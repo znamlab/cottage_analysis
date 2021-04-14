@@ -39,4 +39,14 @@ ml fluxbox
 fluxbox
 ```
 
-pip: statsmodel filterpy tables
+It goes a bit further. New dependencies
+
+```
+conda install -c conda-forge statsmodels filterpy
+```
+
+Seems to work.
+
+## Starting the GUI
+
+We need to start anaconda and load the relevant cuda/cudnn for DLC but if we want the GUI we also need Tigervnc and fluxbox. See the script `start_gui_on_camp.sh`
