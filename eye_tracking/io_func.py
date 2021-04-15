@@ -38,7 +38,7 @@ DEPTH_DICT = {8: np.uint8,
               16: np.uint16}
 
 
-def load_video(data_folder, camera='right_eye_camera'):
+def load_video(data_folder, camera):
     """Load the video from an eye cam"""
     metadata_file = os.path.join(data_folder, '%s_metadata.txt' % camera)
     assert os.path.isfile(metadata_file)
@@ -56,7 +56,7 @@ def load_video(data_folder, camera='right_eye_camera'):
     return data
 
 
-def write_mp4(target_file, video_array, frame_rate, is_color=False, codec='mp4v', extension='.mp4', overwrite=False):
+def write_array_to_video(target_file, video_array, frame_rate, is_color=False, codec='mp4v', extension='.mp4', overwrite=False):
     """Write an array to a mp4 file
 
     The array must shape must be (lines/height x columns/width x frames)
@@ -85,6 +85,7 @@ def read_message(path_to_file, verbose=True, address_to_read=None):
         msg_read = 0
         msg_skipped = 0
         text_msg = ''
+        nbytes = 0
 
     with open(path_to_file, "rb") as f:
         mmap_file = mmap.mmap(f.fileno(), 0, mmap.PROT_WRITE)
@@ -143,9 +144,10 @@ def read_message(path_to_file, verbose=True, address_to_read=None):
             msg_start = binary_file.read(5)
             if verbose:
                 msg_read += 1
+                nbytes += len(msg_start + msg_end)
                 if msg_read % 1000 == 0:
                     erase_line = ('\b' * len(text_msg))
-                    text_msg = 'Read %12d messages ...' % msg_read
+                    text_msg = 'Read %12d messages (%d bytes)...' % (msg_read, nbytes)
                     print(erase_line + text_msg)
         if verbose:
             print("Packing into dataframe...")
@@ -154,11 +156,11 @@ def read_message(path_to_file, verbose=True, address_to_read=None):
 
 if __name__ == "__main__":
     ROOT_DIR = "../resources/test_data"
-    EXAMPLE_FILE = "PZAH4.1c_harpmessage_S20210406_R184923.bin"
+    EXAMPLE_FILE = "harp_messages_example.bin"
 
     fpath = os.path.join(ROOT_DIR, EXAMPLE_FILE)
 
-    msg = read_message(fpath, verbose=False)
+    msg = read_message(fpath, verbose=True)
     MOUSE = "PZAH4.1c"
     SESSION = "S20210406"
     RECORDING = "R184923"
@@ -169,8 +171,8 @@ if __name__ == "__main__":
     codec = 'RGBA'
     extension = '.avi'
     target_file = '_'.join([MOUSE, SESSION, RECORDING, camera]) + extension
-    write_mp4(target_file=os.path.join(data_folder, target_file), video_array=vid, frame_rate=120,
-              codec=codec, extension=extension)
+    write_array_to_video(target_file=os.path.join(data_folder, target_file), video_array=vid, frame_rate=120,
+                         codec=codec, extension=extension)
     print('done')
     import os
 
