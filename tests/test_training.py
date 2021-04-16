@@ -1,7 +1,10 @@
+from pathlib import Path
 import os
+
+ROOT_DIR = Path("tests", "test_data")
 from cottage_analysis.eye_tracking import create_training_dataset
 
-ROOT_DIR = "./resources/test_data"
+
 OUT_DIR = os.path.join(ROOT_DIR, 'tests_outputs')
 MOUSE = "PZAH3.1c"
 SESSION = "S20210406"
