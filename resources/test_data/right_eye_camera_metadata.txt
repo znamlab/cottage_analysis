@@ -1,0 +1,4 @@
+Width: 1440
+Height: 1080
+Depth: 8
+
