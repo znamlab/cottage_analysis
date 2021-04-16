@@ -1,6 +1,5 @@
-import pytest
 import os
-from io_module import harp
+from cottage_analysis.io_module import harp
 
 ROOT_DIR = "./resources/test_data"
 EXAMPLE_HARP = "harp_messages_example.bin"

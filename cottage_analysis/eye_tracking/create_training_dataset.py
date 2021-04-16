@@ -1,7 +1,7 @@
 """Holds function to generate training videos out of binary files"""
 import os
 import numpy as np
-from io_module.video import io_func
+from cottage_analysis.io_module.video import io_func
 
 
 def generate_subset(input_dir, camera, output_dir, **video_kwargs):

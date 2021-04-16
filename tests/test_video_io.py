@@ -1,5 +1,4 @@
-import pytest
-from io_module.video import io_func
+from cottage_analysis.io_module.video import io_func
 
 ROOT_DIR = "./resources/test_data"
 
