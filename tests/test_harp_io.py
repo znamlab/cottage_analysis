@@ -11,7 +11,7 @@ def test_harp():
 
     msg_df = harp.read_message(fpath, verbose=False)
     assert msg_df.shape == (5000, 11)
-    msg_df = harp.read_message(fpath, verbose=False, valid_addresses=32)
+    msg_df = harp.read_message(fpath, verbose=True, valid_addresses=32)
     assert msg_df.shape == (429, 11)
     msg_df = harp.read_message(fpath, verbose=False, valid_addresses=(12, 0))
     assert msg_df.shape == (2, 11)

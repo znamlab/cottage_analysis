@@ -37,14 +37,7 @@ _PAYLOAD_STRUCT = {1: 'B',  # - T U8 : Unsigned 8 bits
 _PAYLOAD_STRUCT = {k: '<' + v for k, v in _PAYLOAD_STRUCT.items()}
 
 
-def read_message(path_to_file, verbose=True, valid_addresses=None, valid_msg_type=None):
-    """Read binary file containing harp messages
-
-    if verbose is True, display some progress
-    valid_addresses can be specified to return only messages with these addresses and ignore the rest
-    msg_type
-    """
-
+def _validate_arguments(valid_addresses, valid_msg_type):
     if valid_msg_type is not None:
         if isinstance(valid_msg_type, str) or isinstance(valid_msg_type, int):
             valid_msg_type = valid_msg_type,
@@ -65,19 +58,26 @@ def read_message(path_to_file, verbose=True, valid_addresses=None, valid_msg_typ
     if valid_addresses is not None:
         if not hasattr(valid_addresses, '__contains__'):
             valid_addresses = int(valid_addresses),
+    return valid_addresses, valid_msg_type
 
+
+def read_message(path_to_file, verbose=True, valid_addresses=None, valid_msg_type=None):
+    """Read binary file containing harp messages
+
+    if verbose is True, display some progress
+    valid_addresses can be specified to return only messages with these addresses and ignore the rest
+    msg_type
+    """
+
+    valid_addresses, valid_msg_type = _validate_arguments(valid_addresses, valid_msg_type)
     all_msgs = []
-    if verbose:
-        print('Start reading')
-        msg_read = 0
-        msg_skipped = 0
-        text_msg = ''
-        nbytes = 0
 
     with open(path_to_file, "rb") as f:
         mmap_file = mmap.mmap(f.fileno(), 0, mmap.PROT_WRITE)
 
-    file_size = len(mmap_file)
+    if verbose:
+        logger = Logger(len(mmap_file))
+
     with mmap_file as binary_file:
         msg_start = binary_file.read(5)
         while msg_start:
@@ -92,61 +92,90 @@ def read_message(path_to_file, verbose=True, valid_addresses=None, valid_msg_typ
             if not read_this_message:
                 binary_file.seek(length - 3, 1)
                 if verbose:
-                    msg_skipped += 1
-                    nbytes += len(msg_start) + length-3
-                    if msg_skipped % 1000 == 0:
-                        erase_line = ('\b' * len(text_msg))
-                        text_msg = 'Skipped %d messages %d%% ...' % (msg_skipped, nbytes / file_size * 100)
-                        print(erase_line + text_msg, end='', flush=True)
+                    logger.log(byte_read=len(msg_start) + length - 3, which='skipped')
                 # read the next msg_start
                 msg_start = binary_file.read(5)
                 continue
 
-            # read the good messages
+            # for good messages make an output dictionary and read the rest
+            msg = dict(msg_type=MESSAGE_TYPE[msg_type], length=length, address=address, port=port,
+                       payload_type=payload_type)
             if length == 255:
                 # some payload might be big. Then the length is spread in 2 more bits.
                 # see harp protocol
                 raise NotImplementedError()
 
             msg_end = binary_file.read(length - 3)  # ignore the fields I have already read
-            # find how many data element I have
-            payload_struct = _PAYLOAD_STRUCT[payload_type]
-            data_size = struct.calcsize(payload_struct[-1])
-            offset = 6 if PAYLOAD_TYPE[payload_type].startswith('Timestamp') else 0
-            num_elements = (len(msg_end[:-1]) - offset) / data_size
-            assert num_elements.is_integer()
 
-            # unpack and put in a dictionary
-            full_struct_fmt = payload_struct[:-1] + payload_struct[-1] * int(num_elements) + 'B'
-            payload = struct.unpack(full_struct_fmt, msg_end)
-            msg = dict(msg_type=MESSAGE_TYPE[msg_type], length=length, address=address, port=port,
-                       payload_type=payload_type)
-            if PAYLOAD_TYPE[payload_type].startswith('Timestamp'):
-                msg['inner_timestamp_part_s'] = payload[0]
-                msg['inner_timestamp_part_us'] = np.int32(payload[1]) * 32  # the data is stored in int16 and is us/32.
-                msg['timestamp_s'] = msg['inner_timestamp_part_s'] + np.float64(msg['inner_timestamp_part_us']) * 1e-6
-                if len(payload) > 3:
-                    msg['data'] = payload[2:-1]
-            else:
-                msg['data'] = payload[0]
-            msg['checksum'] = payload[-1]
-            chksm = 0
-            for i in msg_start + msg_end[:-1]:
-                chksm += i
-            msg['calculated_checksum'] = chksm & 255
+            msg.update(unpack_payload(msg_end, payload_type))
+            msg['calculated_checksum'] = calculate_checksum(msg_start + msg_end[:-1])
             all_msgs.append(msg)
 
             # read the next message start
             msg_start = binary_file.read(5)
             if verbose:
-                msg_read += 1
-                nbytes += len(msg_start + msg_end)
-                if msg_read % 1000 == 0:
-                    erase_line = ('\b' * len(text_msg))
-                    text_msg = 'Read %d messages %d%% ...' % (msg_read, nbytes / file_size * 100)
-                    print(erase_line + text_msg, end="", flush=True)
+                logger.log(byte_read=len(msg_start + msg_end), which='read')
         if verbose:
-            erase_line = ('\b' * len(text_msg))
-            print(erase_line + "Packing into dataframe...")
+            logger.close()
         return pd.DataFrame(all_msgs)
 
+
+def calculate_checksum(message):
+    chksm = 0
+    for i in message:
+        chksm += i
+    return chksm & 255
+
+
+def unpack_payload(msg_end, payload_type):
+    """Unpack the end of a harp message
+
+    The variable lenght part of the message contains the payload and an extra byte for the checksum.
+    This function unpack this into a dictionary
+    """
+    # find how many data element I have
+    payload_struct = _PAYLOAD_STRUCT[payload_type]
+    data_size = struct.calcsize(payload_struct[-1])
+    offset = 6 if PAYLOAD_TYPE[payload_type].startswith('Timestamp') else 0
+    num_elements = (len(msg_end[:-1]) - offset) / data_size
+    assert num_elements.is_integer()
+    # unpack and put in a dictionary
+    full_struct_fmt = payload_struct[:-1] + payload_struct[-1] * int(num_elements) + 'B'
+    payload = struct.unpack(full_struct_fmt, msg_end)
+    out_dict = {}
+    if PAYLOAD_TYPE[payload_type].startswith('Timestamp'):
+        out_dict['inner_timestamp_part_s'] = payload[0]
+        out_dict['inner_timestamp_part_us'] = np.int32(payload[1]) * 32  # the data is stored in int16 and is us/32.
+        out_dict['timestamp_s'] = out_dict['inner_timestamp_part_s'] + np.float64(
+            out_dict['inner_timestamp_part_us']) * 1e-6
+        if len(payload) > 3:
+            out_dict['data'] = payload[2:-1]
+    else:
+        out_dict['data'] = payload[0]
+    out_dict['checksum'] = payload[-1]
+    return out_dict
+
+
+class Logger(object):
+
+    def __init__(self, file_size, log_types=('read', 'skipped'), print_every_n_updates=1000):
+        self.nbytes = 0
+        self.file_size = file_size
+        self.what = {k: 0 for k in log_types}
+        self.last_msg_length = 0
+        self.print_every_n_updates = print_every_n_updates
+        print('Start reading...')
+
+    def log(self, byte_read, which):
+        self.nbytes += byte_read
+        self.what[which] += 1
+        if self.what[which] % self.print_every_n_updates:
+            erase_line = ('\b' * self.last_msg_length)
+            text_msg = '%d messages %s, %d%% ...' % (self.what[which], which, self.nbytes / self.file_size * 100)
+            self.last_msg_length = len(text_msg)
+            print(erase_line + text_msg, end="", flush=True)
+
+    def close(self):
+        erase_line = ('\b' * self.last_msg_length)
+        msg = ', '.join('%d messages %s' % (num, which) for which, num in self.what.items())
+        print(erase_line + msg)
