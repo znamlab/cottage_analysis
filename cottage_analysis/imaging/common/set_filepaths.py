@@ -27,6 +27,15 @@ filenames_dict = {
     }
 
 
+# Just for testing purpose
+def get_general_path_dict(general_path_dict):
+    return general_path_dict
+
+def get_filenames_dict(filenames_dict):
+    return filenames_dict
+
+    
+        
 #%% Get filepaths of all files
 def get_filepaths(general_path_dict=general_path_dict,filenames_dict=filenames_dict):
     '''
