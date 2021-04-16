@@ -1,5 +1,3 @@
-# eye_tracking
-Potentially temporary repository to use DLC to track eye position
+# cottage_analysis
 
-
-This repository might be fused or split with others to make a nicer analysis pipeline 
+Common analysis function for 2P recordings
