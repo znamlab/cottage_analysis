@@ -1,1 +1,4 @@
+.pytest_cache
 **/.DS_Store
+.idea
+tests/test_data/tests_outputs
