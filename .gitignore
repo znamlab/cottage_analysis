@@ -2,4 +2,4 @@
 **/.DS_Store
 .idea
 tests/test_data/tests_outputs
-__pycache__/
+**/__pycache__/
