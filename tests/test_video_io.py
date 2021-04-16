@@ -1,6 +1,8 @@
+from pathlib import Path
 from cottage_analysis.io_module.video import io_func
 
-ROOT_DIR = "./resources/test_data"
+ROOT_DIR = Path("tests", "test_data")
+
 
 def test_load_video():
     data = io_func.load_video(ROOT_DIR, camera='right_eye_camera')

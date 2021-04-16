@@ -1,7 +1,8 @@
+from pathlib import Path
 import os
 from cottage_analysis.io_module import harp
 
-ROOT_DIR = "./resources/test_data"
+ROOT_DIR = Path("tests", "test_data")
 EXAMPLE_HARP = "harp_messages_example.bin"
 
 
