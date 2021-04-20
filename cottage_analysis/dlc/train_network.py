@@ -1,0 +1,25 @@
+import os
+import sys
+
+if __name__ == "__main__":
+    import socket
+    hostname = socket.gethostname()
+    print('Running on %s' % hostname)
+    if hostname == 'C02Z85AULVDC':
+        # that's my laptop
+        ROOT_DIR = "/Volumes/lab-znamenskiyp/home/"
+    else:
+        # should be on camp
+        ROOT_DIR = "/camp/lab/znamenskiyp/home/"
+
+    model_folder = "shared/projects/DLC_models/WF_right_eye_camera-Antonin-2021-04-19"
+    config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
+
+    DLC_DIR = os.path.join(ROOT_DIR, "users", "blota", "code", "Deeplabcut")
+    if DLC_DIR not in sys.path:
+        sys.path.append(DLC_DIR)
+
+    import deeplabcut
+    print("TRAIN")
+    deeplabcut.train_network(config_file)
+    print("Done")
