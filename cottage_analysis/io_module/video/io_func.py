@@ -77,4 +77,5 @@ def write_array_to_video(target_file, video_array, frame_rate, is_color=False, v
             print(erase_line + msg, flush=True, end='')
     if verbose:
         print('Done!')
-    return out
+    out.release()
+    return
