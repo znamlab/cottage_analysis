@@ -29,7 +29,7 @@ if __name__ == "__main__":
     video_array = video.load_video(raw_data_folder, camera=camera)
 
     if PLOT_EXAMPLE:
-        fig = plt.figure()
+        fig = plt.figure(figsize=(14, 7))
         example_frame = 0
         img_kwargs = dict(cmap='Greys_r', interpolation='none')
         def plot_ex(data, plot_index):
@@ -46,7 +46,7 @@ if __name__ == "__main__":
         ax = plot_ex(video_array[:, :, example_frame], 1)
         ax.set_title('Full frame')
     # crop the eye part
-    video_array = video_array[150:250, 900:1100]
+    video_array = video_array[150:300, 950:1100]
     if PLOT_EXAMPLE:
         ax = plot_ex(video_array[:, :, example_frame], 2)
         ax.set_title('Cropped')
@@ -54,11 +54,11 @@ if __name__ == "__main__":
     # remove the end of the range
     cutoff = 30
     video_array[video_array > cutoff] = cutoff
-    video_array = np.array(np.array(video_array, dtype=float) * 255/cutoff, dtype=np.uint8)
+    # video_array = np.array(np.array(video_array, dtype=float) * 255/cutoff, dtype=np.uint8)
 
     if PLOT_EXAMPLE:
         ax = plot_ex(video_array[:, :, example_frame], 3)
-        ax.set_title('Rescaled')
+        ax.set_title('Display changed')
 
     # now save with various codec
     codec_list = dict(DIVX='.avi',
@@ -78,8 +78,9 @@ if __name__ == "__main__":
                       PIM1='.avi',
                       MP42='.avi',
                       DIV3='.avi',
+                      x264='.avi',
                       # U263='.avi',
-                      I263='.avi',  # valid size: 128x96, 176x144, 352x288, 704x576, and 1408x1152.
+                      # I263='.avi',  # valid size: 128x96, 176x144, 352x288, 704x576, and 1408x1152.
                       # FLV1='.avi',valide size: 128x96, 176x144, 352x288, 704x576, and 1408x1152.
                       )
     codec_list['png '] = '.avi'
@@ -96,17 +97,29 @@ if __name__ == "__main__":
             out.write(video_array[:, :, frame])
         out.release()
     if PLOT_EXAMPLE:
-        fig.subplots_adjust(top=0.99, bottom=0, left=0.01, right=1, hspace=0.01, wspace=0.01)
+        fig.subplots_adjust(top=0.99, bottom=0, left=0.01, right=1, hspace=0.01, wspace=0.2)
 
     print('Re-reading')
     # now re-read and plot
     i_plot = 4
+    size_dict = dict()
     for fname in os.listdir(OUTPUT_DIR):
         if fname.startswith('example_'):
-            print('Doing %s'%fname, flush=True)
+            fsize = os.path.getsize(os.path.join(OUTPUT_DIR, fname))
+            size_dict[fname] = fsize
+
+    fsizes = np.array(list(size_dict.values()))
+    files = list(size_dict.keys())
+    order = fsizes.argsort()
+    max_size = video_array.size
+    for fname, fsize in [(files[o], fsizes[o]) for o in order]:
+        if fname.startswith('example_'):
+            print('Doing %s' % fname, flush=True)
+
             reader = cv2.VideoCapture(os.path.join(OUTPUT_DIR, fname))
             retval, image = reader.read()
             ax = plot_ex(image[:, :, 0], i_plot)
-            ax.set_title(fname.split('_')[1])
+            ax.set_title(fname.split('_')[1].split('.')[0] + " %.1f kb (%d%%)" % (fsize/1024, fsize/max_size*100))
             i_plot += 1
+    fig.savefig(os.path.join(OUTPUT_DIR, 'summary_figure_display_only.png'), dpi=600)
     print('done')
