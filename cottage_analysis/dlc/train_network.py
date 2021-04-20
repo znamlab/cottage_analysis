@@ -1,5 +1,9 @@
 import os
+os.environ['DLClight'] = 'True'
 import sys
+import matplotlib
+matplotlib.use('Agg')  # make sure we use a backend that can run in headless mode
+
 
 if __name__ == "__main__":
     import socket
@@ -14,11 +18,6 @@ if __name__ == "__main__":
 
     model_folder = "shared/projects/DLC_models/WF_right_eye_camera-Antonin-2021-04-19"
     config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
-
-    DLC_DIR = os.path.join(ROOT_DIR, "users", "blota", "code", "Deeplabcut")
-    if DLC_DIR not in sys.path:
-        print('Adding %s to the path' % DLC_DIR)
-        sys.path.append(DLC_DIR)
 
     import deeplabcut
     print("TRAIN")
