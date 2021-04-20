@@ -17,6 +17,7 @@ if __name__ == "__main__":
 
     DLC_DIR = os.path.join(ROOT_DIR, "users", "blota", "code", "Deeplabcut")
     if DLC_DIR not in sys.path:
+        print('Adding %s to the path' % DLC_DIR)
         sys.path.append(DLC_DIR)
 
     import deeplabcut
