@@ -20,7 +20,8 @@ At that stage I can import tensorflow in python. Let add the requirements of DLC
 More dependencies
 
 ```
-conda install -c conda-forge statsmodels filterpy matplotlib pandas scikit-learn pyyaml six tqdm click filterpy ruamel.yaml opencv scikit-image pytables wxpython jupyter nb_conda Shapely pip
+conda install -c conda-forge statsmodels filterpy matplotlib pandas scikit-learn pyyaml six tqdm click //
+        filterpy ruamel.yaml opencv scikit-image pytables wxpython jupyter nb_conda Shapely pip imgaug
 ```
 At that point I start to need a GUI
 
@@ -29,7 +30,7 @@ At that point I start to need a GUI
 
 ```
 srun -p vis -n 1 --gres=gpu:1 -t 00:30:00 --pty bash
-ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3 Tigervnc fluxbox
+ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3 Tigervnc fluxbox FFmpeg
 vncstart
 ```
 
