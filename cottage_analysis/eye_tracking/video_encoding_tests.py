@@ -30,9 +30,11 @@ if __name__ == "__main__":
 
     if PLOT_EXAMPLE:
         fig = plt.figure(figsize=(14, 7))
+        fig2 = plt.figure(figsize=(14, 7))
         example_frame = 0
         img_kwargs = dict(cmap='Greys_r', interpolation='none')
-        def plot_ex(data, plot_index):
+
+        def plot_ex(data, plot_index, fig=fig, img_kwargs=img_kwargs):
             ax = fig.add_subplot(3, 6, plot_index)
             ax.imshow(data, **img_kwargs)
             ax.set_xticks([])
@@ -98,6 +100,7 @@ if __name__ == "__main__":
         out.release()
     if PLOT_EXAMPLE:
         fig.subplots_adjust(top=0.99, bottom=0, left=0.01, right=1, hspace=0.01, wspace=0.2)
+        fig2.subplots_adjust(top=0.99, bottom=0, left=0.01, right=1, hspace=0.01, wspace=0.2)
 
     print('Re-reading')
     # now re-read and plot
@@ -112,14 +115,20 @@ if __name__ == "__main__":
     files = list(size_dict.keys())
     order = fsizes.argsort()
     max_size = video_array.size
+    rdbu = plt.get_cmap('RdBu_r', 7)
     for fname, fsize in [(files[o], fsizes[o]) for o in order]:
         if fname.startswith('example_'):
             print('Doing %s' % fname, flush=True)
 
             reader = cv2.VideoCapture(os.path.join(OUTPUT_DIR, fname))
             retval, image = reader.read()
-            ax = plot_ex(image[:, :, 0], i_plot)
+            ax = plot_ex(image[:, :, 0], i_plot, fig=fig)
             ax.set_title(fname.split('_')[1].split('.')[0] + " %.1f kb (%d%%)" % (fsize/1024, fsize/max_size*100))
+            ax = plot_ex(np.array(image[:, :, 0], dtype=float) - video_array[:, :, 0], i_plot, fig=fig2,
+                         img_kwargs=dict(cmap=rdbu, interpolation='none', vmin=-3, vmax=3))
+            plt.colorbar(ax.get_images()[0])
+            ax.set_title(fname.split('_')[1].split('.')[0] + " %.1f kb (%d%%)" % (fsize / 1024, fsize / max_size * 100))
             i_plot += 1
     fig.savefig(os.path.join(OUTPUT_DIR, 'summary_figure_display_only.png'), dpi=600)
+    fig2.savefig(os.path.join(OUTPUT_DIR, 'summary_figure_compression_change.png'), dpi=600)
     print('done')
