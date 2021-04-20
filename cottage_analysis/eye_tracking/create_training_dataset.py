@@ -25,9 +25,7 @@ def generate_subset(input_dir, camera, output_dir, num_frame=100, **video_kwargs
     return output_names
 
 
-def make_mini_movie(video_array, output, num_frame=100, perc_saturation=1, max_brightness=None,
-                    min_brightness=None, overwrite=False,
-                    **video_kwargs):
+def make_mini_movie(video_array, output, num_frame=100, overwrite=False, **video_kwargs):
     """Take one binary file and subsample a few random frame to generate a small video
 
     This also rescales the video to the full 8 bits with prec_saturation pixels behind
@@ -47,24 +45,24 @@ def make_mini_movie(video_array, output, num_frame=100, perc_saturation=1, max_b
         index = np.random.randint(0, video_array.shape[2], num_frame)
         sample = video_array[:, :, index]
 
-    # rescale contrast
-    if min_brightness is not None:
-        sample[sample < min_brightness] = min_brightness
-    if max_brightness is not None:
-        sample[sample > max_brightness] = max_brightness
-    sample_hist = np.percentile(sample, [perc_saturation/2, 100-perc_saturation/2])
-    rescale_sample = (np.array(sample, dtype=float) - sample_hist[0]) / sample_hist[1] * 255
-    rescale_sample[rescale_sample > 255] = 255
-    rescale_sample[rescale_sample < 0] = 0
-    rescale_sample = np.array(rescale_sample, dtype=np.uint8)
-    io_func.write_array_to_video(output, rescale_sample, overwrite=overwrite, **kwargs)
-    return rescale_sample
+    io_func.write_array_to_video(output, sample, overwrite=overwrite, **kwargs)
+    return 1
 
 
 if __name__ == "__main__":
-    ROOT_DIR = "/Volumes/lab-znamenskiyp/home/shared/projects/3d_vision/"
+    import socket
+    hostname = socket.gethostname()
+    print('Running on %s' % hostname)
+    if hostname == 'C02Z85AULVDC':
+        # that's my laptop
+        ROOT_DIR = "/Volumes/lab-znamenskiyp/home/shared/projects/3d_vision/"
+    else:
+        # should be on camp
+        ROOT_DIR = "/camp/lab/znamenskiyp/home/shared/projects/3d_vision/"
+
     OUTPUT_DIR = os.path.join(ROOT_DIR, "EyeCamCalibration/RightEyeCam/TrainingData")
     ROOT_DIR = os.path.join(ROOT_DIR, 'PZAH4.1c', 'S20210406', 'R184923')
+    print('Saving in %s' % OUTPUT_DIR)
     video = generate_subset(input_dir=ROOT_DIR, camera='right_eye_camera', num_frame=None,
-                            output_dir=OUTPUT_DIR, codec='x264', extension='.avi',
+                            output_dir=OUTPUT_DIR, codec='mp4v', extension='.mp4',
                             max_brightness=30, overwrite=True, perc_saturation=0)
