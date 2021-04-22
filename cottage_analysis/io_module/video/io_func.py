@@ -65,10 +65,13 @@ def write_array_to_video(target_file, video_array, frame_rate, is_color=False, v
             frame[frame < min_brightness] = min_brightness
         if max_brightness is not None:
             frame[frame > max_brightness] = max_brightness
-        rescaled_frame = (np.array(frame, dtype=float) - sample_hist[0]) / sample_hist[1] * 255
-        rescaled_frame[rescaled_frame > 255] = 255
-        rescaled_frame[rescaled_frame < 0] = 0
-        rescaled_frame = np.array(rescaled_frame, dtype=np.uint8)
+        if sample_hist[0] != 0 or sample_hist[1] != 255:
+            rescaled_frame = (np.array(frame, dtype=float) - sample_hist[0]) / sample_hist[1] * 255
+            rescaled_frame[rescaled_frame > 255] = 255
+            rescaled_frame[rescaled_frame < 0] = 0
+            rescaled_frame = np.array(rescaled_frame, dtype=np.uint8)
+        else:
+            rescaled_frame = frame
         out.write(rescaled_frame)
         frames_done += 1
         if verbose:

@@ -60,9 +60,9 @@ if __name__ == "__main__":
         # should be on camp
         ROOT_DIR = "/camp/lab/znamenskiyp/home/shared/projects/3d_vision/"
 
-    OUTPUT_DIR = os.path.join(ROOT_DIR, "EyeCamCalibration/RightEyeCam/TrainingData")
-    ROOT_DIR = os.path.join(ROOT_DIR, 'PZAH4.1c', 'S20210406', 'R184923')
+    OUTPUT_DIR = os.path.join(ROOT_DIR, "EyeCamCalibration/RightEyeCam/TrainingData/small_video_overviews")
+    ROOT_DIR = os.path.join(ROOT_DIR)
     print('Saving in %s' % OUTPUT_DIR)
     video = generate_subset(input_dir=ROOT_DIR, camera='right_eye_camera', num_frame=None,
-                            output_dir=OUTPUT_DIR, codec='mp4v', extension='.mp4',
-                            max_brightness=30, overwrite=True, perc_saturation=0)
+                            output_dir=OUTPUT_DIR, codec='FFV1', extension='.avi',
+                            max_brightness=None, overwrite=True, perc_saturation=0)
