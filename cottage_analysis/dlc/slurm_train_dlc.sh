@@ -10,7 +10,7 @@
 echo 'ml-ing'
 ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3
 echo 'Sourcing conda'
-# source /camp/apps/eb/software/Anaconda/conda.env.sh
+source /camp/apps/eb/software/Anaconda/conda.env.sh
 echo 'activate'
 conda activate DLC
 
