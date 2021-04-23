@@ -63,6 +63,6 @@ if __name__ == "__main__":
     OUTPUT_DIR = os.path.join(ROOT_DIR, "EyeCamCalibration/RightEyeCam/TrainingData/small_video_overviews")
     ROOT_DIR = os.path.join(ROOT_DIR)
     print('Saving in %s' % OUTPUT_DIR)
-    video = generate_subset(input_dir=ROOT_DIR, camera='right_eye_camera', num_frame=None,
+    video = generate_subset(input_dir=ROOT_DIR, camera='right_eye_camera', num_frame=10,
                             output_dir=OUTPUT_DIR, codec='FFV1', extension='.avi',
                             max_brightness=None, overwrite=True, perc_saturation=0)

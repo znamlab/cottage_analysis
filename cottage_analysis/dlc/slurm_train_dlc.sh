@@ -2,7 +2,7 @@
 #SBATCH --job-name=dlc_eye_train
 #SBATCH --ntasks=1
 #SBATCH --time=12:00:00
-#SBATCH --mem=128G
+#SBATCH --mem=32G
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
 #SBATCH --mail-type=END,FAIL
