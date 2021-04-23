@@ -6,8 +6,14 @@
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
 #SBATCH --mail-type=END,FAIL
-ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3
-conda activate DLC
-cd /camp/lab/znamenskiyp/home/user/blota/code/cottage_analysis
-python -m cottage_analysis/dlc/train_network.py
+
+echo 'ml-ing'
+ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130
+echo 'Sourcing conda'
+source /camp/apps/eb/software/Anaconda/conda.env.sh
+echo 'activate'
+conda activate /camp/lab/znamenskiyp/home/.conda/envs/DLC/
+
+cd /camp/lab/znamenskiyp/home/users/blota/code/cottage_analysis
+python cottage_analysis/dlc/train_network.py
 
