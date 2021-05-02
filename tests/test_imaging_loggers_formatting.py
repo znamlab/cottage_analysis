@@ -117,19 +117,25 @@ VS_frame_logger = logger_format.load_csv(filepath_dict['VS_frame_logger'])
 VS_param_logger_Retinotopic = logger_format.load_csv(filepath_dict['VS_param_logger_Retinotopic'])
 
 # Format dataframes
-wf_camera_timestamps = logger_format.format_camera_timestamps(wf_camera_timestamps)
-VS_frame_logger = logger_format.format_VS_frame_logger(VS_frame_logger)
-VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_logger=VS_param_logger_Retinotopic, \
+def test_format_camera_timestamps(wf_camera_timestamps):
+    wf_camera_timestamps = logger_format.format_camera_timestamps(cam_timestamps=wf_camera_timestamps)
+    assert(len(wf_camera_timestamps)==42340)
+    assert({'Frame','Timestamp_zeroed'}.issubset(wf_camera_timestamps.columns)) 
+    
+    
+    
+def test_format_VS_frame_logger(VS_frame_logger):    
+    VS_frame_logger = logger_format.format_VS_frame_logger(VS_frame_logger)
+    assert(len(VS_frame_logger)==108215)
+    assert({'Frame','HarpTime','Timestamp_zeroed'}.issubset(VS_frame_logger.columns))
+
+
+
+def test_format_VS_param_logger(VS_param_logger_Retinotopic,VS_frame_logger):
+    VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_logger=VS_param_logger_Retinotopic, \
                                                                     VS_frame_logger=VS_frame_logger,\
                                                                         which_protocol='Retinotopic')
-    
-assert(len(wf_camera_timestamps)==42340)
-assert({'Frame','Timestamp_zeroed'}.issubset(wf_camera_timestamps.columns))
-
-assert(len(VS_frame_logger)==108215)
-assert({'Frame','HarpTime','Timestamp_zeroed'}.issubset(VS_frame_logger.columns))
-
-assert(len(VS_param_logger_Retinotopic)==1566)
-assert({'HarpTime','Timestamp_zeroed','Xdeg','Ydeg','Angle'}.issubset(VS_param_logger_Retinotopic.columns))
+    assert(len(VS_param_logger_Retinotopic)==1566)
+    assert({'HarpTime','Timestamp_zeroed','Xdeg','Ydeg','Angle'}.issubset(VS_param_logger_Retinotopic.columns))
 
 
