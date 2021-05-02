@@ -129,8 +129,8 @@ VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_log
 def test_align_timestamps(df1=wf_camera_timestamps, df2=VS_param_logger_Retinotopic, align_basis='Timestamp_zeroed'):
     DF = align_timestamps.align_timestamps(df1=df1, df2=df2, align_basis=align_basis)
     assert(len(DF)==len(wf_camera_timestamps))
-    assert(DF.loc[0,'HarpTime'] == np.nan)
-    assert(DF.loc[520,'Xdeg'] == np.nan)
+    assert(np.isnan(DF.loc[0,'HarpTime']))
+    assert(np.isnan(DF.loc[520,'Xdeg']))
     assert(DF.loc[521,'Xdeg'] == -105)
     assert(DF.loc[521,'Ydeg'] == 30)
     assert(DF.loc[521,'Angle'] == 45)
