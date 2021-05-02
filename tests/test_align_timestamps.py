@@ -118,6 +118,14 @@ VS_frame_logger = logger_format.load_csv(filepath_dict['VS_frame_logger'])
 VS_param_logger_Retinotopic = logger_format.load_csv(filepath_dict['VS_param_logger_Retinotopic'])
 
 # Format dataframes
+wf_camera_timestamps = logger_format.format_camera_timestamps(wf_camera_timestamps)
+VS_frame_logger = logger_format.format_VS_frame_logger(VS_frame_logger)
+VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_logger=VS_param_logger_Retinotopic, \
+                                                                    VS_frame_logger=VS_frame_logger,\
+                                                                        which_protocol='Retinotopic')
+
+    
+# Format dataframes
 def test_align_timestamps(df1=wf_camera_timestamps, df2=VS_param_logger_Retinotopic, align_basis='Timestamp_zeroed'):
     DF = align_timestamps.align_timestamps(df1=df1, df2=df2, align_basis=align_basis)
     assert(len(DF)==len(wf_camera_timestamps))
