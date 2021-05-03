@@ -29,7 +29,7 @@ At that point I start to need a GUI
 ## Starting the GUI
 
 ```
-srun -p vis -n 1 --gres=gpu:1 -t 00:30:00 --pty bash
+srun -p vis -n 1 --gres=gpu:1 -t 08:30:00 --pty bash
 ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3 Tigervnc fluxbox FFmpeg
 vncstart
 ```
