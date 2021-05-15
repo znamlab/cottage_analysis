@@ -1,23 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Sun May  2 19:49:40 2021
+Created on Sun May  2 12:30:41 2021
 
 @author: hey2
-
-Test cottage_analysis.imaging.common.io_formatting
 """
+#%% Clear all
+run_clear = True
 
-from cottage_analysis.imaging.common import imaging_loggers_formatting as logger_format
+if run_clear:
+    from IPython import get_ipython
+    get_ipython().magic('reset -sf')
+    
+    
+#%% import packages
+from cottage_analysis.io_module import harp
+from cottage_analysis.io_module.video import io_func as video_io
+from cottage_analysis.imaging.common import align_timestamps, io_formatting
 import os
+
+# =============================================================================
+# fpath = '/Volumes/lab-znamenskiyp/home/shared/projects/3d_vision/Data/PZAH4.1c/S20210406/ParamLog/R184923/PZAH4.1c_harpmessage_S20210406_R184923.bin'
+# msg_df = harp.read_message(fpath, verbose=True, valid_addresses=32)
+# 
+# =============================================================================
+
 import numpy as np
 import pandas as pd
+
 
 
 #%%
 # Set-up
 general_path_dict = {
-    'root': 'tests/test_data',
+    'root': '/Users/hey2/Desktop/cottage_analysis/tests/test_data',
     'mouse_name': 'test_mouse',
     'session_dir': 'Stest',
     'recording_dir': 'Rtest'
@@ -110,32 +126,41 @@ def get_filepaths(general_path_dict,filename_dict):
 filepath_dict = get_filepaths(general_path_dict=general_path_dict,filename_dict=filename_dict)
 
 
+
 #%% Test cottage_analysis.imaging.common : io_formatting
 # Load camera timestamps / VS frame logger / VS param logger
-wf_camera_timestamps = logger_format.load_csv(filepath_dict['wf_camera_timestamps'])
-VS_frame_logger = logger_format.load_csv(filepath_dict['VS_frame_logger'])
-VS_param_logger_Retinotopic = logger_format.load_csv(filepath_dict['VS_param_logger_Retinotopic'])
+wf_camera_timestamps = io_formatting.load_csv(filepath_dict['wf_camera_timestamps'])
+VS_frame_logger = io_formatting.load_csv(filepath_dict['VS_frame_logger'])
+VS_param_logger_Retinotopic = io_formatting.load_csv(filepath_dict['VS_param_logger_Retinotopic'])
 
 # Format dataframes
-def test_format_camera_timestamps(cam_timestamps=wf_camera_timestamps):
-    wf_camera_timestamps = logger_format.format_camera_timestamps(cam_timestamps=cam_timestamps)
-    assert(len(wf_camera_timestamps)==42340)
-    assert({'Frame','ElapsedTime'}.issubset(wf_camera_timestamps.columns)) 
-    
-    
-    
-def test_format_VS_frame_logger(VS_frame_logger=VS_frame_logger):    
-    VS_frame_logger = logger_format.format_VS_frame_logger(VS_frame_logger=VS_frame_logger)
-    assert(len(VS_frame_logger)==108215)
-    assert({'Frame','HarpTime','ElapsedTime'}.issubset(VS_frame_logger.columns))
-
-
-
-def test_format_VS_param_logger(VS_param_logger=VS_param_logger_Retinotopic, VS_frame_logger=VS_frame_logger, which_protocol='Retinotopic'):
-    VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_logger=VS_param_logger, \
+wf_camera_timestamps = io_formatting.format_camera_timestamps(wf_camera_timestamps)
+VS_frame_logger = io_formatting.format_VS_frame_logger(VS_frame_logger)
+VS_param_logger_Retinotopic  = io_formatting.format_VS_param_logger(VS_param_logger=VS_param_logger_Retinotopic, \
                                                                     VS_frame_logger=VS_frame_logger,\
-                                                                        which_protocol=which_protocol)
-    assert(len(VS_param_logger_Retinotopic)==1566)
-    assert({'HarpTime','ElapsedTime','Xdeg','Ydeg','Angle'}.issubset(VS_param_logger_Retinotopic.columns))
+                                                                        which_protocol='Retinotopic')
+    
+assert(len(wf_camera_timestamps)==42340)
+assert({'Frame','Timestamp_zeroed'}.issubset(wf_camera_timestamps.columns))
 
+assert(len(VS_frame_logger)==108215)
+assert({'Frame','HarpTime','Timestamp_zeroed'}.issubset(VS_frame_logger.columns))
 
+assert(len(VS_param_logger_Retinotopic)==1566)
+assert({'HarpTime','Timestamp_zeroed','Xdeg','Ydeg','Angle'}.issubset(VS_param_logger_Retinotopic.columns))
+
+    
+    
+#%% Test align_timestamp
+# Align timestamp
+wf_VS_DF = align_timestamps.align_timestamps(df1=wf_camera_timestamps, df2=VS_param_logger_Retinotopic, align_basis='Timestamp_zeroed')
+
+    
+
+    
+    
+    
+    
+   
+    
+    

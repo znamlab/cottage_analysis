@@ -126,7 +126,7 @@ VS_param_logger_Retinotopic  = logger_format.format_VS_param_logger(VS_param_log
 
     
 # Format dataframes
-def test_align_timestamps(df1=wf_camera_timestamps, df2=VS_param_logger_Retinotopic, align_basis='Timestamp_zeroed'):
+def test_align_timestamps(df1=wf_camera_timestamps, df2=VS_param_logger_Retinotopic, align_basis='ElapsedTime'):
     DF = align_timestamps.align_timestamps(df1=df1, df2=df2, align_basis=align_basis)
     assert(len(DF)==len(wf_camera_timestamps))
     assert(np.isnan(DF.loc[0,'HarpTime']))
