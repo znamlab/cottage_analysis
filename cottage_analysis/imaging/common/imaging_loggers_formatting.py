@@ -48,7 +48,7 @@ def load_csv(filepath):
 def format_camera_timestamps(cam_timestamps):
     '''
     Format dataframe for camera timestamps
-    df columns = 'Frame','Timestamp_zeroed' (only take the Pylon Timestamp, don't used the Bonsai timestamp)
+    df columns = 'Frame','ElapsedTime' (only take the Pylon Timestamp, don't used the Bonsai timestamp)
 
     Parameters
     ----------
@@ -61,15 +61,15 @@ def format_camera_timestamps(cam_timestamps):
         Formatted dataframe for camera timestamps
 
     '''
-    formatted_df = pd.DataFrame(columns=['Frame','Timestamp_zeroed'])  
+    formatted_df = pd.DataFrame(columns=['Frame','ElapsedTime'])  
     
     # Calculate elapsed time from the start of camera trigger
     # Use Pylon timestamp instead of Bonsai one!! (Bonsai takes into account the time of processing!)
-    formatted_df['Timestamp_zeroed'] = (cam_timestamps['PylonTimestamp'] - cam_timestamps.loc[0,'PylonTimestamp'])/1e9
+    formatted_df['ElapsedTime'] = (cam_timestamps['PylonTimestamp'] - cam_timestamps.loc[0,'PylonTimestamp'])/1e9
     
     # Find frame number (including the dropped frames)
     median_frame_time = np.nanmedian(cam_timestamps['PylonTimestamp'].diff()/1e9)
-    formatted_df['Frame'] = round(formatted_df['Timestamp_zeroed']/median_frame_time)
+    formatted_df['Frame'] = round(formatted_df['ElapsedTime']/median_frame_time)
     
     
     # Returns
@@ -80,7 +80,7 @@ def format_camera_timestamps(cam_timestamps):
 def format_VS_frame_logger(VS_frame_logger):
     '''
     Format dataframe for VisStim frame_logger
-    df columns = 'HarpTime','Timestamp_zeroed'
+    df columns = 'HarpTime','ElapsedTime'
     
     Parameters
     ----------
@@ -93,11 +93,11 @@ def format_VS_frame_logger(VS_frame_logger):
         Formatted dataframe for VS_frame_logger
 
     '''
-    formatted_df = pd.DataFrame(columns=['Frame','HarpTime','Timestamp_zeroed'])  
+    formatted_df = pd.DataFrame(columns=['Frame','HarpTime','ElapsedTime'])  
 
     formatted_df['Frame'] =  VS_frame_logger['Frame']    
     formatted_df['HarpTime'] =  VS_frame_logger['HarpTime']   
-    formatted_df['Timestamp_zeroed'] = VS_frame_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
+    formatted_df['ElapsedTime'] = VS_frame_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
     
     
     # Returns
@@ -108,7 +108,7 @@ def format_VS_frame_logger(VS_frame_logger):
 def format_VS_param_logger(VS_param_logger, VS_frame_logger, which_protocol):
     '''
     Format dataframe for VisStim param_logger
-    df columns = 'HarpTime','Timestamp_zeroed' (calculated from the start of frame logger!!), Params...
+    df columns = 'HarpTime','ElapsedTime' (calculated from the start of frame logger!!), Params...
     
     Parameters
     ----------
@@ -122,13 +122,13 @@ def format_VS_param_logger(VS_param_logger, VS_frame_logger, which_protocol):
     Returns
     -------
     formatted_df : Dataframe
-        Formatted dataframe for VS_param_logger
+        Formatted dataframe for VS_param_logger. !!ElapsedTime is already alighed to the starting of the frame logger
 
     '''
-    formatted_df = pd.DataFrame(columns=['HarpTime','Timestamp_zeroed'])  
+    formatted_df = pd.DataFrame(columns=['HarpTime','ElapsedTime'])  
 
     formatted_df['HarpTime'] =  VS_param_logger['HarpTime']   
-    formatted_df['Timestamp_zeroed'] = VS_param_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
+    formatted_df['ElapsedTime'] = VS_param_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
     
     # Assign params according to stimulation protocol 
     if which_protocol == 'Retinotopic':
@@ -142,6 +142,11 @@ def format_VS_param_logger(VS_param_logger, VS_frame_logger, which_protocol):
         formatted_df['LocationY'] =  VS_param_logger['LocationY'] 
         formatted_df['Angle'] =  VS_param_logger['Angle']  
     
+    elif which_protocol == 'Episodic':
+        formatted_df['StimID'] =  VS_param_logger['StimID']   
+        formatted_df['Azimuth'] =  VS_param_logger['Azimuth']   
+        formatted_df['Elevation'] =  VS_param_logger['Elevation'] 
+        formatted_df['Angle'] =  VS_param_logger['Angle']  
     
     # Returns
     return formatted_df
