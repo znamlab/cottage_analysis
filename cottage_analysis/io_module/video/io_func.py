@@ -9,7 +9,7 @@ DEPTH_DICT = {8: np.uint8,
               16: np.uint16}
 
 
-def load_video(data_folder, camera):
+def load_video(data_folder, camera, ordered=True):
     """Load the video from an eye cam"""
     metadata_file = os.path.join(data_folder, '%s_metadata.txt' % camera)
     assert os.path.isfile(metadata_file)
@@ -23,7 +23,9 @@ def load_video(data_folder, camera):
     binary_file = os.path.join(data_folder, '%s_data.bin' % camera)
     assert os.path.isfile(binary_file)
     data = np.memmap(binary_file, dtype=DEPTH_DICT[metadata['Depth']], mode='r')
-    data = data.reshape((metadata['Height'], metadata['Width'], -1), order='F')
+    
+    if ordered == True:        
+        data = data.reshape((metadata['Height'], metadata['Width'], -1), order='F')
     return data
 
 
