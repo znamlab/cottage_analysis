@@ -60,3 +60,124 @@ print('That means that the shape of the array should end with the frame dimensio
 print('We can check that by looking as c_data.swapaxes(0, 2).flatten():')
 print(c_data.swapaxes(0, 2).flatten())
 
+
+#%% Test to transform data into frame-major
+ammp_filename = '/Users/hey2/Desktop/f_data.npy'
+newmmp_filename = '/Users/hey2/Desktop/new_data.npy'
+Ncolumns = 4
+Nrows = 3
+Nframes = 2
+data = np.arange(Nrows * Ncolumns * Nframes)
+video = data.reshape([Nframes,Nrows,Ncolumns])
+f_data = video.transpose((0,2,1)).flatten()
+
+
+
+# bonsai saves video in C-order 
+def Fidx_to_Ccoord(idx, R, C, F):
+    '''
+    Convert the index of data saved in F-order (Bonsai) to C-order coordinate
+
+    Parameters
+    ----------
+    idx : int
+        F-order index of data
+    R : int
+        Total number of rows
+    C : int
+        Total number of columns
+    F : int
+        Total number of frames
+
+    Returns
+    -------
+    [r.c.f]: [row_idx, col_idx, frame_idx] in C-order
+
+    '''
+    
+    f = int(idx/(R*C))
+    c = int((idx-f*(R*C))/R)
+    r = (idx-R*C*f) - c*R
+    
+    return[r,c,f]
+
+
+
+# C-order to frame-major index
+def Ccoord_to_FrameMajorIdx(Ccoord, R, C, F):
+    '''
+    Convert C-order coordinate to the index of frame-major data to be saved
+
+    Parameters
+    ----------
+    Ccoord : [r,c,f]
+        [row_idx, col_idx, frame_idx] in C-order
+    R : int
+        Total number of rows
+    C : int
+        Total number of columns
+    F : int
+        Total number of frames
+
+    Returns
+    -------
+    idx: int
+        Index of frame-major data to be saved 
+
+    '''
+    
+    [r,c,f] = Ccoord
+    idx = (r*C+c)*F + f
+    
+    return idx
+    
+
+
+def Fidx_to_FrameMajorIdx(idx, R, C, F):
+    '''
+    Convert the index of data saved in F-order (Bonsai) to the index of frame-major data to be saved
+
+    Parameters
+    ----------
+    idx : int
+        F-order index of data
+    R : int
+        Total number of rows
+    C : int
+        Total number of columns
+    F : int
+        Total number of frames
+
+    Returns
+    -------
+    new_idx : int
+        Index of frame-major data to be saved 
+
+    '''
+    f = int(idx/(R*C))
+    c = int((idx-f*(R*C))/R)
+    r = (idx-R*C*f) - c*R
+    
+    new_idx = (r*C+c)*F + f
+    
+    return new_idx
+
+
+
+new_data = np.zeros(len(f_data))
+for i in range(0,len(f_data)):
+    new_data[Fidx_to_FrameMajorIdx(i, R=Nrows, C=Ncolumns, F=Nframes)] = f_data[i]  
+
+
+fp = np.memmap(ammp_filename, dtype='float32', mode='w+', shape=f_data.shape)
+fp[:] = f_data[:]
+fp.flush()
+
+new_fp = np.memmap(newmmp_filename, dtype='float32', mode='w+', shape=new_data.shape)
+new_fp[:] = new_data[:]
+fp.flush()
+
+check_fp = np.memmap(ammp_filename, dtype='float32', mode='r', shape=f_data.shape)
+check_new_fp = np.memmap(newmmp_filename, dtype='float32', mode='r', shape=new_data.shape)
+
+ 
