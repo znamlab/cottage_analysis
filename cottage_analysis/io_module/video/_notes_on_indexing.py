@@ -64,12 +64,11 @@ print(c_data.swapaxes(0, 2).flatten())
 #%% Test to transform data into frame-major
 ammp_filename = '/Users/hey2/Desktop/f_data.npy'
 newmmp_filename = '/Users/hey2/Desktop/new_data.npy'
-Ncolumns = 4
-Nrows = 3
+Nrows = 3  # Height
+Ncolumns = 4  # Width
 Nframes = 2
-data = np.arange(Nrows * Ncolumns * Nframes)
-video = data.reshape([Nframes,Nrows,Ncolumns])
-f_data = video.transpose((0,2,1)).flatten()
+f_data = np.arange(Nrows * Ncolumns * Nframes)  # data written by Bonsai in disk
+video = np.swapaxes(f_data.reshape([Nframes,Ncolumns,Nrows]),0,2)  # read video data
 
 
 
@@ -175,9 +174,7 @@ fp.flush()
 
 new_fp = np.memmap(newmmp_filename, dtype='float32', mode='w+', shape=new_data.shape)
 new_fp[:] = new_data[:]
-fp.flush()
+new_fp.flush()
 
 check_fp = np.memmap(ammp_filename, dtype='float32', mode='r', shape=f_data.shape)
 check_new_fp = np.memmap(newmmp_filename, dtype='float32', mode='r', shape=new_data.shape)
-
- 
