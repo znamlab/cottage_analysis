@@ -14,6 +14,33 @@ import cottage_analysis.imaging.common.chunk_data as chunk_data
 
 
 def transpose(data_folder, data_filename, data_shape, save_folder, save_filename, chunk_size, dtype='float32', verbose=1):
+    '''
+    Transpose a stored array (column major) into frame-major form.
+
+    Parameters
+    ----------
+    data_folder : string
+        Data folder
+    data_filename : string
+        Data filename
+    data_shape : list, [height, width, frames]
+        Data shape
+    save_folder : string
+        Save folder
+    save_filename : string
+        Save filename, can be in .bin or .npy
+    chunk_size : int or None
+        Bumber of frames for each chunk
+    dtype : string, optional
+        Data type. The default is 'float32'.
+    verbose : 1 or 0, optional
+        verbose or not. The default is 1.
+
+    Returns
+    -------
+    None.
+
+    '''
     
     # load data into memmap
     data_path = data_folder+data_filename
