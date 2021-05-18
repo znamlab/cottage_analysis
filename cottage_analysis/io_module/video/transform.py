@@ -8,61 +8,57 @@ Created on Mon May 17 14:08:43 2021
 Transform the shape of data
 """
 import numpy as np
+import os
+import cottage_analysis.imaging.common.chunk_data as chunk_data
 
 
-def find_idx_colMajor(idx, R, C, F):
-    '''
-    Convert the index of data saved in F-order (Bonsai) to C-order coordinate
 
-    Parameters
-    ----------
-    idx : int
-        F-order index of data
-    R : int
-        Total number of rows
-    C : int
-        Total number of columns
-    F : int
-        Total number of frames
-
-    Returns
-    -------
-    [r.c.f]: [row_idx, col_idx, frame_idx] in C-order
-
-    '''
+def transpose(data_folder, data_filename, data_shape, save_folder, save_filename, chunk_size, dtype='float32', verbose=1):
     
-    f = int(idx/(R*C))
-    c = int((idx-f*(R*C))/R)
-    r = (idx-R*C*f) - c*R
+    # load data into memmap
+    data_path = data_folder+data_filename
+    assert(os.path.isfile(data_path))
+    data = np.memmap(data_path,dtype=dtype, mode='r')
     
-    return[r,c,f]
-
-
-
-def colMajor_to_frameMajor(idx, R, C, F):
-    '''
-    Convert the index of data saved in F-order (Bonsai) to the index of frame-major data to be saved
-
-    Parameters
-    ----------
-    idx : int
-        F-order index of data
-    R : int
-        Total number of rows
-    C : int
-        Total number of columns
-    F : int
-        Total number of frames
-
-    Returns
-    -------
-    new_idx : int
-        Index of frame-major data to be saved 
-
-    '''
-    [r,c,f] = find_idx_colMajor(idx, R, C, F)
+    # reshape data into (row, col, frame)
+    height = data_shape[0]
+    width = data_shape[1]
+    frames = data_shape[2]
+    data = data.reshape((height, width,-1),order='F')
     
-    new_idx = (r*C+c)*F + f
+    # create an empty memmap
+    save_path = save_folder+save_filename
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
+    new_fp = np.memmap(save_path, dtype=dtype, mode='w+', shape=data.shape)
     
-    return new_idx
+    # save frame-major ordered data to new memmap
+    if chunk_size!=None:
+        chunk_list = chunk_data.chunk_data(arr=np.arange(frames), chunk_size=chunk_size)
+        
+        for ichunk in range(0,len(chunk_list)):
+            start_frame = chunk_list[ichunk][0]
+            stop_frame = chunk_list[ichunk][-1]+1
+            new_fp[:,:,start_frame:stop_frame] = data[:,:,start_frame:stop_frame]
+            new_fp.flush()
+            
+            if verbose==1:
+                print('finished: chunk '+str(ichunk))
+        
+    elif chunk_size == None:
+            new_fp[:] = data[:]
+            new_fp.flush()
+            
+    print('---Transpose finished.---')
+
+        
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
