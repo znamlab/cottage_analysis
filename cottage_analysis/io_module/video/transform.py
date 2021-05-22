@@ -73,7 +73,7 @@ def transpose(data_folder, data_filename, data_shape, save_folder, save_filename
                 print('finished: chunk '+str(ichunk))
         
     else:
-        new_fp[:,:,np.arange(frames)] = data[:,:,np.arange(frames)]
+        new_fp[:,:,:] = data[:,:,:]
         new_fp.flush()
             
     print('---Transpose finished.---')
