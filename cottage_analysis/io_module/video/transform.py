@@ -55,12 +55,12 @@ def transpose(data_folder, data_filename, data_shape, save_folder, save_filename
     
     # create an empty memmap
     save_path = save_folder+save_filename
-    if not os.path.exists(save_path):
-        os.mkdir(save_path)
-    new_fp = np.memmap(save_path, dtype=dtype, mode='w+', shape=data.shape)
+    if not os.path.exists(save_folder):
+        os.mkdir(save_folder)
+    new_fp = np.memmap(save_path, dtype=dtype, mode='w+', shape=data.shape, order='C')
     
     # save frame-major ordered data to new memmap
-    if chunk_size!=None:
+    if chunk_size is not None:
         chunk_list = chunk_data.chunk_data(arr=np.arange(frames), chunk_size=chunk_size)
         
         for ichunk in range(0,len(chunk_list)):
@@ -72,14 +72,12 @@ def transpose(data_folder, data_filename, data_shape, save_folder, save_filename
             if verbose==1:
                 print('finished: chunk '+str(ichunk))
         
-    elif chunk_size == None:
-            new_fp[:] = data[:]
-            new_fp.flush()
+    else:
+        new_fp[:,:,np.arange(frames)] = data[:,:,np.arange(frames)]
+        new_fp.flush()
             
     print('---Transpose finished.---')
 
-        
-    
     
     
     
