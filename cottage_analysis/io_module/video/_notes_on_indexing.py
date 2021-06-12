@@ -24,7 +24,7 @@ print(data)
 
 print('Make a data frame as saved by bonsai: Fortran = column major')
 f_data = data.reshape([Ncolumns, Nrows, Nframes], order='F')
-print('First frame (data[:, :, 0):')
+print('First frame (data[:, :, 0]):')
 print(f_data[:, :, 0])
 print('\nThis just means that:\nd[d1,d2,d3] = data[d1 + N1 * d2 + N1 * N2 * d3], '
       'where Nx is the shape of dimension x')
@@ -177,4 +177,4 @@ new_fp[:] = new_data[:]
 new_fp.flush()
 
 check_fp = np.memmap(ammp_filename, dtype='float32', mode='r', shape=f_data.shape)
-check_new_fp = np.memmap(newmmp_filename, dtype='float32', mode='r', shape=new_data.shape)
+check_new_fp = np.memmap(newmmp_filename, dtype='float32', mode='r', shape=(Nrows,Ncolumns,Nframes))
