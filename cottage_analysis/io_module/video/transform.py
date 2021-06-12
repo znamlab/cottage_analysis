@@ -13,7 +13,7 @@ import cottage_analysis.imaging.common.chunk_data as chunk_data
 
 
 
-def transpose(data_folder, data_filename, data_shape, save_folder, save_filename, chunk_size, dtype='float32', verbose=1):
+def transpose(data_folder, data_filename, data_shape, save_folder, save_filename, chunk_size, dtype=np.uint16, verbose=1):
     '''
     Transpose a stored array (column major) into frame-major form.
 
