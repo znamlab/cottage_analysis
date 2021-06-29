@@ -42,7 +42,6 @@ def chunk_data(arr, chunk_size, chunk_nodes=None):
         chunk_list = []  # list of chunks with their start & stop index
         for i in range(0,chunk_groups):
             chunk_list.append(arr[i*chunk_size:(i+1)*chunk_size])
-            chunk_list.append(arr[chunk_groups*chunk_size:])
     
     
     return chunk_list

@@ -70,7 +70,7 @@ def transpose(data_folder, data_filename, data_shape, save_folder, save_filename
             new_fp.flush()
             
             if verbose==1:
-                print('finished: chunk '+str(ichunk)+'/'+str(len(chunk_list)),flush=True)
+                print('finished: chunk '+str(ichunk)+'/'+str(len(chunk_list)-1),flush=True)
         
     else:
         new_fp[:,:,:] = data[:,:,:]
