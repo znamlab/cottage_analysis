@@ -6,6 +6,8 @@ Created on Sun May  2 18:36:04 2021
 @author: hey2
 
 Align timestamps for Vis-Stim & Recorded WF videos / 2p frames
+Assign corresponding harp timestamps of df2 (usually logged stimuli parameters) to df1 (usually timestamps of recorded widefield/2p videos).
+
 
 """
 
@@ -14,13 +16,9 @@ import pandas as pd
 
 
 #%%
-
-# NEED TO CHANGE TO PHOTODIODE TIMESTAMP!!!
-def align_timestamps(df1, df2, align_basis, direction='backward'):
+def align_dataframes(df1, df2, align_basis, direction):
     '''
-    Assign corresponding harp timestamps of df2 (usually logged stimuli parameters) to df1 (usually timestamps of recorded widefield/2p videos).
-    For widefield: df1 = PylonTimestamp of videos
-    For 2p: df1 = harp recorded frametriggers (RegisterAddress=32)
+    Align 2 dataframes
 
     Parameters
     ----------
@@ -46,3 +44,12 @@ def align_timestamps(df1, df2, align_basis, direction='backward'):
     assert(len(DF)==len(df1))
     
     return DF
+
+
+
+def align_timestamps(VS_frames, VS_params, imaging_frames):
+    VS_DF = align_dataframes(df1=VS_frames, df2=VS_params, align_basis='HarpTime', direction='backward')
+    img_VS = align_dataframes(df1=imaging_frames, df2=VS_DF, align_basis='HarpTime', direction='backward')
+
+    return img_VS
+
