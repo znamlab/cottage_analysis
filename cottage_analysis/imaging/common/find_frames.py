@@ -77,10 +77,15 @@ def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, registe
     frame_triggers['Exposure'] = np.nan
     frame_triggers.Exposure.loc[
         frame_triggers[(np.abs(frame_triggers['HarpTime_diff'] - exposure_time) <= 0.0002)].index.values] = 1
-    assert (len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number)
-
     frame_triggers = frame_triggers[frame_triggers.Exposure == 1]
     frame_triggers['ImagingFrame'] = np.arange(len(frame_triggers))
+    if len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number:
+        frame_triggers = frame_triggers
+    elif ((len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 1):
+        frame_triggers = frame_triggers[:-1]
+        print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!')
+    else:
+        print('ERROR: FRAME NUMBER NOT CORRECT!!!')
     frame_triggers = frame_triggers.drop(columns=['HarpTime_diff', 'Exposure', 'RegisterAddress'])
 
     return frame_triggers
