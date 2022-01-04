@@ -20,7 +20,7 @@ from scipy.signal import find_peaks
 
 
 #%%
-def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=250, lower_thr=50, plot=False, plot_start=0, plot_range=2000, plot_dir=None):
+def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=200, lower_thr=50, plot=False, plot_start=0, plot_range=2000, plot_dir=None):
     # Get elapsed time
     photodiode_df['ElapsedTime'] = None
     photodiode_df['ElapsedTime'] = photodiode_df.HarpTime - photodiode_df.HarpTime[0]
@@ -63,6 +63,7 @@ def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=250, lower_thr=50, p
         plt.plot(elapsed_time[plot_start:(plot_start + plot_range)],
                  np.zeros_like(photodiode[plot_start:(plot_start + plot_range)]) + lower_thr, "--", color="gray")
         plt.xlabel('Time(s)')
+    if plot_dir != None:
         plt.savefig(plot_dir+'Frame_finder_check.png')
 
     return photodiode_df_simple
@@ -82,10 +83,14 @@ def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, registe
     if len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number:
         frame_triggers = frame_triggers
     elif ((len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 1):
+        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
         frame_triggers = frame_triggers[:-1]
-        print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!')
+        print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!',flush=True)
+        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
     else:
-        print('ERROR: FRAME NUMBER NOT CORRECT!!!')
+        print('ERROR: FRAME NUMBER NOT CORRECT!!!',flush=True)
     frame_triggers = frame_triggers.drop(columns=['HarpTime_diff', 'Exposure', 'RegisterAddress'])
 
     return frame_triggers
