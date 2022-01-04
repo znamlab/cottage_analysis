@@ -70,14 +70,16 @@ def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=200, lower_thr=50, p
 
 
 
-def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, register_address=32):
+def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, register_address=32, exposure_time_tolerance=0.0002):
+    # exposure_time for widefield: 0.015, for 2p: 0.0324
+    # exposure_time_tolerance for widefield: 0.0002, for 2p: 0.001
     frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
     frame_triggers = frame_triggers.rename(columns={"Timestamp": "HarpTime"}, inplace=False)
     frame_triggers['HarpTime_diff'] = frame_triggers.HarpTime.diff()
 
     frame_triggers['Exposure'] = np.nan
     frame_triggers.Exposure.loc[
-        frame_triggers[(np.abs(frame_triggers['HarpTime_diff'] - exposure_time) <= 0.0002)].index.values] = 1
+        frame_triggers[(np.abs(frame_triggers['HarpTime_diff'] - exposure_time) <= exposure_time_tolerance)].index.values] = 1
     frame_triggers = frame_triggers[frame_triggers.Exposure == 1]
     frame_triggers['ImagingFrame'] = np.arange(len(frame_triggers))
     if len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number:
