@@ -91,6 +91,13 @@ def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, registe
         print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!',flush=True)
         print(('ImagingFrames in video: '+str(frame_number)), flush=True)
         print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+    elif ((len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 2):
+        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+        frame_triggers = frame_triggers[:-2]
+        print('WARNING: SAVED VIDEO FRAME IS 2 FRAMES LESS THAN FRAME TRIGGERS!!!',flush=True)
+        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
     else:
         print('ERROR: FRAME NUMBER NOT CORRECT!!!',flush=True)
     frame_triggers = frame_triggers.drop(columns=['HarpTime_diff', 'Exposure', 'RegisterAddress'])
