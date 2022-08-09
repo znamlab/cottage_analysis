@@ -1,10 +1,9 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='cottage_analysis',
     version='v0.1',
-    packages=['cottage_analysis', 'cottage_analysis.io_module', 'cottage_analysis.io_module.video',
-              'cottage_analysis.eye_tracking'],
+    packages=find_packages(),
     url='https://github.com/znamlab/cottage_analysis',
     license='MIT',
     author='Antonin Blot, Yiran He, Petr Znamenskyi',
