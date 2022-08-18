@@ -8,7 +8,7 @@ import pandas as pd
 import math
 import statistics as stats
 import numpy as np
-import lighthouse_functions.py as lif
+import lighthouse_functions as lif
 
 rawdata_directory = "/Users/antoniocolas/code/cottage_rawdata/BRAC6692.4a/S20220808/"
 
@@ -158,34 +158,52 @@ plt.close('all')
 calibration_directory = "/Users/antoniocolas/code/cottage_rawdata/lighthouse_calibration/"
 calibration_session = "S20220808"
 
-data_ref = pd.read_csv(calibration_directory+calibration_session+"/calibration_reference/ts4231-2_2022-08-08T16_31_57.csv")
-data_x = pd.read_csv(calibration_directory+calibration_session+"/calibration_xaxis/ts4231-2_2022-08-08T16_33_05.csv")
-data_y = pd.read_csv(calibration_directory+calibration_session+"/calibration_yaxis/ts4231-2_2022-08-08T16_33_54.csv")
+data_ref = pd.read_csv(calibration_directory+calibration_session+"/calibration_reference/ts4231-1_2022-08-08T16_31_57.csv")
+data_x = pd.read_csv(calibration_directory+calibration_session+"/calibration_xaxis/ts4231-1_2022-08-08T16_33_05.csv")
+data_y = pd.read_csv(calibration_directory+calibration_session+"/calibration_yaxis/ts4231-1_2022-08-08T16_33_54.csv")
+
+plt.figure(figsize=(6.8, 4.2))
+plt.scatter(data_1.iloc[:, 2], data_1.iloc[:, 3], alpha=0.5, s=0.2, c="gray")
+plt.scatter(data_ref.iloc[:, 2], data_ref.iloc[:, 3], alpha=1, s=3, c="red")
+plt.scatter(data_x.iloc[:, 2], data_x.iloc[:, 3], alpha=1, s=3, c="green")
+plt.scatter(data_y.iloc[:, 2], data_y.iloc[:, 3], alpha=1, s=3, c="blue")
+plt.title("Lighthouse projection of occupancy in the x,y plane")
+plt.xlabel("X axis")
+plt.ylabel("Y axis")
 
 light_posit_ref = np.array([stats.mean(data_ref.iloc[:,2]), stats.mean(data_ref.iloc[:,3]), stats.mean(data_ref.iloc[:,4]), 1])
 light_posit_x = np.array([stats.mean(data_x.iloc[:,2]), stats.mean(data_x.iloc[:,3]), stats.mean(data_x.iloc[:,4]), 1])
 light_posit_y = np.array([stats.mean(data_y.iloc[:,2]), stats.mean(data_y.iloc[:,3]), stats.mean(data_y.iloc[:,4]), 1])
 
+light_posit_ref = np.array(
+    [stats.mean(data_ref.iloc[:, 2]), stats.mean(data_ref.iloc[:, 3]), stats.mean(data_ref.iloc[:, 4])])
+light_posit_x = np.array(
+    [stats.mean(data_x.iloc[:, 2]), stats.mean(data_x.iloc[:, 3]), stats.mean(data_x.iloc[:, 4])])
+light_posit_y = np.array(
+    [stats.mean(data_y.iloc[:, 2]), stats.mean(data_y.iloc[:, 3]), stats.mean(data_y.iloc[:, 4])])
 
-light_posit_refx = light_posit_x[0:3]-light_posit_ref[0:3]
-light_posit_refy = light_posit_y[0:3]-light_posit_ref[0:3]
+light_posit_refx = light_posit_x - light_posit_ref
+light_posit_refy = light_posit_y - light_posit_ref
 
-light_posit_refortho = np.cross(light_posit_refy, light_posit_refx)
-light_posit_ortho = light_posit_ref[0:3]+light_posit_refortho
+light_posit_refortho = np.cross(light_posit_refx, light_posit_refy)
+light_posit_ortho = light_posit_ref + light_posit_refortho
 
-light_posit_refx, light_posit_refy, light_posit_refortho, light_posit_ortho = list(map(np.append, [light_posit_refx, light_posit_refy, light_posit_refortho, light_posit_ortho], [1]*4))
+light_posit_x, light_posit_y, light_posit_ref, light_posit_ortho = list(
+    map(np.append, [light_posit_x, light_posit_y, light_posit_ref, light_posit_ortho], [1]*4))
 
-#The orthogonal vectors point upwards in the arena, I think it makes sense, check with Antonin
+# The orthogonal vectors point upwards in the arena, I think it makes sense, check with Antonin
 
 aruc_posit_ref = np.array([0, 0, 0, 1])
 aruc_posit_x = np.array([30, 0, 0, 1])
 aruc_posit_y = np.array([0, 30, 0, 1])
-aruc_posit_ortho = np.array([0, 0, 30, 1])
+# Because the magnitude of a cross product is the area of the paralellogram that has the terms of the product as
+# sides, and posit_x and posit_y are perpendicular, then the magnitude of posit_ortho is 30^2=900
+aruc_posit_ortho = np.array([0, 0, 900, 1])
 
 aruc_matrix = np.transpose([aruc_posit_ref, aruc_posit_x, aruc_posit_y, aruc_posit_ortho])
 light_matrix = np.transpose([light_posit_ref, light_posit_x, light_posit_y, light_posit_ortho])
 
-#The result is obtained by multiplying the desired set by the inverted original set
+# The result is obtained by multiplying the desired set by the inverted original set
 
 transform_matrix = np.matmul(aruc_matrix, np.linalg.inv(light_matrix))
 
@@ -194,6 +212,82 @@ transform_matrix = np.matmul(aruc_matrix, np.linalg.inv(light_matrix))
 #Let's test that.
 
 np.matmul(transform_matrix, np.transpose(light_posit_x))
+
+#we now try to do it the Antonin way
+
+#Get the data
+
+light_posit_ref = np.array([stats.mean(data_ref.iloc[:,2]), stats.mean(data_ref.iloc[:,3]), stats.mean(data_ref.iloc[:,4])])
+light_posit_x = np.array([stats.mean(data_x.iloc[:,2]), stats.mean(data_x.iloc[:,3]), stats.mean(data_x.iloc[:,4])])
+light_posit_y = np.array([stats.mean(data_y.iloc[:,2]), stats.mean(data_y.iloc[:,3]), stats.mean(data_y.iloc[:,4])])
+
+light_posit_ref = np.array(
+    [stats.mean(data_ref.iloc[:, 2]), stats.mean(data_ref.iloc[:, 3]), stats.mean(data_ref.iloc[:, 4])])
+light_posit_x = np.array(
+    [stats.mean(data_x.iloc[:, 2]), stats.mean(data_x.iloc[:, 3]), stats.mean(data_x.iloc[:, 4])])
+light_posit_y = np.array(
+    [stats.mean(data_y.iloc[:, 2]), stats.mean(data_y.iloc[:, 3]), stats.mean(data_y.iloc[:, 4])])
+
+#Substract the origin from the lighthouse points
+
+cent_posit_x = light_posit_x-light_posit_ref
+cent_posit_y = light_posit_y-light_posit_ref
+
+
+#Compute the cross product for the z pointing vector
+
+cent_posit_z = np.cross(cent_posit_y, cent_posit_x)
+
+#Normalization factor to fix the ratio between z and c
+
+norm_fact = (30*np.linalg.norm(cent_posit_x))/np.linalg.norm(cent_posit_z)
+
+cent_posit_z_scaled = cent_posit_z*norm_fact
+
+plt.close('all')
+
+plt.figure(figsize=(6.8, 4.2))
+plt.scatter(data_1.iloc[:, 2], data_1.iloc[:, 3], alpha=0.5, s=0.2, c="gray")
+plt.scatter(data_ref.iloc[:, 2], data_ref.iloc[:, 3], alpha=1, s=3, c="red")
+plt.scatter(data_x.iloc[:, 2], data_x.iloc[:, 3], alpha=1, s=3, c="green")
+plt.scatter(data_y.iloc[:, 2], data_y.iloc[:, 3], alpha=1, s=3, c="blue")
+plt.title("Intact lighthouse projection of occupancy in the x,y plane")
+plt.xlabel("X axis")
+plt.ylabel("Y axis")
+
+plt.figure(figsize=(6.8, 4.2))
+plt.scatter(data_1.iloc[:, 2], data_1.iloc[:, 3], alpha=0.5, s=0.2, c="gray")
+plt.scatter(0, 0, alpha=1, s=3, c="red")
+plt.scatter(cent_posit_x[0], cent_posit_x[1], alpha=1, s=3, c="green")
+plt.scatter(cent_posit_y[0], cent_posit_y[1], alpha=1, s=3, c="blue")
+plt.scatter(cent_posit_z[0], cent_posit_z[1], alpha=1, s=3, c="purple")
+plt.title("Lighthouse projection of occupancy in the x,y plane")
+plt.xlabel("X axis")
+plt.ylabel("Y axis")
+
+plt.figure(figsize=(6.8, 4.2))
+plt.scatter(data_1.iloc[:, 2], data_1.iloc[:, 4], alpha=0.5, s=0.2, c="gray")
+plt.scatter(0, 0, alpha=1, s=3, c="red")
+plt.scatter(cent_posit_x[1], cent_posit_x[2], alpha=1, s=3, c="green")
+plt.scatter(cent_posit_y[1], cent_posit_y[2], alpha=1, s=3, c="blue")
+plt.scatter(cent_posit_z[1], cent_posit_z[2], alpha=1, s=3, c="purple")
+plt.title("Lighthouse projection of occupancy in the x,z plane")
+plt.xlabel("X axis")
+plt.ylabel("Z axis")
+
+#Divide each vector by their magnitudes: 30, 30, 900
+
+norm_posit_x = cent_posit_x/30
+norm_posit_y = cent_posit_y/30
+norm_posit_z = cent_posit_z_scaled/900
+
+#create the transformation matrix
+
+
+
+lin_trans_mat = np.linalg.inv(np.transpose([norm_posit_x, norm_posit_y, norm_posit_z]))
+
+
 
 #Now we transform every point of the recording and repeat the plots.
 
@@ -208,7 +302,7 @@ tran_matrix = lif.obtain_transform_matrix(calibration_directory, calibration_ses
 
 t_data_1 = lif.transform_data(data_1, tran_matrix)
 
-lif.plot_single_occupancy(t_data_1)
+lif.plot_single_occupancy(t_data_1, colormap=False)
 
 print('hello world')
 
