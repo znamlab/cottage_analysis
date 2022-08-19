@@ -12,7 +12,7 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
     datatype.
 
     Args:
-        uint16_file (str or Path): path to the raw data (C order, uint16)
+        uint16_file (str or Path): path to the raw data (F order, uint16)
         target (str or Path): target to write the new data
         nchan (int): number of channels (default False)
         overwrite (bool): overwrite target if it exists (default False)
