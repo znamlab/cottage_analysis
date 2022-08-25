@@ -1,10 +1,46 @@
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from cottage_analysis.io_module import harp
 
 RHD2164_DATA_FORMAT = dict(ephys='uint16',
                            clock='uint64',
                            aux='uint16')
+
+
+def load_harp(harp_bin):
+    # Harp
+    harp_message = harp.read_message(path_to_file=harp_bin)
+    harp_message = pd.DataFrame(harp_message)
+    output = dict()
+
+    # Each message has a message type that can be 'READ', 'WRITE', 'EVENT', 'READ_ERROR',
+    # or 'WRITE_ERROR'.
+    # We don't want error
+    msg_types = harp_message.msg_type.unique()
+    assert not np.any([m.endswith('ERROR') for m in msg_types])
+    # READ events are the initial config loading at startup. We don't care
+    harp_message = harp_message[harp_message.msg_type != 'READ']
+
+    # WRITE messages are mostly the rewards.
+    # The reward port is toggled by writing to register 36, let's focus on those events
+    reward_message = harp_message[harp_message.address == 36]
+    output['reward_times'] = reward_message.timestamp_s.values
+
+    # EVENT messages are analog and digital input.
+    # Analog are the photodiode and the rotary encoder, both on address 44
+    analog = harp_message[harp_message.address == 44]
+    harp_analog_times = analog.timestamp_s.values
+    analog = np.vstack(analog.data)
+
+    output['analog_time'] = harp_analog_times
+    output['rotary'] = analog[:, 1]
+    output['photodiode'] = analog[:, 0]
+
+    # Digital input is on address 32, the data is 2 when the trigger is high
+    di = harp_message[(harp_message.address == 32) & (harp_message.data == (2,))]
+    output['onix_clock'] = di.timestamp_s.values
+    return output
 
 
 def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
