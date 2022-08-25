@@ -1,5 +1,6 @@
 from pathlib import Path
 import numpy as np
+import pandas as pd
 
 RHD2164_DATA_FORMAT = dict(ephys='uint16',
                            clock='uint64',
@@ -19,17 +20,7 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         data dict: a dictionary of memmap
     """
     num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan)
-    path_to_folder = Path(path_to_folder)
-    assert path_to_folder.is_dir()
-    ephys_files = list(path_to_folder.glob('rhd2164*'))
-    if not len(ephys_files):
-        raise IOError('Could not find any RHD2164 file in %s' % path_to_folder)
-    if timestamp is None:
-        timestamp = '_'.join(ephys_files[0].stem.split('_')[1:])
-        if not all([e.stem.endswith(timestamp) for e in ephys_files]):
-            raise IOError('Multiple acquisition in folder. Specify timestamp')
-    else:
-        ephys_files = [e for e in ephys_files if e.stem.endswith(timestamp)]
+    ephys_files = _find_files(path_to_folder, timestamp, 'rhd2164')
 
     output = dict()
     for ephys_file in ephys_files:
@@ -50,6 +41,29 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
                          shape=(nchan, n_time))
         output[what] = data
     return output
+
+
+def load_ts4231(path_to_folder, timestamp=None):
+    """Load data from the lighthouse system
+
+    Args:
+        path_to_folder (str or Path): path to the folder containing data
+        timestamp (str or None): timestamp used in save name
+
+    Returns:
+        ts_out (dict): a dictionary of dataframe with one element per photodiode
+    """
+
+    ts_files = _find_files(path_to_folder, timestamp, 'ts4231')
+    ts_out = dict()
+    for photodiode in ts_files:
+        try:
+            data = pd.read_csv(photodiode, header=0,
+                               names=['timestamp', 'clock', 'x', 'y', 'z'])
+        except pd.errors.EmptyDataError:
+            continue
+        ts_out[int(photodiode.stem.split('_')[0][len('ts4231-'):])] = data
+    return ts_out
 
 
 def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
@@ -102,3 +116,30 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
     copy_data.flush()
     if verbose:
         print('done', flush=True)
+
+
+def _find_files(folder, timestamp, prefix):
+    """Inner function to return list of files with filter_name and timestamp
+
+    Args:
+        folder(str or Path): path to the folder containing data
+        timestamp (str or None): timestamp used in save name
+        prefix (str): prefix filter
+
+    Returns:
+        file_list (list): list of valid files
+    """
+    folder = Path(folder)
+    if not folder.is_dir():
+        raise IOError('%s is not a directory' % folder)
+
+    valid_files = list(folder.glob('%s*' % prefix))
+    if not len(valid_files):
+        raise IOError('Could not find any %s file in %s' % (prefix.upper(), folder))
+    if timestamp is None:
+        timestamp = '_'.join(valid_files[0].stem.split('_')[1:])
+        if not all([e.stem.endswith(timestamp) for e in valid_files]):
+            raise IOError('Multiple acquisition in folder %s. Specify timestamp' % folder)
+    else:
+        valid_files = [e for e in valid_files if e.stem.endswith(timestamp)]
+    return  valid_files
