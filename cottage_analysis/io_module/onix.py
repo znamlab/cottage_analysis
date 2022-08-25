@@ -1,6 +1,55 @@
 from pathlib import Path
-
 import numpy as np
+
+RHD2164_DATA_FORMAT = dict(ephys='uint16',
+                           clock='uint64',
+                           aux='uint16')
+
+
+def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
+    """Load all files related to rhd2164, ie ephys
+
+    Args:
+        path_to_folder (str or Path): path to the folder containing ephys data
+        timestamp (str or None): timestamp used in save name
+        num_chans (int): number of ephys channels saved (default 64)
+        num_aux_chan (int): number of auxiliary channels saved (default 6)
+
+    Returns:
+        data dict: a dictionary of memmap
+    """
+    num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan)
+    path_to_folder = Path(path_to_folder)
+    assert path_to_folder.is_dir()
+    ephys_files = list(path_to_folder.glob('rhd2164*'))
+    if not len(ephys_files):
+        raise IOError('Could not find any RHD2164 file in %s' % path_to_folder)
+    if timestamp is None:
+        timestamp = '_'.join(ephys_files[0].stem.split('_')[1:])
+        if not all([e.stem.endswith(timestamp) for e in ephys_files]):
+            raise IOError('Multiple acquisition in folder. Specify timestamp')
+    else:
+        ephys_files = [e for e in ephys_files if e.stem.endswith(timestamp)]
+
+    output = dict()
+    for ephys_file in ephys_files:
+        what = ephys_file.stem.split('_')[0][len('rhd2164-'):]
+        if ephys_file.suffix == '.csv':
+            assert what == 'first-time'
+            with open(ephys_file, 'r') as f:
+                output['first_time'] = f.read().strip()
+            continue
+        assert ephys_file.suffix == '.raw'
+        dtype = np.dtype(RHD2164_DATA_FORMAT[what])
+        n_pts = ephys_file.stat().st_size / dtype.itemsize
+        nchan = num_chan_dict[what]
+        if np.mod(n_pts, nchan) != 0:
+            raise IOError('%s data is not a multiple of %d' % (what, nchan))
+        n_time = int(n_pts / nchan)
+        data = np.memmap(ephys_file, dtype=dtype, mode='r', order='F',
+                         shape=(nchan, n_time))
+        output[what] = data
+    return output
 
 
 def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
