@@ -94,8 +94,34 @@ def plot_firing_rate_histogram(data, clockinseconds, filteredclusters, unit, win
                                ,bins=[bins, bins], range=[[-40, 40], [-40, 40]])
     unit_hist = plt.hist2d(plotting_data.iloc[:, 2], plotting_data.iloc[:, 3]
                            ,bins=[bins, bins], range=[[-40, 40], [-40, 40]])
+
     ratio_hist = np.divide(unit_hist[0], complete_hist[0], out=np.zeros_like(unit_hist[0]), where=complete_hist[0]!=0)
     plt.figure(figsize=(10, 8))
-    plt.imshow(ratio_hist, cmap='magma')
+    ax=plt.imshow(ratio_hist, cmap='rainbow', vmin=0, vmax=1)
+    ax.axes.xaxis.set_visible(False)
+    ax.axes.yaxis.set_visible(False)
     plt.colorbar()
-    plt.title('Firing rate histogram of unit '+str(unit)+' window of '+str(window)+'s')
+    plt.title('Firing rate histogram of unit '+str(unit)+' window of '+str(window)+'s', fontsize=20)
+    plt.show()
+
+def plot_delay_histogram(data, bins, percentile):
+    data['clockinseconds'] = data.iloc[:, 1] / 250000000
+
+    timelag = list(np.diff(data['clockinseconds']))
+    timelag.append(np.array(timelag).mean())
+    data['timelag'] = timelag
+
+    plotting_data = data[data['timelag'] > np.percentile(timelag, percentile)]
+
+    complete_hist = plt.hist2d(data.iloc[:, 2], data.iloc[:, 3]
+                               ,bins=[bins, bins], range=[[-40, 40], [-40, 40]])
+    unit_hist = plt.hist2d(plotting_data.iloc[:, 2], plotting_data.iloc[:, 3]
+                           ,bins=[bins, bins], range=[[-40, 40], [-40, 40]])
+
+    ratio_hist = np.divide(unit_hist[0], complete_hist[0], out=np.zeros_like(unit_hist[0]), where=complete_hist[0]!=0)
+    plt.figure(figsize=(9, 6))
+    ax=plt.imshow(ratio_hist, cmap='magma')
+    ax.axes.xaxis.set_visible(False)
+    ax.axes.yaxis.set_visible(False)
+    plt.colorbar()
+    plt.title('Density of delayed Lighthouse datapoints', fontsize=20)

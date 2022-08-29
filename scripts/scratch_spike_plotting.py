@@ -43,13 +43,22 @@ reference, y_axis, x_axis = ["/calibration_reference/ts4231-1_2022-08-08T16_31_5
 transform = light.obtain_transform_matrix(calibration_directory, calibration_session, x_axis, y_axis, reference,
                                           calib_length=30)
 
-diode_data = pd.read_csv('/Users/colasa/code/SpikeSorting/S20220817/R171408/ts4231-2_2022-08-17T17_14_08.csv')
+diode_data = pd.read_csv('/Volumes/lab-znamenskiyp/data/instruments/raw_data/projects/blota_onix_pilote/BRAC6692.4a/S20220817/R171408/ts4231-2_2022-08-17T17_14_08.csv')
+
+fixed_data = diode_data
 
 transformed_position = light.transform_data(diode_data, transform)
 
 transformed_position['clockinseconds'] = transformed_position.iloc[:,1]/250000000
 
 cutoff=transformed_position['clockinseconds'].min()
+
+#diff histogram
+
+timelag=list(np.diff(transformed_position['clockinseconds']))
+timelag=timelag.append(np.array(timelag).mean())
+transformed_position['timelag']=timelag
+
 
 
 #Get each unit
@@ -90,3 +99,18 @@ complete_hist = plt.hist2d(transformed_position.iloc[:,2], transformed_position.
 unit_hist = plt.hist2d(transformed_position.iloc[:,2], transformed_position.iloc[:,3],
                        bins=[100,100], range=[[-40, 40], [-40, 40]], cmmap='magma')
 print('hello')
+
+#histogram of delay
+
+timelag=list(np.diff(transformed_position['clockinseconds']))
+timelag.append(np.array(timelag).mean())
+transformed_position['timelag']=timelag
+
+plt.figure(figsize=(6.8, 4.2))
+plt.scatter(transformed_position.iloc[:,2], transformed_position.iloc[:,3], c = transformed_position.iloc[:,7], cmap = "magma", s = 2)
+plt.title("Delay in space")
+plt.xlim(-40, 40)
+plt.ylim(-40, 40)
+plt.xlabel("X axis (cm)")
+plt.ylabel("Y axis (cm)")
+plt.colorbar()
