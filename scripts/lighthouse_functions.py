@@ -119,7 +119,7 @@ def transform_antonin_data(data, transform_matrix, calibration_directory, calibr
 def transform_data(data, transform_matrix):
     trans_data = data
 
-    for index, row in data.iterrows():
+    for index, row in trans_data.iterrows():
         point_vector = np.array([row[2], row[3], row[4]])
         point_vector = np.append(point_vector, 1)
         trans_point = np.matmul(transform_matrix, np.transpose(point_vector))
@@ -134,32 +134,32 @@ def plot_single_occupancy(data, colormap):
 
     plt.close('all')
 
-    plt.figure(figsize=(6.8, 4.2))
+    plt.figure(figsize=(9, 6))
     if colormap != True:
         plt.scatter(data.iloc[:, 2], data.iloc[:, 3], alpha=0.5, s=0.5)
     else:
         plt.scatter(data.iloc[:, 2], data.iloc[:, 3], c=data.iloc[:, 4], cmap="magma", s=0.5)
         plt.colorbar()
-    plt.title("Lighthouse projection of occupancy in the x,y plane")
-    plt.xlabel("X axis")
-    plt.ylabel("Y axis")
+    plt.title("Lighthouse projection of occupancy in the x,y plane", fontsize=20)
+    plt.xlabel("X axis (cm)", fontsize=15)
+    plt.ylabel("Y axis (cm)", fontsize=15)
 
-    plt.figure(figsize=(6.8, 4.2))
+    plt.figure(figsize=(9, 6))
     if colormap != True:
         plt.scatter(data.iloc[:, 3], data.iloc[:, 4], alpha=0.5, s=0.5)
     else:
-        plt.scatter(data.iloc[:, 3], data.iloc[:, 4], c=data.iloc[:, 4], cmap="magma", s=0.5)
+        plt.scatter(data.iloc[:, 3], data.iloc[:, 4], c=data.iloc[:, 2], cmap="magma", s=0.5)
         plt.colorbar()
-    plt.title("Lighthouse projection of occupancy in the y,z plane")
-    plt.xlabel("Y axis")
-    plt.ylabel("Z axis")
+    plt.title("Lighthouse projection of occupancy in the y,z plane", fontsize=20)
+    plt.xlabel("Y axis (cm)", fontsize=15)
+    plt.ylabel("Z axis (cm)", fontsize=15)
 
-    plt.figure(figsize=(6.8, 4.2))
+    plt.figure(figsize=(9, 6))
     if colormap != True:
         plt.scatter(data.iloc[:, 2], data.iloc[:, 4], alpha=0.5, s=0.5)
     else:
-        plt.scatter(data.iloc[:, 2], data.iloc[:, 4], c=data.iloc[:, 4], cmap="magma", s=0.5)
+        plt.scatter(data.iloc[:, 2], data.iloc[:, 4], c=data.iloc[:, 3], cmap="magma", s=0.5)
         plt.colorbar()
-    plt.title("Lighthouse projection of occupancy in the x,z plane")
-    plt.xlabel("X axis")
-    plt.ylabel("Z axis")
+    plt.title("Lighthouse projection of occupancy in the x,z plane", fontsize=20)
+    plt.xlabel("X axis (cm)", fontsize=15)
+    plt.ylabel("Z axis (cm)", fontsize=15)
