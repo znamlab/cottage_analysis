@@ -122,6 +122,7 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
         None
     """
     uint16_file = Path(uint16_file)
+    batch_size = int(batch_size)  # force int to be able to use for indexing
     target = Path(target)
     if target.is_file() and (not overwrite):
         raise IOError('File %s already exists.' % target)
