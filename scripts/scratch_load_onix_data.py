@@ -10,6 +10,8 @@ Should load:
 """
 import matplotlib
 
+from cottage_analysis.ephys.continuous_analysis import do_sta
+from cottage_analysis.ephys.spike_analysis import gaussian_density
 from cottage_analysis.imaging.common import find_frames
 from cottage_analysis.imaging.common.find_frames import find_pulses
 
@@ -39,6 +41,10 @@ PROCESS_PATH = PROCESS_PATH / 'blota_onix_pilote' / MOUSE / SESSION
 # load ephys data
 onix_sampling = 250e6
 ephys_data = onix.load_rhd2164(DATA_PATH / EPHYS_REC)
+# there is a jitter in the ephys clock. Let's generate a 30kHz thing instead
+clock = np.arange(0, len(ephys_data['clock'][0])) * onix_sampling / 30e3
+clock += ephys_data['clock'][0, 0]  # align start times
+
 # same for lighthouse photodiove
 ts_data = onix.load_ts4231(DATA_PATH / EPHYS_REC)
 
@@ -65,6 +71,10 @@ harp_message['mouse_speed'] = np.hstack([0, mvt])  # 0-padding to keep constant 
 param_file = DATA_PATH / VIS_STIM_REC / ('%s_%s_%s_NewParams.csv' % (MOUSE, SESSION,
                                                                        VIS_STIM_REC))
 vis_stim = pd.read_csv(param_file)
+param_file = DATA_PATH / VIS_STIM_REC / ('%s_%s_%s_FrameLog.csv' % (MOUSE, SESSION,
+                                                                    VIS_STIM_REC))
+frame_log = pd.read_csv(param_file)
+
 # add onix time to vis_stim
 # find triggers from harp
 # there was a double acquisition, get read of early trigger
@@ -83,6 +93,7 @@ def harp2onix(data):
 
 
 vis_stim['onix_time'] = harp2onix(vis_stim['HarpTime'])
+frame_log['onix_time'] = harp2onix(frame_log['HarpTime'])
 harp_message['analog_onix_time'] = harp2onix(harp_message['analog_time'])
 # plot what I did
 fig = plt.figure()
@@ -123,13 +134,15 @@ for w in ['group', 'info']:
 
 # get good units
 good = ks_data['info'][ks_data['info'].group == 'good']
-clock = np.array(ephys_data['clock'][0])
+
+
 good_units = {}
 for cluster_id in good.cluster_id.values:
     # get unit spike index in ephys
     spike_index = ks_data['times'][ks_data['clusters'] == cluster_id]
     spike_time = clock[spike_index] / onix_sampling
     good_units[cluster_id] = spike_time
+
 
 # make a plot of response per depth
 # Find corridor change, we start in the first corridor, then go to -9999 and then to
@@ -157,7 +170,7 @@ ax0.set_ylabel('Depth')
 ax1 = fig.add_subplot(4, 1, 2, sharex=ax0)
 ax1.plot(harp_message['analog_onix_time'], harp_message['mouse_speed'], alpha=0.2)
 # make a moving average on a 100ms window (assuming 1kHz sampling)
-w = int(0.5 * 1000)
+w = int(0.1 * 1000)
 cs = np.cumsum(harp_message['mouse_speed'])
 smooth_speed = (cs[w:] - cs[:-w]) / w
 ax1.plot(harp_message['analog_onix_time'][int(w/2):-int(w/2)], smooth_speed)
@@ -170,7 +183,7 @@ for x in [ax0, ax1]:
 
 
 # make a firing rate map for all "good" units
-bin_width = 1
+bin_width = 0.1
 bin_edges = np.arange(-120, corridor_df.end_time.max() + 120, bin_width)
 # matrix will be in between the bins, so len(bin_edges) -
 fr_matrix = np.zeros([len(good_units), len(bin_edges) - 2])
@@ -193,3 +206,116 @@ cb = fig.colorbar(img, cax=cax)
 cb.set_label('z-score firing')
 ax2.set_xlabel('Time (s)')
 ax2.set_ylabel('Unit #')
+
+
+## Make Yiran's style plot
+
+# First generate series of time, rs, optic flow and spike with the same time base
+# use the frame on the screen as common time base. Frames are on avera 7ms
+frame_times = frame_log.onix_time.values
+frame_duration = np.diff(frame_times)
+spk_cnt_matrix = np.zeros([len(good_units), len(frame_times) - 1])
+cluster_index_list = []
+for index, (cluster_id, spikes) in enumerate(good_units.items()):
+    cluster_index_list.append(cluster_id)
+    spk_cnt_matrix[index] = np.diff(spikes.searchsorted(frame_times))
+fr_matrix = spk_cnt_matrix / frame_duration
+zscore_mat = (((fr_matrix.T - np.nanmean(fr_matrix, axis=1)) /
+               np.nanstd(fr_matrix, axis=1))).T
+# now rs is easy:
+rs_bin_index = harp_message['analog_onix_time'].searchsorted(frame_times)
+run = harp_message['mouse_speed'].cumsum()
+avg_speed = (run[rs_bin_index[1:]] - run[rs_bin_index[:-1]]) / frame_duration
+# harder for OF since we need depth
+viso = vis_stim.onix_time.values
+depth_index = viso.searchsorted(frame_times)
+# depth_index is the index of the last time in vis_stim onix before frame_time,
+# the closest time could either be this one or the next
+last_index = np.ones_like(depth_index) * len(vis_stim.onix_time) - 1
+befaft = np.vstack([viso[np.minimum(depth_index, last_index)],
+                    viso[np.minimum(depth_index + 1, last_index)]])
+arg_closest = np.argmin(np.abs(befaft - np.vstack([frame_times, frame_times])), axis=0)
+depth_index = depth_index + arg_closest
+depth = vis_stim.Depth.values[np.minimum(depth_index, last_index)]
+depth[depth_index == 0] = -9999  # put depth before stimulus start to -9999
+depth = depth[:-1]  # remove the last value to match diff of other times
+optic_flow = avg_speed / depth
+valid = np.logical_and(depth > 0, avg_speed > 0)  #because we will log
+
+lof = np.log2(optic_flow[valid])
+lrs = np.log2(avg_speed[valid])
+fig = plt.figure()
+fig.subplots_adjust(wspace=0.1, hspace=0.5, top=0.95, right=0.98, left=0.05, bottom=0.01)
+fig.set_size_inches([6.4, 7.5])
+ax = fig.add_subplot(4, 4, 1)
+ax.clear()
+bof = np.arange(-3, 9)
+brs = np.arange(6, 12)
+occupency, _, _ = np.histogram2d(lrs, lof, bins=[brs, bof])
+ax.imshow(occupency.T, extent=[brs.min(), brs.max(), bof.min(), bof.max()],
+          origin='lower', aspect='auto')
+ax.set_yticks(bof)
+ax.set_xlabel('Log Running Speed')
+ax.set_ylabel('Log Optic Flow')
+ax.set_xticks(brs)
+for i_nn, nn in enumerate(zscore_mat[:, valid]):
+    mat, _, _ = np.histogram2d(lrs, lof, bins=[brs, bof], weights=nn)
+    ax = fig.add_subplot(4, 4, i_nn + 2)
+    img = ax.imshow((mat/occupency).T, origin='lower', aspect='auto', cmap='RdBu_r',
+                    extent=[brs.min(), brs.max(), bof.min(), bof.max()], vmin=-0.5,
+                    vmax=0.5)
+    ax.set_title(list(good_units.keys())[i_nn])
+    if (i_nn + 2) > 16:
+        break
+    ax.set_xticks([])
+    ax.set_yticks([])
+cax = fig.add_subplot(4, 40, 4*40 - 9)
+plt.colorbar(img, cax=cax)
+
+# I can also try a kind of PSTH for one neuron
+near_nn = 1
+far_nn = 6
+sd = 1000e-3
+bef_corr = 60
+cluster_ids = [26, 31, 34, 43, 272]
+fig = plt.figure()
+fig.subplots_adjust(left=0.01, right=0.99, top=0.95, bottom=0.1)
+for i_neuron, cluster_id in enumerate(cluster_ids):
+    n = 0
+    ax = fig.add_subplot(1, len(cluster_ids), 1 + i_neuron)
+    ax.set_title('Unit #%d' % cluster_id)
+    ax.set_yticks([])
+    ax.set_xlabel('Time (s)')
+    spikes = good_units[cluster_id]
+    depths = corridor_df.depth.unique()
+    depths.sort()
+    for depth in depths:
+        ddf = corridor_df[corridor_df.depth==depth]
+        start_index = spikes.searchsorted(ddf.start_time.values - bef_corr)
+        end_index = spikes.searchsorted(ddf.end_time.values)
+        smooth = []
+        for s, e, t0 in zip(start_index, end_index, ddf.start_time.values):
+            rast = spikes[s:e] - t0
+            ax.scatter(rast, np.zeros_like(rast) + n + 0.1, marker='|', color='k',
+                       alpha=0.05)
+            n += 1
+            smooth.append(gaussian_density(rast, sd=sd, start=-bef_corr))
+        # nan-pad the post end
+        longest = np.argmax([s.shape[1] for s in smooth])
+        time = smooth[longest][0]
+        padded = []
+        for s in smooth:
+            delta = len(time) - len(s[1])
+            padded.append(np.hstack([s[1], np.zeros(delta) * np.nan]))
+        padded = np.vstack(padded)
+        scale = 5
+        m = np.nanmean(padded/scale, axis=0)
+        std = np.nanstd(padded/scale, axis=0)
+        n_trials = len(padded)-np.sum(np.isnan(padded), axis=0)
+        shift = n - len(ddf)
+        ax.plot(time, m + shift, color='purple', alpha=1)
+        ax.fill_between(time, m + shift - std/np.sqrt(n_trials),
+                        m + shift + std / np.sqrt(n_trials), color='purple', alpha=0.2)
+        ax.axhline(shift, color='purple', linestyle='--')
+    ax.axvline(0, color='k', alpha=0.5)
+    ax.set_xlim([-30, 100])
