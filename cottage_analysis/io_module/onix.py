@@ -113,9 +113,9 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
     Args:
         uint16_file (str or Path): path to the raw data (F order, uint16)
         target (str or Path): target to write the new data
-        nchan (int): number of channels (default False)
+        nchan (int): number of channels (default 64)
         overwrite (bool): overwrite target if it exists (default False)
-        batch_size (int): number of time points to process at once
+        batch_size (int): number of time points to process at once (default 1e6)
         verbose (bool): print progress (default True)
 
     Returns:
@@ -143,7 +143,7 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
         end = min(ndone + batch_size, n_time)
         copy_data[:, ndone:end] = np.array(ephys_data[:, ndone:end],
                                            dtype='int16') + 2 ** 15
-        ndone = ndone + batch_size
+        ndone = int(ndone + batch_size)
         if verbose:
             print('\b' * len(txt) + '%.1f %%' % (ndone / n_time * 100), flush=True)
             txt = '%.1f %%' % (ndone / n_time * 100)
