@@ -24,6 +24,9 @@ def preprocess_exp(data, plot_dir=None):
         data (dict): updated data dict
     """
     data['harp_message'], data['harp2onix'] = sync_harp2onix(data['harp_message'])
+    for w in data['vis_stim_log']:
+        harp_time = data['vis_stim_log'][w]['HarpTime']
+        data['vis_stim_log'][w]['onix_time'] = data['harp2onix'](harp_time)
     data['hf_frames'] = find_frame_start_hf(data['harp_message'], plot_dir=plot_dir)
     return data
 

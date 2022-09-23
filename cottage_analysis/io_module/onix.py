@@ -54,6 +54,8 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
             harp_message = load_harp(raw_harp)
             np.savez(processed_messages, **harp_message)
         out['harp_message'] = harp_message
+        # add frame loggers and other CSVs
+        out['vis_stim_log'] = load_vis_stim_log(session_folder / vis_stim_recording)
 
     if onix_recording is not None:
         # Load onix AI/DI
@@ -67,6 +69,15 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
 
     return out
 
+
+def load_vis_stim_log(folder):
+    out = dict()
+    folder = Path(folder)
+    for csv_file in folder.glob('*.csv'):
+        what = csv_file.stem.split('_')[-1]
+        out[what] = pd.read_csv(csv_file)
+
+    return out
 
 def load_harp(harp_bin):
     # Harp
