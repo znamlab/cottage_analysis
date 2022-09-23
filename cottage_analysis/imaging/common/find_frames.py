@@ -9,9 +9,10 @@ Find frames for visual stimulation based on photodiode signal
 
 """
 
-#%% Import packages
+
+# %% Import packages
 import numpy as np
-import pandas as pd
+from pathlib import Path
 import matplotlib.pyplot as plt
 import os
 import pickle
