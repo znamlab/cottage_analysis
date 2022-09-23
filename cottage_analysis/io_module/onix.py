@@ -3,9 +3,52 @@ import numpy as np
 import pandas as pd
 from cottage_analysis.io_module import harp
 
-RHD2164_DATA_FORMAT = dict(ephys='uint16',
-                           clock='uint64',
-                           aux='uint16')
+ONIX_DATA_FORMAT = dict(ephys='uint16',
+                        clock='uint64',
+                        aux='uint16',
+                        hubsynccounter='uint64',
+                        aio='uint16')
+
+
+def load_onix_recording(folder, prefix=None, processed_folder=None, allow_reload=True):
+    """Main function calling all the subfunctions
+
+    `processed_folder` is used to store processed harp messages
+
+    Args:
+        folder (str or Path):  path to the data
+        prefix (str): name common to all datasets. Usually the `mouse_session_rec`. If
+                      None will load only if there is a single recording in the folder.
+        processed_folder (str or Path): Path to save and load processed data.
+        allow_reload (bool): If True (default) and processed_folder is not None,
+                             will reload processed data instead of raw when available
+
+    Returns:
+        data (dict): a dictionary with one element per datasource
+    """
+    """
+    TODO: This function would be nice but will fail until we find a way to have onix, 
+    camera and vis stim data to share a prefix.
+    """
+    folder = Path(folder)
+    out = dict()
+
+    if prefix is None:
+        folder.glob('*rhd*')
+    # Load harp messages
+    if processed_folder is not None:
+        processed_messages = processed_folder / 'processed_harp.npz'
+        processed_messages.parent.mkdir(exist_ok=True)
+    else:
+        processed_messages = None
+    if allow_reload and (processed_messages is not None) and processed_messages.is_file():
+        harp_message = dict(np.load(processed_messages))
+    else:
+        harp_message = load_harp(folder / ('%s_harpmessage.bin' % (prefix)))
+        np.savez(processed_messages, **harp_message)
+    out['harp'] = harp_message
+
+    return out
 
 
 def load_harp(harp_bin):
@@ -38,8 +81,16 @@ def load_harp(harp_bin):
     output['photodiode'] = analog[:, 0]
 
     # Digital input is on address 32, the data is 2 when the trigger is high
-    di = harp_message[(harp_message.address == 32) & (harp_message.data == (2,))]
-    output['onix_clock'] = di.timestamp_s.values
+    di = harp_message[harp_message.address == 32]
+    bits = np.array(np.hstack(di.data.values), dtype='uint8')
+    bits = np.unpackbits(bits, bitorder='little')
+    bits = bits.reshape((len(di), 8))
+
+    # keep only digital input
+    names = ['non_connected', 'onix_clock', 'encoder_initial_state']
+    bits = {names[n]: bits[:, n] for n in range(3)}
+    output.update(bits)
+    output['digital_time'] = di.timestamp_s.values
     return output
 
 
@@ -55,7 +106,7 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
     Returns:
         data dict: a dictionary of memmap
     """
-    num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan)
+    num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan, hubsynccounter=1)
     ephys_files = _find_files(path_to_folder, timestamp, 'rhd2164')
 
     output = dict()
@@ -67,14 +118,10 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
                 output['first_time'] = f.read().strip()
             continue
         assert ephys_file.suffix == '.raw'
-        dtype = np.dtype(RHD2164_DATA_FORMAT[what])
-        n_pts = ephys_file.stat().st_size / dtype.itemsize
-        nchan = num_chan_dict[what]
-        if np.mod(n_pts, nchan) != 0:
-            raise IOError('%s data is not a multiple of %d' % (what, nchan))
-        n_time = int(n_pts / nchan)
-        data = np.memmap(ephys_file, dtype=dtype, mode='r', order='F',
-                         shape=(nchan, n_time))
+
+        data = _load_binary_file(ephys_file,
+                                 dtype=ONIX_DATA_FORMAT[what],
+                                 nchan=num_chan_dict[what])
         output[what] = data
     return output
 
@@ -100,6 +147,43 @@ def load_ts4231(path_to_folder, timestamp=None):
             continue
         ts_out[int(photodiode.stem.split('_')[0][len('ts4231-'):])] = data
     return ts_out
+
+
+def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
+    """Load data from the breakout board, ie AI and DI
+
+    Args:
+        path_to_folder (str or Path): path to the folder containing breakout board data
+        timestamp (str or None): timestamp used in save name
+        num_ai_chans (int): number of ephys channels saved (default 64)
+
+    Returns:
+        data dict: a dictionary of memmap
+    """
+    breakout_files = _find_files(path_to_folder, timestamp, 'breakout')
+    output = dict()
+    for breakout_file in breakout_files:
+        what = breakout_file.stem.split('_')[0][len('breakout-'):]
+        if breakout_file.suffix == '.csv':
+            assert what == 'dio'
+            dio = pd.read_csv(breakout_file, )
+            port = np.array(dio.Port.values, dtype='uint8')
+            bits = np.unpackbits(port, bitorder='little')
+            bits = bits.reshape((len(port), 8))
+            for i in range(8):
+                dio['DI%d' % i] = bits[:, i]
+            output['dio'] = dio
+            continue
+        assert breakout_file.suffix == '.raw'
+        if what == 'aio-clock':
+            nchan = 1
+            dtype = ONIX_DATA_FORMAT['clock']
+        elif what == 'aio':
+            nchan = num_ai_chan
+            dtype = ONIX_DATA_FORMAT['aio']
+        data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
+        output[what] = data
+    return output
 
 
 def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
@@ -179,4 +263,16 @@ def _find_files(folder, timestamp, prefix):
             raise IOError('Multiple acquisition in folder %s. Specify timestamp' % folder)
     else:
         valid_files = [e for e in valid_files if e.stem.endswith(timestamp)]
-    return  valid_files
+    return valid_files
+
+
+def _load_binary_file(file_path, dtype, nchan):
+    file_path = Path(file_path)
+    n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
+    if np.mod(n_pts, nchan) != 0:
+        raise IOError('Data in %s is not a multiple of %d' % (file_path, nchan))
+    n_time = int(n_pts / nchan)
+    shape = (nchan, n_time) if nchan != 1 else None
+    data = np.memmap(file_path, dtype=dtype, mode='r', order='F',
+                     shape=shape)
+    return data
