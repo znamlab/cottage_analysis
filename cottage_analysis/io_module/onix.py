@@ -14,7 +14,7 @@ BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
                                DI2='hf_cam_trig')
 ONIX_SAMPLING = 250e6
 ENCODER_CPR = 4096
-WHEEL_DIAMETER = 20
+WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
 
 RAW = Path(flm.PARAMETERS['data_root']['raw'])
 PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
@@ -129,7 +129,7 @@ def load_harp(harp_bin):
     # 0-padding to keep constant length
     dst = np.array(np.hstack([0, mvt]), dtype=float)
     wheel_gain = WHEEL_DIAMETER / 2 * np.pi * 2 / ENCODER_CPR
-    harp_message['rotary_centimetre'] = dst * wheel_gain
+    output['rotary_meter'] = dst * wheel_gain
     return output
 
 
