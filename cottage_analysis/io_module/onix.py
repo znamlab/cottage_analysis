@@ -9,7 +9,9 @@ ONIX_DATA_FORMAT = dict(ephys='uint16',
                         aux='uint16',
                         hubsynccounter='uint64',
                         aio='uint16')
-
+BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
+                               DI1='oni_clock_di',
+                               DI2='hf_cam_trig')
 ONIX_SAMPLING = 250e6
 ENCODER_CPR = 4096
 WHEEL_DIAMETER = 20
@@ -56,12 +58,9 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
     if onix_recording is not None:
         # Load onix AI/DI
         breakout_data = load_breakout(session_folder / onix_recording)
-
-        dio = breakout_data['dio']
-        breakout_data['fm_cam_trig'] = dio.DI0
-        breakout_data['oni_clock_di'] = dio.DI1
-        breakout_data['hf_cam_trig'] = dio.DI0
-        out['breakout_data'] = dio
+        # use human readable names
+        breakout_data['dio'].rename(columns=BREAKOUT_DIGITAL_INPUTS, inplace=True)
+        out['breakout_data'] = breakout_data
 
         out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
         out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
