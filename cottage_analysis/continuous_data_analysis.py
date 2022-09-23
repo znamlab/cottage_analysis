@@ -1,4 +1,42 @@
+import warnings
+
 import numpy as np
+from scipy.signal import butter, sosfiltfilt, bessel
+
+
+def filter(data, sampling, lowcut=None, highcut=None, design='butter'):
+    """Wrapper around butter and filtfilt to filter continuous data
+
+    Args:
+        data (np.array): signal to process
+        sampling (float): sampling frequency, in Hz
+        lowcut (float or None): cutoff frequency for highpass filter
+        highcut (float or None): cutoff frequency for lowpass filter
+        design (str): `butter` or `bessel`
+
+    Returns:
+        filtered_data (np.array
+    """
+    n = int(lowcut is not None) * 2 + int(highcut is not None)
+    filter_type = [None, 'lowpass', 'highpass', 'bandpass'][n]
+    if filter_type is None:
+        warnings.warn('Both frequencies are None. Do nothing')
+        return data
+    if filter_type == 'lowpass':
+        freq = highcut/sampling
+    elif filter_type == 'highpass':
+        freq = lowcut/sampling
+    else:
+        freq = (lowcut/sampling, highcut/sampling)
+    if design.lower() == 'butter':
+        filt_func = butter
+    elif design.lower() == 'bessel':
+        filt_func = bessel
+    else:
+        raise IOError('`design` must be `bessel` or `butter`')
+    sos = filt_func(N=4, Wn=freq, btype=filter_type, output='sos')
+    fdata = sosfiltfilt(sos, data)
+    return fdata
 
 
 def do_sta(analog_signal, event, window=[-.5, .5], verbose=True,
