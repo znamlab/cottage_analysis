@@ -63,8 +63,8 @@ def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=200, lower_thr=50, p
         plt.plot(elapsed_time[plot_start:(plot_start + plot_range)],
                  np.zeros_like(photodiode[plot_start:(plot_start + plot_range)]) + lower_thr, "--", color="gray")
         plt.xlabel('Time(s)')
-    if plot_dir != None:
-        plt.savefig(plot_dir+'Frame_finder_check.png')
+    if plot_dir is not None:
+        plt.savefig(Path(plot_dir) / 'Frame_finder_check.png')
 
     return photodiode_df_simple
 
