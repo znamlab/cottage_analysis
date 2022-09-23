@@ -65,28 +65,6 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
         out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
 
-    if ('harp_message' in out) and ('breakout_data' in out):
-        # find when clock switches on
-        onix_clock = np.diff(np.hstack([0, harp_message['onix_clock']])) == 1
-        onix_clock_in_harp = harp_message['digital_time'][onix_clock]
-        # assume a perfect 100Hz since so far it has been good
-        real_time = np.arange(len(onix_clock_in_harp)) * 10e-3
-        delta_clock = np.diff(onix_clock_in_harp)
-        if np.nanmax(np.abs(delta_clock - 0.01)) * 1000 > 5:
-            raise ValueError('Onix clock deviation from 100Hz!')
-
-        # linear regression:
-        t0 = onix_clock_in_harp[0]
-        slope = np.nanmean(real_time[1:] / (onix_clock_in_harp[1:] - t0))
-
-        def harp2onix(data):
-            """Convert harp timestamp in onix time"""
-            return (data - t0) * slope
-
-        out['harp_message']['analog_time_onix'] = harp2onix(harp_message['analog_time'])
-        out['harp_message']['digital_time_onix'] = harp2onix(harp_message['digital_time'])
-        out['harp2onix'] = harp2onix
-
     return out
 
 
