@@ -9,23 +9,24 @@ DEPTH_DICT = {8: np.uint8,
               16: np.uint16}
 
 
-def load_video(data_folder, camera, order='F'):
-    """Load the video from an eye cam"""
-    metadata_file = os.path.join(data_folder, '%s_metadata.txt' % camera)
+def load_video(data_folder, camera, order='F', metadata_file=None, binary_file=None):
+    """Load the video from a camera saved as raw binary file + metadata"""
+    if metadata_file is None:
+        metadata_file = os.path.join(data_folder, '%s_metadata.txt' % camera)
     assert os.path.isfile(metadata_file)
     metadata = {}
     with open(metadata_file, 'r') as m_raw:
         for line in m_raw:
             if line.strip():
                 k, v = line.strip().split(":")
-                metadata[k.strip()] = int(v.strip())
-
-    binary_file = os.path.join(data_folder, '%s_data.bin' % camera)
+                metadata[k.strip().lower()] = int(v.strip().replace('U', ''))
+                # note that CV datatype are 'U8' or 'U16', remove the U before int.
+    if binary_file is None:
+        binary_file = os.path.join(data_folder, '%s_data.bin' % camera)
     assert os.path.isfile(binary_file)
-    data = np.memmap(binary_file, dtype=DEPTH_DICT[metadata['Depth']], mode='r')
-    
+    data = np.memmap(binary_file, dtype=DEPTH_DICT[metadata['depth']], mode='r')
     if order != None:        
-        data = data.reshape((metadata['Height'], metadata['Width'], -1), order=order)
+        data = data.reshape((metadata['height'], metadata['width'], -1), order=order)
     return data
 
 
@@ -85,3 +86,24 @@ def write_array_to_video(target_file, video_array, frame_rate, is_color=False, v
     out.release()
     return
 
+
+def deinterleave_camera(camera_file, target_file):
+    """Load a mini camera with interleaved frames"""
+    cap = cv2.VideoCapture(camera_file)
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    fcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+    fcc = (chr(fcc & 0xff) + chr((fcc >> 8) & 0xff) +
+           chr((fcc >> 16) & 0xff) + chr((fcc >> 24) & 0xff))
+    output = cv2.VideoWriter(target_file, cv2.VideoWriter_fourcc(*fcc),
+                             60, (frame_width, frame_height))
+    ret, frame = cap.read()
+    deint_frame = np.zeros_like(frame)
+    while ret:
+        for ilines in range(2):
+            deint_frame[::2, :, :] = frame[ilines::2, :, :] * 2
+            deint_frame[1::2, :, :] = deint_frame[::2, :, :] * 2
+            output.write(deint_frame)
+        ret, frame = cap.read()
+    cap.release()
+    output.release()
