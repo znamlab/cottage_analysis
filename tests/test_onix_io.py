@@ -12,10 +12,10 @@ VIS_STIM_RECORDING = 'R163332_SpheresPermTubeReward'
 def test_load_onix_recording():
     out = onix.load_onix_recording(PROJECT, MOUSE, SESSION,
                                    vis_stim_recording=VIS_STIM_RECORDING,
-                                   onix_recording=ONIX_RECORDING, allow_reload=True)
-    for what in ['harp_message', 'breakout_data', 'rhd2164_data', 'ts4131_data',
-                 'harp2onix']:
+                                   onix_recording=ONIX_RECORDING, allow_reload=False)
+    for what in ['harp_message', 'breakout_data', 'rhd2164_data', 'ts4131_data']:
         assert what in out
+    assert 'rotary_meter' in out['harp_message']
 
 
 def test_sync_onix():

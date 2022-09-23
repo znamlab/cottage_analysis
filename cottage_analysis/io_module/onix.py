@@ -121,7 +121,7 @@ def load_harp(harp_bin):
     output['digital_time'] = di.timestamp_s.values
 
     # make a speed out of rotary increment
-    mvt = np.diff(harp_message['rotary'])
+    mvt = np.diff(output['rotary'])
     rollover = np.abs(mvt) > 40000
     mvt[rollover] -= 2 ** 16 * np.sign(mvt[rollover])
     # The rotary count decreases when the mouse goes forward
