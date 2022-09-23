@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import flexiznam as flm
 from cottage_analysis.io_module import harp
 
 ONIX_DATA_FORMAT = dict(ephys='uint16',
@@ -9,44 +10,83 @@ ONIX_DATA_FORMAT = dict(ephys='uint16',
                         hubsynccounter='uint64',
                         aio='uint16')
 
+ONIX_SAMPLING = 250e6
+ENCODER_CPR = 4096
+WHEEL_DIAMETER = 20
 
-def load_onix_recording(folder, prefix=None, processed_folder=None, allow_reload=True):
+RAW = Path(flm.PARAMETERS['data_root']['raw'])
+PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
+
+
+def load_onix_recording(project, mouse, session, vis_stim_recording=None,
+                        onix_recording=None, allow_reload=True):
     """Main function calling all the subfunctions
 
-    `processed_folder` is used to store processed harp messages
-
     Args:
-        folder (str or Path):  path to the data
-        prefix (str): name common to all datasets. Usually the `mouse_session_rec`. If
-                      None will load only if there is a single recording in the folder.
-        processed_folder (str or Path): Path to save and load processed data.
-        allow_reload (bool): If True (default) and processed_folder is not None,
-                             will reload processed data instead of raw when available
+        project (str): name of the project
+        mouse (str): name of the mouse
+        session (str): name of the session
+        vis_stim_recording (str): recording containing visual stimulation data
+        onix_recording (str): recording containing onix data
+        allow_reload (bool): If True (default) will reload processed data instead of
+        raw when available
 
     Returns:
         data (dict): a dictionary with one element per datasource
     """
-    """
-    TODO: This function would be nice but will fail until we find a way to have onix, 
-    camera and vis stim data to share a prefix.
-    """
-    folder = Path(folder)
+    session_folder = RAW / project / mouse / session
+    assert session_folder.is_dir()
+
+    processed_folder = PROCESSED / project / mouse / session
     out = dict()
 
-    if prefix is None:
-        folder.glob('*rhd*')
-    # Load harp messages
-    if processed_folder is not None:
-        processed_messages = processed_folder / 'processed_harp.npz'
-        processed_messages.parent.mkdir(exist_ok=True)
-    else:
-        processed_messages = None
-    if allow_reload and (processed_messages is not None) and processed_messages.is_file():
-        harp_message = dict(np.load(processed_messages))
-    else:
-        harp_message = load_harp(folder / ('%s_harpmessage.bin' % (prefix)))
-        np.savez(processed_messages, **harp_message)
-    out['harp'] = harp_message
+    if vis_stim_recording is not None:
+        harp_message = '%s_%s_%s_harpmessage.bin' % (mouse, session, vis_stim_recording)
+        raw_harp = session_folder / vis_stim_recording / harp_message
+        processed_messages = processed_folder / vis_stim_recording / (raw_harp.stem + '.npz')
+        processed_messages.parent.mkdir(exist_ok=True, parents=True)
+        if allow_reload and processed_messages.is_file():
+            harp_message = dict(np.load(processed_messages))
+        else:
+            # slow part: read harp messages so save output and reload
+            harp_message = load_harp(raw_harp)
+            np.savez(processed_messages, **harp_message)
+        out['harp_message'] = harp_message
+
+    if onix_recording is not None:
+        # Load onix AI/DI
+        breakout_data = load_breakout(session_folder / onix_recording)
+
+        dio = breakout_data['dio']
+        breakout_data['fm_cam_trig'] = dio.DI0
+        breakout_data['oni_clock_di'] = dio.DI1
+        breakout_data['hf_cam_trig'] = dio.DI0
+        out['breakout_data'] = dio
+
+        out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
+        out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
+
+    if ('harp_message' in out) and ('breakout_data' in out):
+        # find when clock switches on
+        onix_clock = np.diff(np.hstack([0, harp_message['onix_clock']])) == 1
+        onix_clock_in_harp = harp_message['digital_time'][onix_clock]
+        # assume a perfect 100Hz since so far it has been good
+        real_time = np.arange(len(onix_clock_in_harp)) * 10e-3
+        delta_clock = np.diff(onix_clock_in_harp)
+        if np.nanmax(np.abs(delta_clock - 0.01)) * 1000 > 5:
+            raise ValueError('Onix clock deviation from 100Hz!')
+
+        # linear regression:
+        t0 = onix_clock_in_harp[0]
+        slope = np.nanmean(real_time[1:] / (onix_clock_in_harp[1:] - t0))
+
+        def harp2onix(data):
+            """Convert harp timestamp in onix time"""
+            return (data - t0) * slope
+
+        out['harp_message']['analog_time_onix'] = harp2onix(harp_message['analog_time'])
+        out['harp_message']['digital_time_onix'] = harp2onix(harp_message['digital_time'])
+        out['harp2onix'] = harp2onix
 
     return out
 
@@ -87,10 +127,21 @@ def load_harp(harp_bin):
     bits = bits.reshape((len(di), 8))
 
     # keep only digital input
-    names = ['non_connected', 'onix_clock', 'encoder_initial_state']
+    names = ['lick_detection', 'onix_clock', 'di2_encoder_initial_state']
     bits = {names[n]: bits[:, n] for n in range(3)}
     output.update(bits)
     output['digital_time'] = di.timestamp_s.values
+
+    # make a speed out of rotary increment
+    mvt = np.diff(harp_message['rotary'])
+    rollover = np.abs(mvt) > 40000
+    mvt[rollover] -= 2 ** 16 * np.sign(mvt[rollover])
+    # The rotary count decreases when the mouse goes forward
+    mvt *= -1
+    # 0-padding to keep constant length
+    dst = np.array(np.hstack([0, mvt]), dtype=float)
+    wheel_gain = WHEEL_DIAMETER / 2 * np.pi * 2 / ENCODER_CPR
+    harp_message['rotary_centimetre'] = dst * wheel_gain
     return output
 
 
