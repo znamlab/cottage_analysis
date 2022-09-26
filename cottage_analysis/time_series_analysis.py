@@ -1,6 +1,38 @@
 import numpy as np
 
 
+def cc_func(ts0, ts1, trange, keep_zero=True, check=False):
+    """Compute crosscorrelogram between two time series
+
+    This is what ephys people call crosscorrelogram. More precisely it is just events of
+    ts1 in a window around each event of ts0
+
+    Args:
+        ts0 (np.array): first time series
+        ts1 (np.array): second time series
+        trange (float, float): window to extract the crosscorrelogram
+        keep_zero (bool): Keep exact match (useful to remove for autocorrelograms)
+        check (bool): check if series are sorted
+
+    Returns:
+        cc (list of np.array): A list of len(ts0) arrays containing times of ts1
+                               falling in `trange` around each ts0 event
+    """
+    trange = np.asarray(trange)
+    ts0 = np.asarray(ts0)
+    ts1 = np.asarray(ts1)
+    assert len(trange) == 2
+    if check:
+        assert all(np.sort(ts1) == ts1)
+
+    limits = np.vstack([ts0 + t for t in trange])
+    lim_ind = ts1.searchsorted(limits)
+    cc = [ts1[b: e] for b, e in lim_ind.T]
+    if not keep_zero:
+        cc = [c[c != 0] for c in cc]
+    return cc
+
+
 def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
     """ Takes a sequence of spike times and produces a non-normalised density
     estimate by summing Normals defined by sd at each spike time. The range of
