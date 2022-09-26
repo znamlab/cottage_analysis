@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def cc_func(ts0, ts1, trange, keep_zero=True, check=False):
+def cc_func(ts0, ts1, trange, absolute_time=False, keep_zero=True, check=False):
     """Compute crosscorrelogram between two time series
 
     This is what ephys people call crosscorrelogram. More precisely it is just events of
@@ -11,6 +11,8 @@ def cc_func(ts0, ts1, trange, keep_zero=True, check=False):
         ts0 (np.array): first time series
         ts1 (np.array): second time series
         trange (float, float): window to extract the crosscorrelogram
+        absolute_time (bool): If False (default) return the time relative to ts0 event,
+                              otherwise the absolute time
         keep_zero (bool): Keep exact match (useful to remove for autocorrelograms)
         check (bool): check if series are sorted
 
@@ -28,6 +30,8 @@ def cc_func(ts0, ts1, trange, keep_zero=True, check=False):
     limits = np.vstack([ts0 + t for t in trange])
     lim_ind = ts1.searchsorted(limits)
     cc = [ts1[b: e] for b, e in lim_ind.T]
+    if not absolute_time:
+        cc = [c - s for c, s in zip(cc, ts0)]
     if not keep_zero:
         cc = [c[c != 0] for c in cc]
     return cc
