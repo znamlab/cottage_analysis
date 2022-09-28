@@ -87,7 +87,7 @@ def write_array_to_video(target_file, video_array, frame_rate, is_color=False, v
     return
 
 
-def deinterleave_camera(camera_file, target_file):
+def deinterleave_camera(camera_file, target_file, make_grey=False):
     """Load a mini camera with interleaved frames"""
     cap = cv2.VideoCapture(camera_file)
     frame_width = int(cap.get(3))
@@ -98,11 +98,13 @@ def deinterleave_camera(camera_file, target_file):
     output = cv2.VideoWriter(target_file, cv2.VideoWriter_fourcc(*fcc),
                              60, (frame_width, frame_height))
     ret, frame = cap.read()
+    if make_grey:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     deint_frame = np.zeros_like(frame)
     while ret:
         for ilines in range(2):
-            deint_frame[::2, :, :] = frame[ilines::2, :, :] * 2
-            deint_frame[1::2, :, :] = deint_frame[::2, :, :] * 2
+            deint_frame[::2, :, :] = frame[ilines::2, :, :]
+            deint_frame[1::2, :, :] = deint_frame[::2, :, :]
             output.write(deint_frame)
         ret, frame = cap.read()
     cap.release()
