@@ -319,3 +319,30 @@ for i_neuron, cluster_id in enumerate(cluster_ids):
         ax.axhline(shift, color='purple', linestyle='--')
     ax.axvline(0, color='k', alpha=0.5)
     ax.set_xlim([-30, 100])
+
+
+# make another exmaple plot: crosscorr with RS
+from scipy.signal import correlate, correlation_lags
+fig = plt.figure()
+fig.clf()
+fig.subplots_adjust(left=0.05, right=0.99, top=0.95, bottom=0.1)
+for i_neuron, cluster_id in enumerate(cluster_ids):
+    ax = fig.add_subplot(2, len(cluster_ids), 1 + i_neuron)
+    ax.set_title('Unit #%d' % cluster_id)
+    ax.set_yticks([])
+    ax.set_xlabel('Time (s)')
+    mat_id = list(good_units).index(cluster_id)
+    spks = zscore_mat[mat_id, valid]
+    corr = correlate(spks, lrs)
+    lags = correlation_lags(len(spks), len(lrs)) * np.median(np.diff(frame_times))
+    b, e = lags.searchsorted([-100, 100])
+    ax.plot(lags[b:e], corr[b:e])
+    ax.axvline(0, color='k', zorder=-10)
+    if i_neuron == 0:
+        ax.set_ylabel('Correlation with RS')
+    ax = fig.add_subplot(2, len(cluster_ids), 1 + len(cluster_ids) + i_neuron)
+    corr = correlate(spks, lof)
+    ax.plot(lags[b:e], corr[b:e])
+    ax.axvline(0, color='k', zorder=-10)
+    if i_neuron == 0:
+        ax.set_ylabel('Correlation with OF')
