@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -21,7 +22,8 @@ PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
 
 
 def load_onix_recording(project, mouse, session, vis_stim_recording=None,
-                        onix_recording=None, allow_reload=True):
+                        onix_recording=None, allow_reload=True,
+                        breakout_di_names=BREAKOUT_DIGITAL_INPUTS):
     """Main function calling all the subfunctions
 
     Args:
@@ -31,7 +33,8 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         vis_stim_recording (str): recording containing visual stimulation data
         onix_recording (str): recording containing onix data
         allow_reload (bool): If True (default) will reload processed data instead of
-        raw when available
+                             raw when available
+        breakout_di_names (dict): Names of DI on breakout board, e.g. {'DI0': 'lick'}
 
     Returns:
         data (dict): a dictionary with one element per datasource
@@ -61,7 +64,7 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         # Load onix AI/DI
         breakout_data = load_breakout(session_folder / onix_recording)
         # use human readable names
-        breakout_data['dio'].rename(columns=BREAKOUT_DIGITAL_INPUTS, inplace=True)
+        breakout_data['dio'].rename(columns=breakout_di_names, inplace=True)
         out['breakout_data'] = breakout_data
 
         out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
@@ -110,15 +113,18 @@ def load_harp(harp_bin):
 
     # Digital input is on address 32, the data is 2 when the trigger is high
     di = harp_message[harp_message.address == 32]
-    bits = np.array(np.hstack(di.data.values), dtype='uint8')
-    bits = np.unpackbits(bits, bitorder='little')
-    bits = bits.reshape((len(di), 8))
+    if len(di):
+        bits = np.array(np.hstack(di.data.values), dtype='uint8')
+        bits = np.unpackbits(bits, bitorder='little')
+        bits = bits.reshape((len(di), 8))
 
-    # keep only digital input
-    names = ['lick_detection', 'onix_clock', 'di2_encoder_initial_state']
-    bits = {names[n]: bits[:, n] for n in range(3)}
-    output.update(bits)
-    output['digital_time'] = di.timestamp_s.values
+        # keep only digital input
+        names = ['lick_detection', 'onix_clock', 'di2_encoder_initial_state']
+        bits = {names[n]: bits[:, n] for n in range(3)}
+        output.update(bits)
+        output['digital_time'] = di.timestamp_s.values
+    else:
+        warnings.warn('Could not find any digital input!')
 
     # make a speed out of rotary increment
     mvt = np.diff(output['rotary'])
