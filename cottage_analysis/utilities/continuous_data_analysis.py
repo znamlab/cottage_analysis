@@ -4,7 +4,7 @@ import numpy as np
 from scipy.signal import butter, sosfiltfilt, bessel
 
 
-def filter(data, sampling, lowcut=None, highcut=None, design='butter'):
+def filter(data, sampling, lowcut=None, highcut=None, design='butter', axis=-1):
     """Wrapper around butter and filtfilt to filter continuous data
 
     Args:
@@ -13,6 +13,7 @@ def filter(data, sampling, lowcut=None, highcut=None, design='butter'):
         lowcut (float or None): cutoff frequency for highpass filter
         highcut (float or None): cutoff frequency for lowpass filter
         design (str): `butter` or `bessel`
+        axis (int): axis to apply the filter
 
     Returns:
         filtered_data (np.array
@@ -35,7 +36,7 @@ def filter(data, sampling, lowcut=None, highcut=None, design='butter'):
     else:
         raise IOError('`design` must be `bessel` or `butter`')
     sos = filt_func(N=4, Wn=freq, btype=filter_type, output='sos')
-    fdata = sosfiltfilt(sos, data)
+    fdata = sosfiltfilt(sos, data, axis=axis)
     return fdata
 
 
