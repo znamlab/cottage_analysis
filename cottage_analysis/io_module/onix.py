@@ -66,10 +66,14 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         # use human readable names
         breakout_data['dio'].rename(columns=breakout_di_names, inplace=True)
         out['breakout_data'] = breakout_data
-
-        out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
-        out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
-
+        try:
+            out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
+        except IOError:
+            print('Could not load RHD2164 data')
+        try:
+            out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
+        except IOError:
+            print('Could not load TS4131 data')
     return out
 
 
