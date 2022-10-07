@@ -23,7 +23,8 @@ PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
 
 def load_onix_recording(project, mouse, session, vis_stim_recording=None,
                         onix_recording=None, allow_reload=True,
-                        breakout_di_names=BREAKOUT_DIGITAL_INPUTS):
+                        breakout_di_names=BREAKOUT_DIGITAL_INPUTS,
+                        raw_folder=RAW, processed_folder=PROCESSED):
     """Main function calling all the subfunctions
 
     Args:
@@ -39,10 +40,10 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
     Returns:
         data (dict): a dictionary with one element per datasource
     """
-    session_folder = RAW / project / mouse / session
+    session_folder = raw_folder / project / mouse / session
     assert session_folder.is_dir()
 
-    processed_folder = PROCESSED / project / mouse / session
+    processed_folder = processed_folder / project / mouse / session
     out = dict()
 
     if vis_stim_recording is not None:
