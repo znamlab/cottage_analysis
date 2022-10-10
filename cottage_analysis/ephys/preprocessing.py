@@ -25,7 +25,7 @@ def preprocess_exp(data, plot_dir=None):
     """
     data['harp_message'], data['harp2onix'] = sync_harp2onix(data['harp_message'])
     for w in data['vis_stim_log']:
-        if 'HarpTime' in w:
+        if 'HarpTime' in data['vis_stim_log'][w]:
             harp_time = data['vis_stim_log'][w]['HarpTime']
             data['vis_stim_log'][w]['onix_time'] = data['harp2onix'](harp_time)
         else:
