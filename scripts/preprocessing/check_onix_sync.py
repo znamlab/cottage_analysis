@@ -13,6 +13,7 @@ from pathlib import Path
 import flexiznam as flm
 from scipy import signal
 
+import cottage_analysis.io_module.harp
 from cottage_analysis.ephys import continuous_analysis as ca
 from cottage_analysis.ephys.synchronisation import plot_onix_harp_clock_sync
 from cottage_analysis.imaging.common import find_frames
@@ -46,8 +47,8 @@ if Path(processed_messages).is_file():
     harp_message = dict(np.load(processed_messages))
 else:
     # slow part: read harp messages so save output and reload
-    harp_message = onix.load_harp(raw / VIS_STIM / ('%s_%s_%s_harpmessage.bin'
-                                  % (MOUSE, SESSION, VIS_STIM)))
+    harp_message = cottage_analysis.io_module.harp.load_harp(raw / VIS_STIM / ('%s_%s_%s_harpmessage.bin'
+                                                                               % (MOUSE, SESSION, VIS_STIM)))
     np.savez(processed_messages, **harp_message)
 # make a speed out of rotary increament
 mvt = np.diff(harp_message['rotary'])
