@@ -13,8 +13,7 @@ BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
                                DI1='oni_clock_di',
                                DI2='hf_cam_trig')
 ONIX_SAMPLING = 250e6
-ENCODER_CPR = 4096
-WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
+
 
 RAW = Path(flm.PARAMETERS['data_root']['raw'])
 PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])

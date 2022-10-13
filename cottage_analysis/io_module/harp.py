@@ -16,7 +16,9 @@ import numpy as np
 import mmap
 import pandas as pd
 
-from cottage_analysis.io_module.onix import WHEEL_DIAMETER, ENCODER_CPR
+ENCODER_CPR = 4096
+WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
+
 
 # usefull for harp messages:
 MESSAGE_TYPE = {1: 'READ', 2: 'WRITE', 3: 'EVENT', 9: 'READ_ERROR', 10: 'WRITE_ERROR'}
