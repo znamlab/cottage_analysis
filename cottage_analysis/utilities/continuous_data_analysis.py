@@ -1,7 +1,32 @@
 import warnings
 
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 from scipy.signal import butter, sosfiltfilt, bessel
+
+
+def crosscorrelation(x, y, maxlag, mode='corr'):
+    """
+    Cross correlation with a maximum number of lags.
+
+    `x` and `y` must be one-dimensional numpy arrays with the same length.
+
+    This computes the same result as
+        numpy.correlate(x, y, mode='full')[len(a)-maxlag-1:len(a)+maxlag]
+
+    The return value has length 2*maxlag + 1.
+
+    from: https://stackoverflow.com/questions/30677241/how-to-limit-cross-correlation-window-width-in-numpy
+    """
+    py = np.pad(y.conj(), 2*maxlag, mode='constant')
+    T = as_strided(py[2*maxlag:], shape=(2*maxlag+1, len(y) + 2*maxlag),
+                   strides=(-py.strides[0], py.strides[0]))
+    px = np.pad(x, maxlag, mode='constant')
+    if mode == 'dot':       # get lagged dot product
+        return T.dot(px)
+    elif mode == 'corr':    # gets Pearson correlation
+        return (T.dot(px)/px.size - (T.mean(axis=1)*px.mean())) / \
+               (np.std(T, axis=1) * np.std(px))
 
 
 def filter(data, sampling, lowcut=None, highcut=None, design='butter', axis=-1):
