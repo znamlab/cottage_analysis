@@ -1,6 +1,27 @@
 import numpy as np
 
 
+def searchclosest(ts0, ts1):
+    """Find the closest time of ts1 for each element of ts0
+
+    From: https://stackoverflow.com/questions/8914491/finding-the-nearest-value-and-return-the-index-of-array-in-python
+    Args:
+        ts0 (np.array): array in which we need to find the values, needs to be sorted
+        ts1 (np.array): values to find in ts0, needs to be sorted
+
+    Returns:
+        closest (np.array): array of indices of closest values, same shape as ts1
+    """
+    idx = ts0.searchsorted(ts1)
+    # fix border issues (ensure idx and idx-1 are in [0, len(ts0)-1])
+    idx = np.clip(idx, 1, len(ts0) - 1)
+    # We have ts1[idx[i] - 1] < ts0[i] <= ts1[idx[i]]
+    left = ts0[idx - 1]
+    right = ts0[idx]
+    idx -= ts1 - left < right - ts1
+    return idx
+
+
 def cc_func(ts0, ts1, trange, absolute_time=False, keep_zero=True, check=False):
     """Compute crosscorrelogram between two time series
 
