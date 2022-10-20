@@ -1,32 +1,55 @@
 import warnings
-
 import numpy as np
-from numpy.lib.stride_tricks import as_strided
+import scipy.signal as scsi
+from numpy.lib.stride_tricks import as_strided, sliding_window_view
 from scipy.signal import butter, sosfiltfilt, bessel
 
 
-def crosscorrelation(x, y, maxlag, mode='corr'):
+def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation='pearson'):
+    """Crosscorrelation limited to +/- maxlag around expected lag
+
+    Performed the crosscorrelation of signal1 and signal2 (2 arrays of same length) but
+    only for lags comprised in [expected_lag - maxlag : expected_lag + maxlag]
+
+    The output can either be the dot product (raw correlation, as returned by
+    np.correlate), or the pearson correlation coefficient (default).
+    Inspired by:
+    https://stackoverflow.com/questions/30677241/how-to-limit-cross-correlation-window-width-in-numpy
+
+    Args:
+        signal1 (np.array): First signal, 1D array, same shape as signal2, expected to
+                            be lagging by `expected_lag` relative to signal2
+        signal2 (np.array): Second signal, 1D array, same shape as signal2
+        maxlag (int): maximum lag in sample to compute the correlation
+        expected_lag (int): center lag in sample around which to compute the correlation
+        normalisation (str): `dot` or `pearson`
+
+    Returns:
+        correlation (np.array): crosscorrelation, shape = maxlag * 2
+        lags (np.array): corresponding lags, same shape as correlation
     """
-    Cross correlation with a maximum number of lags.
+    assert signal1.ndim == signal2.ndim == 1
+    assert len(signal2) == len(signal1)
+    assert len(signal2) > (maxlag * 2 + expected_lag)
+    assert expected_lag >= 0
+    y = signal2[:len(signal2)-expected_lag]
+    x = signal1[maxlag+expected_lag:-maxlag + 1]
+    lags = scsi.correlation_lags(len(x), len(y), mode='valid')
+    lags += maxlag + expected_lag
 
-    `x` and `y` must be one-dimensional numpy arrays with the same length.
-
-    This computes the same result as
-        numpy.correlate(x, y, mode='full')[len(a)-maxlag-1:len(a)+maxlag]
-
-    The return value has length 2*maxlag + 1.
-
-    from: https://stackoverflow.com/questions/30677241/how-to-limit-cross-correlation-window-width-in-numpy
-    """
-    py = np.pad(y.conj(), 2*maxlag, mode='constant')
-    T = as_strided(py[2*maxlag:], shape=(2*maxlag+1, len(y) + 2*maxlag),
-                   strides=(-py.strides[0], py.strides[0]))
-    px = np.pad(x, maxlag, mode='constant')
-    if mode == 'dot':       # get lagged dot product
-        return T.dot(px)
-    elif mode == 'corr':    # gets Pearson correlation
-        return (T.dot(px)/px.size - (T.mean(axis=1)*px.mean())) / \
-               (np.std(T, axis=1) * np.std(px))
+    circ_y = sliding_window_view(y, maxlag*2)
+    # With that circ_y[:, n] = signal2[n:n - maxlag * 2 + 1], so circ_y shifts the signal
+    # forward, we want to shift it backward, reverse that.
+    circ_y = circ_y[:, ::-1].T
+    if normalisation.lower() == 'dot':
+        corr = circ_y.dot(x)
+    elif normalisation.lower() == 'pearson':
+        # calculate pearson correlation coefficient
+        corr = (circ_y.dot(x) / x.size - (circ_y.mean(axis=1) * x.mean())) / \
+               (np.std(circ_y, axis=1) * np.std(x))
+    else:
+        raise IOError('Normalisation must be `dot` or `pearson`')
+    return corr, lags
 
 
 def filter(data, sampling, lowcut=None, highcut=None, design='butter', axis=-1):
