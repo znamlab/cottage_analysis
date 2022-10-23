@@ -3,6 +3,7 @@ Module to find frames based on photodiode flicker
 """
 import numpy as np
 import scipy.signal as scsi
+import matplotlib.pyplot as plt
 from cottage_analysis.utilities import continuous_data_analysis as cda
 
 
