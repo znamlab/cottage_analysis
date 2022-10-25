@@ -13,7 +13,7 @@ from cottage_analysis.utilities.time_series_analysis import searchclosest
 
 def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                         time_column='HarpTime', sequence_column='PhotoQuadColor',
-                        num_frame_to_corr=5, maxlag=100, expected_lag=24,
+                        num_frame_to_corr=5, maxlag=50e-3, expected_lag=15e-3,
                         frame_rate=144, correlation_threshold=0.8,
                         minimum_lag=5e-3, do_plot=False, verbose=True, debug=False):
     """Find best shift to synchronise photodiode with ideal sequence
@@ -32,7 +32,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                                information (Default to 'PhotoQuadColor')
         num_frame_to_corr (int): number of frame before and after frame_time to keep
                                  for correlation
-        maxlag (int): Maximum lag tested (in samples, centered on expected_lag).
+        maxlag (float): Maximum lag tested (in s, centered on expected_lag).
         expected_lag (float): expected lag (in s) to center search
         frame_rate (float): Frame rate in Hz
         correlation_threshold (float): threshold on the pearson correlation. Anything
@@ -94,6 +94,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     normed_pd -= np.quantile(normed_pd, 0.01)
     normed_pd /= np.quantile(normed_pd, 0.99)
     frame_onsets = frames_df['onset_sample'].values
+    maxlag = int(np.round(maxlag * pd_sampling))  # make it into samples
     out = _crosscorr_befcentaft(frame_onsets,
                                 photodiode_time=photodiode_time,
                                 photodiode_signal=normed_pd,
@@ -135,9 +136,12 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                                      minimum_lag=minimum_lag,
                                      clean_df=not debug,
                                      verbose=True)
+    out = [frames_df]
+    if do_plot:
+        out.append(fig_dict)
     if debug:
-        return frames_df, db_dict
-    return frames_df
+        out.append(db_dict)
+    return out
 
 
 def detect_frame_onset(photodiode, frame_rate=144, photodiode_sampling=1000,
@@ -337,13 +341,13 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
     cc_mat = np.zeros((len(window), len(frame_onsets), maxlag * 2)) + np.nan
     for iframe, foi in enumerate(frame_onsets):
         for iw, win in enumerate(window):
-            if (win[0] + foi < 0):
+            if (win[0] + foi) < 0:
                 print('Frame %d at sample %d is too close from start of recording' % (
-                iframe, foi))
+                    iframe, foi))
                 continue
-            elif (win[1] + foi > len(photodiode_signal) - expected_lag):
+            elif (win[1] + foi) > (len(photodiode_signal) - expected_lag):
                 print('Frame %d at sample %d is too close from end of recording' % (
-                iframe, foi))
+                    iframe, foi))
                 continue
             corr, lags = cda.crosscorrelation(photodiode_signal[slice(*win + foi)],
                                               ideal_pd[slice(*win + foi - expected_lag)],
@@ -351,6 +355,7 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
                                               expected_lag=0,
                                               normalisation='pearson')
             cc_mat[iw, iframe] = corr
+    lags /= photodiode_sampling
     lags += expected_lag
     if verbose:
         end = time.time()
