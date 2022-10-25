@@ -142,7 +142,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
         out.append(fig_dict)
     if debug:
         out.append(db_dict)
-    return out
+    return tuple(out)
 
 
 def detect_frame_onset(photodiode, frame_rate=144, photodiode_sampling=1000,
@@ -413,6 +413,9 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
     # and impossible lags
     impossible_lag = frames_df.loc[~good, ['lag_%s' % l for l in labels]] < minimum_lag
     bad = did_not_fit | impossible_lag
+    if verbose:
+        start = time.time()
+        print('Matching frame to logger', flush=True)
 
     for ind, line in bad.iterrows():
         n_bad = np.sum(line)
@@ -453,6 +456,10 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
         frames_df.loc[ind, 'closet_frame'] = frames_df.loc[ind, 'closest_frame_%s' % lab]
         frames_df.loc[ind, 'sync_reason'] = 'photodiode matching'
         frames_df.loc[ind, 'crosscorr_picked'] = lab
+
+    if verbose:
+        end = time.time()
+        print('done (%d s)' % (end - start))
 
     if clean_df:
         cols = [c for c in frames_df.columns if (not c.endswith('bef')) and
