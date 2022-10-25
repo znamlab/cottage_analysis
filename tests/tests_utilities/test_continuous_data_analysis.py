@@ -20,3 +20,8 @@ def test_correlate_with_lag():
                                               expected_lag=expected_lag,
                                               normalisation='dot')
             assert all(np.abs(corr_np - corr) < 1e-12)
+            # check that the lag is what we expect
+            corr, lags = cda.crosscorrelation(x[:-10], x[10:], maxlag=20,
+                                              expected_lag=0,
+                                              normalisation='dot')
+            assert lags[corr.argmax()] == 10
