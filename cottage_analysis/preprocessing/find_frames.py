@@ -53,14 +53,20 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     # First step: Frame detection
     pd_sampling = 1/np.mean(np.diff(photodiode_time))
     out = detect_frame_onset(photodiode=photodiode_signal,
-                                                   frame_rate=frame_rate,
-                                                   photodiode_sampling=pd_sampling,
-                                                   highcut=frame_rate * 3,
-                                                   debug=debug or do_plot)
+                             frame_rate=frame_rate,
+                             photodiode_sampling=pd_sampling,
+                             highcut=frame_rate * 3,
+                             debug=debug or do_plot)
     if debug or do_plot:
         frame_borders, peak_index, db_dict = out
     else:
         frame_borders, peak_index = out
+    # cut frame detected before the recording started
+    t0 = frame_log[time_column].iloc[0]
+    to_cut = photodiode_time[frame_borders].searchsorted(t0)
+    frame_borders = frame_borders[to_cut:]
+    peak_index = peak_index[to_cut:]
+
     # Format the results in a nicer dataframe
     frame_skip = np.diff(frame_borders) > pd_sampling / frame_rate * 1.5
     frames_df = pd.DataFrame(dict(onset_sample=frame_borders[:-1],
@@ -110,6 +116,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     if debug:
         cc_mat, lags, db = out
         db_dict.update(db)
+        db_dict['normed_pd'] = normed_pd
         db_dict['lags_sample'] = lags
         db_dict['cc_mat'] = cc_mat
     else:
@@ -119,8 +126,18 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
         frames_df['lag_%s' % which] = lags[cc_mat[iw].argmax(axis=1)] / pd_sampling
         frames_df['peak_corr_%s' % which] = cc_mat[iw].max(axis=1)
         # find the closest frame
-        cl = searchclosest(frame_log[time_column].values,
-                           (frames_df.onset_time - frames_df['lag_%s' % which]).values)
+        if which in ['bef', 'center']:
+            cl = searchclosest(frame_log[time_column].values,
+                               (frames_df.onset_time - frames_df['lag_%s' %
+                                                                 which]).values)
+        else:
+            # for aft, we match the offset to the begin of the next frame and take the
+            # previous. That avoids mismatch in case of frame skip, where the frame
+            # started a while ago
+            cl = searchclosest(frame_log[time_column].values,
+                               (frames_df.offset_time - frames_df['lag_%s' %
+                                                                  which]).values)
+            cl = np.clip(cl - 1, 0, len(frame_log) - 1)
         frames_df['closest_frame_%s' % which] = cl
         frames_df['quadcolor_%s' % which] = frame_log.iloc[cl][sequence_column].values
 
