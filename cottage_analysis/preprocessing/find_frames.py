@@ -46,8 +46,8 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
-        figures (dict): only if do_plot is True. Dictionary of figure handles
-        db_dict (dict): only if debug is True. Dictionary with intermediary results
+        extra_out (dict): A dictionary containing figures if `do_plot` is True,
+                          debug information if debug is True. Empty if both are False
     """
 
     # First step: Frame detection
@@ -137,12 +137,12 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                                      minimum_lag=minimum_lag,
                                      clean_df=not debug,
                                      verbose=True)
-    out = [frames_df]
+    extra_out = {}
     if do_plot:
-        out.append(fig_dict)
+        extra_out['figures'] = fig_dict
     if debug:
-        out.append(db_dict)
-    return tuple(out)
+        extra_out['debug_info'] = db_dict
+    return frames_df, extra_out
 
 
 def detect_frame_onset(photodiode, frame_rate=144, photodiode_sampling=1000,
@@ -428,7 +428,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
             # some there is only one fit remaining, keep this one
             lab = labels[np.where(~line.values)[0][0]]
             frames_df.loc[ind, 'lag'] = frames_df.loc[ind, 'lag_%s' % lab]
-            frames_df.loc[ind, 'closet_frame'] = frames_df.loc[
+            frames_df.loc[ind, 'closest_frame'] = frames_df.loc[
                 ind, 'closest_frame_%s' % lab]
             frames_df.loc[ind, 'sync_reason'] = 'only fit'
             frames_df.loc[ind, 'crosscorr_picked'] = lab
@@ -440,7 +440,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
             if frames_df.loc[ind, 'closest_frame_%s' % lab[0]] == frames_df.loc[
                 ind, 'closest_frame_%s' % lab[1]]:
                 frames_df.loc[ind, 'lag'] = frames_df.loc[ind, 'lag_%s' % lab[0]]
-                frames_df.loc[ind, 'closet_frame'] = frames_df.loc[
+                frames_df.loc[ind, 'closest_frame'] = frames_df.loc[
                     ind, 'closest_frame_%s' % lab[0]]
                 frames_df.loc[ind, 'sync_reason'] = 'partial consensus'
                 frames_df.loc[ind, 'crosscorr_picked'] = lab[0]
@@ -453,7 +453,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
         closest = np.abs(val - frames_df.loc[ind, 'photodiode']).values.argmin()
         lab = lab[closest]
         frames_df.loc[ind, 'lag'] = frames_df.loc[ind, 'lag_%s' % lab]
-        frames_df.loc[ind, 'closet_frame'] = frames_df.loc[ind, 'closest_frame_%s' % lab]
+        frames_df.loc[ind, 'closest_frame'] = frames_df.loc[ind, 'closest_frame_%s' % lab]
         frames_df.loc[ind, 'sync_reason'] = 'photodiode matching'
         frames_df.loc[ind, 'crosscorr_picked'] = lab
 
