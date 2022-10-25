@@ -11,6 +11,10 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation='pe
     Performed the crosscorrelation of signal1 and signal2 (2 arrays of same length) but
     only for lags comprised in [expected_lag - maxlag : expected_lag + maxlag]
 
+    The central part of signal1 (exclude maxlag on each side) will be used for
+    correlation. If expected_lag is non-zero, the first `expected_lag` samples of
+    signal2 will also be cut.
+
     The output can either be the dot product (raw correlation, as returned by
     np.correlate), or the pearson correlation coefficient (default).
     Inspired by:
