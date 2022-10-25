@@ -94,14 +94,15 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     normed_pd -= np.quantile(normed_pd, 0.01)
     normed_pd /= np.quantile(normed_pd, 0.99)
     frame_onsets = frames_df['onset_sample'].values
-    maxlag = int(np.round(maxlag * pd_sampling))  # make it into samples
+    maxlag_samples = int(np.round(maxlag * pd_sampling))  # make it into samples
+    expected_lag_samples = int(np.round(expected_lag * pd_sampling))  # make it into samples
     out = _crosscorr_befcentaft(frame_onsets,
                                 photodiode_time=photodiode_time,
                                 photodiode_signal=normed_pd,
                                 switch_time=frame_log[time_column].values,
                                 sequence=frame_log[sequence_column].values,
-                                expected_lag=expected_lag,
-                                maxlag=maxlag,
+                                expected_lag=expected_lag_samples,
+                                maxlag=maxlag_samples,
                                 num_frame_to_corr=num_frame_to_corr,
                                 frame_rate=frame_rate,
                                 verbose=verbose,
@@ -109,7 +110,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     if debug:
         cc_mat, lags, db = out
         db_dict.update(db)
-        db_dict['lags'] = lags
+        db_dict['lags_sample'] = lags
         db_dict['cc_mat'] = cc_mat
     else:
         cc_mat, lags = out
@@ -313,7 +314,7 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
         photodiode_signal (np.array): Photodiode signal, same size as photodiode time
         switch_time (np.array): Time of all changes of photodiode quad colour
         sequence (np.array): Value of the quad colour after each switch.
-        expected_lag (float): expected lag (in s) to center search
+        expected_lag (int): expected lag (in samples) to center search
         maxlag (int): Maximum lag tested (in samples, centered on expected_lag).
         num_frame_to_corr (int): number of frame around frame_time to keep for correlation
         frame_rate (float): Frame rate in Hz
@@ -355,7 +356,6 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
                                               expected_lag=0,
                                               normalisation='pearson')
             cc_mat[iw, iframe] = corr
-    lags /= photodiode_sampling
     lags += expected_lag
     if verbose:
         end = time.time()
