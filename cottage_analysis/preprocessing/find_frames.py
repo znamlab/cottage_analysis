@@ -114,17 +114,17 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                                 verbose=verbose,
                                 debug=debug)
     if debug:
-        cc_mat, lags, db = out
+        cc_dict, lags, db = out
         db_dict.update(db)
         db_dict['normed_pd'] = normed_pd
         db_dict['lags_sample'] = lags
-        db_dict['cc_mat'] = cc_mat
+        db_dict['cc_dict'] = cc_dict
     else:
-        cc_mat, lags = out
+        cc_dict, lags = out
     # add that to the dataframe
     for iw, which in enumerate(['bef', 'center', 'aft']):
-        frames_df['lag_%s' % which] = lags[cc_mat[iw].argmax(axis=1)] / pd_sampling
-        frames_df['peak_corr_%s' % which] = cc_mat[iw].max(axis=1)
+        frames_df['lag_%s' % which] = lags[cc_dict[which].argmax(axis=1)] / pd_sampling
+        frames_df['peak_corr_%s' % which] = cc_dict[which].max(axis=1)
         # find the closest frame
         if which in ['bef', 'center']:
             cl = searchclosest(frame_log[time_column].values,
@@ -349,10 +349,11 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
                                            switch_time=switch_time,
                                            sequence=sequence)
 
-    window = [np.array([-1, 1]) * maxlag +
-              np.array(w * num_frame_to_corr / frame_rate * photodiode_sampling,
-                       dtype='int')
+    window = [np.array([-1, 1]) * maxlag + np.array(w * num_frame_to_corr / frame_rate
+                                                    * photodiode_sampling, dtype='int')
               for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]]
+    # for bef window, we add 1 frame to have the current frame included
+    window[0] += int(1/frame_rate * photodiode_sampling)
     if verbose:
         start = time.time()
         print('Starting crosscorrelation', flush=True)
@@ -377,10 +378,11 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
     if verbose:
         end = time.time()
         print('done (%d s)' % (end - start))
+    cc_dict = {l:cc_mat[i] for i, l in enumerate(['bef', 'center', 'aft'])}
     if debug:
         db_dict = dict(window=window, seq_trace=seq_trace, ideal_pd=ideal_pd)
-        return cc_mat, lags, db_dict
-    return cc_mat, lags
+        return cc_dict, lags, db_dict
+    return cc_dict, lags
 
 
 def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
