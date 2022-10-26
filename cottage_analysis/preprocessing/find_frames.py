@@ -522,20 +522,24 @@ def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
         end = time.time()
         print('done (%d s)' % (end - start), flush=True)
 
-    # after the initial match, clean-up parts were the order is wrong
-    # If the match of frame n, M(n) is <= M(n-1) --- so if we don't move or go back in
-    # time --- and frame M(n+1) = M(n-1) + 2, we just have one mistake in the middle
-    # and we can say that M(n) = M(n+1) + 1
-    baddies = np.where(np.diff(frames_df.closest_frame.values) < 1)[0] + 1
-    baddies = baddies[baddies < len(frames_df) - 1]
-    nm1 = frames_df.closest_frame[baddies-1].values
-    np1 = frames_df.closest_frame[baddies+1].values
-    to_replace = baddies[np1-nm1 == 2]
-    # set lag to unknown
-    frames_df.loc[to_replace, 'lag'] = np.nan
-    frames_df.loc[to_replace, 'sync_reason'] = 'time correction'
-    frames_df.loc[to_replace, 'closest_frame'] = frames_df.loc[to_replace - 1,
-                                                               'closest_frame'].values + 1
+    # after the initial match, clean-up parts where the order is wrong
+    time_travel = np.where(np.diff(frames_df.closest_frame.values) < 1)[0]
+    time_travel = time_travel[(time_travel > 0) & (time_travel < len(frames_df) - 2)]
+    # Two options: either frame n is shifted forward or n+1 is shifted backward,
+    # just look at both
+    for shift in [0, 1]:
+        baddies = time_travel + shift
+        nm1 = frames_df.closest_frame[baddies - 1].values
+        np1 = frames_df.closest_frame[baddies + 1].values
+        n = frames_df.closest_frame[baddies].values
+        to_replace = baddies[(np1 - nm1) == 2]
+        # set lag to unknown
+        frames_df.loc[to_replace, 'lag'] = np.nan
+        reason = 'fixing time travel (%s)' % ('to future' if not shift else 'to past')
+        frames_df.loc[to_replace, 'sync_reason'] = reason
+        frames_df.loc[to_replace,
+                      'closest_frame'] = frames_df.loc[to_replace - 1,
+                                                       'closest_frame'].values + 1
 
     # Finally add the color from the sequence
     frames_df['quadcolor'] = np.nan
