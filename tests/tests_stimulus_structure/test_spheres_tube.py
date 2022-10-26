@@ -7,3 +7,4 @@ DATA_FOLDER = '/Users/blota/Data/R165353_SpheresPermTubeReward/'
 
 
 def test_recreate_stimulus():
+    raise NotImplementedError()

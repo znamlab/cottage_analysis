@@ -123,8 +123,8 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
         cc_dict, lags = out
     # add that to the dataframe
     align = dict(bef='onset_time', center='peak_time', aft='offset_time')
-    func = dict(bef=searchclosest, center=np.searchsorted, aft=np.searchsorted)
-    shift = dict(bef=0, center=1, aft=2)
+    func = dict(bef=searchclosest, center=np.searchsorted, aft=searchclosest)
+    shift = dict(bef=0, center=-1, aft=-1)
     for iw, which in enumerate(['bef', 'center', 'aft']):
         frames_df['lag_%s' % which] = lags[cc_dict[which].argmax(axis=1)] / pd_sampling
         frames_df['peak_corr_%s' % which] = cc_dict[which].max(axis=1)
@@ -137,8 +137,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
         # To have the proper number of element I search frame_log in frames_df instead
         # of the converse. That means that I get the index of frame_log that is >=
         # frames_df
-        if func[which] == np.searchsorted:
-            cl -= shift[which]
+        cl += shift[which]
         cl = np.clip(cl, 0, len(frame_log) - 1)
         frames_df['closest_frame_%s' % which] = cl
         frames_df['quadcolor_%s' % which] = frame_log.iloc[cl][sequence_column].values
@@ -162,6 +161,37 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     if debug:
         extra_out['debug_info'] = db_dict
     return frames_df, extra_out
+
+
+def plot_on_frame_check(frame, frames_df, frame_log, db_dict):
+
+    fs = frames_df.loc[frame]
+    win = np.array([-20, 20])
+    t0 = fs.onset_time
+    fig = plt.figure(figsize=(5, 6))
+    d = dict(bef='onset_time', center='peak_time', aft='offset_time')
+    iax=1
+    for w in ['bef', 'center', 'aft']:
+        plt.subplot(3, 1, iax)
+        i = fs['closest_frame_%s'%w] + np.arange(-3, 4, dtype=int)
+        i0 =fs['closest_frame_%s'%w]
+        plt.axvspan(fs.onset_time-t0, fs.offset_time-t0, color='purple', alpha=0.5)
+        plt.axvline(fs[d[w]]-t0, color='k', ls='--')
+        plt.plot(photodiode_time[slice(*win + fs.peak_sample)]-t0,
+                 db_dict['normed_pd'][slice(*win + fs.peak_sample)])
+        plt.plot(photodiode_time[slice(*win + fs.peak_sample)] -t0+ fs['lag_%s'%w],
+                 db_dict['ideal_pd'][slice(*win + fs.peak_sample)])
+        plt.plot(frame_log.loc[i, 'HarpTime'] + fs['lag_%s'%w]-t0,
+                 frame_log.loc[i, 'PhotoQuadColor'],
+                 drawstyle='steps-post')
+        plt.plot(frame_log.loc[[i0, i0+1], 'HarpTime'] + fs['lag_%s'%w]-t0,
+                 np.zeros(2) + frame_log.loc[i0, 'PhotoQuadColor'], 'k',
+                 lw=4)
+        plt.axvline(frame_log.loc[i0, 'HarpTime'] + fs['lag_%s'%w]-t0,
+                    color='k', ls=':')
+        plt.ylabel(w)
+        iax+=1
+    plt.show()
 
 
 def detect_frame_onset(photodiode, frame_rate=144, photodiode_sampling=1000,
