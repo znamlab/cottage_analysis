@@ -15,7 +15,8 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                         time_column='HarpTime', sequence_column='PhotoQuadColor',
                         num_frame_to_corr=5, maxlag=50e-3, expected_lag=15e-3,
                         frame_rate=144, correlation_threshold=0.9,
-                        minimum_lag=5e-3, do_plot=False, verbose=True, debug=False):
+                        relative_corr_thres=0.03, minimum_lag=5e-3, do_plot=False,
+                        verbose=True, debug=False):
     """Find best shift to synchronise photodiode with ideal sequence
 
     This will generate an idealised photodiode trace based on the `switch_time` and the
@@ -37,6 +38,9 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
         frame_rate (float): Frame rate in Hz
         correlation_threshold (float): threshold on the pearson correlation. Anything
                                        below is considered a failure to fit
+        relative_corr_thres (float): When multiple correlations are above threshold,
+                                     will consider only among those that less than
+                                     `relative_corr_thres` away from max corr
         minimum_lag (float): Minimum possible lag. Anything below is considered a
                              failure to fit
         do_plot (bool): If True generate some quality measure plots during run and
@@ -152,6 +156,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     # Now attempt the matching
     frames_df = _match_fit_to_logger(frames_df, frame_log,
                                      correlation_threshold=correlation_threshold,
+                                     relative_corr_thres=relative_corr_thres,
                                      minimum_lag=minimum_lag,
                                      clean_df=not debug,
                                      verbose=verbose)
@@ -418,7 +423,8 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
 
 
 def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
-                         minimum_lag=5e-3, clean_df=False, verbose=True):
+                         relative_corr_thres=0.03, minimum_lag=5e-3, clean_df=False,
+                         verbose=True):
     """Remove bad fit and pick the best of remaining
 
     Inner function of sync_by_correlation
@@ -431,6 +437,9 @@ def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
         frame_log (pd.DateFrame): Dataframe from bonsai logger
         correlation_threshold (float): threshold on the pearson correlation. Anything
                                        below is considered a failure to fit
+        relative_corr_thres (float): When multiple correlations are above threshold,
+                                     will consider only among those that less than
+                                     `relative_corr_thres` away from max corr
         minimum_lag (float): Minimum possible lag. Anything below is considered a
                              failure to fit
         clean_df (bool): Should the output contain all columns) (if clean_df=False,
@@ -440,7 +449,6 @@ def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
 
     Returns:
         df (pd.DataFrame): A dataframe with one of 3 crosscorr selected.
-
     """
     good = np.logical_and(
         frames_df['closest_frame_center'] == frames_df['closest_frame_bef'],
@@ -504,7 +512,7 @@ def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
         corrs = np.array(frames_df.loc[ind, ['peak_corr_%s' % l for l in lab]],
                          dtype=float)
         corrs[np.isnan(corrs)] = 0
-        good = np.nanmax(corrs) - corrs < 0.05
+        good = np.nanmax(corrs) - corrs < relative_corr_thres
         reason = ['relative peak corr'] if any(~good) else []
         lab = [l for ok, l in zip(good, lab) if ok]
         if len(lab) > 1:
