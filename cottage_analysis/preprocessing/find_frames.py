@@ -150,7 +150,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     frames_df['is_jump'] = np.hstack([0, jumps, 0])
 
     # Now attempt the matching
-    frames_df = _match_fit_to_logger(frames_df,
+    frames_df = _match_fit_to_logger(frames_df, frame_log,
                                      correlation_threshold=correlation_threshold,
                                      minimum_lag=minimum_lag,
                                      clean_df=not debug,
@@ -417,7 +417,7 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
     return cc_dict, lags
 
 
-def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
+def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
                          minimum_lag=5e-3, clean_df=False, verbose=True):
     """Remove bad fit and pick the best of remaining
 
@@ -428,6 +428,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
 
     Args:
         frames_df (pd.DateFrame): Dataframe containing crosscorrelation information
+        frame_log (pd.DateFrame): Dataframe from bonsai logger
         correlation_threshold (float): threshold on the pearson correlation. Anything
                                        below is considered a failure to fit
         minimum_lag (float): Minimum possible lag. Anything below is considered a
@@ -521,6 +522,26 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
         end = time.time()
         print('done (%d s)' % (end - start), flush=True)
 
+    # after the initial match, clean-up parts were the order is wrong
+    # If the match of frame n, M(n) is <= M(n-1) --- so if we don't move or go back in
+    # time --- and frame M(n+1) = M(n-1) + 2, we just have one mistake in the middle
+    # and we can say that M(n) = M(n+1) + 1
+    baddies = np.where(np.diff(frames_df.closest_frame.values) < 1)[0] + 1
+    baddies = baddies[baddies < len(frames_df) - 1]
+    nm1 = frames_df.closest_frame[baddies-1].values
+    np1 = frames_df.closest_frame[baddies+1].values
+    to_replace = baddies[np1-nm1 == 2]
+    # set lag to unknown
+    frames_df.iloc[to_replace]['lag'] = np.nan
+    frames_df.iloc[to_replace]['sync_reason'] = 'Time correction'
+    frames_df.iloc[to_replace]['closest_frame'] = frames_df.closest_frame[
+                                                      to_replace].values + 1
+
+    frames_df['quadcolor'] = np.nan
+    matched = ~np.isnan(frames_df.closest_frame)
+    frames_df.loc[matched, 'quadcolor'] = frame_log.loc[frames_df.loc[matched,
+                                                                      'closest_frame'],
+                                                        'PhotoQuadColor'].values
     if clean_df:
         cols = [c for c in frames_df.columns if (not c.endswith('bef')) and
                 (not c.endswith('center')) and (not c.endswith('aft'))]
