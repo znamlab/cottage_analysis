@@ -391,6 +391,9 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
               for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]]
     # for bef window, we add 1 frame to have the current frame included
     window[0] += int(1/frame_rate * photodiode_sampling)
+    # for center window, we shift by 0.5 frame to center
+    window[1] += int(0.5/frame_rate * photodiode_sampling)
+
     if verbose:
         start = time.time()
         print('Starting crosscorrelation', flush=True)
