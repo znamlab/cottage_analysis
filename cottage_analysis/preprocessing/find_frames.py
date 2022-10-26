@@ -532,11 +532,12 @@ def _match_fit_to_logger(frames_df, frame_log, correlation_threshold=0.8,
     np1 = frames_df.closest_frame[baddies+1].values
     to_replace = baddies[np1-nm1 == 2]
     # set lag to unknown
-    frames_df.iloc[to_replace]['lag'] = np.nan
-    frames_df.iloc[to_replace]['sync_reason'] = 'Time correction'
-    frames_df.iloc[to_replace]['closest_frame'] = frames_df.closest_frame[
-                                                      to_replace].values + 1
+    frames_df.loc[to_replace, 'lag'] = np.nan
+    frames_df.loc[to_replace, 'sync_reason'] = 'time correction'
+    frames_df.loc[to_replace, 'closest_frame'] = frames_df.loc[to_replace - 1,
+                                                               'closest_frame'].values + 1
 
+    # Finally add the color from the sequence
     frames_df['quadcolor'] = np.nan
     matched = ~np.isnan(frames_df.closest_frame)
     frames_df.loc[matched, 'quadcolor'] = frame_log.loc[frames_df.loc[matched,
