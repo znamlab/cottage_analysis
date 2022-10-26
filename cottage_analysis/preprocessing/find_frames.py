@@ -122,22 +122,24 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
     else:
         cc_dict, lags = out
     # add that to the dataframe
+    align = dict(bef='onset_time', center='peak_time', aft='offset_time')
+    func = dict(bef=searchclosest, center=np.searchsorted, aft=np.searchsorted)
+    shift = dict(bef=0, center=1, aft=2)
     for iw, which in enumerate(['bef', 'center', 'aft']):
         frames_df['lag_%s' % which] = lags[cc_dict[which].argmax(axis=1)] / pd_sampling
         frames_df['peak_corr_%s' % which] = cc_dict[which].max(axis=1)
-        # find the closest frame
-        if which in ['bef', 'center']:
-            cl = searchclosest(frame_log[time_column].values,
-                               (frames_df.onset_time - frames_df['lag_%s' %
-                                                                 which]).values)
-        else:
-            # for aft, we match the offset to the begin of the next frame and take the
-            # previous. That avoids mismatch in case of frame skip, where the frame
-            # started a while ago
-            cl = searchclosest(frame_log[time_column].values,
-                               (frames_df.offset_time - frames_df['lag_%s' %
-                                                                  which]).values)
-            cl = np.clip(cl - 1, 0, len(frame_log) - 1)
+        # find the closest frame, looking at onset for before, peak for center and
+        # offset for after.
+        cl = func[which](frame_log[time_column].values,
+                         (frames_df[align[which]] - frames_df['lag_%s' % which]).values)
+        # To lag each element from frames_df by a different lag, I subtract the lag
+        # instead of adding to frame_log
+        # To have the proper number of element I search frame_log in frames_df instead
+        # of the converse. That means that I get the index of frame_log that is >=
+        # frames_df
+        if func[which] == np.searchsorted:
+            cl -= shift[which]
+        cl = np.clip(cl, 0, len(frame_log) - 1)
         frames_df['closest_frame_%s' % which] = cl
         frames_df['quadcolor_%s' % which] = frame_log.iloc[cl][sequence_column].values
 
@@ -153,7 +155,7 @@ def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                                      correlation_threshold=correlation_threshold,
                                      minimum_lag=minimum_lag,
                                      clean_df=not debug,
-                                     verbose=True)
+                                     verbose=verbose)
     extra_out = {}
     if do_plot:
         extra_out['figures'] = fig_dict
@@ -360,11 +362,11 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
     cc_mat = np.zeros((len(window), len(frame_onsets), maxlag * 2)) + np.nan
     for iframe, foi in enumerate(frame_onsets):
         for iw, win in enumerate(window):
-            if (win[0] + foi) < 0:
+            if (win[0] + foi) < 0 and verbose:
                 print('Frame %d at sample %d is too close from start of recording' % (
                     iframe, foi))
                 continue
-            elif (win[1] + foi) > (len(photodiode_signal) - expected_lag):
+            elif (win[1] + foi) > (len(photodiode_signal) - expected_lag) and verbose:
                 print('Frame %d at sample %d is too close from end of recording' % (
                     iframe, foi))
                 continue
@@ -377,8 +379,8 @@ def _crosscorr_befcentaft(frame_onsets, photodiode_time, photodiode_signal, swit
     lags += expected_lag
     if verbose:
         end = time.time()
-        print('done (%d s)' % (end - start))
-    cc_dict = {l:cc_mat[i] for i, l in enumerate(['bef', 'center', 'aft'])}
+        print('done (%d s)' % (end - start), flush=True)
+    cc_dict = {l: cc_mat[i] for i, l in enumerate(['bef', 'center', 'aft'])}
     if debug:
         db_dict = dict(window=window, seq_trace=seq_trace, ideal_pd=ideal_pd)
         return cc_dict, lags, db_dict
@@ -424,7 +426,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
     frames_df.loc[good, 'sync_reason'] = 'consensus'
     if verbose:
         print("Sync'ed %d frames easily. That's %d%% of the recording." % (
-            np.sum(good), np.sum(good) / len(good) * 100))
+            np.sum(good), np.sum(good) / len(good) * 100), flush=True)
     labels = ['bef', 'center', 'aft']
     # first let's get rid of very bad fit
     did_not_fit = frames_df.loc[~good, ['peak_corr_%s' % l for l in labels]].values < \
@@ -478,7 +480,7 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
 
     if verbose:
         end = time.time()
-        print('done (%d s)' % (end - start))
+        print('done (%d s)' % (end - start), flush=True)
 
     if clean_df:
         cols = [c for c in frames_df.columns if (not c.endswith('bef')) and
