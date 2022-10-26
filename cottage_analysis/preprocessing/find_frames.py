@@ -14,7 +14,7 @@ from cottage_analysis.utilities.time_series_analysis import searchclosest
 def sync_by_correlation(frame_log, photodiode_time, photodiode_signal,
                         time_column='HarpTime', sequence_column='PhotoQuadColor',
                         num_frame_to_corr=5, maxlag=50e-3, expected_lag=15e-3,
-                        frame_rate=144, correlation_threshold=0.8,
+                        frame_rate=144, correlation_threshold=0.9,
                         minimum_lag=5e-3, do_plot=False, verbose=True, debug=False):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -498,14 +498,23 @@ def _match_fit_to_logger(frames_df, correlation_threshold=0.8,
                 continue
         else:
             lab = list(labels)
-        # now we are left with a bunch of frames for which we have 2 or 3 reasonable values.
-        # Pick that which is the closest to photodiode
+        # We have 2 or 3 reasonable values.
+        # get rid of the less good correlation
+        corrs = np.array(frames_df.loc[ind, ['peak_corr_%s' % l for l in lab]],
+                         dtype=float)
+        corrs[np.isnan(corrs)] = 0
+        good = np.nanmax(corrs) - corrs < 0.05
+        reason = ['relative peak corr'] if any(~good) else []
+        lab = [l for ok, l in zip(good, lab) if ok]
+        if len(lab) > 1:
+            reason.append('photodiode matching')
+        # Among remaining, pick that which is the closest to photodiode
         val = frames_df.loc[ind, ['quadcolor_%s' % l for l in lab]]
         closest = np.abs(val - frames_df.loc[ind, 'photodiode']).values.argmin()
         lab = lab[closest]
         frames_df.loc[ind, 'lag'] = frames_df.loc[ind, 'lag_%s' % lab]
         frames_df.loc[ind, 'closest_frame'] = frames_df.loc[ind, 'closest_frame_%s' % lab]
-        frames_df.loc[ind, 'sync_reason'] = 'photodiode matching'
+        frames_df.loc[ind, 'sync_reason'] = ' & '.join(reason)
         frames_df.loc[ind, 'crosscorr_picked'] = lab
 
     if verbose:
