@@ -1,7 +1,7 @@
 import warnings
 import numpy as np
 import scipy.signal as scsi
-from numpy.lib.stride_tricks import as_strided, sliding_window_view
+from numpy.lib.stride_tricks import sliding_window_view
 from scipy.signal import butter, sosfiltfilt, bessel
 
 
