@@ -52,12 +52,12 @@ def test_recreate_stimulus():
 
     mouse_pos_cm = harp_messages['rotary_meter'].cumsum() * 100
     frame_times = all_frames[::10]
-    out_shape = (len(frame_times), int(np.diff(elevation_limits) / resolution),
+    out_shape = (len(frame_times[:10000]), int(np.diff(elevation_limits) / resolution),
                  int(np.diff(azimuth_limits) / resolution))
     print(np.prod(out_shape)*2/1024**3)
     output = np.zeros(out_shape, dtype=bool)
 
-    frames = stu.regenerate_frames(frame_times,
+    frames = stu.regenerate_frames(frame_times[:10000],
                                    params,
                                    mouse_pos_cm,
                                    mouse_pos_time=harp_messages['analog_time'],
@@ -65,8 +65,8 @@ def test_recreate_stimulus():
                                    resolution=resolution, sphere_size=10,
                                    azimuth_limits=(-120, 120),
                                    elevation_limits=(-40, 40),
+                                   binarise_single_frame=True,
                                    output=output)
-
     plt.imshow(frames.mean(axis=0), extent=azimuth_limits+elevation_limits)
     plt.show()
     raise NotImplementedError()

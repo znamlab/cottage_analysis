@@ -38,7 +38,7 @@ def trial_structure(param_logger, time_column='HarpTime'):
 def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
                       corridor_df=None, time_column='HarpTime', resolution=0.1,
                       sphere_size=10, azimuth_limits=(-120, 120),
-                      elevation_limits=(-40, 40),
+                      elevation_limits=(-40, 40), binarise_single_frame=True,
                       verbose=True, output_datatype=bool, output=None):
     """Regenerate frames of sphere stimulus
 
@@ -54,6 +54,8 @@ def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
         sphere_size (float): size of a sphere in degrees
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
+        binarise_single_frame (bool): Should single frame be binary or showing sphere
+                                      overlap?
         verbose (bool): Print information
         output_datatype (type): datatype of the output. Use bool to have binary
                                 sphere/no sphere output. int for seeing sphere overlap.
@@ -100,19 +102,20 @@ def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
                                    param_logger[time_column].searchsorted(frame_time)]
         sphere_coordinates = np.array(logger[['X', 'Y', 'Z']], dtype=float)
         sphere_coordinates[:, 2] -= mouse_position[frame_index]
-        output[frame_index] = draw_spheres(*sphere_coordinates.T, corridor.depth,
-                                           resolution=resolution,
-                                           sphere_size=sphere_size,
-                                           azimuth_limits=azimuth_limits,
-                                           elevation_limits=elevation_limits,
-                                           output_datatype=output_datatype,
-                                           output=output[frame_index])
+        single_frame_dtype = bool if binarise_single_frame else int
+
+        output[frame_index] += draw_spheres(*sphere_coordinates.T, corridor.depth,
+                                            resolution=resolution,
+                                            sphere_size=sphere_size,
+                                            azimuth_limits=azimuth_limits,
+                                            elevation_limits=elevation_limits,
+                                            output_datatype=single_frame_dtype)
     return output
 
 
 def draw_spheres(sphere_x, sphere_y, sphere_z, depth, resolution=0.1, sphere_size=10,
-                 azimuth_limits=(-120, 120),
-                 elevation_limits=(-40, 40), output_datatype=bool, output=None):
+                 azimuth_limits=(-120, 120), elevation_limits=(-40, 40), binarise=True,
+                 output_datatype=bool, output=None):
     """Recreate stimulus for a single frame from corrected sphere position
 
     Given the positions of the spheres relative to the mouse and the corridor depth,
