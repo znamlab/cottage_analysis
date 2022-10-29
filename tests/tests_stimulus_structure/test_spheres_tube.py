@@ -11,6 +11,7 @@ from cottage_analysis.preprocessing import find_frames as ff
 from cottage_analysis.io_module import harp
 import pandas as pd
 import flexiznam as flm
+from scipy.sparse import bsr_array
 from cottage_analysis.stimulus_structure import spheres_tube as stu
 from cottage_analysis.utilities.time_series_analysis import searchclosest
 from cottage_analysis.utilities import continuous_data_analysis as cda
@@ -51,13 +52,14 @@ def test_recreate_stimulus():
     all_frames = frame_log['HarpTime']
 
     mouse_pos_cm = harp_messages['rotary_meter'].cumsum() * 100
-    frame_times = all_frames[::10]
-    out_shape = (len(frame_times[:10000]), int(np.diff(elevation_limits) / resolution),
+    frame_times = all_frames[::10][10000:12000]
+    out_shape = (len(frame_times), int(np.diff(elevation_limits) / resolution),
                  int(np.diff(azimuth_limits) / resolution))
-    print(np.prod(out_shape)*2/1024**3)
-    output = np.zeros(out_shape, dtype=bool)
-
-    frames = stu.regenerate_frames(frame_times[:10000],
+    outsize = np.prod(out_shape)*2/1024**3
+    if outsize > 10:
+        print('big image: %.2f Gb' % outsize)
+    output = np.zeros(out_shape, dtype='int16')
+    frames = stu.regenerate_frames(frame_times,
                                    params,
                                    mouse_pos_cm,
                                    mouse_pos_time=harp_messages['analog_time'],
