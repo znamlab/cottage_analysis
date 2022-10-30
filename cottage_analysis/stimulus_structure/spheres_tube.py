@@ -39,7 +39,7 @@ def trial_structure(param_logger, time_column='HarpTime'):
 def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
                       corridor_df=None, time_column='HarpTime', resolution=1,
                       sphere_size=10, azimuth_limits=(-120, 120),
-                      elevation_limits=(-40, 40), binarise_single_frame=True,
+                      elevation_limits=(-40, 40),
                       verbose=True, output_datatype='int16', output=None):
     """Regenerate frames of sphere stimulus
 
@@ -55,8 +55,6 @@ def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
         sphere_size (float): size of a sphere in degrees
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
-        binarise_single_frame (bool): Should single frame be binary or showing sphere
-                                      overlap?
         verbose (bool): Print information
         output_datatype (type): datatype of the output. Use bool to have binary
                                 sphere/no sphere output. int for seeing sphere overlap.
@@ -95,36 +93,38 @@ def regenerate_frames(frame_times, param_logger, mouse_pos_cm, mouse_pos_time,
     valid_frames = valid_frames & (~grey_time)
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
     frame_indices = np.where(valid_frames)[0]
+    # now process the valid frames
+    log_ends = param_logger[time_column].searchsorted(frame_times)
     for frame_index in frame_indices:
         corridor = corridor_df.loc[corridor_index[frame_index]]
-        frame_time = frame_times[frame_index]
-        # keep the spheres appearing from the beginning of the corridor until frame time
-        logger = param_logger.iloc[int(corridor.start_sample):
-                                   param_logger[time_column].searchsorted(frame_time)]
+        logger = param_logger.iloc[int(corridor.start_sample): log_ends[frame_index]]
         sphere_coordinates = np.array(logger[['X', 'Y', 'Z']], dtype=float)
         sphere_coordinates[:, 2] -= mouse_position[frame_index]
-
-        # draw spheres works inplace
-        draw_spheres(*sphere_coordinates.T,
+        draw_spheres(output=output[frame_index],
+                     sphere_x=sphere_coordinates[:, 0],
+                     sphere_y=sphere_coordinates[:, 1],
+                     sphere_z=sphere_coordinates[:, 2],
                      depth=float(corridor.depth),
                      resolution=float(resolution),
                      sphere_size=float(sphere_size),
                      azimuth_limits=np.array(azimuth_limits, dtype=float),
-                     elevation_limits=np.array(elevation_limits, dtype=float),
-                     binarise=bool(binarise_single_frame),
-                     output=output[frame_index])
+                     elevation_limits=np.array(elevation_limits, dtype=float))
     return output
 
 
-def draw_spheres(sphere_x, sphere_y, sphere_z, depth, resolution=0.1,
-                 sphere_size=10, azimuth_limits=(-120, 120), elevation_limits=(-40, 40),
-                 binarise=True, output=None):
+
+
+#@numba.jit(nopython=False)
+def draw_spheres(output, sphere_x, sphere_y, sphere_z, depth, resolution=0.1,
+                 sphere_size=10, azimuth_limits=(-120, 120), elevation_limits=(-40, 40)):
     """Recreate stimulus for a single frame from corrected sphere position
 
     Given the positions of the spheres relative to the mouse and the corridor depth,
     recreate a single frame
 
     Args:
+        output (np.array): Array to write frame. Must be the correct shape to match the
+                           output image. Will be modified in place.
         sphere_x (np.array): X positions for all spheres on the frame
         sphere_y (np.array): Y positions for all spheres on the frame
         sphere_z (np.array): Z positions for all spheres on the frame
@@ -133,9 +133,7 @@ def draw_spheres(sphere_x, sphere_y, sphere_z, depth, resolution=0.1,
         sphere_size (float): size of a sphere in degrees
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
-        binarise (bool): If True, frames will be binary. Otherwise sum of all spheres
-        output (np.array): if provided, must be the correct shape to match the
-                                   output image. Will be modified in place.
+
 
     Returns:
         virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
@@ -150,11 +148,7 @@ def draw_spheres(sphere_x, sphere_y, sphere_z, depth, resolution=0.1,
     # now prepare output
     azi_n = int((azimuth_limits[1]-azimuth_limits[0]) / resolution)
     ele_n = int((elevation_limits[1]-elevation_limits[0]) / resolution)
-    if output is None:
-        virtual_screen = np.zeros((ele_n, azi_n), dtype=numba.int16)
-    else:
-        assert output.shape == (ele_n, azi_n)
-        virtual_screen = output
+    assert output.shape == (ele_n, azi_n)
 
     # find if the sphere is on the screen, that means in the -120 +120 azimuth range
     in_screen = (az_compas > azimuth_limits[0]) & (az_compas < azimuth_limits[1])
@@ -162,29 +156,19 @@ def draw_spheres(sphere_x, sphere_y, sphere_z, depth, resolution=0.1,
     in_screen = in_screen & ((elevation > elevation_limits[0]) &
                              (elevation < elevation_limits[1]))
     if not np.any(in_screen):
-        return virtual_screen
+        return
 
-    # convert sphere in pixel space
-    sphere_on_screen = np.vstack((az_compas[in_screen], elevation[in_screen])).T
-    sphere_on_screen -= np.array([azimuth_limits[0], elevation_limits[0]])
-    sphere_on_screen = sphere_on_screen / resolution
-    size = depth / radius * sphere_size / resolution
-    sphere_max_px = sphere_size / resolution
-    footprint = np.meshgrid(*([np.arange(np.max(sphere_max_px) + 1) -
-                               sphere_max_px / 2] * 2))
-    for center, s in zip(sphere_on_screen, size):
-        # note that np.round will round 0.5 to the nearest even value. We need floor or
-        # ceil to avoid duplicating values
-        az, el = [np.array(np.floor(f + c), dtype='int16') for f, c in
-                  zip(footprint, center)]
-        circle = (footprint[0] ** 2 + footprint[1] ** 2) <= (s / 2) ** 2
-        valid = (az >= 0) & (az < azi_n) & (el >= 0) & (el < ele_n)
-        if binarise:
-            virtual_screen[el[valid], az[valid]] = (circle[valid] |
-                                                    virtual_screen[el[valid], az[valid]])
-        else:
-            virtual_screen[el[valid], az[valid]] += circle[valid]
-    return virtual_screen
+    # convert `in_screen` spheres in pixel space
+    az_on_screen = (az_compas[in_screen] - azimuth_limits[0]) / resolution
+    el_on_screen = (elevation[in_screen] - elevation_limits[0]) / resolution
+    size = depth / radius[in_screen] * sphere_size / resolution
+
+    xx, yy = np.meshgrid(np.arange(azi_n), np.arange(ele_n))
+    xx = np.outer(xx.reshape(-1), np.ones(len(az_on_screen)))
+    yy = np.outer(yy.reshape(-1), np.ones(len(el_on_screen)))
+    ok = (xx - az_on_screen)**2 + (yy - el_on_screen)**2 - size**2
+    ok = ok <= 0
+    output[:] = np.any(ok, axis=1).reshape(output.shape)
 
 
 @numba.njit

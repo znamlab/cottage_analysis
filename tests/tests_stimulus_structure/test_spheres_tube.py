@@ -48,11 +48,11 @@ def test_recreate_stimulus():
     frame_log = pd.read_csv(raw_data / FRAME_LOG)
     params = pd.read_csv(raw_data / PARAMS_LOG)
     rot_log = pd.read_csv(raw_data / ROTARY_LOG)
-    corridor_df = stu.trial_structure(params, time_column='HarpTime')
+    corridor_df = stu.trial_structure(params, time_column=time_column)
     all_frames = frame_log['HarpTime']
 
     mouse_pos_cm = harp_messages['rotary_meter'].cumsum() * 100
-    frame_times = all_frames[::10][10000:12000]
+    frame_times = all_frames[::10][20000:22000]
     out_shape = (len(frame_times), int(np.diff(elevation_limits) / resolution),
                  int(np.diff(azimuth_limits) / resolution))
     outsize = np.prod(out_shape)*2/1024**3
@@ -64,11 +64,10 @@ def test_recreate_stimulus():
                                    mouse_pos_cm,
                                    mouse_pos_time=harp_messages['analog_time'],
                                    corridor_df=corridor_df, time_column='HarpTime',
-                                   resolution=resolution, sphere_size=10,
+                                   resolution=resolution, sphere_size=sphere_size,
                                    azimuth_limits=(-120, 120),
                                    elevation_limits=(-40, 40),
-                                   binarise_single_frame=True,
                                    output=output)
     plt.imshow(frames.mean(axis=0), extent=azimuth_limits+elevation_limits)
     plt.show()
-    raise NotImplementedError()
+
