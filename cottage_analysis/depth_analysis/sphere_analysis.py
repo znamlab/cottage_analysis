@@ -5,6 +5,9 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
                  frame_rate=144, delays=None, spk_per_frame=None, verbose=True):
     """Spike triggered average of reconstructed frames by depth
 
+    Delays, in second, are delay applied to the stimulus sequence. If delay is -100,
+    that means that spikes were triggered by stimulus 100ms before them.
+
     Args:
         corridor_df (pd.DataFrame): Stimulus structure, must have a 'depth',
         'start_time' and 'end_time' columns
@@ -51,8 +54,7 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
                 print('... ... doing delay %d ms' % (delay * 1000))
             shift = int(delay * frame_rate)
             # shift the stim
-            # We want to trigger frame (n-shift) when there is a spike at frame n.
-            shifted_frames = np.clip(frame_index[valid_frames] - shift, 0,
+            shifted_frames = np.clip(frame_index[valid_frames] + shift, 0,
                                      len(frame_times))
             stims = reconstructed_frames[shifted_frames].reshape(len(shifted_frames), -1)
             sta = np.dot(stims.T, spk_per_frame_at_depth[valid_frames])
