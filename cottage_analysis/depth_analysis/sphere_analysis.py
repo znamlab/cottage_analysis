@@ -29,7 +29,7 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
         spk_per_frame = np.ones(reconstructed_frames.shape[0])
 
     depths = np.sort(corridor_df.depth.unique())
-    sta = np.zeros((len(depths), len(delays), *reconstructed_frames.shape[1:]))
+    full_sta = np.zeros((len(depths), len(delays), *reconstructed_frames.shape[1:]))
     nspks = np.zeros(len(depths))
 
     for idepth, depth in enumerate(depths):
@@ -57,5 +57,5 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
             stims = reconstructed_frames[shifted_frames].reshape(len(shifted_frames), -1)
             sta = np.dot(stims.T, spk_per_frame_at_depth[valid_frames])
             sta = sta.reshape(reconstructed_frames.shape[1:])
-            sta[idepth, idelay] = sta
-    return sta, nspks, depths, delays
+            full_sta[idepth, idelay] = sta
+    return full_sta, nspks, depths, delays
