@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def sta_by_group(corridor_df, reconstructed_frames, frame_times,
+def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
                  frame_rate=144, delays=None, spk_per_frame=None, verbose=True):
     """Spike triggered average of reconstructed frames by depth
 
