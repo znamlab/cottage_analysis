@@ -20,8 +20,15 @@ With the `ml` I should have all I need, but tensorflow was throwing lots of libr
 
 ```
 conda install -c conda-forge cudnn=8.1 cudatoolkit=11.2
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/dlc_nogui/lib/
 ```
 
+
+Add the `conda` part of DLC environment.yml, before installing DLC per se
+
+```
+conda install pip ipython nb_conda jupyter ffmpeg
+```
 
 ### Camp version
 Attempt #5
