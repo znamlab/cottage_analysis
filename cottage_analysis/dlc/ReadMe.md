@@ -28,7 +28,11 @@ Add the `conda` part of DLC environment.yml, before installing DLC per se
 
 ```
 conda install pip ipython nb_conda jupyter ffmpeg
+pip install deeplabcut
 ```
+
+Run `test_tf_install.py` to check that the GPU is detected as expected. See `slurm_train_dlc.sh` for example slurm with 
+`ml` and `export`.
 
 ### Camp version
 Attempt #5
