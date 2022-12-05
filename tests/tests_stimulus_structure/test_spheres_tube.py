@@ -59,6 +59,7 @@ def test_recreate_stimulus():
     if outsize > 10:
         print('big image: %.2f Gb' % outsize)
     output = np.zeros(out_shape, dtype='int16')
+    start_time = time.time()
     frames = stu.regenerate_frames(frame_times,
                                    params,
                                    mouse_pos_cm,
@@ -68,6 +69,12 @@ def test_recreate_stimulus():
                                    azimuth_limits=(-120, 120),
                                    elevation_limits=(-40, 40),
                                    output=output)
+    end_time = time.time()
+    print('That took %s s' % (end_time-start_time))
+    fig = plt.figure()
     plt.imshow(frames.mean(axis=0), extent=azimuth_limits+elevation_limits)
-    plt.show()
+    fig.savefig(str(p_msg.with_name('temp.png')))
 
+
+if __name__ == '__main__':
+    test_recreate_stimulus()
