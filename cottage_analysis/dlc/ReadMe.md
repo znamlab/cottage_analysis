@@ -4,7 +4,26 @@
 
 On CAMP I tried to run their conda env files and it failed. Instead I did:
 
+### Nemo update
 
+The nodes have been updated for CUDA 11. Also, it seems better to have an environment with no GUI support for training/inference in `sbatch` and a separate envoriment for GUI stuff. (https://github.com/DeepLabCut/DeepLabCut/issues/1583)
+
+New install:
+
+```
+ml cuDNN/8.1.1.33-CUDA-11.2.1
+conda create -n dlc_nogui -c conda-forge python=3.8
+conda activate dlc_nogui
+```
+
+With the `ml` I should have all I need, but tensorflow was throwing lots of library warnings, so I also install the conda version.
+
+```
+conda install -c conda-forge cudnn=8.1 cudatoolkit=11.2
+```
+
+
+### Camp version
 Attempt #5
 
 ```
