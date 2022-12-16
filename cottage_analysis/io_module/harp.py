@@ -1,11 +1,24 @@
 """
 Functions used to manipulate harp data
+
+The main entry points are:
+ - load_harp: load or
+ - read_message
+
+The rest is lower level stuff to handle harp protocol
 """
 
 import struct
+import warnings
+from pathlib import Path
+
 import numpy as np
 import mmap
 import pandas as pd
+
+ENCODER_CPR = 4096
+WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
+
 
 # usefull for harp messages:
 MESSAGE_TYPE = {1: 'READ', 2: 'WRITE', 3: 'EVENT', 9: 'READ_ERROR', 10: 'WRITE_ERROR'}
@@ -37,28 +50,86 @@ _PAYLOAD_STRUCT = {1: 'B',  # - T U8 : Unsigned 8 bits
 _PAYLOAD_STRUCT = {k: '<' + v for k, v in _PAYLOAD_STRUCT.items()}
 
 
-def _validate_arguments(valid_addresses, valid_msg_type):
-    if valid_msg_type is not None:
-        if isinstance(valid_msg_type, str) or isinstance(valid_msg_type, int):
-            valid_msg_type = valid_msg_type,
-        elif not hasattr(valid_msg_type, '__iter__'):
-            raise AttributeError('valid_msg_type must be a sequence of int or str')
-        valid_msg = []
-        TYPE_MESSAGE = {v: k for k, v in MESSAGE_TYPE.items()}
-        for msg_type in valid_msg_type:
-            if isinstance(msg_type, str):
-                valid_msg.append(TYPE_MESSAGE[msg_type.upper()])
-            elif isinstance(msg_type, int):
-                assert msg_type in MESSAGE_TYPE.keys()
-                valid_msg.append(msg_type)
-            else:
-                raise AttributeError('valid_msg_type must be in %s' % TYPE_MESSAGE.keys())
-        valid_msg_type = valid_msg
+def load_harp(harp_bin, reward_port=36, wheel_diameter=WHEEL_DIAMETER,
+              ecoder_cpr=ENCODER_CPR,  inverse_rotary=True,
+              di_names=('lick_detection', 'onix_clock', 'di2_encoder_initial_state')):
+    """Read harp messages and format output
 
-    if valid_addresses is not None:
-        if not hasattr(valid_addresses, '__contains__'):
-            valid_addresses = int(valid_addresses),
-    return valid_addresses, valid_msg_type
+    This loads all the messages and filter relevant inputs, renaming them if needed.
+
+    Args:
+        harp_bin (str or Path): Path to the raw .bin harp file
+        reward_port (int): Port where the valve for reward is connected
+        wheel_diameter (float): Diameter of the wheel (in m or cm, output will have
+                                same unit)
+        ecoder_cpr (int): Number of tick per turn. Used to go from tick to distance
+        inverse_rotary (bool): If True, the encoder counts decreases when the mouse
+                               goes forward. False otherwise
+        di_names ([str, str, str]): A list or tuple of three str with the human
+                                    readable name for the 3 DIs
+
+    Returns:
+        harp_output (pd.DataFrame)
+    """
+    # Harp
+    harp_message = read_message(path_to_file=harp_bin)
+    harp_message = pd.DataFrame(harp_message)
+    output = dict()
+
+    # Each message has a message type that can be 'READ', 'WRITE', 'EVENT', 'READ_ERROR',
+    # or 'WRITE_ERROR'.
+    # We don't want error
+    msg_types = harp_message.msg_type.unique()
+    assert not np.any([m.endswith('ERROR') for m in msg_types])
+    # READ events are the initial config loading at startup. We don't care
+    harp_message = harp_message[harp_message.msg_type != 'READ']
+
+    # WRITE messages are mostly the rewards.
+    # The reward port is toggled by writing to register 36, let's focus on those events
+    reward_message = harp_message[harp_message.address == reward_port]
+    output['reward_times'] = reward_message.timestamp_s.values
+
+    # EVENT messages are analog and digital input.
+    # Analog are the photodiode and the rotary encoder, both on address 44
+    analog = harp_message[harp_message.address == 44]
+    harp_analog_times = analog.timestamp_s.values
+    analog = np.vstack(analog.data)
+
+    output['analog_time'] = harp_analog_times
+    output['rotary'] = analog[:, 1]
+    output['photodiode'] = analog[:, 0]
+
+    # Digital input is on address 32, the data is 2 when the trigger is high
+    di = harp_message[harp_message.address == 32]
+    if len(di):
+        bits = np.array(np.hstack(di.data.values), dtype='uint8')
+        bits = np.unpackbits(bits, bitorder='little')
+        bits = bits.reshape((len(di), 8))
+
+        # keep only digital input
+        if di_names is not None:
+            names = list(di_names)
+            if len(names) != 3:
+                raise IOError('Behaviour devices have 3 DIs, provide 3 names')
+            bits = {names[n]: bits[:, n] for n in range(3)}
+            output.update(bits)
+            output['digital_time'] = di.timestamp_s.values
+    else:
+        warnings.warn('Could not find any digital input!')
+
+    # make a speed out of rotary increment
+    mvt = np.diff(output['rotary'])
+    rollover = np.abs(mvt) > 40000
+    mvt[rollover] -= 2 ** 16 * np.sign(mvt[rollover])
+    # The rotary count decreases when the mouse goes forward
+    if inverse_rotary:
+        mvt *= -1
+    # 0-padding to keep constant length
+    dst = np.array(np.hstack([0, mvt]), dtype=float)
+    wheel_gain = wheel_diameter / 2 * np.pi * 2 / ecoder_cpr
+    output['rotary_meter'] = dst * wheel_gain
+
+    return output
 
 
 def read_message(path_to_file, verbose=True, valid_addresses=None, valid_msg_type=None,
@@ -187,3 +258,29 @@ class Logger(object):
         msg = ', '.join('%d messages %s' % (num, which)
                         for which, num in self.what.items())
         print(erase_line + msg)
+
+
+def _validate_arguments(valid_addresses, valid_msg_type):
+    if valid_msg_type is not None:
+        if isinstance(valid_msg_type, str) or isinstance(valid_msg_type, int):
+            valid_msg_type = valid_msg_type,
+        elif not hasattr(valid_msg_type, '__iter__'):
+            raise AttributeError('valid_msg_type must be a sequence of int or str')
+        valid_msg = []
+        TYPE_MESSAGE = {v: k for k, v in MESSAGE_TYPE.items()}
+        for msg_type in valid_msg_type:
+            if isinstance(msg_type, str):
+                valid_msg.append(TYPE_MESSAGE[msg_type.upper()])
+            elif isinstance(msg_type, int):
+                assert msg_type in MESSAGE_TYPE.keys()
+                valid_msg.append(msg_type)
+            else:
+                raise AttributeError('valid_msg_type must be in %s' % TYPE_MESSAGE.keys())
+        valid_msg_type = valid_msg
+
+    if valid_addresses is not None:
+        if not hasattr(valid_addresses, '__contains__'):
+            valid_addresses = int(valid_addresses),
+    return valid_addresses, valid_msg_type
+
+

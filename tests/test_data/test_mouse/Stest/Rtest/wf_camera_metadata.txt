@@ -1,4 +1,0 @@
-Width: 1677
-Height: 1434
-Depth: 16
-

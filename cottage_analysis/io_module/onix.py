@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import flexiznam as flm
-from cottage_analysis.io_module import harp
+from cottage_analysis.io_module.harp import load_harp
 
 ONIX_DATA_FORMAT = dict(ephys='uint16',
                         clock='uint64',
@@ -13,15 +13,16 @@ BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
                                DI1='oni_clock_di',
                                DI2='hf_cam_trig')
 ONIX_SAMPLING = 250e6
-ENCODER_CPR = 4096
-WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
+
 
 RAW = Path(flm.PARAMETERS['data_root']['raw'])
 PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
 
 
 def load_onix_recording(project, mouse, session, vis_stim_recording=None,
-                        onix_recording=None, allow_reload=True):
+                        onix_recording=None, allow_reload=True,
+                        breakout_di_names=BREAKOUT_DIGITAL_INPUTS,
+                        raw_folder=RAW, processed_folder=PROCESSED):
     """Main function calling all the subfunctions
 
     Args:
@@ -31,15 +32,16 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         vis_stim_recording (str): recording containing visual stimulation data
         onix_recording (str): recording containing onix data
         allow_reload (bool): If True (default) will reload processed data instead of
-        raw when available
+                             raw when available
+        breakout_di_names (dict): Names of DI on breakout board, e.g. {'DI0': 'lick'}
 
     Returns:
         data (dict): a dictionary with one element per datasource
     """
-    session_folder = RAW / project / mouse / session
+    session_folder = raw_folder / project / mouse / session
     assert session_folder.is_dir()
 
-    processed_folder = PROCESSED / project / mouse / session
+    processed_folder = processed_folder / project / mouse / session
     out = dict()
 
     if vis_stim_recording is not None:
@@ -61,12 +63,16 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
         # Load onix AI/DI
         breakout_data = load_breakout(session_folder / onix_recording)
         # use human readable names
-        breakout_data['dio'].rename(columns=BREAKOUT_DIGITAL_INPUTS, inplace=True)
+        breakout_data['dio'].rename(columns=breakout_di_names, inplace=True)
         out['breakout_data'] = breakout_data
-
-        out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
-        out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
-
+        try:
+            out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
+        except IOError:
+            print('Could not load RHD2164 data')
+        try:
+            out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
+        except IOError:
+            print('Could not load TS4131 data')
     return out
 
 
@@ -78,59 +84,6 @@ def load_vis_stim_log(folder):
         out[what] = pd.read_csv(csv_file)
 
     return out
-
-def load_harp(harp_bin):
-    # Harp
-    harp_message = harp.read_message(path_to_file=harp_bin)
-    harp_message = pd.DataFrame(harp_message)
-    output = dict()
-
-    # Each message has a message type that can be 'READ', 'WRITE', 'EVENT', 'READ_ERROR',
-    # or 'WRITE_ERROR'.
-    # We don't want error
-    msg_types = harp_message.msg_type.unique()
-    assert not np.any([m.endswith('ERROR') for m in msg_types])
-    # READ events are the initial config loading at startup. We don't care
-    harp_message = harp_message[harp_message.msg_type != 'READ']
-
-    # WRITE messages are mostly the rewards.
-    # The reward port is toggled by writing to register 36, let's focus on those events
-    reward_message = harp_message[harp_message.address == 36]
-    output['reward_times'] = reward_message.timestamp_s.values
-
-    # EVENT messages are analog and digital input.
-    # Analog are the photodiode and the rotary encoder, both on address 44
-    analog = harp_message[harp_message.address == 44]
-    harp_analog_times = analog.timestamp_s.values
-    analog = np.vstack(analog.data)
-
-    output['analog_time'] = harp_analog_times
-    output['rotary'] = analog[:, 1]
-    output['photodiode'] = analog[:, 0]
-
-    # Digital input is on address 32, the data is 2 when the trigger is high
-    di = harp_message[harp_message.address == 32]
-    bits = np.array(np.hstack(di.data.values), dtype='uint8')
-    bits = np.unpackbits(bits, bitorder='little')
-    bits = bits.reshape((len(di), 8))
-
-    # keep only digital input
-    names = ['lick_detection', 'onix_clock', 'di2_encoder_initial_state']
-    bits = {names[n]: bits[:, n] for n in range(3)}
-    output.update(bits)
-    output['digital_time'] = di.timestamp_s.values
-
-    # make a speed out of rotary increment
-    mvt = np.diff(output['rotary'])
-    rollover = np.abs(mvt) > 40000
-    mvt[rollover] -= 2 ** 16 * np.sign(mvt[rollover])
-    # The rotary count decreases when the mouse goes forward
-    mvt *= -1
-    # 0-padding to keep constant length
-    dst = np.array(np.hstack([0, mvt]), dtype=float)
-    wheel_gain = WHEEL_DIAMETER / 2 * np.pi * 2 / ENCODER_CPR
-    output['rotary_meter'] = dst * wheel_gain
-    return output
 
 
 def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):

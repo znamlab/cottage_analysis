@@ -1,5 +1,5 @@
 import os
-os.environ['DLClight'] = 'True'
+# os.environ['DLClight'] = 'True'
 import sys
 import matplotlib
 matplotlib.use('Agg')  # make sure we use a backend that can run in headless mode
@@ -16,7 +16,7 @@ if __name__ == "__main__":
         # should be on camp
         ROOT_DIR = "/camp/lab/znamenskiyp/home/"
 
-    model_folder = "shared/projects/DLC_models/twoP_right_cam-Antonin-2021-04-23"
+    model_folder = "shared/projects/DLC_models/wehrcam_eye_tracking_2022"
     config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
 
     import deeplabcut

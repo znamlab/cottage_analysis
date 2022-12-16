@@ -14,10 +14,30 @@ Find frames for visual stimulation based on photodiode signal
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
-import os
-import pickle
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, butter, sosfiltfilt
 
+
+def find_pulses(data, sampling, lowcut=1, highcut=400):
+    """Find square like pulses in continuous signal
+
+    Useful for instance to find frame pulses in the photodiode
+    Args:
+        data (np.array): signal to process
+        sampling (float): sampling frequency, in Hz
+        lowcut (float or None): cutoff frequency for highpass filter
+        highcut (float or None): cutoff frequency for lowpass filter
+
+    Returns:
+
+    """
+    n = int(lowcut is not None) * 2 + int(highcut is not None)
+    filter_type = [None, 'lowpass', 'highpass', 'bandpass'][n]
+    if filter_type is not None:
+        freq = [None, highcut / sampling, lowcut / sampling,
+                (lowcut / sampling, highcut / sampling)][n]
+        sos = butter(N=4, Wn=freq, btype=filter_type, output='sos')
+        fdata = sosfiltfilt(sos, data)
+    raise NotImplementedError
 
 
 # %%
@@ -104,38 +124,46 @@ def find_VS_frames(photodiode_df, frame_rate=144, upper_thr=200, lower_thr=50,
     return detect_frames
 
 
-
-def find_imaging_frames(harp_message, frame_number, exposure_time=0.015, register_address=32, exposure_time_tolerance=0.0002):
+def find_imaging_frames(harp_message, frame_number, exposure_time=0.015,
+                        register_address=32, exposure_time_tolerance=0.0002):
     # exposure_time for widefield: 0.015, for 2p: 0.0324
     # exposure_time_tolerance for widefield: 0.0002, for 2p: 0.001
     frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
-    frame_triggers = frame_triggers.rename(columns={"Timestamp": "HarpTime"}, inplace=False)
+    frame_triggers = frame_triggers.rename(columns={"Timestamp": "HarpTime"},
+                                           inplace=False)
     frame_triggers['HarpTime_diff'] = frame_triggers.HarpTime.diff()
 
     frame_triggers['Exposure'] = np.nan
     frame_triggers.Exposure.loc[
-        frame_triggers[(np.abs(frame_triggers['HarpTime_diff'] - exposure_time) <= exposure_time_tolerance)].index.values] = 1
+        frame_triggers[(np.abs(frame_triggers[
+                                   'HarpTime_diff'] - exposure_time) <= exposure_time_tolerance)].index.values] = 1
     frame_triggers = frame_triggers[frame_triggers.Exposure == 1]
     frame_triggers['ImagingFrame'] = np.arange(len(frame_triggers))
     if len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number:
         frame_triggers = frame_triggers
     elif ((len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 1):
-        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
-        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+        print(('ImagingFrames in video: ' + str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: ' + str(
+            len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
         frame_triggers = frame_triggers[:-1]
-        print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!',flush=True)
-        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
-        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+        print('WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!',
+              flush=True)
+        print(('ImagingFrames in video: ' + str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: ' + str(
+            len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
     elif ((len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 2):
-        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
-        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+        print(('ImagingFrames in video: ' + str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: ' + str(
+            len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
         frame_triggers = frame_triggers[:-2]
-        print('WARNING: SAVED VIDEO FRAME IS 2 FRAMES LESS THAN FRAME TRIGGERS!!!',flush=True)
-        print(('ImagingFrames in video: '+str(frame_number)), flush=True)
-        print(('ImagingFrame triggers: '+str(len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
+        print('WARNING: SAVED VIDEO FRAME IS 2 FRAMES LESS THAN FRAME TRIGGERS!!!',
+              flush=True)
+        print(('ImagingFrames in video: ' + str(frame_number)), flush=True)
+        print(('ImagingFrame triggers: ' + str(
+            len(frame_triggers[frame_triggers.Exposure == 1]))), flush=True)
     else:
-        print('ERROR: FRAME NUMBER NOT CORRECT!!!',flush=True)
-    frame_triggers = frame_triggers.drop(columns=['HarpTime_diff', 'Exposure', 'RegisterAddress'])
+        print('ERROR: FRAME NUMBER NOT CORRECT!!!', flush=True)
+    frame_triggers = frame_triggers.drop(
+        columns=['HarpTime_diff', 'Exposure', 'RegisterAddress'])
 
     return frame_triggers
-
