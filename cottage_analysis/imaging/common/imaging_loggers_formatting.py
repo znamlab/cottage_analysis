@@ -76,6 +76,25 @@ def format_camera_timestamps(cam_timestamps):
     return formatted_df
 
 
+def format_VS_photodiode_logger(photodiode_file):
+    '''
+    Format photodiode logger.
+
+    :param str photodiode_filepath: Filepath for photodiode logger
+    :return:
+    pd.DataFrame formatted_df: formatted dataframe for photodiode logger
+    '''
+
+    VS_photodiode_logger = pd.read_csv(photodiode_file, sep=',')
+    formatted_df = pd.DataFrame(columns=['HarpTime', 'Photodiode'])
+    formatted_df['HarpTime'] = VS_photodiode_logger['HarpTime']
+    formatted_df['Photodiode'] = VS_photodiode_logger['Photodiode']
+
+    formatted_df['ElapsedTime'] = VS_photodiode_logger['HarpTime'] - VS_photodiode_logger.loc[0, 'HarpTime']
+
+    # Returns
+    return formatted_df
+
 
 def format_VS_frame_logger(VS_frame_logger):
     '''
@@ -104,49 +123,96 @@ def format_VS_frame_logger(VS_frame_logger):
     return formatted_df
     
 
-
-def format_VS_param_logger(VS_param_logger, VS_frame_logger, which_protocol):
+def format_VS_param_logger(VS_param_file, which_protocol):
     '''
-    Format dataframe for VisStim param_logger
-    df columns = 'HarpTime','ElapsedTime' (calculated from the start of frame logger!!), Params...
-    
-    Parameters
-    ----------
-    VS_param_logger : Dataframe
-        Loaded dataframe from VS param_logger.csv
-    VS_frame_logger : Dataframe
-        Loaded dataframe from VS frame_logger.csv
-    which_protocol: string
-        The Vis-Stim protocol used ('Retinotopic','Fourier')
+    Format visual stimulation parameter logger.
 
-    Returns
-    -------
-    formatted_df : Dataframe
-        Formatted dataframe for VS_param_logger. !!ElapsedTime is already alighed to the starting of the frame logger
-
+    :param str VS_param_file: Filepath for vis-stim param logger
+    :param str which_protocol: 'SpherePermTubeReward', 'Retinotopy', 'Fourier', 'Episodic', 'SphereSparseNoise'
+    :return:
+    pd.DataFrame formatted_df: formatted dataframe for vis-stim parameter logger
     '''
-    formatted_df = pd.DataFrame(columns=['HarpTime','ElapsedTime'])  
+    VS_param_logger = pd.read_csv(VS_param_file, sep=',')
+    formatted_df = pd.DataFrame(columns=['HarpTime'])
 
-    formatted_df['HarpTime'] =  VS_param_logger['HarpTime']   
-    formatted_df['ElapsedTime'] = VS_param_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
-    
-    # Assign params according to stimulation protocol 
-    if which_protocol == 'Retinotopic':
-        formatted_df['Xdeg'] =  VS_param_logger['Xdeg']   
-        formatted_df['Ydeg'] =  VS_param_logger['Ydeg']   
-        formatted_df['Angle'] =  VS_param_logger['Angle']
-        
+    formatted_df['HarpTime'] = VS_param_logger['HarpTime']
+    # formatted_df['ElapsedTime'] = VS_param_logger['HarpTime'] - VS_frame_logger.loc[0,'HarpTime']
+
+    # Assign params according to stimulation protocol
+    if which_protocol == 'Retinotopy':
+        formatted_df['Xdeg'] = VS_param_logger['Xdeg']
+        formatted_df['Ydeg'] = VS_param_logger['Ydeg']
+        formatted_df['Angle'] = VS_param_logger['Angle']
+
     elif which_protocol == 'Fourier':
-        formatted_df['BarID'] =  VS_param_logger['BarID']   
-        formatted_df['LocationX'] =  VS_param_logger['LocationX']   
-        formatted_df['LocationY'] =  VS_param_logger['LocationY'] 
-        formatted_df['Angle'] =  VS_param_logger['Angle']  
-    
+        formatted_df['BarID'] = VS_param_logger['BarID']
+        formatted_df['LocationX'] = VS_param_logger['LocationX']
+        formatted_df['LocationY'] = VS_param_logger['LocationY']
+        formatted_df['Angle'] = VS_param_logger['Angle']
+
     elif which_protocol == 'Episodic':
-        formatted_df['StimID'] =  VS_param_logger['StimID']   
-        formatted_df['Azimuth'] =  VS_param_logger['Azimuth']   
-        formatted_df['Elevation'] =  VS_param_logger['Elevation'] 
-        formatted_df['Angle'] =  VS_param_logger['Angle']  
-    
+        formatted_df['StimID'] = VS_param_logger['StimID']
+        formatted_df['Azimuth'] = VS_param_logger['Azimuth']
+        formatted_df['Elevation'] = VS_param_logger['Elevation']
+        formatted_df['Angle'] = VS_param_logger['Angle']
+
+    elif which_protocol == 'SphereSparseNoise':
+        formatted_df['SphereID'] = VS_param_logger['SphereID']
+        formatted_df['Depth'] = VS_param_logger['Depth']
+        formatted_df['Azimuth'] = VS_param_logger['Azimuth']
+        formatted_df['Elevation'] = VS_param_logger['Elevation']
+
+    elif which_protocol == 'SpheresPermTubeReward':
+        formatted_df['SphereID'] = VS_param_logger['SphereID']
+        formatted_df['Depth'] = VS_param_logger['Radius']
+        formatted_df['Theta'] = VS_param_logger['Theta']
+        formatted_df['Z0'] = VS_param_logger['Z0']
+        formatted_df['X'] = VS_param_logger['X']
+        formatted_df['Y'] = VS_param_logger['Y']
+
+    elif which_protocol == 'SpheresPermTubeRewardPlayback':
+        formatted_df['SphereID'] = VS_param_logger['SphereID']
+        formatted_df['Depth'] = VS_param_logger['Depth']
+        formatted_df['Theta'] = VS_param_logger['Theta']
+        formatted_df['Z0'] = VS_param_logger['Z0']
+        formatted_df['X'] = VS_param_logger['X']
+        formatted_df['Y'] = VS_param_logger['Y']
+
     # Returns
     return formatted_df
+
+
+def format_img_frame_logger(harpmessage_file, register_address=32):
+    '''
+    Format imaging frame trigger logger (harpmessage).
+
+    :param str harpmessage_file: filepath for harpmessage
+    :param int register_address: at which address was the frame trigger registered. Default 32.
+    :return: pd.DataFrame formatted_df
+    '''
+    harp_message = pd.read_csv(harpmessage_file, sep=',', usecols=['RegisterAddress', 'Timestamp', 'DataElement0'])
+    harp_message = harp_message[harp_message.RegisterAddress == register_address]
+
+    # Find 8 bit correspondance to different channels because the lick signal is also registered on the same channel
+    data = np.array(range(8), dtype='uint8')
+    bits = np.unpackbits(data, bitorder='little')
+    bits = bits.reshape((len(data), 8))
+
+    if len(harp_message['DataElement0'].unique()) == 2:
+        formatted_df = harp_message
+    elif len(harp_message['DataElement0'].unique()) == 4:
+        if (0 in harp_message['DataElement0'].unique()):
+            rows = [0, 1, 2, 3]
+        elif (4 in harp_message['DataElement0'].unique()):
+            rows = [4, 5, 6, 7]
+        for iport in range(2):
+            harp_message['Port' + str(iport)] = np.nan
+            for irow in rows:
+                harp_message.loc[harp_message.DataElement0 == irow, 'Port' + str(iport)] = bits[irow, iport]
+
+        formatted_df = harp_message[harp_message.Port0.diff() != 0]
+        formatted_df.rename(columns={'Timestamp': 'HarpTime'}, inplace=True)
+
+    return formatted_df
+
+
