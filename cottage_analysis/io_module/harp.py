@@ -52,7 +52,7 @@ _PAYLOAD_STRUCT = {k: '<' + v for k, v in _PAYLOAD_STRUCT.items()}
 
 def load_harp(harp_bin, reward_port=36, wheel_diameter=WHEEL_DIAMETER,
               ecoder_cpr=ENCODER_CPR,  inverse_rotary=True,
-              di_names=('lick_detection', 'onix_clock', 'di2_encoder_initial_state')):
+              di_names=('lick_detection', 'onix_clock', 'di2_encoder_initial_state'), verbose=True):
     """Read harp messages and format output
 
     This loads all the messages and filter relevant inputs, renaming them if needed.
@@ -72,7 +72,7 @@ def load_harp(harp_bin, reward_port=36, wheel_diameter=WHEEL_DIAMETER,
         harp_output (pd.DataFrame)
     """
     # Harp
-    harp_message = read_message(path_to_file=harp_bin)
+    harp_message = read_message(path_to_file=harp_bin, verbose=verbose)
     harp_message = pd.DataFrame(harp_message)
     output = dict()
 
