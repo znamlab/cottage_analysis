@@ -22,12 +22,14 @@ import matplotlib
 from matplotlib import cm
 
 import cottage_analysis as cott
-from cottage_analysis.depth_analysis.filepath import *
-from cottage_analysis.imaging.common import *
+from cottage_analysis.depth_analysis.filepath import generate_filepaths
+from cottage_analysis.imaging.common import find_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 from cottage_analysis.stimulus_structure import sphere_structure as vis_stim_structure
 from cottage_analysis.depth_analysis.plotting.plotting_utils import *
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
+from cottage_analysis.depth_analysis.depth_preprocess.process_trace import *
+
 
 
 def main(project, mouse, session, protocol):
@@ -39,16 +41,14 @@ def main(project, mouse, session, protocol):
     :return: None
     '''
 
-    # # Test commandline import
-    # print(sys.argv)
     # ----- SETUPS -----
     rawdata_root = '/camp/lab/znamenskiyp/data/instruments/raw_data/projects/'
     root = '/camp/lab/znamenskiyp/home/shared/projects/'
     # depth_list = [0.06, 0.19, 0.6, 1.9, 6]
-    choose_trials = 50
+    choose_trials = 13
     frame_rate = 15
     speed_thr_cal = 0.2  #m/s, threshold for running speed when calculating depth neurons
-    calculate_dFF = True
+    calculate_dFF = False
     if 'Playback' in protocol:
         folder_no = 1
     else:
@@ -63,7 +63,6 @@ def main(project, mouse, session, protocol):
                                                                                                            protocol=protocol,
                                                                                                            rawdata_root=rawdata_root,
                                                                                                            root=root)
-    print(rawdata_folder, protocol_folder, analysis_folder, suite2p_folder, trace_folder, flush=True)
     if not os.path.exists(analysis_folder+'plane0/'):
         os.makedirs(analysis_folder+'plane0/')
 
@@ -74,7 +73,6 @@ def main(project, mouse, session, protocol):
                                                                                                            protocol=protocol.replace('Playback',''),
                                                                                                            rawdata_root=rawdata_root,
                                                                                                            root=root)
-        print(rawdata_folder_closeloop, protocol_folder_closeloop, analysis_folder_closeloop, suite2p_folder_closeloop, trace_folder_closeloop, flush=True)
         assert(os.path.exists(analysis_folder_closeloop+'plane0/'))
     print('---STEP 1 FINISHED.---', '\n', flush=True)
     
@@ -93,7 +91,7 @@ def main(project, mouse, session, protocol):
     # spks = np.load(trace_folder + 'spks.npy', allow_pickle=True)
 
     # The ROI no. for all cells (excluding non-cells)
-    which_rois = (np.arange(F.shape[0]))[iscell.astype('bool')]
+    which_rois = (np.arange(Fast.shape[0]))[iscell.astype('bool')]
     
     # Calculate dF/F
     if calculate_dFF:
@@ -109,7 +107,7 @@ def main(project, mouse, session, protocol):
     
     
     # -----STEP3: Align timestamps of visual stimulation loggers and save as img_VS.pickle file-----
-    # !!! FIX THIS STEP!! THE NEW PHOTODIODE FRAME FINDER IS NOT USED YET FOR TRIAL-BASED ANALYSIS
+    # This is trial-based analysis and has not included screen frame no.
     print('---START STEP 3---', '\n', 'Align timestamps for all loggers...', flush=True)
     # photodiode_file = generate_filepaths.generate_logger_path(project=project,
     #                                                           mouse=mouse,
@@ -137,7 +135,6 @@ def main(project, mouse, session, protocol):
                                                               root=root,
                                                               logger_name='NewParams')
     VS_param_logger = format_loggers.format_VS_param_logger(VS_param_file, which_protocol=protocol)
-    depth_list = VS_param_logger['Depth'].unique().tolist()
 
     # Load frame trigger logger and find frame triggers
     harpmessage_file = generate_filepaths.generate_logger_path(project=project,
@@ -174,6 +171,12 @@ def main(project, mouse, session, protocol):
     img_VS.MouseZ = img_VS.MouseZ / 100  # Convert cm to m
     img_VS.Depth = img_VS.Depth / 100  # Convert cm to m
     img_VS.Z0 = img_VS.Z0 / 100  # Convert cm to m
+    
+    depth_list = img_VS['Depth'].unique()
+    depth_list = np.round(depth_list,2)
+    depth_list = depth_list[~np.isnan(depth_list)].tolist()
+    depth_list.remove(-99.99)
+    depth_list.sort()
 
     # print(img_VS[:20], flush=True)
     # Save img_VS
@@ -239,7 +242,6 @@ def main(project, mouse, session, protocol):
 
     max_depths = np.ones(len(depth_neurons)) * 9999  # index no. from depth_list indicating the max depth of each depth neuron
     max_depths_values = np.ones(len(depth_neurons)) * 9999  # depth value = the max depth of each depth neuron
-    max_depths_gaussian_fit = np.zeros((len(depth_neurons), 4))  # gaussian fit of log(preferred_depth), ncells x 3 ([a,x0,sigma]), x0=log(preferred_depth)
 
     for iroi in range(len(depth_neurons)):
         roi = depth_neurons[iroi]
@@ -251,16 +253,9 @@ def main(project, mouse, session, protocol):
         max_depths[iroi] = max_depth
         max_depths_values[iroi] = depth_list[max_depth[0]]
 
-        x = np.log(np.repeat(np.array(depth_list), trace_arr_mean_eachtrial.shape[1]))
-        (a, x0, sigma, b), pcov = curve_fit(gaussian_func, x, trace_arr_mean_eachtrial.flatten(),
-                                         p0=[1, np.log(depth_list[max_depth[0]]), 1, 0], maxfev=100000000)
-        max_depths_gaussian_fit[iroi, :] = [a, x0, sigma, b]
-
     max_depths[max_depths == 9999] = np.nan
     np.save(analysis_folder + 'plane0/max_depths_index.npy', max_depths)
     np.save(analysis_folder + 'plane0/max_depths_values.npy', max_depths_values)
-    np.save(analysis_folder + 'plane0/max_LogDepth_gaussianfit.npy',
-            max_depths_gaussian_fit)  # ncells x 3 ([a,x0,sigma]), x0=log(preferred_depth)
     print('Depth neurons and max depths saved.', flush=True)
 
 
@@ -391,108 +386,10 @@ def main(project, mouse, session, protocol):
     plt.savefig(analysis_folder + save_prefix + 'depth_selectivity_anova.pdf')
     print('Plot 1 of depth neuron distribution saved.', flush=True)
 
-
-    # PLOT 2: based on depth with gaussian-fitted preferred depth
-    plot_cols = 3
-    plot_rows = 2
-    plt.figure(figsize=(plot_cols * 10, plot_rows * 10))
-    # Plot 1 (0,0): Useless histogram of fitted preferred depth
-    plt.subplot(plot_rows, plot_cols, 1)
-    # plt.subplot2grid([plot_rows, plot_cols], [0, 4])
-    max_depth_thr = 20
-    min_depth_thr = 0.06
-    max_depths_gaussian_fit_peaks = max_depths_gaussian_fit[:, 1]
-    max_depths_gaussian_fit_peaks[max_depths_gaussian_fit_peaks > np.log(max_depth_thr)] = np.log(max_depth_thr)
-    max_depths_gaussian_fit_peaks[max_depths_gaussian_fit_peaks < np.log(min_depth_thr)] = np.log(min_depth_thr)
-    hist, bins, _ = plt.hist(np.power(np.e, max_depths_gaussian_fit_peaks), bins=100);
-
-    # Plot 1 (0,1): Log-scale histogram of fitted preferred depth
-    plt.subplot(plot_rows, plot_cols, 2)
-    # plt.subplot2grid([plot_rows, plot_cols], [1,0])
-    from matplotlib.patches import Rectangle
-
-    logbins = np.logspace(np.log(bins[1]), np.log(bins[-1]), len(bins), base=np.e)
-    logbins = np.insert(logbins, 0, np.arange(min_depth_thr, logbins[0], logbins[1] - logbins[0]))
-
-    hist, bins, _ = plt.hist(np.power(np.e, max_depths_gaussian_fit_peaks), bins=logbins, density=False)
-    plt.xscale('log')
-    log_midpoint = (np.log(depth_list)[:-1] + np.log(depth_list)[1:]) / 2
-    # log_midpoint = np.insert(log_midpoint,0,0)
-    log_midpoint = np.insert(log_midpoint, 0, np.log(min_depth_thr))
-    log_midpoint = np.append(log_midpoint, np.log(max_depth_thr))
-    width = log_midpoint[1] - log_midpoint[0]
-    # for depth in depth_list[1:]:
-    #     plt.axvline(x=depth,ymin=0,ymax=np.nanmax(hist),c='r',linestyle='--',linewidth=1)
-    # colors = ['red', 'orange', 'forestgreen', 'skyblue', 'purple']
-    for idepth in range(len(depth_list)):
-        #     if idepth == 0:
-        # #         plt.axvline(x=0,ymin=0,ymax=np.nanmax(hist),c='none',linestyle='--',linewidth=0)
-        #         rect = Rectangle((0,0),np.power(np.e, log_midpoint[idepth+1]),np.nanmax(hist), linewidth=0, edgecolor='none', facecolor=colors[idepth],alpha = 0.1)
-        #     else:
-        #         plt.axvline(x=np.power(np.e,log_midpoint[idepth]),ymin=0,ymax=np.nanmax(hist),c='r',linestyle='--',linewidth=1)
-        rect = Rectangle((np.power(np.e, log_midpoint[idepth]), 0),
-                         np.power(np.e, log_midpoint[idepth + 1]) - np.power(np.e, log_midpoint[idepth]),
-                         np.nanmax(hist), linewidth=0, edgecolor='none', facecolor=line_colors[idepth], alpha=0.1)
-        plt.xlim([min_depth_thr, max_depth_thr])
-        ax = plt.gca()
-        ax.add_patch(rect)
-    plt.xticks(fontsize=15)
-    plt.yticks(fontsize=15)
-    plt.xlabel('Gaussian-fitted preferred depth (cm)', fontsize=20)
-    plt.ylabel('Frequency', fontsize=20)
-
-    # Plot 3 (0,2): Useless histogram for max depth of gaussian fit
-    plt.subplot(plot_rows, plot_cols, 3)
-    # plt.subplot2grid([plot_rows, plot_cols], [1,1])
-    hist, bins, _ = plt.hist(np.power(np.e, max_depths_gaussian_fit_peaks), bins=np.power(np.e, log_midpoint));
-    plt.xscale('log')
-
-    # Plot 4 (1,0): Bar plot of fitted preferred depth
-    plt.subplot(plot_rows, plot_cols, 4)
-    hist = np.append(hist, len(which_rois) - np.sum(np.array(hist)))
-    plt.bar(x=np.arange(len(depth_list) + 1), height=np.array(hist) / len(which_rois) * 100)
-    xticks = [i for i in (np.array(depth_list) * 100).astype('int')]
-    xticks.append('NaN')
-    plt.xticks(np.arange(len(depth_list) + 1), xticks, fontsize=15);
-    plt.yticks(fontsize=15)
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.ylabel('Percentage of total neurons (%)', fontsize=20)
-    plt.xlabel('Gaussian-fitted preferred depth (cm)', fontsize=20)
-
-    # # Plot 5 (1,1):Spatial map of fitted preferred depth
-    # plt.subplot(plot_rows, plot_cols, 5)
-    # # plt.subplot2grid([plot_rows, plot_cols], [1,2])
-    # max_depths_fit = np.digitize(max_depths_gaussian_fit[:, 1], log_midpoint) - 1
-    # max_depths_fit[max_depths_fit == len(depth_list)] = len(depth_list) - 1
-    # plt.imshow(ops['meanImg'], cmap='gray', vmax=700)
-    # # plt.imshow(ops['max_proj'], cmap='gray', vmax=1500)
-    # # colors = ['red', 'orange', 'forestgreen', 'skyblue', 'purple']
-    # # colors = [[1,1,1],[0.8,1,1],[0.6,1,1],[0.4,1,1],[0.2,1,1]]
-    # ax = plt.gca()
-    # for iroi in range(len(depth_neurons)):
-    #     roi = depth_neurons[iroi]
-    #     x_center, y_center, radius = find_roi_center(cells_mask, roi)
-    #     radius = 5
-    #     circ = Circle((x_center, y_center), radius, color=colors[int(max_depths_fit[iroi])])
-    #     ax.add_patch(circ)
-    # plt.legend([(str(int(i * 100)) + 'cm') for i in depth_list], bbox_to_anchor=(1, 1), fontsize=15)
-    # leg = ax.get_legend()
-    # for i in range(len(depth_list)):
-    #     leg.legendHandles[i].set_color(colors[i])
-    # plt.axis('off');
-
-    plt.tight_layout(pad=1)
-
-    save_prefix = '/plane0/plots/depth_selectivity/'
-    if not os.path.exists(analysis_folder + save_prefix):
-        os.makedirs(analysis_folder + save_prefix)
-    plt.savefig(analysis_folder + save_prefix + 'depth_selectivity_anova_fitted.pdf')
-    print('Plot 2 of depth neuron distribution saved.', flush=True)
-
-    np.save(analysis_folder + '/plane0/max_depths_index_fit.npy', max_depths_fit)
     print('---STEP 5 FINISHED.---', '\n', flush=True)
 
     print('---PREPROCESS FINISHED.---', '\n', flush=True)
 
+
+if __name__ == '__main__':
+    defopt.run(main)
