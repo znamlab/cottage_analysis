@@ -111,7 +111,9 @@ def write_array_to_video(
     return
 
 
-def deinterleave_camera(camera_file, target_file, make_grey=False, verbose=True):
+def deinterleave_camera(
+    camera_file, target_file, make_grey=False, verbose=True, intrinsic_calibration=None
+):
     """Load a mini camera with interleaved frames"""
     camera_file = Path(camera_file)
     if not camera_file.exists():
@@ -122,6 +124,14 @@ def deinterleave_camera(camera_file, target_file, make_grey=False, verbose=True)
     cap = cv2.VideoCapture(str(camera_file))
     frame_width = int(cap.get(3))
     frame_height = int(cap.get(4))
+    if intrinsic_calibration is not None:
+        newcameramtx, roi = cv2.getOptimalNewCameraMatrix(
+            intrinsic_calibration["mtx"],
+            intrinsic_calibration["dist"],
+            (frame_width, frame_height),
+            1,
+            (frame_width, frame_height),
+        )
     fcc = int(cap.get(cv2.CAP_PROP_FOURCC))
     fcc = (
         chr(fcc & 0xFF)
@@ -143,6 +153,15 @@ def deinterleave_camera(camera_file, target_file, make_grey=False, verbose=True)
             iframe += 1
             if iframe % 1000 == 0:
                 print("... frame %d" % iframe)
+        if intrinsic_calibration is not None:
+
+            dst = cv2.undistort(
+                frame,
+                intrinsic_calibration["mtx"],
+                intrinsic_calibration["dist"],
+                None,
+                newcameramtx,
+            )
         for ilines in range(2):
             deint_frame[::2, ...] = frame[ilines::2, ...]
             deint_frame[1::2, ...] = deint_frame[::2, ...]
