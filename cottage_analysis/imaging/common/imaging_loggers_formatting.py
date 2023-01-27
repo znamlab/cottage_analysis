@@ -194,25 +194,16 @@ def format_img_frame_logger(harpmessage_file, register_address=32):
     harp_message = harp_message[harp_message.RegisterAddress == register_address]
 
     # Find 8 bit correspondance to different channels because the lick signal is also registered on the same channel
-    data = np.array(range(8), dtype='uint8')
-    bits = np.unpackbits(data, bitorder='little')
-    bits = bits.reshape((len(data), 8))
+    bits = np.array(np.hstack(harp_message.DataElement0.values), dtype='uint8')
+    bits = np.unpackbits(bits, bitorder='little')
+    bits = bits.reshape((len(harp_message), 8))
 
-    if len(harp_message['DataElement0'].unique()) == 2:
-        formatted_df = harp_message
-    elif len(harp_message['DataElement0'].unique()) == 4:
-        if (0 in harp_message['DataElement0'].unique()):
-            rows = [0, 1, 2, 3]
-        elif (4 in harp_message['DataElement0'].unique()):
-            rows = [4, 5, 6, 7]
-        for iport in range(2):
-            harp_message['Port' + str(iport)] = np.nan
-            for irow in rows:
-                harp_message.loc[harp_message.DataElement0 == irow, 'Port' + str(iport)] = bits[irow, iport]
+    for iport in range(8):
+        harp_message[f'Port{iport}'] = bits[:, iport]
 
-        formatted_df = harp_message[harp_message.Port0.diff() != 0]
-        formatted_df.rename(columns={'Timestamp': 'HarpTime'}, inplace=True)
-
+    formatted_df = harp_message[harp_message.Port0.diff() != 0]
+    formatted_df.rename(columns={'Timestamp': 'HarpTime'}, inplace=True)
+    
     return formatted_df
 
 
