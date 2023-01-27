@@ -5,4 +5,5 @@ flexiznam
 matplotlib
 scipy
 setuptools
-pytables
+tables
+scikit-learn
