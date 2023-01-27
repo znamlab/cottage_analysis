@@ -5,3 +5,4 @@ flexiznam
 matplotlib
 scipy
 setuptools
+pytables
