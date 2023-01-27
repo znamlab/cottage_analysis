@@ -6,6 +6,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
 #SBATCH --mail-type=END,FAIL
+#SBATCH --output=eye_train.out
+#SBATCH --error=eye_train.err
 #SBATCH --mail-user=blota@crick.ac.uk
 
 echo 'ml-ing'
