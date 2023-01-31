@@ -188,12 +188,9 @@ def find_imaging_frames(
     if len(frame_triggers[frame_triggers.Exposure == 1]) == frame_number:
         frame_triggers = frame_triggers
     elif (len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 1:
-        print(("ImagingFrames in video: " + str(frame_number)), flush=True)
+        print((f"ImagingFrames in video: {frame_number}"), flush=True)
         print(
-            (
-                "ImagingFrame triggers: "
-                + str(len(frame_triggers[frame_triggers.Exposure == 1]))
-            ),
+            f"ImagingFrame triggers: {len(frame_triggers[frame_triggers.Exposure == 1])}",
             flush=True,
         )
         frame_triggers = frame_triggers[:-1]
@@ -201,21 +198,15 @@ def find_imaging_frames(
             "WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!",
             flush=True,
         )
-        print(("ImagingFrames in video: " + str(frame_number)), flush=True)
+        print(f"ImagingFrames in video: {frame_number}", flush=True)
         print(
-            (
-                "ImagingFrame triggers: "
-                + str(len(frame_triggers[frame_triggers.Exposure == 1]))
-            ),
+            f"ImagingFrame triggers: {len(frame_triggers[frame_triggers.Exposure == 1])}",
             flush=True,
         )
     elif (len(frame_triggers[frame_triggers.Exposure == 1]) - frame_number) == 2:
-        print(("ImagingFrames in video: " + str(frame_number)), flush=True)
+        print(f"ImagingFrames in video: {frame_number}", flush=True)
         print(
-            (
-                "ImagingFrame triggers: "
-                + str(len(frame_triggers[frame_triggers.Exposure == 1]))
-            ),
+            f"ImagingFrame triggers: {len(frame_triggers[frame_triggers.Exposure == 1])}",
             flush=True,
         )
         frame_triggers = frame_triggers[:-2]
@@ -223,12 +214,9 @@ def find_imaging_frames(
             "WARNING: SAVED VIDEO FRAME IS 2 FRAMES LESS THAN FRAME TRIGGERS!!!",
             flush=True,
         )
-        print(("ImagingFrames in video: " + str(frame_number)), flush=True)
+        print(f"ImagingFrames in video: {frame_number}", flush=True)
         print(
-            (
-                "ImagingFrame triggers: "
-                + str(len(frame_triggers[frame_triggers.Exposure == 1]))
-            ),
+            f"ImagingFrame triggers: {len(frame_triggers[frame_triggers.Exposure == 1])}",
             flush=True,
         )
     else:
