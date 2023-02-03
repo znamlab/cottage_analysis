@@ -3,7 +3,20 @@ from pathlib import Path
 import flexiznam as flm
 
 
-def dlc_track(video_path, model_name, target_folder):
+def dlc_track(video_path, model_name, target_folder, filter=False, label=False):
+    """Start slurm job to track pupil
+
+    Args:
+        video_path (str): Full path to video file
+        model_name (str): Name of the model to use. Must be in the `DLC_models` shared
+            project folder 
+        target_folder (str): Folder to save results
+        filter (bool, optional): Filter prediction. Defaults to False.
+        label (bool, optional): Generate a labeled copy of the video. Defaults to False.
+
+    Returns:
+        subprocess.Process: The process job
+    """
     target_folder = Path(target_folder)
     target_folder.mkdir(exist_ok=True)
 
@@ -16,7 +29,7 @@ def dlc_track(video_path, model_name, target_folder):
     # Make a python script
     video_path = Path(video_path)
     assert video_path.exists()
-    arguments = dict(video=video_path, model=config_file, target=target_folder)
+    arguments = dict(video=video_path, model=config_file, target=target_folder, filter=filter, label=label)
     source = (Path(__file__).parent / "label_video.py").read_text()
     for k, v in arguments.items():
         source = source.replace(f"XXX_{k.upper()}_XXX", str(v))
