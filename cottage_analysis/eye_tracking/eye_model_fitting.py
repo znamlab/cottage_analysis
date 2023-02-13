@@ -258,10 +258,7 @@ def unproject_observations(ellipses, circle_radius, focal_length):
     # (This has to be done here because it's used by the pupil circle
     # disambiguation)
 
-
-        
-
-
+  
 def fit_ellipses(dlc_res_file, likelihood_threshold=None):
     if isinstance(dlc_res_file, pd.DataFrame):
         dlc_res = dlc_res_file
@@ -286,7 +283,7 @@ def fit_ellipses(dlc_res_file, likelihood_threshold=None):
         xy = np.vstack([xdata.values, ydata.values]).T
         success = ellipse.estimate(xy)
         if not success:
-            print("Failed to fit %s" % frame_id)
+            print("Failed to fit %s" % frame_id, flush=True)
             ellipse_fits.append(None)
             continue
         xc, yc, a, b, theta = ellipse.params
