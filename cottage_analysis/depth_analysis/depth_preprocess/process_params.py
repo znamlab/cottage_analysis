@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Created on Sat Jun 12 14:08:41 2021
 
@@ -8,7 +6,6 @@ Created on Sat Jun 12 14:08:41 2021
 Functions to sort running speed, optic flow speed and dFF into desired array form or to process these values
 """
 import numpy as np
-import pandas as pd
 from cottage_analysis.stimulus_structure.sphere_structure import (
     find_min_trial_num_all_depths,
     find_frame_num_per_trial,
