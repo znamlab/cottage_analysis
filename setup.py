@@ -8,5 +8,15 @@ setup(
     license='MIT',
     author='Antonin Blot, Yiran He, Petr Znamenskyi',
     author_email='antonin.blot@crick.ac.uk',
-    description='Common functions for analysis'
+    description='Common functions for analysis',
+    install_requires=[
+        "numpy",
+        "pandas",
+        "pathlib",
+        "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
+        "matplotlib",
+        "scipy",
+        "tables",
+        "scikit-learn",
+    ]
 )
