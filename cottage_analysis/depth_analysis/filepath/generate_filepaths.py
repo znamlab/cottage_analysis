@@ -8,25 +8,47 @@ Created on Sat Jun 12 14:08:41 2021
 Generate filepaths for importing data files or saving analysis results 
 """
 import flexiznam as flz
+from pathlib import Path
+from warnings import warn
 from flexiznam.schema import Dataset
 
 
-def get_session_children(project, mouse, session):
+def get_session_children(project, mouse, session, flexilims_session=None):
+    """Get children of a session
+
+    Args:
+        project (str): Name of the project
+        mouse (str): Name of the mouse
+        session (str): Name of the session
+        flexilims_session (flexilims.Session, optional): flexilims session to interact
+            with database. If None, will create one. Defaults to None.
+
+    Raises:
+        IOError: If the session cannot be found online
+
+    Returns:
+        pandas.DataFrame: Dataframe of children of the session
     """
-    Get children of a session
-    :param str project: project name
-    :param str mouse: mouse name
-    :param str session: session name
-    :return:
-    """
-    project_sess = flz.get_experimental_sessions(project_id=project)
-    this_sess = project_sess[project_sess.name == mouse + "_" + session]
-    sess_children = flz.get_children(this_sess.id, project_id=project)
+    if flexilims_session is None:
+        warn(
+            "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
+        )
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+    this_sess = flz.get_entity(
+        datatype="session",
+        name=f"{mouse}_{session}",
+        flexilims_session=flexilims_session,
+    )
+    if this_sess is None:
+        raise IOError("Could not find session")
+    sess_children = flz.get_children(
+        this_sess.id, project_id=project, flexilims_session=flexilims_session
+    )
 
     return sess_children
 
 
-def get_recording_entries(project, mouse, session, protocol):
+def get_recording_entries(project, mouse, session, protocol, flexilims_session=None):
     """
     Get all flexilims entries (children) of a recording
     :param str project:
@@ -35,62 +57,101 @@ def get_recording_entries(project, mouse, session, protocol):
     :param str protocol:
     :return:
     """
-    sess_children = get_session_children(project, mouse, session)
+
+    if flexilims_session is None:
+        warn(
+            "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
+        )
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    sess_children = get_session_children(project, mouse, session, flexilims_session)
     # protocol_recording = sess_children.loc[sess_children['name'].str.contains(protocol, case=False)]
     for i in range(len(sess_children)):
         name = sess_children.iloc[i].name
         if name[-len(protocol) :] == protocol:
             protocol_recording = sess_children.iloc[i]
-    recording_entries = flz.get_children(protocol_recording.id, project_id=project)
-    recording_path = str(protocol_recording.path)
+    recording_entries = flz.get_children(
+        protocol_recording.id, project_id=project, flexilims_session=flexilims_session
+    )
+    recording_path = protocol_recording.path
 
     return recording_entries, recording_path
 
 
-def generate_file_folders(project, mouse, session, protocol, rawdata_root, root):
+def generate_file_folders(
+    project,
+    mouse,
+    session,
+    protocol,
+    rawdata_root=None,
+    root=None,
+    flexilims_session=None,
+):
+    """Generate folders for raw data, preprocessed data and analyzed data
+
+
+    Args:
+        project (str): Name of the project
+        mouse (str): Name of the mouse
+        session (str): Name of the session
+        protocol (str): Type of protocol
+        rawdata_root (pathlib.Path, optional): Path to raw data. Defaults to None.
+        root (pathlib.Path, optional): Path to processed data. Defaults to None.
+        flexilims_session (flexilims.Session, optional): Flexilims session to interact
+            with database. Defaults to None.
+
+    Returns:
+        rawdata_root (pathlib.Path):
+        protocol_folder (pathlib.Path):
+        analysis_folder (pathlib.Path):
+        suite2p_folder (pathlib.Path):
+        trace_folder (pathlib.Path):
     """
-    Generate folders for raw data, preprocessed data and analyzed data
-    :param str project:
-    :param str mouse:
-    :param str session:
-    :param str protocol:
-    :param str rawdata_root:
-    :param str root:
-    :return:
-    """
-    sess_children = get_session_children(project, mouse, session)
+    if rawdata_root is None:
+        rawdata_root = Path(flz.PARAMETERS["data_root"]["raw"])
+    else:
+        warn(
+            "rawdata_root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        rawdata_root = Path(rawdata_root)
+    if root is None:
+        root = Path(flz.PARAMETERS["data_root"]["processed"])
+    else:
+        warn(
+            "root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        root = Path(root)
+
+    sess_children = get_session_children(
+        project, mouse, session, flexilims_session=flexilims_session
+    )
 
     # find recording paths
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol
+        project, mouse, session, protocol, flexilims_session=flexilims_session
     )
 
-    rawdata_folder = rawdata_root + recording_path + "/"
+    rawdata_root = rawdata_root / recording_path
     # preprocess_folder = root + protocol_path
-    protocol_folder = root + recording_path + "/"
-    first_slash = str(recording_path).find("/")
-    analysis_folder = (
-        root
-        + recording_path[: first_slash + 1]
-        + "Analysis/"
-        + recording_path[first_slash + 1 :]
-        + "/"
-    )
-    suite2p_folder = (
-        root
-        + sess_children.loc[
-            sess_children["name"].str.contains("suite2p", case=False)
-        ].path.values[0]
-        + "/suite2p/plane0/"
-    )
+    protocol_folder = root / recording_path
+    analysis_folder = root / project / "Analysis" / recording_path[len(project) + 1 :]
 
-    trace_path = recording_entries.loc[
-        recording_entries["name"].str.contains("suite2p_trace", case=False)
-    ].path.values[0]
-    trace_folder = root + trace_path + "/"
+    suite2p_ds = sess_children[sess_children.dataset_type == "suite2p_rois"]
+    assert len(suite2p_ds) == 1
+    suite2p_ds = suite2p_ds.iloc[0]
+    suite2p_folder = root / suite2p_ds.path / "suite2p" / "plane0"
+
+    trace_ds = recording_entries[recording_entries.dataset_type == "suite2p_traces"]
+    assert len(trace_ds) == 1
+    trace_ds = trace_ds.iloc[0]
+    trace_folder = root / trace_ds.path
 
     return (
-        rawdata_folder,
+        rawdata_root,
         protocol_folder,
         analysis_folder,
         suite2p_folder,
@@ -132,16 +193,21 @@ def generate_logger_path(
     return logger_path
 
 
-def generate_analysis_session_folder(root, project, mouse, session):
-    project_sess = flz.get_experimental_sessions(project_id=project)
+def generate_analysis_session_folder(
+    root, project, mouse, session, flexilims_session=None
+):
+    # TODO remove root
+    if flexilims_session is None:
+        warn(
+            "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
+        )
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    project_sess = flz.get_experimental_sessions(
+        project_id=project, flexilims_session=flexilims_session
+    )
     this_sess = project_sess[project_sess.name == mouse + "_" + session]
     sess_path = str(this_sess.path.values[0])
-    first_slash = sess_path.find("/")
-    analysis_sess_folder = (
-        root
-        + sess_path[: first_slash + 1]
-        + "Analysis/"
-        + sess_path[first_slash + 1 :]
-        + "/"
-    )
+    analysis_sess_folder = root / project / "Analysis" / sess_path[len(project) + 1 :]
+
     return analysis_sess_folder
