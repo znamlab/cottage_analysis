@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
+from matplotlib.animation import FuncAnimation
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
@@ -455,7 +456,12 @@ def plot_dFF_binned_speed(
     plt.xlabel(xlabel, fontsize=axis_fontsize)
     plt.ylabel("$\Delta$F/F", fontsize=axis_fontsize)
     plt.title(title, fontsize=fontsize)
-    plt.legend(fontsize=axis_fontsize, loc="upper left", bbox_to_anchor=[1.0, 1.0], frameon=False)
+    plt.legend(
+        fontsize=axis_fontsize,
+        loc="upper left",
+        bbox_to_anchor=[1.0, 1.0],
+        frameon=False,
+    )
     despine()
     if log:
         plt.xticks([0.1, 1, 10, 100, 1000])
@@ -678,6 +684,31 @@ def plot_mean_responses(
     plt.xlabel("Distance (cm)")
     plt.ylabel("$\Delta$F/F")
     despine()
+
+
+def plot_sta(sta, extent=[-120, 120, -40, 40], clim=None):
+    ndepths = sta.shape[0]
+    fig, axes = plt.subplots(ndepths, 1, sharex="all", sharey="all", figsize=(5, 7.5))
+    ims = []
+    if not clim:
+        clim = np.max(sta)
+    for idepth in range(ndepths):
+        ims.append(
+            axes[idepth].imshow(
+                sta[idepth].T,
+                extent=extent,
+                cmap="RdBu_r",
+                vmin=-clim,
+                vmax=clim,
+            )
+        )
+        plt.xticks([extent[0], 0, extent[1]])
+        plt.yticks([extent[2], 0, extent[3]])
+
+    fig.supylabel("Elevation (degrees)")
+    fig.supxlabel("Azimuth (degrees)")
+    # plt.tight_layout(pad=1)
+    return fig, axes, ims
 
 
 def plot_roi_summary(
