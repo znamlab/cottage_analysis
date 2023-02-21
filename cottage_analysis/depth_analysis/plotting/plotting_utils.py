@@ -842,3 +842,49 @@ def plot_roi_summary(
     )
 
     plt.tight_layout(pad=2)
+
+
+def linear_regression(X,y,x2, model=LinearRegression()):
+    reg = model.fit(X, y)
+    y_pred = reg.predict(x2)
+    return reg.score(X,y), reg.coef_, reg.intercept_, y_pred
+
+
+def scatter_plot_fit_line(X, y, x2, xlabel, ylabel, n_boots=10000, s=1, alpha=0.8,c='k',log=True, fit_line=True, model=LinearRegression()):
+
+    if log:
+        score, coef, intercept, y_pred = linear_regression(X=np.log(X),
+                                                           y=np.log(y),
+                                                          x2=np.log(x2),
+                                                          model=model)
+        print(coef, intercept)
+        plt.scatter(X,y,s=s,alpha=alpha,c=c)
+        
+        y_pred_exp = []
+        if fit_line:
+            for _ in range(n_boots):
+                sample_index = np.random.choice(range(0, len(X)), len(X))
+
+                X_samples = X[sample_index]
+                y_samples = y[sample_index]    
+
+                score, coef, intercept, y_pred = linear_regression(X=np.log(X_samples),
+                                                               y=np.log(y_samples),
+                                                              x2=np.log(x2), 
+                                                              model=model)
+                y_pred_exp.append(np.exp(y_pred))
+            y_pred_exp = np.array(y_pred_exp)
+            lower_CI = np.percentile(y_pred_exp,2.5,axis=0)
+            higher_CI = np.percentile(y_pred_exp,97.5,axis=0)
+#             middle_CI = np.percentile(y_pred_exp,50,axis=0)
+            plt.plot(x2,np.exp(y_pred),'r',linewidth=1)
+#             plt.plot(x2,middle_CI, 'b')
+#             plt.plot(x2,lower_CI,'orange',linewidth=1)
+#             plt.plot(x2, higher_CI,'green',linewidth=1)
+            plt.fill_between(x=x2.reshape(-1), y1=lower_CI.reshape(-1), y2=higher_CI.reshape(-1), color='r', alpha=0.25, zorder=0.01, edgecolor=None)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.xscale('log')
+        plt.yscale('log')
+        despine()
+    
