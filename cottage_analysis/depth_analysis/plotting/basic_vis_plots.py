@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
-from depth_analysis_2p.plotting.plotting_utils import *
-from depth_analysis_2p.process_params.process_params import *
+from cottage_analysis.depth_analysis.plotting.plotting_utils import *
+from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
 
 # --- Raster plot for different depths (running speed or dFF) --- #
 def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance_bins, plot_rows, plot_cols, which_row, which_col, heatmap_cmap, fontsize_dict, is_trace=True, roi=0, title='', frame_rate=15, distance_max=6, vmax=None):

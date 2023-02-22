@@ -10,6 +10,7 @@ from cottage_analysis.depth_analysis.depth_preprocess.process_params import (
     create_trace_arr_per_roi,
     thr,
 )
+from sklearn.linear_model import LinearRegression
 
 
 def segment_arr(arr_idx, segment_size):
@@ -887,4 +888,19 @@ def scatter_plot_fit_line(X, y, x2, xlabel, ylabel, n_boots=10000, s=1, alpha=0.
         plt.xscale('log')
         plt.yscale('log')
         despine()
-    
+
+
+def get_PSTH(values, dffs,  depth_list, stim_dict, distance_arr, distance_bins, roi=0, is_trace=False, frame_rate=15):
+    if is_trace:
+        values_arr,_ = create_trace_arr_per_roi(roi, dffs, depth_list, stim_dict,
+                                                mode='sort_by_depth', protocol='fix_length',
+                                                blank_period=0, frame_rate=frame_rate)
+        unit_scale = 1
+    else:
+        values_arr, _ = create_speed_arr(values, depth_list, stim_dict, mode='sort_by_depth', protocol='fix_length',
+                                blank_period=0, frame_rate=frame_rate)
+        unit_scale = 100 # scale depth unit from m to cm
+            
+    binned_stats = get_binned_arr(xarr=distance_arr, yarr=values_arr, bin_number=distance_bins,
+                                bin_edge_min=0, bin_edge_max=6)
+    return binned_stats
