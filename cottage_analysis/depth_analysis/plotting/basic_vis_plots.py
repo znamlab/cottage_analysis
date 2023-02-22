@@ -95,7 +95,7 @@ def plot_PSTH(values, dffs,  depth_list, img_VS, stim_dict, distance_bins, line_
     else: 
         ylim=ylim
         plt.ylim(ylim)
-    plot_frame_off()
+    despine()
         
     return binned_stats, xlim, ylim
 
@@ -152,7 +152,7 @@ def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_d
         plt.xlabel('Depth (cm/s)', fontsize=fontsize_dict['xlabel'])
         plt.title('Depth tuning (Closeloop)', fontsize=fontsize_dict['title'])
         ylim = [0,plt.gca().get_ylim()[1]]
-        plot_frame_off()
+        despine()
     else:
         ylim = None
 
@@ -167,7 +167,7 @@ def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_d
         plt.ylim(ylim)
     else:
         ylim = plt.gca().get_ylim()
-    plot_frame_off()
+    despine()
     
     return ylim
 
