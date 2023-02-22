@@ -208,6 +208,6 @@ def generate_analysis_session_folder(
     )
     this_sess = project_sess[project_sess.name == mouse + "_" + session]
     sess_path = str(this_sess.path.values[0])
-    analysis_sess_folder = root / project / "Analysis" / sess_path[len(project) + 1 :]
+    analysis_sess_folder = root + project + ("Analysis" + '/' +  sess_path[len(project) + 1 :])
 
     return analysis_sess_folder
