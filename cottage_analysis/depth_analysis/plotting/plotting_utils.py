@@ -451,7 +451,7 @@ def plot_dFF_binned_speed(
             label="blank",
         )
 
-    plt.ylim([0, np.nanmax(binned_stats["bin_means"]) * 1.2])
+    plt.ylim([-0.1, np.nanmax(binned_stats["bin_means"]) * 1.2])
     if log:
         plt.gca().set_xscale("log")
     plt.xlabel(xlabel, fontsize=axis_fontsize)

@@ -161,7 +161,7 @@ def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_d
     plt.xticks(np.arange(len(depth_list)), (np.array(depth_list) * 100).astype('int'),
                fontsize=fontsize_dict['xticks'])
     plt.ylabel('dF/F', fontsize=fontsize_dict['ylabel'])
-    plt.xlabel('Depth (cm/s)', fontsize=fontsize_dict['xlabel'])
+    plt.xlabel('Depth (cm)', fontsize=fontsize_dict['xlabel'])
     plt.title('Depth tuning (CloseLoop)', fontsize=fontsize_dict['title'])
     if ylim != None:
         plt.ylim(ylim)
