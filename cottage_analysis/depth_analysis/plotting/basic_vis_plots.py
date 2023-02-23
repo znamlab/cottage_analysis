@@ -9,7 +9,7 @@ from cottage_analysis.depth_analysis.plotting.plotting_utils import *
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
 
 # --- Raster plot for different depths (running speed or dFF) --- #
-def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance_bins, plot_rows, plot_cols, which_row, which_col, heatmap_cmap, fontsize_dict, is_trace=True, roi=0, title='', frame_rate=15, distance_max=6, vmax=None):
+def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance_bins, plot_rows, plot_cols, which_row, which_col, heatmap_cmap, fontsize_dict, is_trace=True, roi=0, title='', frame_rate=15, distance_max=6, vmax=None, landscape=False):
     if is_trace:
         values_arr,_ = create_trace_arr_per_roi(roi, dffs, depth_list, stim_dict,
                                                 mode='sort_by_depth', protocol='fix_length',
@@ -33,7 +33,10 @@ def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance
         vmax=vmax
     for idepth in range(0, len(depth_list)):
         depth = depth_list[idepth]
-        plt.subplot2grid([plot_rows, plot_cols], [which_row+idepth, which_col])
+        if landscape:
+            plt.subplot2grid([plot_rows, plot_cols], [which_row, which_col+idepth])
+        else: 
+            plt.subplot2grid([plot_rows, plot_cols], [which_row+idepth, which_col])
         if idepth == 0:
             title_on = True
         else:
