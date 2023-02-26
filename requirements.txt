@@ -1,7 +1,0 @@
-numpy
-pandas
-pathlib
-flexiznam
-matplotlib
-scipy
-setuptools
