@@ -160,7 +160,14 @@ def generate_file_folders(
 
 
 def generate_logger_path(
-    project, mouse, session, protocol, rawdata_root, root, logger_name
+    logger_name,
+    mouse,
+    session,
+    protocol,
+    project=None,
+    rawdata_root=None,
+    root=None,
+    flexilims_session=None,
 ):
     """
     Generate paths for param loggers
@@ -173,22 +180,51 @@ def generate_logger_path(
     :param str logger_name:
     :return:
     """
+
+    if rawdata_root is None:
+        rawdata_root = Path(flz.PARAMETERS["data_root"]["raw"])
+    else:
+        warn(
+            "rawdata_root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        rawdata_root = Path(rawdata_root)
+    if root is None:
+        root = Path(flz.PARAMETERS["data_root"]["processed"])
+    else:
+        warn(
+            "root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        root = Path(root)
+
+    if flexilims_session is None:
+        warn(
+            "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
+        )
+        assert project is not None
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+    elif project is not None:
+        warn("Project will be read from flexilims_session. Ignore project argument")
+
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol
+        project, mouse, session, protocol, flexilims_session=flexilims_session
     )
 
     # Find logger entries
     harp = recording_entries[recording_entries.dataset_type == "harp"]
     if logger_name == "harp_message":
-        logger_name = flz.get_entity(id=harp.id, project_id=project)[
+        logger_name = flz.get_entity(id=harp.id, flexilims_session=flexilims_session)[
             "binary_file"
         ].replace("bin", "csv")
     else:
-        logger_name = flz.get_entity(id=harp.id, project_id=project)["csv_files"][
-            logger_name
-        ]
+        logger_name = flz.get_entity(id=harp.id, flexilims_session=flexilims_session)[
+            "csv_files"
+        ][logger_name]
 
-    logger_path = rawdata_root + recording_path + "/" + logger_name
+    logger_path = Path(rawdata_root) / recording_path / logger_name
 
     return logger_path
 
@@ -208,6 +244,8 @@ def generate_analysis_session_folder(
     )
     this_sess = project_sess[project_sess.name == mouse + "_" + session]
     sess_path = str(this_sess.path.values[0])
-    analysis_sess_folder = root + project + ("Analysis" + '/' +  sess_path[len(project) + 1 :])
+    analysis_sess_folder = (
+        Path(root) / project / "Analysis" / sess_path[len(project) + 1 :]
+    )
 
     return analysis_sess_folder
