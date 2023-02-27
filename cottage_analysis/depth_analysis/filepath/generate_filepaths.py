@@ -251,19 +251,29 @@ def generate_logger_path(
 
 
 def generate_analysis_session_folder(
-    root, project, mouse, session, flexilims_session=None
+     project, mouse, session, root=None, flexilims_session=None
 ):
     if flexilims_session is None:
         warn(
             "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
         )
         flexilims_session = flz.get_flexilims_session(project_id=project)
+        
+    if root is None:
+        root = Path(flz.PARAMETERS["data_root"]["processed"])
+    else:
+        warn(
+            "root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        root = Path(root)
 
     project_sess = flz.get_experimental_sessions(
         project_id=project, flexilims_session=flexilims_session
     )
     this_sess = project_sess[project_sess.name == mouse + "_" + session]
     sess_path = str(this_sess.path.values[0])
-    analysis_sess_folder = root + project + ("Analysis" + '/' +  sess_path[len(project) + 1 :])
+    analysis_sess_folder = root/project/("Analysis" + '/' +  sess_path[len(project) + 1 :])
 
     return analysis_sess_folder
