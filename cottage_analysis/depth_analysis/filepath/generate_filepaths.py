@@ -199,11 +199,11 @@ def generate_logger_path(
 ):
     """
     Generate paths for param loggers
-    :param ste project:
-    :param ste mouse:
-    :param ste session:
-    :param ste protocol:
-    :param ste rawdata_root:
+    :param str project:
+    :param str mouse:
+    :param str session:
+    :param str protocol:
+    :param str rawdata_root:
     :param str root:
     :param str logger_name:
     :return:
