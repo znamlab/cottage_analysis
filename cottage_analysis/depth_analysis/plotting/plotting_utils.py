@@ -413,7 +413,7 @@ def plot_dFF_binned_speed(
             x=binned_stats["bin_centers"][idepth, :],
             y=binned_stats["bin_means"][idepth, :],
             yerr=ci[idepth, :],
-            fmt="-o",
+            fmt="o",
             color=linecolor,
             ls="none",
         )
@@ -435,7 +435,7 @@ def plot_dFF_binned_speed(
             x=binned_stats_blank["bin_centers"][0, :],
             y=binned_stats_blank["bin_means"][0, :],
             yerr=ci_blank[0, :],
-            fmt="-o",
+            fmt="o",
             color="gray",
             label="_",
             ls="none",
@@ -455,7 +455,7 @@ def plot_dFF_binned_speed(
     if log:
         plt.gca().set_xscale("log")
     plt.xlabel(xlabel, fontsize=axis_fontsize)
-    plt.ylabel("$\Delta$F/F", fontsize=axis_fontsize)
+    plt.ylabel(r"$\Delta$F/F", fontsize=axis_fontsize)
     plt.title(title, fontsize=fontsize)
     plt.legend(
         fontsize=axis_fontsize,
@@ -648,7 +648,7 @@ def plot_depth_tuning(trace_arr, speed_arr, speed_thr_cal, depths):
         xarr=depths,
     )
     plt.xscale("log")
-    plt.ylabel("$\Delta$F/F")
+    plt.ylabel(r"$\Delta$F/F")
     plt.xlabel("Depth (cm)")
     plt.xticks([10, 100, 1000])
     plt.gca().xaxis.set_minor_locator(mticker.LogLocator(numticks=999, subs="auto"))
@@ -683,7 +683,7 @@ def plot_mean_responses(
             fontsize=10, loc="upper left", bbox_to_anchor=[1.0, 1.0], frameon=False
         )
     plt.xlabel("Distance (cm)")
-    plt.ylabel("$\Delta$F/F")
+    plt.ylabel(r"$\Delta$F/F")
     despine()
 
 
@@ -845,62 +845,110 @@ def plot_roi_summary(
     plt.tight_layout(pad=2)
 
 
-def linear_regression(X,y,x2, model=LinearRegression()):
+def linear_regression(X, y, x2, model=LinearRegression()):
     reg = model.fit(X, y)
     y_pred = reg.predict(x2)
-    return reg.score(X,y), reg.coef_, reg.intercept_, y_pred
+    return reg.score(X, y), reg.coef_, reg.intercept_, y_pred
 
 
-def scatter_plot_fit_line(X, y, x2, xlabel, ylabel, n_boots=10000, s=1, alpha=0.8,c='k',log=True, fit_line=True, model=LinearRegression()):
+def scatter_plot_fit_line(
+    X,
+    y,
+    x2,
+    xlabel,
+    ylabel,
+    n_boots=10000,
+    s=1,
+    alpha=0.8,
+    c="k",
+    log=True,
+    fit_line=True,
+    model=LinearRegression(),
+):
 
     if log:
-        score, coef, intercept, y_pred = linear_regression(X=np.log(X),
-                                                           y=np.log(y),
-                                                          x2=np.log(x2),
-                                                          model=model)
+        score, coef, intercept, y_pred = linear_regression(
+            X=np.log(X), y=np.log(y), x2=np.log(x2), model=model
+        )
         print(coef, intercept)
-        plt.scatter(X,y,s=s,alpha=alpha,c=c)
-        
+        plt.scatter(X, y, s=s, alpha=alpha, c=c)
+
         y_pred_exp = []
         if fit_line:
             for _ in range(n_boots):
                 sample_index = np.random.choice(range(0, len(X)), len(X))
 
                 X_samples = X[sample_index]
-                y_samples = y[sample_index]    
+                y_samples = y[sample_index]
 
-                score, coef, intercept, y_pred = linear_regression(X=np.log(X_samples),
-                                                               y=np.log(y_samples),
-                                                              x2=np.log(x2), 
-                                                              model=model)
+                score, coef, intercept, y_pred = linear_regression(
+                    X=np.log(X_samples), y=np.log(y_samples), x2=np.log(x2), model=model
+                )
                 y_pred_exp.append(np.exp(y_pred))
             y_pred_exp = np.array(y_pred_exp)
-            lower_CI = np.percentile(y_pred_exp,2.5,axis=0)
-            higher_CI = np.percentile(y_pred_exp,97.5,axis=0)
-#             middle_CI = np.percentile(y_pred_exp,50,axis=0)
-            plt.plot(x2,np.exp(y_pred),'r',linewidth=1)
-#             plt.plot(x2,middle_CI, 'b')
-#             plt.plot(x2,lower_CI,'orange',linewidth=1)
-#             plt.plot(x2, higher_CI,'green',linewidth=1)
-            plt.fill_between(x=x2.reshape(-1), y1=lower_CI.reshape(-1), y2=higher_CI.reshape(-1), color='r', alpha=0.25, zorder=0.01, edgecolor=None)
+            lower_CI = np.percentile(y_pred_exp, 2.5, axis=0)
+            higher_CI = np.percentile(y_pred_exp, 97.5, axis=0)
+            #             middle_CI = np.percentile(y_pred_exp,50,axis=0)
+            plt.plot(x2, np.exp(y_pred), "r", linewidth=1)
+            #             plt.plot(x2,middle_CI, 'b')
+            #             plt.plot(x2,lower_CI,'orange',linewidth=1)
+            #             plt.plot(x2, higher_CI,'green',linewidth=1)
+            plt.fill_between(
+                x=x2.reshape(-1),
+                y1=lower_CI.reshape(-1),
+                y2=higher_CI.reshape(-1),
+                color="r",
+                alpha=0.25,
+                zorder=0.01,
+                edgecolor=None,
+            )
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        plt.xscale('log')
-        plt.yscale('log')
+        plt.xscale("log")
+        plt.yscale("log")
         despine()
 
 
-def get_PSTH(values, dffs,  depth_list, stim_dict, distance_arr, distance_bins, roi=0, is_trace=False, frame_rate=15):
+def get_PSTH(
+    values,
+    dffs,
+    depth_list,
+    stim_dict,
+    distance_arr,
+    distance_bins,
+    roi=0,
+    is_trace=False,
+    frame_rate=15,
+):
     if is_trace:
-        values_arr,_ = create_trace_arr_per_roi(roi, dffs, depth_list, stim_dict,
-                                                mode='sort_by_depth', protocol='fix_length',
-                                                blank_period=0, frame_rate=frame_rate)
+        values_arr, _ = create_trace_arr_per_roi(
+            roi,
+            dffs,
+            depth_list,
+            stim_dict,
+            mode="sort_by_depth",
+            protocol="fix_length",
+            blank_period=0,
+            frame_rate=frame_rate,
+        )
         unit_scale = 1
     else:
-        values_arr, _ = create_speed_arr(values, depth_list, stim_dict, mode='sort_by_depth', protocol='fix_length',
-                                blank_period=0, frame_rate=frame_rate)
-        unit_scale = 100 # scale depth unit from m to cm
-            
-    binned_stats = get_binned_arr(xarr=distance_arr, yarr=values_arr, bin_number=distance_bins,
-                                bin_edge_min=0, bin_edge_max=6)
+        values_arr, _ = create_speed_arr(
+            values,
+            depth_list,
+            stim_dict,
+            mode="sort_by_depth",
+            protocol="fix_length",
+            blank_period=0,
+            frame_rate=frame_rate,
+        )
+        unit_scale = 100  # scale depth unit from m to cm
+
+    binned_stats = get_binned_arr(
+        xarr=distance_arr,
+        yarr=values_arr,
+        bin_number=distance_bins,
+        bin_edge_min=0,
+        bin_edge_max=6,
+    )
     return binned_stats
