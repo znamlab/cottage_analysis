@@ -245,7 +245,7 @@ def generate_logger_path(
             logger_name
         ]
 
-    logger_path = rawdata_root + recording_path + "/" + logger_name
+    logger_path = rawdata_root/recording_path/logger_name
 
     return logger_path
 
@@ -253,7 +253,6 @@ def generate_logger_path(
 def generate_analysis_session_folder(
     root, project, mouse, session, flexilims_session=None
 ):
-    # TODO remove root
     if flexilims_session is None:
         warn(
             "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
