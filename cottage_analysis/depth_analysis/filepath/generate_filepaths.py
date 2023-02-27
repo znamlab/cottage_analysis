@@ -194,7 +194,8 @@ def generate_file_folders(
 
 
 def generate_logger_path(
-    project, mouse, session, protocol, rawdata_root, root, logger_name
+    project, mouse, session, protocol, logger_name, rawdata_root=None, root=None, 
+    all_protocol_recording_entries=None, recording_no=None, flexilims_session=None
 ):
     """
     Generate paths for param loggers
@@ -207,8 +208,30 @@ def generate_logger_path(
     :param str logger_name:
     :return:
     """
+    if rawdata_root is None:
+        rawdata_root = Path(flz.PARAMETERS["data_root"]["raw"])
+    else:
+        warn(
+            "rawdata_root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        rawdata_root = Path(rawdata_root)
+    if root is None:
+        root = Path(flz.PARAMETERS["data_root"]["processed"])
+    else:
+        warn(
+            "root will be read from flexiznam config. Remove parameter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        root = Path(root)
+        
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol
+        project, mouse, session, protocol, 
+        all_protocol_recording_entries=all_protocol_recording_entries,
+        recording_no=recording_no,
+        flexilims_session=flexilims_session
     )
 
     # Find logger entries
