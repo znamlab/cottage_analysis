@@ -114,6 +114,8 @@ def generate_file_folders(
     protocol,
     rawdata_root=None,
     root=None,
+    all_protocol_recording_entries=None,
+    recording_no=0,
     flexilims_session=None,
 ):
     """Generate folders for raw data, preprocessed data and analyzed data
@@ -161,7 +163,10 @@ def generate_file_folders(
 
     # find recording paths
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol, flexilims_session=flexilims_session
+        project, mouse, session, protocol, 
+        all_protocol_recording_entries=all_protocol_recording_entries,
+        recording_no=recording_no,
+        flexilims_session=flexilims_session
     )
 
     rawdata_root = rawdata_root / recording_path
