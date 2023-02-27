@@ -172,7 +172,10 @@ def format_VS_param_logger(VS_param_file, which_protocol):
 
     elif which_protocol == 'SpheresPermTubeRewardPlayback':
         formatted_df['SphereID'] = VS_param_logger['SphereID']
-        formatted_df['Depth'] = VS_param_logger['Depth']
+        if 'Depth' in VS_param_logger.columns:
+            formatted_df['Depth'] = VS_param_logger['Depth']
+        elif 'Radius' in VS_param_logger.columns:
+            formatted_df['Depth'] = VS_param_logger['Radius']
         formatted_df['Theta'] = VS_param_logger['Theta']
         formatted_df['Z0'] = VS_param_logger['Z0']
         formatted_df['X'] = VS_param_logger['X']
