@@ -48,7 +48,29 @@ def get_session_children(project, mouse, session, flexilims_session=None):
     return sess_children
 
 
-def get_recording_entries(project, mouse, session, protocol, flexilims_session=None):
+def get_all_recording_entries(project, mouse, session, protocol, flexilims_session=None):
+    """
+    Get all flexilims entries (children) of a recording
+    :param str project:
+    :param str mouse:
+    :param str session:
+    :param str protocol:
+    :return:
+    """
+    if flexilims_session is None:
+        warn(
+            "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
+        )
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    sess_children = get_session_children(project, mouse, session, flexilims_session)
+    
+    all_protocol_recording_entries = sess_children[sess_children['name'].str[-len(protocol):].str.contains(protocol)]
+    
+    return all_protocol_recording_entries
+
+
+def get_recording_entries(project, mouse, session, protocol, all_protocol_recording_entries=None, recording_no=0, flexilims_session=None):
     """
     Get all flexilims entries (children) of a recording
     :param str project:
@@ -63,16 +85,23 @@ def get_recording_entries(project, mouse, session, protocol, flexilims_session=N
             "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
         )
         flexilims_session = flz.get_flexilims_session(project_id=project)
-
-    sess_children = get_session_children(project, mouse, session, flexilims_session)
-    # protocol_recording = sess_children.loc[sess_children['name'].str.contains(protocol, case=False)]
-    for i in range(len(sess_children)):
-        name = sess_children.iloc[i].name
-        if name[-len(protocol) :] == protocol:
-            protocol_recording = sess_children.iloc[i]
+    
+    if all_protocol_recording_entries is None:
+        warn(
+            f"all_protocol_recording_entries not given, assume only one recording for protocol {protocol} in this session.\n \
+            The last recording that matches this protocoll will be returned."
+        )
+        sess_children = get_session_children(project, mouse, session, flexilims_session)
+        # protocol_recording = sess_children.loc[sess_children['name'].str.contains(protocol, case=False)]
+        for i in range(len(sess_children)):
+            name = sess_children.iloc[i].name
+            if name[-len(protocol) :] == protocol:
+                protocol_recording = sess_children.iloc[i]
+    else:
+        protocol_recording = all_protocol_recording_entries.iloc[recording_no]
     recording_entries = flz.get_children(
         protocol_recording.id, project_id=project, flexilims_session=flexilims_session
-    )
+        )
     recording_path = protocol_recording.path
 
     return recording_entries, recording_path
