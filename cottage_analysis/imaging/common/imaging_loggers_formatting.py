@@ -193,7 +193,10 @@ def format_img_frame_logger(harpmessage_file, register_address=32):
     :param int register_address: at which address was the frame trigger registered. Default 32.
     :return: pd.DataFrame formatted_df
     '''
-    harp_message = pd.read_csv(harpmessage_file, sep=',', usecols=['RegisterAddress', 'Timestamp', 'DataElement0'])
+    if 'csv' in str(harpmessage_file):
+        harp_message = pd.read_csv(harpmessage_file, sep=',', usecols=['RegisterAddress', 'Timestamp', 'DataElement0'])
+    else:
+        harp_message = harpmessage_file
     harp_message = harp_message[harp_message.RegisterAddress == register_address]
 
     # Find 8 bit correspondance to different channels because the lick signal is also registered on the same channel
