@@ -75,7 +75,7 @@ def main(project, mouse, session):
     speed_thr_cal = (
         0.2  # m/s, threshold for running speed when calculating depth neurons
     )
-    is_calculate_dFF = False
+    is_calculate_dFF = True
     manual_choose_rois = False
     manually_chosen_rois = [0,1,2,3,4]
     # Fontsizes
@@ -247,17 +247,15 @@ def main(project, mouse, session):
             msg = Path(str(harpmessage_file).replace('csv','bin'))
             p_msg = trace_folder
             p_msg = p_msg / (msg.stem + '.npz')
-            if p_msg.is_file():
-                harp_messages = np.load(p_msg)
-            else:
+            if not p_msg.is_file():
                 print('Saving harp messages into npz...', flush=True)
-                harp_messages = harp.load_harp(msg)
+                harp_messages = harp.load_harp(msg, di_names=('frame_triggers','lick_detection','di2_encoder_initial_state'))
                 p_msg.parent.mkdir(parents=True, exist_ok=True)
                 np.savez(p_msg, **harp_messages)
                 print('Harp messages saved.', flush=True)
 
             img_frame_logger = format_loggers.format_img_frame_logger(
-                harpmessage_file, register_address=32
+                harpmessage_file=p_msg, register_address=32
             )
             frame_number = ops["frames_per_folder"][folder_no]
             img_frame_logger = find_frames.find_imaging_frames(

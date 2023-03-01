@@ -195,21 +195,27 @@ def format_img_frame_logger(harpmessage_file, register_address=32):
     '''
     if 'csv' in str(harpmessage_file):
         harp_message = pd.read_csv(harpmessage_file, sep=',', usecols=['RegisterAddress', 'Timestamp', 'DataElement0'])
-    else:
-        harp_message = harpmessage_file
-    harp_message = harp_message[harp_message.RegisterAddress == register_address]
+        harp_message = harp_message[harp_message.RegisterAddress == register_address]
 
-    # Find 8 bit correspondance to different channels because the lick signal is also registered on the same channel
-    bits = np.array(np.hstack(harp_message.DataElement0.values), dtype='uint8')
-    bits = np.unpackbits(bits, bitorder='little')
-    bits = bits.reshape((len(harp_message), 8))
+        # Find 8 bit correspondance to different channels because the lick signal is also registered on the same channel
+        bits = np.array(np.hstack(harp_message.DataElement0.values), dtype='uint8')
+        bits = np.unpackbits(bits, bitorder='little')
+        bits = bits.reshape((len(harp_message), 8))
 
-    for iport in range(8):
-        harp_message[f'Port{iport}'] = bits[:, iport]
+        for iport in range(8):
+            harp_message[f'Port{iport}'] = bits[:, iport]
 
-    formatted_df = harp_message[harp_message.Port0.diff() != 0]
-    formatted_df.rename(columns={'Timestamp': 'HarpTime'}, inplace=True)
+        formatted_df = harp_message[harp_message.Port0.diff() != 0]
+        formatted_df.rename(columns={'Timestamp': 'HarpTime'}, inplace=True)
     
+    elif 'npz' in str(harpmessage_file):
+        harp_message = np.load(harpmessage_file)
+        formatted_df = pd.DataFrame(columns=['HarpTime','FrameTriggers'])
+        formatted_df['HarpTime'] = harp_message['digital_time']
+        formatted_df['FrameTriggers'] = harp_message['frame_triggers']
+        formatted_df['RegisterAddress'] = register_address
+        formatted_df = formatted_df[formatted_df.FrameTriggers.diff()!=0]
+
     return formatted_df
 
 
