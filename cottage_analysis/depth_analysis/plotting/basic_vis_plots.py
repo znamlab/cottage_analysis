@@ -41,19 +41,29 @@ def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance
             title_on = True
         else:
             title_on = False
-        title = f'ROI {roi} {title}, \n'
+        # title = f'ROI {roi} {title}, \n'
+        title = f'{title}'
+        if idepth!=len(depth_list)-1:
+            colorbar_on = False
+        else:
+            colorbar_on = True
         plot_raster(arr=np.array(binned_stats['binned_yrr'][idepth]) * unit_scale, vmin=0,
                     vmax=vmax,
                     cmap=heatmap_cmap, title=title, title_on=title_on,
-                    suffix='Depth: ' + str(int(depth_list[idepth] * 100)) + ' cm', fontsize=fontsize_dict['title'],
+                    suffix='Depth: ' + str(int(depth_list[idepth] * 100)) + ' cm', fontsize_dict=fontsize_dict,
                     frame_rate=frame_rate,
                     extent=[0, distance_max * 100, binned_stats['binned_yrr'][idepth].shape[0], 1],
-                    set_nan_cmap=False)
+                    set_nan_cmap=False, colorbar_on=colorbar_on)
+        if idepth==0:
+            plt.ylabel('Trial no.', fontsize=fontsize_dict['ylabel'])
+            plt.xticks(fontsize=fontsize_dict['xticks'], rotation = 45)
+            plt.yticks(fontsize=fontsize_dict['yticks'])    
+            plt.xlabel('Corridor \n position (cm)', fontsize=fontsize_dict['xlabel'])
+        else:
+            plt.xticks(fontsize=fontsize_dict['xticks'], rotation = 45)
+            plt.yticks([])
+            plt.xlabel('Corridor \n position (cm)', fontsize=fontsize_dict['xlabel'])
 
-        plt.xlabel('Distance (cm)', fontsize=fontsize_dict['xlabel'])
-        plt.ylabel('Trial no.', fontsize=fontsize_dict['ylabel'])
-        plt.xticks(fontsize=fontsize_dict['xticks'])
-        plt.yticks(fontsize=fontsize_dict['yticks'])
     return binned_stats
 
 
