@@ -49,4 +49,4 @@ def fix_bad_path_handling(config_file, user):
 
 if __name__ == "__main__":
     config_file = "/nemo/lab/znamenskiyp/home/shared/projects/DLC_models/all_eyes_2023/config.yaml"
-    fix_bad_path_handling(config_file)
+    fix_bad_path_handling(config_file, user='Antonin Blot')
