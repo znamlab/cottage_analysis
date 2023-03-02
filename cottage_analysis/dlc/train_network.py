@@ -16,7 +16,7 @@ if __name__ == "__main__":
         # should be on camp
         ROOT_DIR = "/camp/lab/znamenskiyp/home/"
 
-    model_folder = "shared/projects/DLC_models/wehrcam_eye_tracking_2022"
+    model_folder = "shared/projects/DLC_models/all_eyes_2023"
     config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
 
     import deeplabcut
