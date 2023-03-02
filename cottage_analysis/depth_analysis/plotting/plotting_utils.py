@@ -74,14 +74,15 @@ def plot_raster(
     vmin,
     vmax,
     cmap,
+    fontsize_dict,
     blank_period=5,
     frame_rate=30,
     title=None,
     suffix=None,
     title_on=False,
-    fontsize=10,
     extent=[],
     set_nan_cmap=True,
+    colorbar_on=True
 ):
     """
     Raster plot of input params. Row: trials. Column: time.
@@ -121,11 +122,14 @@ def plot_raster(
         rasterized=False,
         interpolation="none",
     )
-    plt.colorbar()
+
+    if colorbar_on:
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=fontsize_dict['legend'])
     if title_on:
-        plt.title(title + " " + suffix, fontsize=fontsize)
+        plt.title(title + " " + suffix, fontsize=fontsize_dict['title'])
     else:
-        plt.title(suffix, fontsize=fontsize)
+        plt.title(suffix, fontsize=fontsize_dict['title'])
     #     plt.xticks(np.arange(0,arr.shape[1],500))
     plt.ylim([arr.shape[0], 1])
 
