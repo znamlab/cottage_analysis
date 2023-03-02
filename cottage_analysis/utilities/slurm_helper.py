@@ -48,6 +48,7 @@ def create_slurm_sbatch(
             [
                 "ml Anaconda3",
                 "source /camp/apps/eb/software/Anaconda/conda.env.sh",
+                "source activate base",
                 f"conda activate {conda_env}",
                 f"export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/{conda_env}/lib/",
                 "",
