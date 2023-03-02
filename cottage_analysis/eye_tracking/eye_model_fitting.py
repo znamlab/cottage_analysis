@@ -284,7 +284,16 @@ def fit_ellipses(dlc_res_file, likelihood_threshold=None):
         success = ellipse.estimate(xy)
         if not success:
             print("Failed to fit %s" % frame_id, flush=True)
-            ellipse_fits.append(None)
+            ellipse_fits.append(
+            dict(
+                centre_x=np.nan,
+                centre_y=np.nan,
+                angle=np.nan,
+                major_radius=np.nan,
+                minor_radius=np.nan,
+                error=np.nan,
+                rsquare=np.nan,
+            ))
             continue
         xc, yc, a, b, theta = ellipse.params
         # It's a mess. see:
@@ -327,15 +336,14 @@ if __name__ == "__main__":
 
     raw = Path(flz.PARAMETERS["data_root"]["raw"])
     processed = Path(flz.PARAMETERS["data_root"]["processed"])
-    project = "blota_onix_pilote"
-    mouse = "BRAC6692.4a"
-    session = "S20221125"
-    recording = "R154923"
-    camera = "eye_camera"
+    project = "hey2_3d-vision_foodres_20220101"
+    mouse = "PZAH6.4b"
+    session = "S20220419"
+    recording = "R145152_SpheresPermTubeReward"
+    camera = "right_eye_camera"
 
-    fname = "eye_camera_2022-11-25T15_49_23_cropped"
     data_path = processed / project / mouse / session / recording / camera
-    dlc_path = data_path / "dlc_output"
+    dlc_path = data_path # / "dlc_output"
     ellipse_fits = None
     print("Fitting ellipses")
     for fname in dlc_path.glob("*.h5"):
@@ -344,13 +352,13 @@ if __name__ == "__main__":
         if ellipse_fits is not None:
             raise IOError("Multiple DLC results files")
 
-        fit_save = dlc_path / "{0}_ellipse_fit.csv".format(fname.stem)
+        fit_save = dlc_path / "{0}_ellipse_fits.csv".format(fname.stem)
         if fit_save.exists():
             ellipse_fits = pd.read_csv(fit_save)
         else:
             ellipse_fits = fit_ellipses(fname)
             ellipse_fits.to_csv(fit_save, index=False)
-
+    raise NotImplementedError
     # let's unproject
     print("Unprojecting")
     px_per_mm = 5
