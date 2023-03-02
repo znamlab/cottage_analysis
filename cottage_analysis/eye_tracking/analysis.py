@@ -1,0 +1,289 @@
+import flexiznam as flz
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from skimage.measure import EllipseModel
+from pathlib import Path
+import cv2
+import pickle
+from cottage_analysis.utilities.plot_utils import get_img_from_fig, write_fig_to_video
+
+
+def get_data(
+    camera,
+    flexilims_session=None,
+    likelihood_threshold=0.88,
+    rsquare_threshold=0.99,
+    error_threshold=4,
+):
+    """Get eye tracking data from camera dataset
+
+    Args:
+        camera (flexiznam.schema.camera_data.CameraData): Camera dataset
+        flexilims_session (flexilims.Session): Flexilims session to interact with
+            database. Must have the proper project. If None, use
+            `camera.flexilims_sessions`. Default to None.
+        likelihood_threshold (float, optional): Threshold on average DLC likelihood.
+            Defaults to 0.88.
+        rsquare_threshold (float, optional): Threshold on rsquare of ellipse fit.
+            Defaults to 0.99.
+        error_threshold (float, optional): Threshold on error of ellipse fit, in px.
+            Defaults to 4.
+
+    Returns:
+        panda.DataFrame: DLC results
+        panda.DataFrame: Ellipse fits
+    """
+
+    rec_ds = flz.get_children(
+        parent_id=camera.origin_id,
+        flexilims_session=flexilims_session,
+        children_datatype="dataset",
+    )
+    cam_analysis = rec_ds[rec_ds.name.map(lambda x: camera.dataset_name in x)]
+    dlc = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
+    assert len(dlc) == 1
+    dlc = flz.Dataset.from_flexilims(
+        data_series=dlc.iloc[0], flexilims_session=flexilims_session
+    )
+    dlc_res = pd.read_hdf(dlc.path_full)
+    # Get ellipse fits
+    camera_save_folder = dlc.path_full.parent
+    ellipse_csv = list(camera_save_folder.glob("*ellipse_fits.csv"))
+    assert len(ellipse_csv) == 1
+    ellipse = pd.read_csv(ellipse_csv[0])
+    # add dlc likelihood
+
+    dlc_like = dlc_res.xs("likelihood", axis="columns", level=2)
+    dlc_like.columns = dlc_like.columns.droplevel("scorer")
+    dlc_like = dlc_like.drop(
+        axis="columns",
+        labels=[
+            "reflection",
+            "left_eye_corner",
+            "right_eye_corner",
+            "top_eye_lid",
+            "bottom_eye_lid",
+        ],
+    ).mean(axis="columns")
+    ellipse["dlc_avg_likelihood"] = dlc_like
+    valid = (
+        (ellipse.dlc_avg_likelihood > likelihood_threshold)
+        & (ellipse.rsquare > rsquare_threshold)
+        & (ellipse.error < error_threshold)
+    )
+    ellipse["valid"] = valid
+    return dlc_res, ellipse
+
+
+def plot_movie(
+    camera,
+    target_file,
+    start_frame=0,
+    duration=60,
+    dlc_res=None,
+    ellipse=None,
+    vmax=None,
+    vmin=None,
+    playback_speed=4,
+):
+    """Plot a movie of raw video, video with dlc tracking and video with ellipse fit
+
+    Args:
+        camera (flexiznam.schema.camera_data.CameraData): Camera dataset
+        target_file (str): Full path to video output
+        start_frame (int, optional): First frame to plot. Defaults to 0.
+        duration (float, optional): Duration of video, in seconds. Defaults to 60.
+        dlc_res (pandas.DataFrame, optional): DLC results. Will be loaded if None.
+            Defaults to None.
+        ellipse (pandas.DataFrame, optional): Ellipse fit. Will be loaded if None.
+            Defaults to None.
+        vmax (int, optional): vmax for video grayscale image. Defaults to None
+        vmin (int, optional): vmin for video grayscale image. Defaults to None
+        playback_speed (float, optional): playback speed, relative to original video
+            speed (which might not be real time). Default to 4.
+    """
+
+    if dlc_res is None or ellipse is None:
+        dlc_res, ellipse = get_data(camera, flexilims_session=camera.flexilims_session)
+    # Find DLC crop area
+    borders = np.zeros((4, 2))
+    for iw, w in enumerate(
+        ("left_eye_corner", "right_eye_corner", "top_eye_lid", "bottom_eye_lid")
+    ):
+        vals = dlc_res.xs(w, level=1, axis=1)
+        vals.columns = vals.columns.droplevel("scorer")
+        v = np.nanmedian(vals[["x", "y"]].values, axis=0)
+        borders[iw, :] = v
+
+    borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
+    borders += ((np.diff(borders, axis=0) * 0.1).T @ np.array([[-1, 1]])).T
+    borders = borders.astype(int)
+    video_file = camera.path_full / camera.extra_attributes["video_file"]
+    ellipse_model = EllipseModel()
+
+    fig = plt.figure()
+    fig.set_size_inches((9, 3))
+
+    img = get_img_from_fig(fig)
+    cam_data = cv2.VideoCapture(str(video_file))
+    fps = cam_data.get(cv2.CAP_PROP_FPS)
+    fcc = int(cam_data.get(cv2.CAP_PROP_FOURCC))
+    fcc = (
+        chr(fcc & 0xFF)
+        + chr((fcc >> 8) & 0xFF)
+        + chr((fcc >> 16) & 0xFF)
+        + chr((fcc >> 24) & 0xFF)
+    )
+
+    output = cv2.VideoWriter(
+        str(target_file),
+        cv2.VideoWriter_fourcc(*fcc),
+        fps * playback_speed,
+        (img.shape[1], img.shape[0]),
+    )
+
+    nframes = int(fps * duration * 4)
+    cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
+    for frame_id in np.arange(nframes) + start_frame:
+        track = dlc_res.loc[frame_id]
+        # plot
+        fig.clear()
+        ax_img = fig.add_subplot(1, 3, 1)
+        ax_track = fig.add_subplot(1, 3, 2)
+        ax_fit = fig.add_subplot(1, 3, 3)
+        fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
+
+        ret, frame = cam_data.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        for ax in [ax_img, ax_fit, ax_track]:
+            ax.imshow(
+                gray[slice(*borders[:, 1]), slice(*borders[:, 0])],
+                cmap="gray",
+                vmax=vmax,
+                vmin=vmin,
+            )
+            ax.set_yticks([])
+            ax.set_xticks([])
+
+        track.index = track.index.droplevel(["scorer"])
+        xdata = track.loc[[(f"eye_{i}", "x") for i in np.arange(1, 13)]]
+        ydata = track.loc[[(f"eye_{i}", "y") for i in np.arange(1, 13)]]
+        likelihood = track.loc[[(f"eye_{i}", "likelihood") for i in np.arange(1, 13)]]
+        ax_track.scatter(
+            xdata - borders[0, 0], ydata - borders[0, 1], s=likelihood * 10
+        )
+
+        # params are xc, yc, a, b, theta
+        params = ellipse.loc[
+            frame_id, ["centre_x", "centre_y", "major_radius", "minor_radius", "angle"]
+        ]
+        ellipse_model.params = params.values
+        circ_coord = ellipse_model.predict_xy(np.arange(0, 2 * np.pi, 0.1))
+        ax_fit.plot(circ_coord[:, 0] - borders[0, 0], circ_coord[:, 1] - borders[0, 1])
+        write_fig_to_video(fig, output)
+        if frame_id > nframes:
+            break
+
+    cam_data.release()
+    output.release()
+    print(f"Saved in {target_file}")
+
+
+def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=False):
+    """Add running speed, optic flow and depth to ellipse dataframe
+
+    This assumes that there can be a few triggers after the end of the scanimage session
+    and cuts them (up to 5)
+    Args:
+        camera (flexiznam.CameraDataset): Camera dataset, used for finding data and flexilims interaction
+        dlc_res (pandas.DataFrame): DLC results
+        ellipse (pandas.DataFrame): Ellipse fits
+        speed_threshold (float, optional): Threshold to cut running speeds. Defaults to
+            0.01.
+        log_speeds (bool, optional): If True, speeds at log10, otherwise raw. Defaults
+            to False.
+
+    Returns:
+        pandas.DataFrame: Combined dataframe, copy of ellipse with speeds
+    """
+    # get data
+    flm_sess = camera.flexilims_session
+    assert flm_sess is not None
+    recording = flz.get_entity(id=camera.origin_id, flexilims_session=flm_sess)
+
+    sess_ds = flz.get_children(
+        parent_id=recording.origin_id,
+        flexilims_session=flm_sess,
+        children_datatype="dataset",
+    )
+    suite_2p = sess_ds[sess_ds.dataset_type == "suite2p_rois"]
+    assert len(suite_2p) == 1
+    suite_2p = flz.Dataset.from_flexilims(
+        data_series=suite_2p.iloc[0], flexilims_session=flm_sess
+    )
+
+    ops = np.load(
+        suite_2p.path_full / "suite2p" / "plane0" / "ops.npy", allow_pickle=True
+    ).item()
+    processed = Path(flz.PARAMETERS["data_root"]["processed"])
+
+    with open(processed / recording.path / "img_VS.pickle", "rb") as handle:
+        param_logger = pickle.load(handle)
+    with open(processed / recording.path / "stim_dict.pickle", "rb") as handle:
+        stim_dict = pickle.load(handle)
+
+    sampling = ops["fs"]
+
+    vrs = np.array(param_logger.EyeZ.diff() / param_logger.HarpTime.diff(), dtype=float)
+    vrs = np.clip(vrs, speed_threshold, None)
+    rs = np.array(
+        param_logger.MouseZ.diff() / param_logger.HarpTime.diff(), dtype=float
+    )
+    rs = np.clip(rs, speed_threshold, None)
+    depth = np.array(param_logger.Depth, copy=True, dtype=float)
+    depth[depth < 0] = np.nan
+    of = np.degrees(vrs / depth)
+    # convert to cm
+    depth *= 100
+    rs *= 100
+    vrs *= 100
+    if log_speeds:
+        rs = np.log10(rs)
+        vrs = np.log10(vrs)
+        of = np.log10(of)
+
+    print(f"Running speed with {len(rs)}, vs {len(ellipse)} frames")
+    ntocut = len(ellipse) - len(rs)
+    if ntocut > 5:
+        raise ValueError("{ntocut} more frames in video than SI trggers")
+    elif ntocut > 0:
+        print(f"Cutting the last {ntocut} frames")
+        data = pd.DataFrame(ellipse.iloc[:-ntocut], copy=True)
+    else:
+        raise NotImplementedError
+
+    data["running_speed"] = rs
+    data["optic_flow"] = of
+    data["virtual_running_speed"] = vrs
+    data["depth"] = np.round(depth, 0)
+    reflection = dlc_res.xs(axis="columns", level=1, key="reflection")
+    reflection.columns = reflection.columns.droplevel("scorer")
+    data["reflection_x"] = reflection.x.values[:-ntocut]
+    data["reflection_y"] = reflection.x.values[:-ntocut]
+    data["pupil_x"] = data.centre_x - data.reflection_x
+    data["pupil_y"] = data.centre_y - data.reflection_y
+    data.loc[~data.valid, "x"] = np.nan
+    data.loc[~data.valid, "y"] = np.nan
+    data["pupil_motion"] = 0
+    data.loc[1:, "pupil_motion"] = np.sqrt(
+        data.pupil_x.diff() ** 2 + data.pupil_y.diff() ** 2
+    )
+    med_pos = np.array([np.nanmedian(data.pupil_x), np.nanmedian(data.pupil_y)])
+    data["delta_position_x"] = data.pupil_x - med_pos[0]
+    data["delta_position_y"] = data.pupil_y - med_pos[1]
+    data["distance_to_median_position"] = np.sqrt(
+        data.delta_position_x**2 + data.delta_position_y**2
+    )
+
+    return data
