@@ -259,7 +259,7 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
         raise ValueError("{ntocut} more frames in video than SI trggers")
     elif ntocut > 0:
         print(f"Cutting the last {ntocut} frames")
-        data = pd.DataFrame(ellipse.iloc[:-ntocut], copy=True)
+        data = pd.DataFrame(ellipse.iloc[:-ntocut,:], copy=True)
     else:
         raise NotImplementedError
 
@@ -286,4 +286,4 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
         data.delta_position_x**2 + data.delta_position_y**2
     )
 
-    return data
+    return data, sampling
