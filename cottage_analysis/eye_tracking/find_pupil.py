@@ -166,3 +166,57 @@ def fit_ellipses(dlc_file, target_folder, likelihood_threshold=None):
         stderr=subprocess.STDOUT,
     )
     return proc
+
+
+def reproject_pupils(camera_dataset_name, project, target_folder):
+    """Find best eye parameters and eye rotation to reproject pupils
+
+    This will generate a .sh and .py scripts in target_folder and use them to start a
+    sbatch job.
+
+    Args:
+        camera_dataset_name (str): Name of the camera dataset as on flexilims
+        project (str): Name of the project
+        target_folder (str): Full path to save data
+
+    Returns:
+        subprocess.process: Process running the job
+    """
+    target_folder = Path(target_folder)
+
+    python_script = target_folder / "find_gaze.py"
+
+    # Make a python script
+    arguments = dict(
+        camera_dataset_name=str(camera_dataset_name),
+        target_folder=str(target_folder),
+        project=project,
+        plot=True,
+    )
+
+    source = (
+        Path(__file__).parent / "slurm_scripts" / "reproject_ellipse_kerr.py"
+    ).read_text()
+    for k, v in arguments.items():
+        source = source.replace(f'"XXX_{k.upper()}_XXX"', repr(v))
+    with open(python_script, "w") as fhandle:
+        fhandle.write(source)
+
+    slurm_helper.create_slurm_sbatch(
+        target_folder,
+        script_name="find_gaze.sh",
+        python_script=python_script,
+        conda_env="cottage_analysis",
+        slurm_options=dict(mem="8G", time="24:00:00"),
+        module_list=None,
+    )
+
+    # Now run the job
+    command = f"sbatch {target_folder / 'find_gaze.sh'}"
+    print(command)
+    proc = subprocess.Popen(
+        shlex.split(command),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+    return proc

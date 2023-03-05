@@ -22,6 +22,6 @@ assert dlc_file.exists()
 target = Path(target_folder) / f"{dlc_file.stem}_ellipse_fits.csv"
 print(f"Doing %s" % dlc_file)
 ellipse_fits = eye_model_fitting.fit_ellipses(dlc_file, likelihood_threshold=likelihood)
-print(f'Fitted, save to {target}')
+print(f"Fitted, save to {target}")
 ellipse_fits.to_csv(target, index=False)
-print('Done')
+print("Done")
