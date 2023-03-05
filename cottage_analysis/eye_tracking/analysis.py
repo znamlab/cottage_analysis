@@ -76,6 +76,16 @@ def get_data(
         & (reflection_like > likelihood_threshold)
     )
     ellipse["valid"] = valid
+
+    reflection = dlc_res.xs(axis="columns", level=1, key="reflection")
+    reflection.columns = reflection.columns.droplevel("scorer")
+    ellipse["reflection_x"] = reflection.x.values
+    ellipse["reflection_y"] = reflection.y.values
+    ellipse["pupil_x"] = ellipse.centre_x - ellipse.reflection_x
+    ellipse["pupil_y"] = ellipse.centre_y - ellipse.reflection_y
+    ellipse.loc[~ellipse.valid, "x"] = np.nan
+    ellipse.loc[~ellipse.valid, "y"] = np.nan
+
     return dlc_res, ellipse
 
 
@@ -282,23 +292,4 @@ def add_behaviour(
     data["optic_flow"] = of
     data["virtual_running_speed"] = vrs
     data["depth"] = np.round(depth, 0)
-    reflection = dlc_res.xs(axis="columns", level=1, key="reflection")
-    reflection.columns = reflection.columns.droplevel("scorer")
-    data["reflection_x"] = reflection.x.values[:-ntocut]
-    data["reflection_y"] = reflection.y.values[:-ntocut]
-    data["pupil_x"] = data.centre_x - data.reflection_x
-    data["pupil_y"] = data.centre_y - data.reflection_y
-    data.loc[~data.valid, "x"] = np.nan
-    data.loc[~data.valid, "y"] = np.nan
-    data["pupil_motion"] = 0
-    data.loc[1:, "pupil_motion"] = np.sqrt(
-        data.pupil_x.diff() ** 2 + data.pupil_y.diff() ** 2
-    )
-    med_pos = np.array([np.nanmedian(data.pupil_x), np.nanmedian(data.pupil_y)])
-    data["delta_position_x"] = data.pupil_x - med_pos[0]
-    data["delta_position_y"] = data.pupil_y - med_pos[1]
-    data["distance_to_median_position"] = np.sqrt(
-        data.delta_position_x**2 + data.delta_position_y**2
-    )
-
     return data, sampling
