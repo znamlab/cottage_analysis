@@ -1,5 +1,8 @@
 """This script is intended to be copied and edited by find_pupil.dlc_track"""
 import deeplabcut
+import yaml
+import numpy as np
+import pandas as pd
 from pathlib import Path
 
 video = "XXX_VIDEO_XXX"
@@ -9,6 +12,7 @@ filter = "XXX_FILTER_XXX"
 label = "XXX_LABEL_XXX"
 origin_id = "XXX_ORIGIN_ID_XXX"
 project = "XXX_PROJECT_XXX"
+crop = "XXX_CROP_XXX"
 
 if origin_id.startswith("XXX_"):
     origin_id = None
@@ -40,10 +44,28 @@ analyse_kwargs = dict(
     identity_only=False,
 )
 
-print("Analyzing", flush=True)
-out = deeplabcut.analyze_videos(**analyse_kwargs)
 target_folder = Path(target_folder)
 video = Path(video)
+
+if isinstance(crop, bool) and crop:
+    crop_file = target_folder / f"{video.stem}_crop_tracking.yml"
+    if crop_file.exists():
+        print("Cropping using crop file info", flush=True)
+        with open(crop_file, "r") as fhandle:
+            crop_info = yaml.safe_load(fhandle)
+            analyse_kwargs["cropping"] = [
+                crop_info["xmin"],
+                crop_info["xmax"],
+                crop_info["ymin"],
+                crop_info["ymax"],
+            ]
+        print(f'New crop: {analyse_kwargs["cropping"]}')
+    else:
+        raise IOError("No cropping info found")
+
+print("Analyzing", flush=True)
+out = deeplabcut.analyze_videos(**analyse_kwargs)
+
 dlc_output = target_folder / f"{video.stem}{out}.h5"
 if not dlc_output.exists():
     raise IOError(f"DLC ran but I cannot find the output. {dlc_output} does not exist.")

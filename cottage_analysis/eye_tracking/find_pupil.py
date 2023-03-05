@@ -9,6 +9,7 @@ def dlc_track(
     video_path,
     model_name,
     target_folder,
+    crop=False,
     origin_id=None,
     project=None,
     filter=False,
@@ -21,6 +22,9 @@ def dlc_track(
         model_name (str): Name of the model to use. Must be in the `DLC_models` shared
             project folder
         target_folder (str): Folder to save results
+        crop (bool, optional): Crop the video before tracking. If True crop info must be
+            defined either in f"{video.stem}_crop_tracking.yml" or as previous dlc track
+            see slurm_scripts/dlc_track_filter_label.py for more info. Defaults to False
         origin_id (str, optional): Hexadecimal code of the origin on flexilims. If
             not None, a flexilims entry with be created from this origin, otherwise
             nothing is uploaded. Defaults to None.
@@ -50,6 +54,7 @@ def dlc_track(
         target=str(target_folder),
         filter=bool(filter),
         label=bool(label),
+        crop=bool(crop),
     )
     if origin_id is not None:
         if project is None:
@@ -87,6 +92,7 @@ def dlc_track(
                 "ml cuDNN/8.1.1.33-CUDA-11.2.1",
                 "ml Anaconda3",
                 "source /camp/apps/eb/software/Anaconda/conda.env.sh",
+                "source activate base",
                 "conda activate dlc_nogui",
                 "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/dlc_nogui/lib/",
                 "",
