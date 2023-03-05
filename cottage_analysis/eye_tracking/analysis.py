@@ -1,6 +1,7 @@
 import flexiznam as flz
 import pandas as pd
 import numpy as np
+from warnings import warn
 import matplotlib.pyplot as plt
 from skimage.measure import EllipseModel
 from pathlib import Path
@@ -56,6 +57,7 @@ def get_data(
 
     dlc_like = dlc_res.xs("likelihood", axis="columns", level=2)
     dlc_like.columns = dlc_like.columns.droplevel("scorer")
+    reflection_like = dlc_like["reflection"]
     dlc_like = dlc_like.drop(
         axis="columns",
         labels=[
@@ -71,6 +73,7 @@ def get_data(
         (ellipse.dlc_avg_likelihood > likelihood_threshold)
         & (ellipse.rsquare > rsquare_threshold)
         & (ellipse.error < error_threshold)
+        & (reflection_like > likelihood_threshold)
     )
     ellipse["valid"] = valid
     return dlc_res, ellipse
@@ -173,7 +176,10 @@ def plot_movie(
         ax_track.scatter(
             xdata - borders[0, 0], ydata - borders[0, 1], s=likelihood * 10
         )
-
+        ax_track.scatter(
+            track.loc[("reflection", "x")] - borders[0, 0],
+            track.loc[("reflection", "y")] - borders[0, 1],
+        )
         # params are xc, yc, a, b, theta
         params = ellipse.loc[
             frame_id, ["centre_x", "centre_y", "major_radius", "minor_radius", "angle"]
@@ -190,7 +196,9 @@ def plot_movie(
     print(f"Saved in {target_file}")
 
 
-def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=False):
+def add_behaviour(
+    camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=False, verbose=True
+):
     """Add running speed, optic flow and depth to ellipse dataframe
 
     This assumes that there can be a few triggers after the end of the scanimage session
@@ -203,6 +211,7 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
             0.01.
         log_speeds (bool, optional): If True, speeds at log10, otherwise raw. Defaults
             to False.
+        verbose (bool, optional): If True tell how many frames are cut. Defaults to True
 
     Returns:
         pandas.DataFrame: Combined dataframe, copy of ellipse with speeds
@@ -237,10 +246,15 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
 
     vrs = np.array(param_logger.EyeZ.diff() / param_logger.HarpTime.diff(), dtype=float)
     vrs = np.clip(vrs, speed_threshold, None)
-    rs = np.array(
-        param_logger.MouseZ.diff() / param_logger.HarpTime.diff(), dtype=float
-    )
-    rs = np.clip(rs, speed_threshold, None)
+    if "MouseZ" in param_logger.columns:
+        rs = np.array(
+            param_logger.MouseZ.diff() / param_logger.HarpTime.diff(), dtype=float
+        )
+        rs = np.clip(rs, speed_threshold, None)
+    else:
+        warn(f"No MouseZ for {recording.path}")
+        assert not recording.protocol.lower().endswith("playback")
+        rs = np.array(vrs)
     depth = np.array(param_logger.Depth, copy=True, dtype=float)
     depth[depth < 0] = np.nan
     of = np.degrees(vrs / depth)
@@ -252,14 +266,15 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
         rs = np.log10(rs)
         vrs = np.log10(vrs)
         of = np.log10(of)
-
-    print(f"Running speed with {len(rs)}, vs {len(ellipse)} frames")
+    if verbose:
+        print(f"Running speed with {len(rs)}, vs {len(ellipse)} frames")
     ntocut = len(ellipse) - len(rs)
     if ntocut > 5:
         raise ValueError("{ntocut} more frames in video than SI trggers")
     elif ntocut > 0:
-        print(f"Cutting the last {ntocut} frames")
-        data = pd.DataFrame(ellipse.iloc[:-ntocut,:], copy=True)
+        if verbose:
+            print(f"Cutting the last {ntocut} frames")
+        data = pd.DataFrame(ellipse.iloc[:-ntocut, :], copy=True)
     else:
         raise NotImplementedError
 
@@ -270,7 +285,7 @@ def add_behaviour(camera, dlc_res, ellipse, speed_threshold=0.01, log_speeds=Fal
     reflection = dlc_res.xs(axis="columns", level=1, key="reflection")
     reflection.columns = reflection.columns.droplevel("scorer")
     data["reflection_x"] = reflection.x.values[:-ntocut]
-    data["reflection_y"] = reflection.x.values[:-ntocut]
+    data["reflection_y"] = reflection.y.values[:-ntocut]
     data["pupil_x"] = data.centre_x - data.reflection_x
     data["pupil_y"] = data.centre_y - data.reflection_y
     data.loc[~data.valid, "x"] = np.nan
