@@ -16,15 +16,6 @@ CAMERA_DATASET_NAME = "XXX_CAMERA_DATASET_NAME_XXX"
 save_folder = "XXX_TARGET_FOLDER_XXX"
 PLOT = True
 
-#####################
-# TEMP FOR TEST
-from v1_depth_analysis.config import PROJECT
-
-CAMERA_DATASET_NAME = "PZAH6.4b_S20220419_R145152_SpheresPermTubeReward_left_eye_camera"
-
-########################
-
-
 # get the data
 flm_sess = flz.get_flexilims_session(project_id=PROJECT)
 camera = flz.Dataset.from_flexilims(
@@ -185,7 +176,9 @@ if PLOT:
     )
     ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="purple")
     plt.tight_layout()
-    fig.savefig(save_folder / f"{basename}_initial_reprojection_median_eye_position.png")
+    fig.savefig(
+        save_folder / f"{basename}_initial_reprojection_median_eye_position.png"
+    )
     plt.close(fig)
 
 # optimise for all binned positions
@@ -291,13 +284,40 @@ if PLOT:
     )
     ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="purple")
     plt.tight_layout()
-    fig.savefig(save_folder / f"{basename}_optimised_reprojection_median_eye_position.png")
+    fig.savefig(
+        save_folder / f"{basename}_optimised_reprojection_median_eye_position.png"
+    )
     plt.close(fig)
+# find median eye position and associated phi/theta/radius
+# needed because we want to limit the search 90 degrees around that
+median_position = np.nanmedian(data[["pupil_x", "pupil_y"]], axis=0)
+print(median_position)
+closest_frame = np.argmin(
+    np.sum((enough_frames[["pupil_x", "pupil_y"]] - median_position) ** 2, axis=1)
+)
+median_dlc = data.iloc[closest_frame]
+params_median, i, e = emf.minimise_reprojection_error(
+    median_dlc[["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]],
+    params_med,
+    eye_centre,
+    f_z0,
+    p_range=(np.pi, np.pi, 0.5),
+    grid_size=20,
+    niter=5,
+    reduction_factor=5,
+    verbose=True,
+)
 
 
 # SAVE Eye parameters
 print("Saving eye parameters", flush=True)
-np.savez(save_folder / f"{basename}_eye_parameters.npz", eye_centre=eye_centre, f_z0=f_z0)
+np.savez(
+    save_folder / f"{basename}_eye_parameters.npz",
+    eye_centre=eye_centre,
+    f_z0=f_z0,
+    median_eye_position_parameters=params_median,
+)
+
 
 # optimise for all frames
 print("Fitting all frames", flush=True)
@@ -307,7 +327,8 @@ grid_angles = np.deg2rad(np.arange(0, 360, 5))
 grid_radius = np.arange(0.8, 1.2, 0.1)
 for i_pos, series in data.iterrows():
     if np.mod(i_pos, 1000) == 0:
-        print(f"{i_pos/len(eye_rotation)*100}%", flush=True)
+        percent = i_pos / len(eye_rotation) * 100
+        print(f"{percent:.2f}%", flush=True)
     if not series.valid:
         continue
     ellipse_params = series[
@@ -315,10 +336,10 @@ for i_pos, series in data.iterrows():
     ]
     pa, i, e = emf.minimise_reprojection_error(
         ellipse_params,
-        p0=params_med,
+        p0=params_median,
         eye_centre=eye_centre,
         f_z0=f_z0,
-        p_range=(np.pi / 2, np.pi / 2, 0.5),
+        p_range=(np.pi / 3, np.pi / 3, 0.5),
         grid_size=10,
         niter=3,
         reduction_factor=5,
