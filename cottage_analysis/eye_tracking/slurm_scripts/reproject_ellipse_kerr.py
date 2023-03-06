@@ -14,6 +14,8 @@ from cottage_analysis.eye_tracking import eye_model_fitting as emf
 PROJECT = "XXX_PROJECT_XXX"
 CAMERA_DATASET_NAME = "XXX_CAMERA_DATASET_NAME_XXX"
 save_folder = "XXX_TARGET_FOLDER_XXX"
+phi0 = "XXX_PHI0_XXX"
+theta0 = "XXX_THETA0_XXX"
 PLOT = True
 
 # get the data
@@ -45,6 +47,7 @@ binned_ellipses = elli.groupby(["bin_id_x", "bin_id_y"])
 ns = binned_ellipses.valid.aggregate(len)
 binned_ellipses = binned_ellipses.aggregate(np.nanmedian)
 enough_frames = binned_ellipses[ns > 10]
+
 # PLOT
 if PLOT:
     mat = np.zeros((len(ns.index.levels[0]), len(ns.index.levels[1]))) + np.nan
@@ -135,16 +138,17 @@ if PLOT:
 
 # fit median eye position with fine grid
 print("Fit median position", flush=True)
-ellipse_params_med = enough_frames.loc[
-    :, ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
-].median(axis=0)
-p0 = (0, 0, 1)
+most_frequent_bin = ns.idxmax()
+params_most_frequent_bin = binned_ellipses.loc[
+    most_frequent_bin, ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
+]
+p0 = (phi0, theta0, 1)
 params_med, i, e = emf.minimise_reprojection_error(
-    ellipse_params_med,
+    params_most_frequent_bin,
     p0,
     eye_centre_binned,
     f_z0_binned,
-    p_range=(np.pi, np.pi, 0.5),
+    p_range=(np.pi / 3, np.pi / 3, 0.5),
     grid_size=20,
     niter=5,
     reduction_factor=5,
@@ -153,28 +157,40 @@ params_med, i, e = emf.minimise_reprojection_error(
 phi, theta, radius = params_med
 # Plot fit of median position
 if PLOT:
-    cam_data = cv2.VideoCapture(str(video_file))
-    cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
-    ret, frame = cam_data.read()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
-    cam_data.release()
+    fig = plt.figure()
     ax = plt.subplot(1, 1, 1)
     ax.axis("off")
     ax.imshow(gray, cmap="gray")
     source_model = EllipseModel()
-    source_model.params = ellipse_params_med
+    source_model.params = params_most_frequent_bin
     circ_coord = source_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
         1, 2
     )
     ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="lightblue")
+    ax.plot(*(eye_centre_binned + ref), color="g", marker="o", label="Eye centre")
+    eye_binned = mpl.patches.Circle(
+        xy=(eye_centre_binned + ref),
+        radius=f_z0_binned,
+        facecolor="none",
+        edgecolor="g",
+        label=r"$\frac{f}{z_0}$",
+    )
+    ax.add_artist(eye_binned)
+
     fitted_model = emf.reproj_ellipse(
         phi=phi, theta=theta, r=radius, eye_centre=eye_centre_binned, f_z0=f_z0_binned
     )
     circ_coord = fitted_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
         1, 2
     )
-    ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="purple")
+    ax.plot(
+        circ_coord[:, 0],
+        circ_coord[:, 1],
+        label="Reprojection",
+        color="purple",
+        ls="--",
+    )
+    ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
     plt.tight_layout()
     fig.savefig(
         save_folder / f"{basename}_initial_reprojection_median_eye_position.png"
@@ -193,7 +209,7 @@ for i_pos, (pos, s) in enumerate(enough_frames.iterrows()):
         p0=params_med,
         eye_centre=eye_centre_binned,
         f_z0=f_z0_binned,
-        p_range=(np.pi / 4, np.pi / 4, 0.5),
+        p_range=(np.pi / 3, np.pi / 3, 0.5),
         grid_size=10,
         niter=5,
         reduction_factor=5,
@@ -229,7 +245,8 @@ if PLOT:
 
 # Now optimise eye_centre and f_z0
 print("Optimise eye parameters", flush=True)
-# use a quarter of the frames to go a bit faster
+# skip to use about 20 frames to go a bit faster
+skip = int(np.ceil(len(enough_frames) / 20))
 source_ellipses = (
     enough_frames[::4]
     .loc[:, ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]]
@@ -247,66 +264,88 @@ gazes = eye_rotation_initial[::4]
     verbose=True,
 )
 eye_centre = np.array([x, y])
-if PLOT:
-    # replot median eye posisiton with better eye
-    cam_data = cv2.VideoCapture(str(video_file))
-    cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
-    ret, frame = cam_data.read()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
-    cam_data.release()
 
-    ax = plt.subplot(1, 1, 1)
-    ax.axis("off")
-    ax.imshow(gray, cmap="gray")
-
-    source_model = EllipseModel()
-    source_model.params = ellipse_params_med
-    circ_coord = source_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
-        1, 2
-    )
-    ax.scatter(*(eye_centre + ref), color="purple")
-    ax.scatter(*(eye_centre_binned + ref), color="orange")
-    ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="lightblue")
-    fitted_model = emf.reproj_ellipse(
-        phi=phi, theta=theta, r=radius, eye_centre=eye_centre_binned, f_z0=f_z0_binned
-    )
-    circ_coord = fitted_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
-        1, 2
-    )
-    ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="orange")
-
-    fitted_model = emf.reproj_ellipse(
-        phi=phi, theta=theta, r=radius, eye_centre=eye_centre, f_z0=f_z0
-    )
-    circ_coord = fitted_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
-        1, 2
-    )
-    ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="purple")
-    plt.tight_layout()
-    fig.savefig(
-        save_folder / f"{basename}_optimised_reprojection_median_eye_position.png"
-    )
-    plt.close(fig)
-# find median eye position and associated phi/theta/radius
-# needed because we want to limit the search 90 degrees around that
-median_position = np.nanmedian(data[["pupil_x", "pupil_y"]], axis=0)
-print(median_position)
-closest_frame = np.argmin(
-    np.sum((enough_frames[["pupil_x", "pupil_y"]] - median_position) ** 2, axis=1)
-)
-median_dlc = data.iloc[closest_frame]
-params_median, i, e = emf.minimise_reprojection_error(
-    median_dlc[["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]],
+# Refit median eye position with new eye
+# needed because we want to limit the search 60 degrees around that
+params_med, i, e = emf.minimise_reprojection_error(
+    params_most_frequent_bin,
     params_med,
     eye_centre,
     f_z0,
-    p_range=(np.pi, np.pi, 0.5),
+    p_range=(np.pi / 2, np.pi / 2, 0.5),
     grid_size=20,
     niter=5,
     reduction_factor=5,
     verbose=True,
 )
+
+if PLOT:
+    # replot median eye posisiton with better eye
+    fig = plt.figure()
+    ax = plt.subplot(1, 1, 1)
+    ax.axis("off")
+    ax.imshow(gray, cmap="gray")
+    source_model = EllipseModel()
+    source_model.params = params_most_frequent_bin
+    circ_coord = source_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
+        1, 2
+    )
+    ax.scatter(*(eye_centre_binned + ref), color="g", label="Eye centre (initial)")
+    ax.scatter(
+        *(eye_centre + ref), ec="purple", label="Eye centre (optimised)", fc="None"
+    )
+    eye_binned = mpl.patches.Circle(
+        xy=(eye_centre_binned + ref),
+        radius=f_z0_binned,
+        facecolor="none",
+        edgecolor="g",
+        label=r"$\frac{f}{z_0}$ (initial)",
+    )
+    ax.add_artist(eye_binned)
+
+    eye_binned = mpl.patches.Circle(
+        xy=(eye_centre + ref),
+        radius=f_z0,
+        facecolor="none",
+        edgecolor="purple",
+        ls="--",
+        label=r"$\frac{f}{z_0}$ (optimised)",
+    )
+    ax.add_artist(eye_binned)
+
+    ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="lightblue")
+    # use phi/theta/radius to get original estimate
+    fitted_model = emf.reproj_ellipse(
+        *(phi, theta, radius), eye_centre=eye_centre_binned, f_z0=f_z0_binned
+    )
+    circ_coord = fitted_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
+        1, 2
+    )
+    ax.plot(
+        circ_coord[:, 0],
+        circ_coord[:, 1],
+        label="Original reprojection",
+        color="orange",
+        ls="--",
+    )
+
+    fitted_model = emf.reproj_ellipse(*params_med, eye_centre=eye_centre, f_z0=f_z0)
+    circ_coord = fitted_model.predict_xy(np.arange(0, 2 * np.pi, 0.1)) + ref.reshape(
+        1, 2
+    )
+    ax.plot(
+        circ_coord[:, 0],
+        circ_coord[:, 1],
+        label="Optimised reprojection",
+        color="purple",
+        ls=":",
+    )
+    ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    fig.savefig(
+        save_folder / f"{basename}_optimised_reprojection_median_eye_position.png"
+    )
+    plt.close(fig)
 
 
 # SAVE Eye parameters
@@ -315,7 +354,7 @@ np.savez(
     save_folder / f"{basename}_eye_parameters.npz",
     eye_centre=eye_centre,
     f_z0=f_z0,
-    median_eye_position_parameters=params_median,
+    median_eye_position_parameters=params_med,
 )
 
 
@@ -336,7 +375,7 @@ for i_pos, series in data.iterrows():
     ]
     pa, i, e = emf.minimise_reprojection_error(
         ellipse_params,
-        p0=params_median,
+        p0=params_med,
         eye_centre=eye_centre,
         f_z0=f_z0,
         p_range=(np.pi / 3, np.pi / 3, 0.5),

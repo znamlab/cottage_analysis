@@ -168,8 +168,11 @@ def fit_ellipses(dlc_file, target_folder, likelihood_threshold=None):
     return proc
 
 
-def reproject_pupils(camera_dataset_name, project, target_folder):
+def reproject_pupils(camera_dataset_name, project, target_folder, phi0, theta0):
     """Find best eye parameters and eye rotation to reproject pupils
+
+    There are two solutions for each ellipse fit. Only one is selected by limiting the
+    search in +/- pi/2 around phi0 and theta0
 
     This will generate a .sh and .py scripts in target_folder and use them to start a
     sbatch job.
@@ -178,6 +181,8 @@ def reproject_pupils(camera_dataset_name, project, target_folder):
         camera_dataset_name (str): Name of the camera dataset as on flexilims
         project (str): Name of the project
         target_folder (str): Full path to save data
+        phi0 (float): Centre phi value for initial search
+        theta0 (float): Centre theta value for initial search
 
     Returns:
         subprocess.process: Process running the job
@@ -192,6 +197,8 @@ def reproject_pupils(camera_dataset_name, project, target_folder):
         target_folder=str(target_folder),
         project=project,
         plot=True,
+        phi0=phi0,
+        theta0=theta0,
     )
 
     source = (
