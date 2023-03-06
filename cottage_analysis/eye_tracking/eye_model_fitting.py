@@ -94,7 +94,6 @@ def fit_ellipses(dlc_res_file, likelihood_threshold=None):
         )
     return pd.DataFrame(ellipse_fits)
 
-    
 
 def minimise_reprojection_error(
     ellipse,
@@ -167,6 +166,7 @@ def optimise_eye_parameters(
     niter=5,
     reduction_factor=3,
     verbose=True,
+    inner_search_kwargs=None,
 ):
     source_ellipses = list(ellipses)
     for i in range(len(source_ellipses)):
@@ -181,15 +181,23 @@ def optimise_eye_parameters(
         source_ellipses[i] = model1
 
     params = tuple(p0)
+    if verbose:
+        p_display = np.round(params, 2)
+        print(f"Initial eye parameters: {p_display}.", flush=True)
     for i_iter in range(niter):
         if verbose:
-            print(f"Iteration {i_iter + 1}")
+            print(f"Iteration {i_iter + 1}", flush=True)
 
         grids = [np.linspace(-r, r, grid_size) + p for r, p in zip(p_range, params)]
-        params, ind, errors = grid_search_best_eye(source_ellipses, gazes, *grids)
+        params, ind, errors = grid_search_best_eye(
+            source_ellipses, gazes, *grids, inner_search_kwargs
+        )
         if verbose:
             p_display = np.round(params, 2)
-            print(f"    Best eye parameters: {p_display}. Error: {errors[ind]:.0f}")
+            print(
+                f"    Best eye parameters: {p_display}. Error: {errors[ind]:.0f}",
+                flush=True,
+            )
         p_range = [p / reduction_factor for p in p_range]
     return params, ind, errors
 
@@ -214,16 +222,20 @@ def reproj_centre(phi, theta, eye_centre, f_z0):
 
     Wallace and Kerr method.
 
+    There is an extra minus 1 in the y of the centre reprojection compared to their
+    methods to have the camera y axis pointing down
+
     Args:
-        phi (float): Angle in radians
-        theta (float): Angle in radians
+        phi (float): Vertical angle in radians
+        theta (float): Horizontal angle in radians
         eye_centre (numpy.array): x,y position of eye centre
         f_z0 (float): Scale factor
 
     Returns:
         numpy.array: X, Y of pupil centre in camera coordinates
     """
-    return f_z0 * np.array([np.sin(theta), np.sin(phi) + np.cos(theta)]) + eye_centre
+
+    return f_z0 * np.array([np.sin(theta), -np.sin(phi) * np.cos(theta)]) + eye_centre
 
 
 def reproj_ellipse(phi, theta, r, eye_centre, f_z0):
@@ -232,8 +244,8 @@ def reproj_ellipse(phi, theta, r, eye_centre, f_z0):
     Wallace and Kerr method
 
     Args:
-        phi (float): Angle in radians
-        theta (float): Angle in radians
+        phi (float): Vertical angle in radians
+        theta (float): Horizontal angle in radians
         r (float): Radius of pupil in units of f_z0
         eye_centre (numpy.array): x,y position of eye centre
         f_z0 (float): Scale factor
@@ -244,11 +256,16 @@ def reproj_ellipse(phi, theta, r, eye_centre, f_z0):
     w3 = -np.cos(phi) * np.cos(theta)
     major = r * f_z0
     minor = np.abs(w3) * major
-    # from Wallace et al: not sure what it is
-    # angle = np.arctan(np.tan(theta)/np.sin(phi))
+    # from Wallace et al:
+    if np.sin(phi) != 0:
+        angle = np.arctan(np.tan(theta) / np.sin(phi))
+    else:
+        angle = np.pi / 2 * np.sign(np.tan(theta))
     centre = reproj_centre(phi, theta, eye_centre, f_z0)
-    vect = centre - eye_centre
-    angle = np.arcsin(vect[0] / np.linalg.norm(vect))
+    if False:
+        # one could also look at the angle to centre
+        vect = centre - eye_centre
+        angle = np.arcsin(vect[0] / np.linalg.norm(vect))
     ellipse = EllipseModel()
     # params are xc, yc, a, b, theta
     ellipse.params = (centre[0], centre[1], major / 2, minor / 2, angle)
@@ -335,8 +352,48 @@ def grid_search_best_gaze(
 
 
 def grid_search_best_eye(
-    source_ellipses, ellipse_fits, grid_eye_x, grid_eye_y, grid_f_z0
+    source_ellipses,
+    ellipse_fits,
+    grid_eye_x,
+    grid_eye_y,
+    grid_f_z0,
+    inner_search_kwargs=None,
 ):
+    """Optimise eye parameters by grid search
+
+    Grid search on eye parameters (center x, y and f/z0 scale). For each combination,
+    optimise phi/theta/radius for all source_ellipses and sum reprojection errors
+
+    Args:
+        source_ellipses (list): List of ellipses or ellipse parameter, input data
+        ellipse_fits (list): List of phi/theta/radius parameters to initial search for
+            each source_ellipse
+        grid_eye_x (numpy.array): List of x values to test
+        grid_eye_y (numpy.array): List of y values to test
+        grid_f_z0 (numpy.array): List of f_z0 values to test
+        inner_search_kwargs (dict, optional): Parameters of inner search. If None will
+            use: p_range=(np.deg2rad(30), np.deg2rad(30), 0.2), niter=3, and grid_size=5
+            Defaults to None.
+
+    Returns:
+        params (tuple): Best (x, y, f_z0) eye parameters
+        index (tuple): Index of best parameter in grid
+        errors (numpy.array): Matrix of error for each position in the grid
+    """
+
+    inner_search_params = dict(
+        p_range=(np.deg2rad(30), np.deg2rad(30), 0.2),
+        niter=3,
+        grid_size=5,
+        verbose=False,
+    )
+    if inner_search_kwargs is not None:
+        for k, v in inner_search_kwargs.items():
+            if k not in inner_search_params:
+                warnings.warn(f"Unknown parameter for inner loop: {k}")
+            else:
+                inner_search_kwargs[k] = v
+
     source_ellipses = list(source_ellipses)
     for i in range(len(source_ellipses)):
         source_ellipse = source_ellipses[i]
@@ -352,16 +409,13 @@ def grid_search_best_eye(
         for iy, y in enumerate(grid_eye_y):
             for ifz, fz in enumerate(grid_f_z0):
                 error = 0
-                for iel, ellipse in enumerate(source_ellipses):
+                for ellipse, fit_params in zip(source_ellipses, ellipse_fits):
                     _, ind, errs = minimise_reprojection_error(
                         ellipse,
-                        ellipse_fits[iel],
+                        p0=fit_params,
                         eye_centre=np.array([x, y]),
                         f_z0=fz,
-                        p_range=(np.deg2rad(10), np.deg2rad(10), 0.2),
-                        niter=3,
-                        grid_size=5,
-                        verbose=False,
+                        **inner_search_params,
                     )
                     error += errs[ind]
                 out[ix, iy, ifz] = error
