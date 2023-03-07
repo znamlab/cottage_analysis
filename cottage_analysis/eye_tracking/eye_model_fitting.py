@@ -217,6 +217,58 @@ def get_gaze_vector(phi, theta):
     )
 
 
+def convert_to_world(gaze_vec, rmat, is_flipped=True):
+    """Convert gaze vectors from camera to world coordinates
+
+    This include weird adhoc transformation because the camera images where flipped
+    vertically
+
+    Args:
+        gaze_vec (numpy.array): N x 3 array of gaze in camera coordinate
+        rmat (numpy.array): 3x3 rotation matrix
+        is_flipped (bool, optional): Is the image flipped vertically. Defaults to True.
+
+    Returns:
+        numpy array: N x 3 array
+    """
+    flipped_gaze = np.array(gaze_vec, copy=True)
+    flipped_gaze[:, 1] *= -1  # to have back y going up instead of down
+    rotated_gaze_vec = (rmat @ flipped_gaze.T).T
+    if is_flipped:
+        rotated_gaze_vec = rotated_gaze_vec[
+            :, [0, 2, 1]
+        ]  # because of camera mirror made it a lefthand coordinate system
+    else:
+        raise NotImplementedError(
+            "You need to check that. Not sure if the flipped is needed"
+        )
+
+    return rotated_gaze_vec
+
+
+def gaze_to_azel(gaze_vector, zero_median=False):
+    """Transform gaze vectors in world coordinates to Azimuth and Elevation
+
+    Args:
+        gaze_vector (numpy.array): N x 3 array of gaze
+        zero_median (bool, optional): Subtract the median. Defaults to False.
+
+    Returns:
+        azimuth (numpy.array): len(N) array of azimuth in radians
+        elevation (numpy.array): len(N) array of elevation in radians
+    """
+    azimuth = np.arctan2(gaze_vector[:, 1], gaze_vector[:, 0])
+    elevation = np.arctan2(gaze_vector[:, 2], np.sum(gaze_vector[:, :2] ** 2, axis=1))
+    # zero the median pos
+    if zero_median:
+        azimuth -= np.nanmedian(azimuth)
+        elevation -= np.nanmedian(elevation)
+        # put back in -pi pi
+        azimuth = np.mod(azimuth + np.pi, 2 * np.pi) - np.pi
+        elevation = np.mod(elevation + np.pi, 2 * np.pi) - np.pi
+    return azimuth, elevation
+
+
 def reproj_centre(phi, theta, eye_centre, f_z0):
     """Reproject ellipse centre on camera frame
 
