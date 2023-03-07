@@ -312,35 +312,35 @@ def main(project, mouse, session):
         # Running speed is thresholded with a small threshold to get rid of non-zero values (default threshold 0.01)
         speeds = img_VS_all.MouseZ.diff() / img_VS_all.HarpTime.diff()  # with no playback. EyeZ and MouseZ should be the same.
         speeds[0] = 0
-        speeds = thr(speeds, speed_thr)
+        speeds = thr(speeds, 0)
         speed_arr_noblank,_ = create_speed_arr(speeds, depth_list, stim_dict_all, mode='sort_by_depth', protocol='fix_length', blank_period=0, frame_rate=frame_rate)
         speed_arr =  speed_arr_noblank
         
 
-        # OF (Unit: rad/s)
-        if 'Playback' in protocol:
-            speeds_eye = img_VS_all.EyeZ.diff() / img_VS_all.HarpTime.diff()  # EyeZ is how the perspective of animal moves
-            speeds_eye[0] = 0
-            speeds_eye = thr(speeds_eye, speed_thr)
-            speed_eye_arr_noblank,_ = create_speed_arr(speeds_eye, depth_list, stim_dict_all, mode='sort_by_depth', protocol='fix_length', blank_period=0, frame_rate=frame_rate)
+        # # OF (Unit: rad/s)
+        # if 'Playback' in protocol:
+        #     speeds_eye = img_VS_all.EyeZ.diff() / img_VS_all.HarpTime.diff()  # EyeZ is how the perspective of animal moves
+        #     speeds_eye[0] = 0
+        #     # speeds_eye = thr(speeds_eye, speed_thr)
+        #     speed_eye_arr_noblank,_ = create_speed_arr(speeds_eye, depth_list, stim_dict_all, mode='sort_by_depth', protocol='fix_length', blank_period=0, frame_rate=frame_rate)
 
-            optics = calculate_OF(rs=speeds_eye, img_VS=img_VS_all, mode='no_RF')
+        #     optics = calculate_OF(rs=speeds_eye, img_VS=img_VS_all, mode='no_RF')
 
-        else:
-            optics = calculate_OF(rs=speeds, img_VS=img_VS_all, mode='no_RF')
+        # else:
+        #     optics = calculate_OF(rs=speeds, img_VS=img_VS_all, mode='no_RF')
 
-        of_arr, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
-                            protocol='fix_length', blank_period=3)
-        of_arr_mean = np.nanmean(of_arr, axis=1)
-        of_arr_noblank, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
-                                            protocol='fix_length', blank_period=0)
-        of_arr_noblank_mean = np.nanmean(of_arr_noblank, axis=1)
-        of_arr_blank, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
-                                        protocol='fix_length', isStim=False, blank_period=0)
+        # of_arr, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
+        #                     protocol='fix_length', blank_period=3)
+        # of_arr_mean = np.nanmean(of_arr, axis=1)
+        # of_arr_noblank, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
+        #                                     protocol='fix_length', blank_period=0)
+        # of_arr_noblank_mean = np.nanmean(of_arr_noblank, axis=1)
+        # of_arr_blank, _ = create_speed_arr(optics, depth_list, stim_dict_all, mode='sort_by_depth',
+        #                                 protocol='fix_length', isStim=False, blank_period=0)
         
         # Transform speed into cm/s, optic flow into degrees/s
         speed_arr_noblank = speed_arr_noblank*100
-        of_arr_noblank = np.degrees(of_arr_noblank)
+        # of_arr_noblank = np.degrees(of_arr_noblank)
         
         # PARAMS PROCESSING
         print('---STEP 3: Decoding depth...---', '\n', flush=True)
@@ -371,7 +371,6 @@ def main(project, mouse, session):
         print('Fitting classifier on all data...', '\n', flush=True)
         # train test split
         depth_labels = np.repeat(np.repeat(np.arange(len(depth_list)),speed_arr_downsam.shape[1]),speed_arr_downsam.shape[2]).reshape(len(depth_list),speed_arr_downsam.shape[1],speed_arr_downsam.shape[2])
-        bin_number=10
         speed_min = 1
         speed_max= 150
 
@@ -453,12 +452,11 @@ def main(project, mouse, session):
         print('Fitting classifier on RS bins...', '\n', flush=True)
         # Train and test on 50% of data, validate on 10% of data, test on 40% of data with splitting into different running bins
         depth_labels = np.repeat(np.repeat(np.arange(len(depth_list)),speed_arr_downsam.shape[1]),speed_arr_downsam.shape[2]).reshape(len(depth_list),speed_arr_downsam.shape[1],speed_arr_downsam.shape[2])
-        bin_number=5
-        speed_min = 1
-        speed_max= 150
-        speed_arr_downsam_log = np.log10(speed_arr_downsam)
+        # speed_min = 1
+        # speed_max= 150
+        # speed_arr_downsam_log = np.log10(speed_arr_downsam)
         rs_classifier, rs_rest, trace_classifier, trace_rest, depth_classifier, depth_rest = train_test_split_trials(p_test=0.4, 
-                                                                                                    xarr1=speed_arr_downsam_log, 
+                                                                                                    xarr1=speed_arr_downsam, 
                                                                                                     xarr2=all_trace_downsam,
                                                                                                     yarr=depth_labels)
         rs_classifier_train_test, rs_val, trace_classifier_train_test, trace_val, depth_classifier_train_test, depth_val = train_test_split_trials(p_test=0.1, 
@@ -476,7 +474,20 @@ def main(project, mouse, session):
         trace_val, depth_val, rs_val = remove_nan(xarr=trace_val, arr1=depth_val, arr2=rs_val, shape=(len(which_rois),-1))
         trace_classifier_test, depth_classifier_test, rs_classifier_test = remove_nan(xarr=trace_classifier_test, arr1=depth_classifier_test, arr2=rs_classifier_test, shape=(len(which_rois),-1))
 
-        rs_bins = np.linspace(np.nanmin(speed_arr_downsam_log),np.nanmax(speed_arr_downsam_log),bin_number+1)
+        log_range = {
+            'rs_bin_log_min':0,
+            'rs_bin_log_max':2.5,
+            'rs_bin_num':6,
+            'of_bin_log_min':-1.5,
+            'of_bin_log_max':3.5,
+            'of_bin_num':11,
+            'log_base':10
+            }
+        bin_number = log_range['rs_bin_num']
+        speed_min = np.power(log_range['log_base'],log_range['rs_bin_log_min'])
+        speed_max = np.power(log_range['log_base'], log_range['rs_bin_log_max'])
+        rs_bins = np.geomspace(speed_min, speed_max, log_range['rs_bin_num'])
+        rs_bins = np.insert(rs_bins, 0, 0)
         trace_all_bins = separate_data_into_bins(arr=trace_rest, bin_arr=rs_rest, bins=rs_bins, shape=(len(which_rois),-1))
         rs_all_bins = separate_data_into_bins(arr=rs_rest, bin_arr=rs_rest, bins=rs_bins, shape=(len(which_rois),-1))
         depth_all_bins = separate_data_into_bins(arr=depth_rest, bin_arr=rs_rest, bins=rs_bins, shape=(len(which_rois),-1))
@@ -484,36 +495,41 @@ def main(project, mouse, session):
         param_grid = {'C': [0.1, 1, 10], 'gamma': [1, 0.1, 0.01]} 
         all_accs = []
         all_conmats = []
-        acc_same, conmat_same, clf = train_classifier(X_train=trace_train.T, 
-                        X_test=trace_classifier_test.T, 
-                        X_val = trace_val.T,
-                        y_train=depth_train, 
-                        y_test=depth_classifier_test, 
-                        y_val=depth_val, 
-                        param_grid=param_grid,
-                        class_labels=np.arange(len(depth_list)))
+        
+        # if the mouse is not running that fast
+        test_bins = bin_number 
+        if (len(rs_all_bins) == bin_number-1) or (len(rs_all_bins[-1])<5):
+            test_bins = bin_number - 1
 
         # Evaluate the accuracy of the classifier
-        for i in range(bin_number):
+        for i in range(test_bins):
             y_pred = clf.predict(trace_all_bins[i].T)
             acc = accuracy_score(depth_all_bins[i], y_pred)
             conmat = confusion_matrix(depth_all_bins[i], y_pred, labels=np.arange(len(depth_list)))
             all_accs.append(acc)
             all_conmats.append(conmat)
-            print(f'RS bin {i}', flush=True)        
+            print(f'RS bin {i}', flush=True)  
+        if test_bins != bin_number:
+            all_accs.append(np.nan)
+            all_conmats.append(np.full((conmat.shape),np.nan))
+                    
             
         plot_cols = 2
         plot_rows = bin_number//plot_cols + int(np.bool(bin_number%plot_cols))
         plt.figure(figsize=(plot_cols*4, plot_rows*4))
-        for i in range(bin_number):
+        for i in range(test_bins):
             plt.subplot(plot_rows, plot_cols, i+1)
             plot_confusion_matrix(conmat=all_conmats[i], fontsize_dict=fontsize_dict)
             plt.title(f'bin {i}, acc: {np.round(all_accs[i],2)}')
         plt.tight_layout(pad=1)
         plt.savefig(save_folder/'conmat_all_bins.pdf')
-        
+
         all_accs = np.array(all_accs)
         all_conmats = np.array(all_conmats)
+            
+        if test_bins != bin_number:
+            all_accs[-1] = np.nan
+            all_conmats[-1] = np.full((conmat.shape),np.nan)
         np.save(save_folder/'accs_all_bins.npy', all_accs)
         np.save(save_folder/'conmats_all_bins.npy', all_conmats)
         

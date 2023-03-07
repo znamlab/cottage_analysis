@@ -43,10 +43,11 @@ def plot_raster_all_depths(values, dffs, depth_list, img_VS, stim_dict, distance
             title_on = False
         # title = f'ROI {roi} {title}, \n'
         title = f'{title}'
-        if idepth!=len(depth_list)-1:
-            colorbar_on = False
-        else:
-            colorbar_on = True
+        # if idepth!=len(depth_list)-1:
+        #     colorbar_on = False
+        # else:
+        #     colorbar_on = True
+        colorbar_on = False
         plot_raster(arr=np.array(binned_stats['binned_yrr'][idepth]) * unit_scale, vmin=0,
                     vmax=vmax,
                     cmap=heatmap_cmap, title=title, title_on=title_on,
@@ -120,7 +121,7 @@ def gaussian_func(x, a, x0, log_sigma,b):
     sigma = np.exp(log_sigma)+MIN_SIGMA
     return (a * np.exp(-(x - x0) ** 2) / (2 * sigma ** 2))+b
 
-def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_dict, depth_neurons, gaussian_depth, fontsize_dict, this_depth=None, ylim=None, frame_rate=15):
+def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_dict, depth_neurons, gaussian_depth, fontsize_dict, this_depth=None, ylim=None, frame_rate=15, linewidth=3, ax=None):
     trace_arr_noblank, _ = create_trace_arr_per_roi(which_roi=roi, 
                                                     dffs=dffs,
                                                     depth_list=depth_list, 
@@ -148,7 +149,7 @@ def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_d
 
     if (this_depth == None) or (this_depth!=len(depth_list)): # we can't plot the tuning curve for non-depth-selective neurons
         plot_line_with_error(arr=np.nanmean(trace_arr_mean_eachtrial, axis=1), CI_low=CI_lows,
-                             CI_high=CI_highs, linecolor='b', fontsize=fontsize_dict['title'], linewidth=3)
+                             CI_high=CI_highs, linecolor='b', fontsize=fontsize_dict['title'], linewidth=linewidth)
 
         trace_arr_mean_eachtrial = np.nanmean(trace_arr_noblank, axis=2)
         x = np.log(np.repeat(np.array(depth_list), trace_arr_mean_eachtrial.shape[1]))
@@ -170,16 +171,29 @@ def plot_depth_tuning_curve(dffs, speeds, roi, speed_thr_cal, depth_list, stim_d
         ylim = None
 
     plot_line_with_error(arr=np.nanmean(trace_arr_mean_eachtrial, axis=1), CI_low=CI_lows,
-                         CI_high=CI_highs, linecolor='b', fontsize=fontsize_dict['title'], linewidth=3)
-    plt.xticks(np.arange(len(depth_list)), (np.array(depth_list) * 100).astype('int'),
-               fontsize=fontsize_dict['xticks'])
-    plt.ylabel('dF/F', fontsize=fontsize_dict['ylabel'])
-    plt.xlabel('Depth (cm)', fontsize=fontsize_dict['xlabel'])
-    plt.title('Depth tuning (CloseLoop)', fontsize=fontsize_dict['title'])
-    if ylim != None:
-        plt.ylim(ylim)
+                         CI_high=CI_highs, linecolor='b', fontsize=fontsize_dict['title'], linewidth=linewidth, ax=ax)
+    if ax==None:
+        plt.xticks(np.arange(len(depth_list)), (np.array(depth_list) * 100).astype('int'),
+                fontsize=fontsize_dict['xticks'])
+        plt.ylabel('dF/F', fontsize=fontsize_dict['ylabel'])
+        plt.xlabel('Depth (cm)', fontsize=fontsize_dict['xlabel'])
+        plt.title('Depth tuning (CloseLoop)', fontsize=fontsize_dict['title'])
+        if ylim != None:
+            plt.ylim(ylim)
+        else:
+            ylim = plt.gca().get_ylim()
     else:
-        ylim = plt.gca().get_ylim()
+        # xticks = ax.get_xticks()
+        # plt.xticks(xticks, (np.array(depth_list) * 100).astype('int'))
+        # ax.set_tick_params(axis='x', labelsize=fontsize_dict['xticks'])
+        ax.set_ylabel('dF/F', fontsize=fontsize_dict['ylabel'])
+        ax.set_xlabel('Depth (cm)', fontsize=fontsize_dict['xlabel'])
+        ax.set_title('Depth tuning (CloseLoop)', fontsize=fontsize_dict['title'])
+        if ylim != None:
+            ax.set_ylim(ylim)
+        else:
+            ylim = ax.get_ylim()
+        
     despine()
     
     return ylim

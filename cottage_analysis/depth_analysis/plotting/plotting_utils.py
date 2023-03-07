@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
 from matplotlib.animation import FuncAnimation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
@@ -82,7 +83,8 @@ def plot_raster(
     title_on=False,
     extent=[],
     set_nan_cmap=True,
-    colorbar_on=True
+    colorbar_on=True,
+    ax=None
 ):
     """
     Raster plot of input params. Row: trials. Column: time.
@@ -112,6 +114,7 @@ def plot_raster(
             arr.shape[0],
             1,
         ]
+    # if ax==None:
     plt.imshow(
         arr,
         aspect="auto",
@@ -122,16 +125,32 @@ def plot_raster(
         rasterized=False,
         interpolation="none",
     )
-
-    if colorbar_on:
-        cbar = plt.colorbar()
-        cbar.ax.tick_params(labelsize=fontsize_dict['legend'])
+    # else: 
+    #     ax.imshow(
+    #         arr,
+    #         aspect="auto",
+    #         vmin=vmin,
+    #         vmax=vmax,
+    #         cmap=current_cmap,
+    #         extent=extent,
+    #         rasterized=False,
+    #         interpolation="none",
+    #     )
+    ax = plt.gca()
     if title_on:
         plt.title(title + " " + suffix, fontsize=fontsize_dict['title'])
     else:
         plt.title(suffix, fontsize=fontsize_dict['title'])
-    #     plt.xticks(np.arange(0,arr.shape[1],500))
+    # if colorbar_on:
+    #     # divider = make_axes_locatable(ax)
+    #     # cax = divider.append_axes("right", size="2%", pad=0.05)
+    #     fig = plt.gcf()
+    #     cax = fig.add_axes([ax.get_position().x1+1,ax.get_position().y0,1,ax.get_position().height])
+    #     cbar = plt.colorbar(cax=cax)
+    #     cbar.ax.tick_params(labelsize=fontsize_dict['legend'])
+    # #     plt.xticks(np.arange(0,arr.shape[1],500))
     plt.ylim([arr.shape[0], 1])
+    return ax
 
 
 def plot_trial_onset_offset(onset, offset, ymin, ymax):
@@ -208,54 +227,105 @@ def plot_line_with_error(
     fontsize=10,
     axis_fontsize=10,
     linewidth=0.5,
-):
-    if len(xarr) == 0:
-        plt.plot(
-            arr,
-            marker,
-            c=linecolor,
-            linewidth=linewidth,
-            label=label,
-            alpha=1,
-            markersize=markersize,
-            rasterized=True,
-        )
-        plt.fill_between(
-            np.arange(len(arr)),
-            CI_low,
-            CI_high,
-            color=linecolor,
-            alpha=0.3,
-            edgecolor=None,
-            rasterized=True,
-        )
+    ax=None
+):  
+    if ax==None:
+        if len(xarr) == 0:
+            plt.plot(
+                arr,
+                marker,
+                c=linecolor,
+                linewidth=linewidth,
+                label=label,
+                alpha=1,
+                markersize=markersize,
+                rasterized=False,
+            )
+            plt.fill_between(
+                np.arange(len(arr)),
+                CI_low,
+                CI_high,
+                color=linecolor,
+                alpha=0.3,
+                edgecolor=None,
+                rasterized=False,
+            )
+        else:
+            plt.plot(
+                xarr,
+                arr,
+                marker,
+                c=linecolor,
+                linewidth=linewidth,
+                label=label,
+                alpha=1,
+                markersize=markersize,
+                rasterized=False,
+            )
+            plt.fill_between(
+                xarr,
+                CI_low,
+                CI_high,
+                color=linecolor,
+                alpha=0.3,
+                edgecolor=None,
+                rasterized=False,
+            )
+        plt.xlabel(xlabel, fontsize=axis_fontsize)
+        plt.ylabel(ylabel, fontsize=axis_fontsize)
+        if title_on:
+            plt.title(title + " " + suffix, fontsize=fontsize)
+        else:
+            plt.title(suffix, fontsize=fontsize)
     else:
-        plt.plot(
-            xarr,
-            arr,
-            marker,
-            c=linecolor,
-            linewidth=linewidth,
-            label=label,
-            alpha=1,
-            markersize=markersize,
-            rasterized=True,
-        )
-        plt.fill_between(
-            xarr,
-            CI_low,
-            CI_high,
-            color=linecolor,
-            alpha=0.3,
-            edgecolor=None,
-            rasterized=True,
-        )
-    plt.xlabel(xlabel, fontsize=axis_fontsize)
-    plt.ylabel(ylabel, fontsize=axis_fontsize)
-    if title_on:
-        plt.title(title + " " + suffix, fontsize=fontsize)
-    else:
-        plt.title(suffix, fontsize=fontsize)
+        if len(xarr) == 0:
+            ax.plot(
+                arr,
+                marker,
+                c=linecolor,
+                linewidth=linewidth,
+                label=label,
+                alpha=1,
+                markersize=markersize,
+                rasterized=False,
+            )
+            ax.fill_between(
+                np.arange(len(arr)),
+                CI_low,
+                CI_high,
+                color=linecolor,
+                alpha=0.3,
+                edgecolor=None,
+                rasterized=False,
+            )
+        else:
+            ax.plot(
+                xarr,
+                arr,
+                marker,
+                c=linecolor,
+                linewidth=linewidth,
+                label=label,
+                alpha=1,
+                markersize=markersize,
+                rasterized=False,
+            )
+            ax.fill_between(
+                xarr,
+                CI_low,
+                CI_high,
+                color=linecolor,
+                alpha=0.3,
+                edgecolor=None,
+                rasterized=False,
+            )
+        ax.set_xlabel(xlabel, fontsize=axis_fontsize)
+        ax.set_ylabel(ylabel, fontsize=axis_fontsize)
+        if title_on:
+            ax.set_title(title + " " + suffix, fontsize=fontsize)
+        else:
+            ax.set_title(suffix, fontsize=fontsize)
+        
 
 
 def plot_scatter(
@@ -270,7 +340,7 @@ def plot_scatter(
     title=None,
     label=None,
 ):
-    plt.plot(x, y, "o", markersize=3, c=markercolor, rasterized=True, label=label)
+    plt.plot(x, y, "o", markersize=3, c=markercolor, rasterized=False, label=label)
     plt.ylabel(ylabel)
     plt.xlabel(xlabel)
     plt.xlim(xlim)
@@ -956,3 +1026,9 @@ def get_PSTH(
         bin_edge_max=6,
     )
     return binned_stats
+
+
+def set_aspect_ratio(ax, ratio=1):
+    x_left, x_right = ax.get_xlim()
+    y_low, y_high = ax.get_ylim()
+    ax.set_aspect(abs((x_right-x_left)/(y_low-y_high))*ratio)
