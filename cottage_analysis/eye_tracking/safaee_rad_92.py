@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.polynomial import Polynomial
+from cottage_analysis.eye_tracking import eye_model_fitting
 
 def conic(ellipse):
     # NOT IN USE. ATTEMPT TO FOLLOW Safaee-Rad 1992
@@ -282,7 +283,7 @@ if __name__ == "__main__":
         if fit_save.exists():
             ellipse_fits = pd.read_csv(fit_save)
         else:
-            ellipse_fits = fit_ellipses(fname)
+            ellipse_fits = eye_model_fitting.fit_ellipses(fname)
             ellipse_fits.to_csv(fit_save, index=False)
     raise NotImplementedError
     # let's unproject
