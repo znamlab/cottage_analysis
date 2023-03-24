@@ -8,7 +8,11 @@ ONIX_DATA_FORMAT = dict(ephys='uint16',
                         clock='uint64',
                         aux='uint16',
                         hubsynccounter='uint64',
-                        aio='uint16')
+                        aio='uint16', 
+                        euler='uint16', 
+                        gravity='uint16',
+                        linear='uint16',
+                        quaternion='uint16')
 BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
                                DI1='oni_clock_di',
                                DI2='hf_cam_trig')
@@ -177,6 +181,43 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
         output[what] = data
     return output
 
+def load_bno055(path_to_folder, timestamp=None, num_chans_euler=3, num_chans_gravity=3, 
+                num_chans_linear_accel=3, num_chans_quaternion=4):
+    '''Loads the IMU data in a memmap dictionary
+    Args:
+        path_to_folder (str or Path): the full path to the folder which contains the IMU output. 
+        timestamp (str or None): timestamp used in save name
+    
+    Returns: 
+        bno_out: a dictionary of memmap 
+    '''
+
+    num_chan_dict = dict(euler=num_chans_euler,
+                         gravity=num_chans_gravity,
+                         linear=num_chans_linear_accel,
+                         quaternion=num_chans_quaternion)
+
+
+    bno_files = _find_files(path_to_folder, timestamp, 'bno055')
+    output = dict()
+    for bno_file in bno_files:
+        what = bno_file.stem.split('_')[0][len('bno055-'):]
+        if '-' in what:
+            what=Path(what)
+            what=what.stem.split('-')[0]
+        if bno_file.suffix == '.csv':
+            assert what == 'other'
+            with open(bno_file, 'r') as f:
+                output['other'] = f.read().strip()
+            continue
+        assert bno_file.suffix == '.raw'
+
+        data = _load_binary_file(bno_file,
+                                 dtype=ONIX_DATA_FORMAT[what],
+                                 nchan=num_chan_dict[what])
+        output[what] = data
+
+    return output
 
 def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
                   verbose=True):
