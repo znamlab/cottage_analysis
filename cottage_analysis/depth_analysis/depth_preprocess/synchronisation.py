@@ -1,6 +1,7 @@
 import functools
 print = functools.partial(print, flush=True)
 
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import pickle
 import flexiznam as flm
 from cottage_analysis.io_module import harp
 from cottage_analysis.preprocessing import find_frames
+from cottage_analysis.depth_analysis.filepath import generate_filepaths
 
 
 def load_harpmessage(project, mouse, session, protocol, all_protocol_recording_entries=None, irecording=None, flexilims_session=None, redo=False):
@@ -109,10 +111,10 @@ def find_monitor_frames(project, mouse, session, protocol, all_protocol_recordin
     
     if redo:
         # Load files
-        harp_messages = load_harpmessage(project=PROJECT, 
-                                    mouse=MOUSE, 
-                                    session=SESSION, 
-                                    protocol=PROTOCOL, 
+        harp_messages = load_harpmessage(project=project, 
+                                    mouse=mouse, 
+                                    session=session, 
+                                    protocol=protocol, 
                                     all_protocol_recording_entries=all_protocol_recording_entries, 
                                     irecording=irecording, 
                                     flexilims_session=flexilims_session,
@@ -154,7 +156,7 @@ def find_monitor_frames(project, mouse, session, protocol, all_protocol_recordin
         )
 
         # Save monitor frame dataframes
-        save_folder = trace_folder/'sync/monitor_frames/'
+        save_folder = protocol_folder/'sync/monitor_frames/'
         if not os.path.exists(save_folder):
             os.makedirs(save_folder)
         frames_df.to_pickle(save_folder/'monitor_frames_df.pickle')  
