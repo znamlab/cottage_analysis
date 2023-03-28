@@ -8,11 +8,7 @@ ONIX_DATA_FORMAT = dict(ephys='uint16',
                         clock='uint64',
                         aux='uint16',
                         hubsynccounter='uint64',
-                        aio='uint16', 
-                        euler='uint16', 
-                        gravity='uint16',
-                        linear='uint16',
-                        quaternion='uint16')
+                        aio='uint16')
 BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
                                DI1='oni_clock_di',
                                DI2='hf_cam_trig')
@@ -212,9 +208,8 @@ def load_bno055(path_to_folder, timestamp=None, num_chans_euler=3, num_chans_gra
             continue
         assert bno_file.suffix == '.raw'
 
-        data = _load_binary_file(bno_file,
-                                 dtype=ONIX_DATA_FORMAT[what],
-                                 nchan=num_chan_dict[what])
+        data = np.fromfile(bno_file, dtype=np.double).reshape(-1, num_chan_dict[what])
+
         output[what] = data
 
     return output
@@ -299,13 +294,13 @@ def _find_files(folder, timestamp, prefix):
     return valid_files
 
 
-def _load_binary_file(file_path, dtype, nchan):
+def _load_binary_file(file_path, dtype, nchan, order='F'):
     file_path = Path(file_path)
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
         raise IOError('Data in %s is not a multiple of %d' % (file_path, nchan))
     n_time = int(n_pts / nchan)
     shape = (nchan, n_time) if nchan != 1 else None
-    data = np.memmap(file_path, dtype=dtype, mode='r', order='F',
+    data = np.memmap(file_path, dtype=dtype, mode='r', order=order,
                      shape=shape)
     return data
