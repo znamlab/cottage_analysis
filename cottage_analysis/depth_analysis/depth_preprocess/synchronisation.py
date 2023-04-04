@@ -533,6 +533,9 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     Returns:
         DataFrame: contains information for each trial.
     """
+    imaging_df = generate_imaging_df(
+        project, mouse, session, protocol, vs_df, irecording
+    )
     flexilims_session = flz.get_flexilims_session(project_id=project)
     all_protocol_recording_entries = generate_filepaths.get_all_recording_entries(
         project=project,
@@ -576,18 +579,20 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         columns=[
             "trial_no",
             "depth",
-            "start_time_stim",
-            "stop_time_stim",
-            "start_time_blank",
-            "stop_time_blank",
-            "start_imaging_frame_stim",
-            "stop_imaging_frame_stim",
-            "start_imaging_frame_blank",
-            "stop_imaging_frame_blank",
-            "RS_array_stim",
+            "harptime_stim_start",
+            "harptime_stim_stop",
+            "harptime_blank_start",
+            "harptime_blank_stop",
+            "imaging_frame_stim_start",
+            "imaging_frame_stim_stop",
+            "imaging_frame_blank_start",
+            "imaging_frame_blank_stop",
+            "RS_array_stim",  # actual running speed, m/s
             "RS_array_blank",
-            "RS_eye_array_stim",
-            "OF_array_stim",
+            "RS_eye_array_stim",  # virtual running speed, m/s
+            "OF_array_stim",  # optic flow speed = RS/depth, rad/s
+            "dffs_array_stim",
+            "dffs_array_blank",
             "spheres_no",
             "closed_loop",
         ]
@@ -620,51 +625,78 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     stop_idx_stim = start_idx_blank - 1
 
     # Assign trial no, depth, start/stop time, start/stop imaging frame to trials_df
-    # !!! trials_df RS/OF should be changed!!! now it's only choosing one value from each imaging frame --> should we average?
+    # Harptime for starts and stops are harptime for monitor frames, not corresponding to imaging trigger harptime
     trials_df.trial_no = np.arange(len(start_idx_stim))
     trials_df.depth = vs_df.loc[start_idx_stim].depth.values
-    trials_df.start_time_stim = vs_df.loc[start_idx_stim].onset_time.values
-    trials_df.stop_time_stim = vs_df.loc[stop_idx_stim].onset_time.values
-    trials_df.start_time_blank = vs_df.loc[start_idx_blank].onset_time.values
-    trials_df.stop_time_blank = vs_df.loc[stop_idx_blank].onset_time.values
-    trials_df.start_imaging_frame_stim = vs_df.loc[start_idx_stim].imaging_frame.values
-    trials_df.stop_imaging_frame_stim = vs_df.loc[stop_idx_stim].imaging_frame.values
-    trials_df.start_imaging_frame_blank = vs_df.loc[
+    trials_df.harptime_stim_start = vs_df.loc[start_idx_stim].onset_time.values
+    trials_df.harptime_stim_stop = vs_df.loc[stop_idx_stim].onset_time.values
+    trials_df.harptime_blank_start = vs_df.loc[start_idx_blank].onset_time.values
+    trials_df.harptime_blank_stop = vs_df.loc[stop_idx_blank].onset_time.values
+    trials_df.imaging_frame_stim_start = vs_df.loc[start_idx_stim].imaging_frame.values
+    trials_df.imaging_frame_blank_start = vs_df.loc[
         start_idx_blank
     ].imaging_frame.values
-    trials_df.stop_imaging_frame_blank = vs_df.loc[stop_idx_blank].imaging_frame.values
+    trials_df.imaging_frame_blank_stop = vs_df.loc[stop_idx_blank].imaging_frame.values
+    trials_df.imaging_frame_stim_stop = trials_df.imaging_frame_blank_start - 1
 
-    vs_img_frames = vs_df[vs_df.imaging_frame.diff() != 0].set_index("imaging_frame")
-    vs_img_frames["RS"] = vs_img_frames.mouse_z.diff() / vs_img_frames.onset_time.diff()
-    vs_img_frames["RS_eye"] = (
-        vs_img_frames.eye_z.diff() / vs_img_frames.onset_time.diff()
-    )
-    trials_df.RS_array_stim = trials_df.apply(
-        lambda x: vs_img_frames.RS.loc[
-            x.start_imaging_frame_stim : x.stop_imaging_frame_stim
-        ].values,
-        axis=1,
-    )  # This is not RS, this is mouseZ!!!
-    trials_df.RS_array_blank = trials_df.apply(
-        lambda x: vs_img_frames.RS.loc[
-            x.start_imaging_frame_blank : x.stop_imaging_frame_blank
-        ].values,
-        axis=1,
-    )
-    trials_df.RS_eye_array_stim = trials_df.apply(
-        lambda x: vs_img_frames.RS_eye.loc[
-            x.start_imaging_frame_stim : x.stop_imaging_frame_stim
-        ].values,
-        axis=1,
-    )
-    trials_df.OF_array_stim = trials_df.apply(
-        lambda x: x["RS_eye_array_stim"] / x["depth"], axis=1
-    )
+    mask = (
+        trials_df.imaging_frame_stim_start
+        == trials_df.imaging_frame_blank_stop.shift(1)
+    )  # Get rid of the overlap of imaging frame no. between different trials
+    trials_df.loc[mask, "imaging_frame_stim_start"] += 1
 
     if "Playback" in protocol:
         trials_df.closed_loop = 0
     else:
         trials_df.closed_loop = 1
+
+    # Assign RS array from imaging_df back to trials_df
+    trials_df.RS_array_stim = trials_df.apply(
+        lambda x: imaging_df.RS.loc[
+            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+        ].values,
+        axis=1,
+    )
+
+    trials_df.RS_array_blank = trials_df.apply(
+        lambda x: imaging_df.RS.loc[
+            x.imaging_frame_blank_start : x.imaging_frame_blank_stop
+        ].values,
+        axis=1,
+    )
+
+    trials_df.RS_eye_array_stim = trials_df.apply(
+        lambda x: imaging_df.RS_eye.loc[
+            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+        ].values,
+        axis=1,
+    )
+
+    # trials_df.OF_array_stim = trials_df.apply(
+    #         lambda x: x["RS_eye_array_stim"] / x["depth"], axis=1
+    #     )
+    trials_df.OF_array_stim = trials_df.apply(
+        lambda x: imaging_df.OF.loc[
+            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+        ].values,
+        axis=1,
+    )
+
+    # Assign dffs array to trials_df
+    dffs = np.load(trace_folder / "dffs_ast.npy")
+    trials_df.dffs_array_stim = trials_df.apply(
+        lambda x: dffs[
+            :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
+        ],
+        axis=1,
+    )
+
+    trials_df.dffs_array_blank = trials_df.apply(
+        lambda x: dffs[
+            :, int(x.imaging_frame_blank_start) : int(x.imaging_frame_blank_stop)
+        ],
+        axis=1,
+    )
 
     # Save df to pickle
     save_folder = protocol_folder / "sync"
