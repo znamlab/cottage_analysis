@@ -704,4 +704,4 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         os.makedirs(save_folder)
     trials_df.to_pickle(save_folder / "trials_df.pickle")
 
-    return trials_df
+    return trials_df, imaging_df
