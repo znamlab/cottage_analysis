@@ -9,7 +9,7 @@ import pandas as pd
 from cottage_analysis.imaging.common import find_frames
 
 
-def preprocess_exp(data, plot_dir=None):
+def preprocess_exp(data, plot=True, plot_dir=None):
     """Run all mandatory preprocessing function
 
     Namely:
@@ -18,19 +18,24 @@ def preprocess_exp(data, plot_dir=None):
 
     Args:
         data (dict): output of onix.load_onix_recording
-        plot_dir (Path or str): path to save frame detection figure
+        plot (bool, optional): should frame detection figure be generated? Defaults to
+            True.
+        plot_dir (Path or str, optional): path to save frame detection figure. Defaults
+            to None.
 
     Returns:
         data (dict): updated data dict
     """
-    data['harp_message'], data['harp2onix'] = sync_harp2onix(data['harp_message'])
-    for w in data['vis_stim_log']:
-        if 'HarpTime' in data['vis_stim_log'][w]:
-            harp_time = data['vis_stim_log'][w]['HarpTime']
-            data['vis_stim_log'][w]['onix_time'] = data['harp2onix'](harp_time)
+    data["harp_message"], data["harp2onix"] = sync_harp2onix(data["harp_message"])
+    for w in data["vis_stim_log"]:
+        if "HarpTime" in data["vis_stim_log"][w]:
+            harp_time = data["vis_stim_log"][w]["HarpTime"]
+            data["vis_stim_log"][w]["onix_time"] = data["harp2onix"](harp_time)
         else:
-            print('No HarpTime in %s' % w)
-    data['hf_frames'] = find_frame_start_hf(data['harp_message'], plot_dir=plot_dir)
+            print("No HarpTime in %s" % w)
+    data["hf_frames"] = find_frame_start_hf(
+        data["harp_message"], plot=plot, plot_dir=plot_dir
+    )
     return data
 
 
@@ -47,13 +52,13 @@ def sync_harp2onix(harp_message):
     """
 
     # find when clock switches on
-    onix_clock = np.diff(np.hstack([0, harp_message['onix_clock']])) == 1
-    onix_clock_in_harp = harp_message['digital_time'][onix_clock]
+    onix_clock = np.diff(np.hstack([0, harp_message["onix_clock"]])) == 1
+    onix_clock_in_harp = harp_message["digital_time"][onix_clock]
     # assume a perfect 100Hz since so far it has been good
     real_time = np.arange(len(onix_clock_in_harp)) * 10e-3
     delta_clock = np.diff(onix_clock_in_harp)
     if np.nanmax(np.abs(delta_clock - 0.01)) * 1000 > 5:
-        raise ValueError('Onix clock deviation from 100Hz!')
+        raise ValueError("Onix clock deviation from 100Hz!")
 
     # linear regression:
     t0 = onix_clock_in_harp[0]
@@ -63,13 +68,21 @@ def sync_harp2onix(harp_message):
         """Convert harp timestamp in onix time"""
         return (data - t0) * slope
 
-    harp_message['analog_time_onix'] = harp2onix(harp_message['analog_time'])
-    harp_message['digital_time_onix'] = harp2onix(harp_message['digital_time'])
+    harp_message["analog_time_onix"] = harp2onix(harp_message["analog_time"])
+    harp_message["digital_time_onix"] = harp2onix(harp_message["digital_time"])
     return harp_message, harp2onix
 
 
-def find_frame_start_hf(harp_message, frame_rate=144, upper_thr=0.5, lower_thr=-0.5,
-                        plot=True, plot_start=1000, plot_range=200,  plot_dir=None):
+def find_frame_start_hf(
+    harp_message,
+    frame_rate=144,
+    upper_thr=0.5,
+    lower_thr=-0.5,
+    plot=True,
+    plot_start=1000,
+    plot_range=200,
+    plot_dir=None,
+):
     """Wrapper around find_frames.find_VS_frames for ONIX
 
     Args:
@@ -94,16 +107,20 @@ def find_frame_start_hf(harp_message, frame_rate=144, upper_thr=0.5, lower_thr=-
                 - 'VisStim_Frame': peak index
 
     """
-    zsc_hf_pd = harp_message['photodiode']
+    zsc_hf_pd = harp_message["photodiode"]
     zsc_hf_pd = (zsc_hf_pd - np.nanmean(zsc_hf_pd)) / np.nanstd(zsc_hf_pd)
-    photodiode_df = pd.DataFrame(dict(Photodiode=zsc_hf_pd,
-                                      HarpTime=harp_message['analog_time_onix']))
-    frame_starts = find_frames.find_VS_frames(photodiode_df,
-                                              frame_rate=frame_rate,
-                                              upper_thr=upper_thr,
-                                              lower_thr=lower_thr, plot=plot,
-                                              plot_start=plot_start,
-                                              plot_range=plot_range,
-                                              plot_dir=plot_dir)
-    frame_starts.rename(columns=dict(HarpTime='onix_time'), inplace=True)
+    photodiode_df = pd.DataFrame(
+        dict(Photodiode=zsc_hf_pd, HarpTime=harp_message["analog_time_onix"])
+    )
+    frame_starts = find_frames.find_VS_frames(
+        photodiode_df,
+        frame_rate=frame_rate,
+        upper_thr=upper_thr,
+        lower_thr=lower_thr,
+        plot=plot,
+        plot_start=plot_start,
+        plot_range=plot_range,
+        plot_dir=plot_dir,
+    )
+    frame_starts.rename(columns=dict(HarpTime="onix_time"), inplace=True)
     return frame_starts

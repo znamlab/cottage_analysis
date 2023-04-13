@@ -4,25 +4,28 @@ import pandas as pd
 import flexiznam as flm
 from cottage_analysis.io_module.harp import load_harp
 
-ONIX_DATA_FORMAT = dict(ephys='uint16',
-                        clock='uint64',
-                        aux='uint16',
-                        hubsynccounter='uint64',
-                        aio='uint16')
-BREAKOUT_DIGITAL_INPUTS = dict(DI0='fm_cam_trig',
-                               DI1='oni_clock_di',
-                               DI2='hf_cam_trig')
+ONIX_DATA_FORMAT = dict(
+    ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
+)
+BREAKOUT_DIGITAL_INPUTS = dict(DI0="fm_cam_trig", DI1="oni_clock_di", DI2="hf_cam_trig")
 ONIX_SAMPLING = 250e6
 
 
-RAW = Path(flm.PARAMETERS['data_root']['raw'])
-PROCESSED = Path(flm.PARAMETERS['data_root']['processed'])
+RAW = Path(flm.PARAMETERS["data_root"]["raw"])
+PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
 
 
-def load_onix_recording(project, mouse, session, vis_stim_recording=None,
-                        onix_recording=None, allow_reload=True,
-                        breakout_di_names=BREAKOUT_DIGITAL_INPUTS,
-                        raw_folder=RAW, processed_folder=PROCESSED):
+def load_onix_recording(
+    project,
+    mouse,
+    session,
+    vis_stim_recording=None,
+    onix_recording=None,
+    allow_reload=True,
+    breakout_di_names=BREAKOUT_DIGITAL_INPUTS,
+    raw_folder=RAW,
+    processed_folder=PROCESSED,
+):
     """Main function calling all the subfunctions
 
     Args:
@@ -45,9 +48,11 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
     out = dict()
 
     if vis_stim_recording is not None:
-        harp_message = '%s_%s_%s_harpmessage.bin' % (mouse, session, vis_stim_recording)
+        harp_message = "%s_%s_%s_harpmessage.bin" % (mouse, session, vis_stim_recording)
         raw_harp = session_folder / vis_stim_recording / harp_message
-        processed_messages = processed_folder / vis_stim_recording / (raw_harp.stem + '.npz')
+        processed_messages = (
+            processed_folder / vis_stim_recording / (raw_harp.stem + ".npz")
+        )
         processed_messages.parent.mkdir(exist_ok=True, parents=True)
         if allow_reload and processed_messages.is_file():
             harp_message = dict(np.load(processed_messages))
@@ -55,32 +60,32 @@ def load_onix_recording(project, mouse, session, vis_stim_recording=None,
             # slow part: read harp messages so save output and reload
             harp_message = load_harp(raw_harp)
             np.savez(processed_messages, **harp_message)
-        out['harp_message'] = harp_message
+        out["harp_message"] = harp_message
         # add frame loggers and other CSVs
-        out['vis_stim_log'] = load_vis_stim_log(session_folder / vis_stim_recording)
+        out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
 
     if onix_recording is not None:
         # Load onix AI/DI
         breakout_data = load_breakout(session_folder / onix_recording)
         # use human readable names
-        breakout_data['dio'].rename(columns=breakout_di_names, inplace=True)
-        out['breakout_data'] = breakout_data
+        breakout_data["dio"].rename(columns=breakout_di_names, inplace=True)
+        out["breakout_data"] = breakout_data
         try:
-            out['rhd2164_data'] = load_rhd2164(session_folder / onix_recording)
+            out["rhd2164_data"] = load_rhd2164(session_folder / onix_recording)
         except IOError:
-            print('Could not load RHD2164 data')
+            print("Could not load RHD2164 data")
         try:
-            out['ts4131_data'] = load_ts4231(session_folder / onix_recording)
+            out["ts4131_data"] = load_ts4231(session_folder / onix_recording)
         except IOError:
-            print('Could not load TS4131 data')
+            print("Could not load TS4131 data")
     return out
 
 
 def load_vis_stim_log(folder):
     out = dict()
     folder = Path(folder)
-    for csv_file in folder.glob('*.csv'):
-        what = csv_file.stem.split('_')[-1]
+    for csv_file in folder.glob("*.csv"):
+        what = csv_file.stem.split("_")[-1]
         out[what] = pd.read_csv(csv_file)
 
     return out
@@ -99,21 +104,21 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         data dict: a dictionary of memmap
     """
     num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan, hubsynccounter=1)
-    ephys_files = _find_files(path_to_folder, timestamp, 'rhd2164')
+    ephys_files = _find_files(path_to_folder, timestamp, "rhd2164")
 
     output = dict()
     for ephys_file in ephys_files:
-        what = ephys_file.stem.split('_')[0][len('rhd2164-'):]
-        if ephys_file.suffix == '.csv':
-            assert what == 'first-time'
-            with open(ephys_file, 'r') as f:
-                output['first_time'] = f.read().strip()
+        what = ephys_file.stem.split("_")[0][len("rhd2164-") :]
+        if ephys_file.suffix == ".csv":
+            assert what == "first-time"
+            with open(ephys_file, "r") as f:
+                output["first_time"] = f.read().strip()
             continue
-        assert ephys_file.suffix == '.raw'
+        assert ephys_file.suffix == ".raw"
 
-        data = _load_binary_file(ephys_file,
-                                 dtype=ONIX_DATA_FORMAT[what],
-                                 nchan=num_chan_dict[what])
+        data = _load_binary_file(
+            ephys_file, dtype=ONIX_DATA_FORMAT[what], nchan=num_chan_dict[what]
+        )
         output[what] = data
     return output
 
@@ -129,15 +134,16 @@ def load_ts4231(path_to_folder, timestamp=None):
         ts_out (dict): a dictionary of dataframe with one element per photodiode
     """
 
-    ts_files = _find_files(path_to_folder, timestamp, 'ts4231')
+    ts_files = _find_files(path_to_folder, timestamp, "ts4231")
     ts_out = dict()
     for photodiode in ts_files:
         try:
-            data = pd.read_csv(photodiode, header=0,
-                               names=['timestamp', 'clock', 'x', 'y', 'z'])
+            data = pd.read_csv(
+                photodiode, header=0, names=["timestamp", "clock", "x", "y", "z"]
+            )
         except pd.errors.EmptyDataError:
             continue
-        ts_out[int(photodiode.stem.split('_')[0][len('ts4231-'):])] = data
+        ts_out[int(photodiode.stem.split("_")[0][len("ts4231-") :])] = data
     return ts_out
 
 
@@ -152,34 +158,35 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
     Returns:
         data dict: a dictionary of memmap
     """
-    breakout_files = _find_files(path_to_folder, timestamp, 'breakout')
+    breakout_files = _find_files(path_to_folder, timestamp, "breakout")
     output = dict()
     for breakout_file in breakout_files:
-        what = breakout_file.stem.split('_')[0][len('breakout-'):]
-        if breakout_file.suffix == '.csv':
-            assert what == 'dio'
-            dio = pd.read_csv(breakout_file, )
-            port = np.array(dio.Port.values, dtype='uint8')
-            bits = np.unpackbits(port, bitorder='little')
+        what = breakout_file.stem.split("_")[0][len("breakout-") :]
+        if breakout_file.suffix == ".csv":
+            assert what == "dio"
+            dio = pd.read_csv(breakout_file)
+            port = np.array(dio.Port.values, dtype="uint8")
+            bits = np.unpackbits(port, bitorder="little")
             bits = bits.reshape((len(port), 8))
             for i in range(8):
-                dio['DI%d' % i] = bits[:, i]
-            output['dio'] = dio
+                dio["DI%d" % i] = bits[:, i]
+            output["dio"] = dio
             continue
-        assert breakout_file.suffix == '.raw'
-        if what == 'aio-clock':
+        assert breakout_file.suffix == ".raw"
+        if what == "aio-clock":
             nchan = 1
-            dtype = ONIX_DATA_FORMAT['clock']
-        elif what == 'aio':
+            dtype = ONIX_DATA_FORMAT["clock"]
+        elif what == "aio":
             nchan = num_ai_chan
-            dtype = ONIX_DATA_FORMAT['aio']
+            dtype = ONIX_DATA_FORMAT["aio"]
         data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
         output[what] = data
     return output
 
 
-def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
-                  verbose=True):
+def convert_ephys(
+    uint16_file, target, nchan=64, overwrite=False, batch_size=1e6, verbose=True
+):
     """Convert raw uint16 data in int16
 
     Data from onix is saved as uint16. Kilosort has no option to change expected
@@ -201,34 +208,37 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
     batch_size = int(batch_size)  # force int to be able to use for indexing
     target = Path(target)
     if target.is_file() and (not overwrite):
-        raise IOError('File %s already exists.' % target)
+        raise IOError("File %s already exists." % target)
 
     n_pts = uint16_file.stat().st_size / 2  # divide by 2 for uint16
     if np.mod(n_pts, nchan) != 0:
-        raise IOError('Input data is not a multiple of %d' % nchan)
+        raise IOError("Input data is not a multiple of %d" % nchan)
     n_time = int(n_pts / nchan)
-    ephys_data = np.memmap(uint16_file, dtype='uint16', mode='r', order='F',
-                           shape=(nchan, n_time))
-    copy_data = np.memmap(target, dtype='int16', mode='w+', order='F',
-                          shape=(nchan, n_time))
+    ephys_data = np.memmap(
+        uint16_file, dtype="uint16", mode="r", order="F", shape=(nchan, n_time)
+    )
+    copy_data = np.memmap(
+        target, dtype="int16", mode="w+", order="F", shape=(nchan, n_time)
+    )
 
     ndone = 0
     if verbose:
-        txt = '%.1f %%' % (ndone / n_time * 100)
+        txt = "%.1f %%" % (ndone / n_time * 100)
         print(txt, flush=True)
     while ndone < n_time:
         end = min(ndone + batch_size, n_time)
-        copy_data[:, ndone:end] = np.array(ephys_data[:, ndone:end],
-                                           dtype='int16') + 2 ** 15
+        copy_data[:, ndone:end] = (
+            np.array(ephys_data[:, ndone:end], dtype="int16") + 2**15
+        )
         ndone = int(ndone + batch_size)
         if verbose:
-            print('\b' * len(txt) + '%.1f %%' % (ndone / n_time * 100), flush=True)
-            txt = '%.1f %%' % (ndone / n_time * 100)
+            print("\b" * len(txt) + "%.1f %%" % (ndone / n_time * 100), flush=True)
+            txt = "%.1f %%" % (ndone / n_time * 100)
     if verbose:
-        print('Flushing to disk', flush=True)
+        print("Flushing to disk", flush=True)
     copy_data.flush()
     if verbose:
-        print('done', flush=True)
+        print("done", flush=True)
 
 
 def _find_files(folder, timestamp, prefix):
@@ -244,15 +254,17 @@ def _find_files(folder, timestamp, prefix):
     """
     folder = Path(folder)
     if not folder.is_dir():
-        raise IOError('%s is not a directory' % folder)
+        raise IOError("%s is not a directory" % folder)
 
-    valid_files = list(folder.glob('%s*' % prefix))
+    valid_files = list(folder.glob("%s*" % prefix))
     if not len(valid_files):
-        raise IOError('Could not find any %s file in %s' % (prefix.upper(), folder))
+        raise IOError("Could not find any %s file in %s" % (prefix.upper(), folder))
     if timestamp is None:
-        timestamp = '_'.join(valid_files[0].stem.split('_')[1:])
+        timestamp = "_".join(valid_files[0].stem.split("_")[1:])
         if not all([e.stem.endswith(timestamp) for e in valid_files]):
-            raise IOError('Multiple acquisition in folder %s. Specify timestamp' % folder)
+            raise IOError(
+                "Multiple acquisition in folder %s. Specify timestamp" % folder
+            )
     else:
         valid_files = [e for e in valid_files if e.stem.endswith(timestamp)]
     return valid_files
@@ -262,9 +274,8 @@ def _load_binary_file(file_path, dtype, nchan):
     file_path = Path(file_path)
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
-        raise IOError('Data in %s is not a multiple of %d' % (file_path, nchan))
+        raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
     n_time = int(n_pts / nchan)
     shape = (nchan, n_time) if nchan != 1 else None
-    data = np.memmap(file_path, dtype=dtype, mode='r', order='F',
-                     shape=shape)
+    data = np.memmap(file_path, dtype=dtype, mode="r", order="F", shape=shape)
     return data
