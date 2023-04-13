@@ -202,9 +202,11 @@ def load_bno055(path_to_folder, timestamp=None, num_chans_euler=3, num_chans_gra
             what=Path(what)
             what=what.stem.split('-')[0]
         if bno_file.suffix == '.csv':
-            assert what == 'other'
-            with open(bno_file, 'r') as f:
-                output['other'] = f.read().strip()
+            other = pd.read_csv(bno_file)
+            output['computer_timestamp'] = other.iloc[:,0]
+            output['onix_time'] = other.iloc[:,1]
+            output['temperature'] = other.iloc[:,2]
+            output['no_idea'] = other.iloc[:,3]
             continue
         assert bno_file.suffix == '.raw'
 
@@ -213,6 +215,26 @@ def load_bno055(path_to_folder, timestamp=None, num_chans_euler=3, num_chans_gra
         output[what] = data
 
     return output
+
+def load_camera_times(camera_dir, acquisition):
+    if acquisition == 'freely_moving':
+        camlist = ['cam1_camera', 'cam2_camera', 'cam3_camera']
+    if acquisition == 'headfixed':
+        camlist = ['letfeye_camera', 'righteye_camera', 'face_camera', 'behaviour_camera']
+    folder = Path(camera_dir)
+    if not folder.is_dir():
+        raise IOError('%s is not a directory' % folder)
+    output = dict()
+    for cam in camlist:
+        cam_folder = folder/cam
+        valid_files = list(cam_folder.glob('*timestamp*'))
+        if not len(valid_files):
+            raise IOError(f'Could not find any timestamp files in {folder}')
+        for possible_file in valid_files:
+            possible_file = str(possible_file)
+            if cam in possible_file:
+                output[cam] = pd.read_csv(possible_file)
+    return(output)
 
 def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
                   verbose=True):
@@ -266,6 +288,36 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
     if verbose:
         print('done', flush=True)
 
+def load_camera_times(camera_dir, acquisition):
+    """Loads the timestamps of all cameras of a specific acquisition into a dictionary of .csv files
+
+    Args:
+        camera_dir (str or Path): the directory in which the output files of a camera are contained. 
+        acquisition: the kind of acquisition: either 'headfixed' or 'freely_moving
+
+    Returns: 
+
+    A dictionary of pandas dataframes, one per camera. 
+
+    """
+    if acquisition == 'freely_moving':
+        camlist = ['cam1', 'cam2', 'cam3']
+    if acquisition == 'headfixed':
+        camlist = ['lefteye_cam', 'righteye_cam', 'face_cam', 'behaviour_cam']
+    folder = Path(camera_dir)
+    if not folder.is_dir():
+        raise IOError('%s is not a directory' % folder)
+
+    valid_files = list(folder.glob('*timestamp*'))
+    if not len(valid_files):
+        raise IOError(f'Could not find any timestamp files in {folder}')
+    output = dict()
+    for cam in camlist:
+        for possible_file in valid_files:
+            possible_file = str(possible_file)
+            if cam in possible_file:
+                output[cam] = pd.read_csv(possible_file)
+    return(output)
 
 def _find_files(folder, timestamp, prefix):
     """Inner function to return list of files with filter_name and timestamp
