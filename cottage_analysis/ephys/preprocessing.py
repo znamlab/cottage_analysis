@@ -39,6 +39,38 @@ def preprocess_exp(data, plot=True, plot_dir=None):
     return data
 
 
+
+def clean_di_channel(clock, values, window=25000):
+    """Remove rapid flicker from digital input channel
+
+    Also ensure that the output contains only actual changes on this channel.
+    
+    Args:
+        clock (np.ndarray): clock data
+        values (np.ndarray): digital input channel value (0 or 1)
+        window (int, optional): window size in samples. Defaults to 25000.
+    
+    Returns:
+        np.ndarray: cleaned clock times
+        np.ndarray: cleaned digital input channel
+    """
+    values = values.astype("int8")
+
+    # Find when the value actually changes
+    changes = np.hstack([True, np.diff(values) != 0])
+    values = values[changes]
+    clock = np.array(clock[changes])
+    
+    # Median filter
+    borders = clock.searchsorted(np.vstack([clock-window, clock+window]))
+    batch_size = borders[1] - borders[0]
+    cumsum = np.hstack([0, values.cumsum()])
+    n_true = cumsum[borders[1]] - cumsum[borders[0]]
+    med_filtered = n_true > batch_size // 2
+    return clock, med_filtered
+
+
+
 def sync_harp2onix(harp_message):
     """Synchronise harp to onix using clock digital input
 
