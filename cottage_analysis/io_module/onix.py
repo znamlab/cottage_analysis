@@ -183,67 +183,82 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
         output[what] = data
     return output
 
-def load_bno055(path_to_folder, timestamp=None, num_chans_euler=3, num_chans_gravity=3, 
-                num_chans_linear_accel=3, num_chans_quaternion=4):
-    '''Loads the IMU data in a memmap dictionary
+
+def load_bno055(
+    path_to_folder,
+    timestamp=None,
+    num_chans_euler=3,
+    num_chans_gravity=3,
+    num_chans_linear_accel=3,
+    num_chans_quaternion=4,
+):
+    """Loads the IMU data in a memmap dictionary
     Args:
-        path_to_folder (str or Path): the full path to the folder which contains the IMU output. 
+        path_to_folder (str or Path): the full path to the folder which contains the IMU output.
         timestamp (str or None): timestamp used in save name
-    
-    Returns: 
-        bno_out: a dictionary of memmap 
-    '''
 
-    num_chan_dict = dict(euler=num_chans_euler,
-                         gravity=num_chans_gravity,
-                         linear=num_chans_linear_accel,
-                         quaternion=num_chans_quaternion)
+    Returns:
+        bno_out: a dictionary of memmap
+    """
 
+    num_chan_dict = dict(
+        euler=num_chans_euler,
+        gravity=num_chans_gravity,
+        linear=num_chans_linear_accel,
+        quaternion=num_chans_quaternion,
+    )
 
-    bno_files = _find_files(path_to_folder, timestamp, 'bno055')
+    bno_files = _find_files(path_to_folder, timestamp, "bno055")
     output = dict()
     for bno_file in bno_files:
-        what = bno_file.stem.split('_')[0][len('bno055-'):]
-        if '-' in what:
-            what=Path(what)
-            what=what.stem.split('-')[0]
-        if bno_file.suffix == '.csv':
+        what = bno_file.stem.split("_")[0][len("bno055-") :]
+        if "-" in what:
+            what = Path(what)
+            what = what.stem.split("-")[0]
+        if bno_file.suffix == ".csv":
             other = pd.read_csv(bno_file)
-            output['computer_timestamp'] = other.iloc[:,0]
-            output['onix_time'] = other.iloc[:,1]
-            output['temperature'] = other.iloc[:,2]
-            output['no_idea'] = other.iloc[:,3]
+            output["computer_timestamp"] = other.iloc[:, 0]
+            output["onix_time"] = other.iloc[:, 1]
+            output["temperature"] = other.iloc[:, 2]
+            output["no_idea"] = other.iloc[:, 3]
             continue
-        assert bno_file.suffix == '.raw'
+        assert bno_file.suffix == ".raw"
 
         data = np.fromfile(bno_file, dtype=np.double).reshape(-1, num_chan_dict[what])
 
         output[what] = data
-
     return output
 
+
 def load_camera_times(camera_dir, acquisition):
-    if acquisition == 'freely_moving':
-        camlist = ['cam1_camera', 'cam2_camera', 'cam3_camera']
-    if acquisition == 'headfixed':
-        camlist = ['letfeye_camera', 'righteye_camera', 'face_camera', 'behaviour_camera']
+    if acquisition == "freely_moving":
+        camlist = ["cam1_camera", "cam2_camera", "cam3_camera"]
+    if acquisition == "headfixed":
+        camlist = [
+            "letfeye_camera",
+            "righteye_camera",
+            "face_camera",
+            "behaviour_camera",
+        ]
     folder = Path(camera_dir)
     if not folder.is_dir():
-        raise IOError('%s is not a directory' % folder)
+        raise IOError("%s is not a directory" % folder)
     output = dict()
     for cam in camlist:
-        cam_folder = folder/cam
-        valid_files = list(cam_folder.glob('*timestamp*'))
+        cam_folder = folder / cam
+        valid_files = list(cam_folder.glob("*timestamp*"))
         if not len(valid_files):
-            raise IOError(f'Could not find any timestamp files in {folder}')
+            raise IOError(f"Could not find any timestamp files in {folder}")
         for possible_file in valid_files:
             possible_file = str(possible_file)
             if cam in possible_file:
                 output[cam] = pd.read_csv(possible_file)
-    return(output)
+    return output
 
-def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6,
-                  verbose=True):
+
+def convert_ephys(
+    uint16_file, target, nchan=64, overwrite=False, batch_size=1e6, verbose=True
+):
     """Convert raw uint16 data in int16
 
     Data from onix is saved as uint16. Kilosort has no option to change expected
@@ -295,7 +310,7 @@ def convert_ephys(uint16_file, target, nchan=64, overwrite=False, batch_size=1e6
         print("Flushing to disk", flush=True)
     copy_data.flush()
     if verbose:
-        print('done', flush=True)
+        print("done", flush=True)
 
 
 def _find_files(folder, timestamp, prefix):
@@ -327,13 +342,12 @@ def _find_files(folder, timestamp, prefix):
     return valid_files
 
 
-def _load_binary_file(file_path, dtype, nchan, order='F'):
+def _load_binary_file(file_path, dtype, nchan, order="F"):
     file_path = Path(file_path)
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
         raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
     n_time = int(n_pts / nchan)
     shape = (nchan, n_time) if nchan != 1 else None
-    data = np.memmap(file_path, dtype=dtype, mode='r', order=order,
-                     shape=shape)
+    data = np.memmap(file_path, dtype=dtype, mode="r", order=order, shape=shape)
     return data
