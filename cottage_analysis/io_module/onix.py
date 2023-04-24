@@ -46,8 +46,7 @@ def load_onix_recording(
     out = dict()
 
     if vis_stim_recording is not None:
-        harp_message = "%s_%s_%s_harpmessage.bin" % (mouse, session, vis_stim_recording)
-        raw_harp = session_folder / vis_stim_recording / harp_message
+        raw_harp = session_folder / vis_stim_recording / "harpmessage.bin"
         processed_messages = (
             processed_folder / vis_stim_recording / (raw_harp.stem + ".npz")
         )
@@ -161,7 +160,7 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
         if breakout_file.suffix == ".csv":
             assert what == "dio"
             dio = pd.read_csv(breakout_file)
-            port = np.array(dio["Value.Port"].values, dtype="uint8")
+            port = np.array(dio["Port"].values, dtype="uint8")
             bits = np.unpackbits(port, bitorder="little")
             bits = bits.reshape((len(port), 8))
             for i in range(8):
