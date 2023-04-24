@@ -11,6 +11,9 @@ def preprocess_onix_recording(data, breakout_di_names=None, debounce_window=1000
         breakout_di_names (dict, optional): A dictionary mapping the breakout digital
         debounce_window (int, optional): Window to debounce signal in samples. Defaults
             to 1000.
+
+    Returns:
+        dict: The preprocessed ONIX recording data. (same as input)
     """
     if breakout_di_names is None:
         breakout_di_names = BREAKOUT_DIGITAL_INPUTS
@@ -18,7 +21,7 @@ def preprocess_onix_recording(data, breakout_di_names=None, debounce_window=1000
     for di in list(dis.keys()):
         if di in breakout_di_names:
             dis[breakout_di_names[di]] = dis.pop(di)
-    data["dio"]["digital_inputs"] = dis
+    data["breakout_data"]["digital_inputs"] = dis
     return data
 
 
@@ -34,10 +37,10 @@ def clean_di(dio, debounce_window=1000):
         dict: The cleaned digital input signals.
     """
     dis = {}
-    full_clock = dio["clock"]
+    full_clock = dio["Clock"]
     for i in range(8):
         values, clock = debounce(dio["DI%d" % i], full_clock, debounce_window)
-        dis["DI%d" % i] = np.hstack([clock, values])
+        dis["DI%d" % i] = np.vstack([clock, values])
     return dis
 
 
@@ -53,8 +56,12 @@ def debounce(values, clock, window):
         np.ndarray: The debounced values.
         np.ndarray: The debounced clock.
     """
+    values = np.array(values, dtype=bool)
+    clock = np.array(clock)
     val_change = np.zeros(values.shape, dtype=bool)
     val_change[1:] = np.diff(values) != 0
+    if not any(val_change):
+        return np.array([values[0]]), np.array([clock[0]])
     values = values[val_change]
     clock = clock[val_change]
     valid_transition = np.hstack([True, np.diff(clock) > window])
