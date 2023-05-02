@@ -15,7 +15,6 @@ from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.depth_analysis.filepath import generate_filepaths
 from cottage_analysis.imaging.common import find_frames as find_img_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
-from cottage_analysis.depth_analysis.depth_preprocess import synchronisation
 
 
 def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False):
@@ -350,6 +349,16 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
 
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
+    vs_df = vs_df.drop(
+        columns=["harptime_framelog", "harptime_sphere", "harptime_imaging_trigger"]
+    )
+    vs_df = vs_df.rename(
+        columns={
+            "onset_time": "onset_harptime",
+            "offset_time": "offset_harptime",
+            "peak_time": "peak_harptime",
+        }
+    )
 
     # Save df to pickle
     vs_df.to_pickle(save_folder / "vs_df.pickle")
@@ -419,7 +428,7 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
             "imaging_frame",
             "harptime_imaging_trigger",
             "depth",
-            "trial_no",
+            # "trial_no",
             "is_stim",
             "RS",  # actual running speed, m/s
             "RS_eye",  # virtual running speed, m/s
@@ -449,12 +458,12 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
     rs_img = (
         grouped_vs_df.apply(
             lambda x: (x["mouse_z"].iloc[-1] - x["mouse_z"].iloc[0])
-            / (x["onset_time"].iloc[-1] - x["onset_time"].iloc[0])
+            / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
         )
         .to_frame()
         .rename(columns={0: "RS"})
     )
-    rs_img = synchronisation.fill_in_missing_index(rs_img, value_col="RS")
+    rs_img = fill_in_missing_index(rs_img, value_col="RS")
     rs_img = rs_img.RS.values
     rs_img = np.insert(rs_img, 0, 0)
     rs_img = rs_img[:-1]
@@ -464,12 +473,12 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
     rs_eye_img = (
         grouped_vs_df.apply(
             lambda x: (x["eye_z"].iloc[-1] - x["eye_z"].iloc[0])
-            / (x["onset_time"].iloc[-1] - x["onset_time"].iloc[0])
+            / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
         )
         .to_frame()
         .rename(columns={0: "RS_eye"})
     )
-    rs_eye_img = synchronisation.fill_in_missing_index(rs_eye_img, value_col="RS_eye")
+    rs_eye_img = fill_in_missing_index(rs_eye_img, value_col="RS_eye")
     rs_eye_img = rs_eye_img.RS_eye.values
     rs_eye_img = np.insert(rs_eye_img, 0, 0)
     rs_eye_img = rs_eye_img[:-1]
@@ -477,7 +486,7 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
 
     # depth for each imaging frame
     depth_img = grouped_vs_df.depth.min().to_frame().rename(columns={0: "depth"})
-    depth_img = synchronisation.fill_in_missing_index(depth_img, value_col="depth")
+    depth_img = fill_in_missing_index(depth_img, value_col="depth")
     imaging_df.depth = depth_img
     imaging_df.is_stim = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
     imaging_df.depth[imaging_df.depth.isna()] = 0
@@ -587,13 +596,13 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
             "imaging_frame_stim_stop",
             "imaging_frame_blank_start",
             "imaging_frame_blank_stop",
-            "RS_array_stim",  # actual running speed, m/s
-            "RS_array_blank",
-            "RS_eye_array_stim",  # virtual running speed, m/s
-            "OF_array_stim",  # optic flow speed = RS/depth, rad/s
-            "dffs_array_stim",
-            "dffs_array_blank",
-            "spheres_no",
+            "RS_stim",  # actual running speed, m/s
+            "RS_blank",
+            "RS_eye_stim",  # virtual running speed, m/s
+            "OF_stim",  # optic flow speed = RS/depth, rad/s
+            "dff_stim",
+            "dff_blank",
+            # "spheres_no",
             "closed_loop",
         ]
     )
@@ -617,10 +626,12 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
             print("Warning: incorrect stimulus trial structure! Double check!")
     else:
         stop_idx_blank = start_idx_stim[1:] - 1
-        last_blank_stop_time = vs_df.loc[start_idx_blank[-1]].onset_time + blank_time
+        last_blank_stop_time = (
+            vs_df.loc[start_idx_blank[-1]].onset_harptime + blank_time
+        )
         stop_idx_blank = np.append(
             stop_idx_blank,
-            (np.abs(vs_df["onset_time"] - last_blank_stop_time)).idxmin(),
+            (np.abs(vs_df["onset_harptime"] - last_blank_stop_time)).idxmin(),
         )
     stop_idx_stim = start_idx_blank - 1
 
@@ -628,10 +639,10 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     # Harptime for starts and stops are harptime for monitor frames, not corresponding to imaging trigger harptime
     trials_df.trial_no = np.arange(len(start_idx_stim))
     trials_df.depth = vs_df.loc[start_idx_stim].depth.values
-    trials_df.harptime_stim_start = vs_df.loc[start_idx_stim].onset_time.values
-    trials_df.harptime_stim_stop = vs_df.loc[stop_idx_stim].onset_time.values
-    trials_df.harptime_blank_start = vs_df.loc[start_idx_blank].onset_time.values
-    trials_df.harptime_blank_stop = vs_df.loc[stop_idx_blank].onset_time.values
+    trials_df.harptime_stim_start = vs_df.loc[start_idx_stim].onset_harptime.values
+    trials_df.harptime_stim_stop = vs_df.loc[stop_idx_stim].onset_harptime.values
+    trials_df.harptime_blank_start = vs_df.loc[start_idx_blank].onset_harptime.values
+    trials_df.harptime_blank_stop = vs_df.loc[stop_idx_blank].onset_harptime.values
     trials_df.imaging_frame_stim_start = vs_df.loc[start_idx_stim].imaging_frame.values
     trials_df.imaging_frame_blank_start = vs_df.loc[
         start_idx_blank
@@ -651,31 +662,31 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         trials_df.closed_loop = 1
 
     # Assign RS array from imaging_df back to trials_df
-    trials_df.RS_array_stim = trials_df.apply(
+    trials_df.RS_stim = trials_df.apply(
         lambda x: imaging_df.RS.loc[
             x.imaging_frame_stim_start : x.imaging_frame_stim_stop
         ].values,
         axis=1,
     )
 
-    trials_df.RS_array_blank = trials_df.apply(
+    trials_df.RS_blank = trials_df.apply(
         lambda x: imaging_df.RS.loc[
             x.imaging_frame_blank_start : x.imaging_frame_blank_stop
         ].values,
         axis=1,
     )
 
-    trials_df.RS_eye_array_stim = trials_df.apply(
+    trials_df.RS_eye_stim = trials_df.apply(
         lambda x: imaging_df.RS_eye.loc[
             x.imaging_frame_stim_start : x.imaging_frame_stim_stop
         ].values,
         axis=1,
     )
 
-    # trials_df.OF_array_stim = trials_df.apply(
-    #         lambda x: x["RS_eye_array_stim"] / x["depth"], axis=1
+    # trials_df.OF_stim = trials_df.apply(
+    #         lambda x: x["RS_eye_stim"] / x["depth"], axis=1
     #     )
-    trials_df.OF_array_stim = trials_df.apply(
+    trials_df.OF_stim = trials_df.apply(
         lambda x: imaging_df.OF.loc[
             x.imaging_frame_stim_start : x.imaging_frame_stim_stop
         ].values,
@@ -684,19 +695,22 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
 
     # Assign dffs array to trials_df
     dffs = np.load(trace_folder / "dffs_ast.npy")
-    trials_df.dffs_array_stim = trials_df.apply(
+    trials_df.dff_stim = trials_df.apply(
         lambda x: dffs[
             :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
         ],
         axis=1,
     )
 
-    trials_df.dffs_array_blank = trials_df.apply(
+    trials_df.dff_blank = trials_df.apply(
         lambda x: dffs[
             :, int(x.imaging_frame_blank_start) : int(x.imaging_frame_blank_stop)
         ],
         axis=1,
     )
+
+    # Rename
+    trials_df = trials_df.drop(columns=["imaging_frame_blank_start"])
 
     # Save df to pickle
     save_folder = protocol_folder / "sync"
