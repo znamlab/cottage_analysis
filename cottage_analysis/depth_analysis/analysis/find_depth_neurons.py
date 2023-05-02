@@ -57,7 +57,7 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
 
     for protocol in protocols:
         print(
-            f"---------Process protocol {protocol}/{len(protocols)}---------",
+            f"---------Process protocol {protocol+1}/{len(protocols)}---------",
             flush=True,
         )
         # ----- STEP1: Generate file path -----
