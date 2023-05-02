@@ -151,16 +151,22 @@ def find_depth_list(df):
     return depth_list
 
 
-def average_dff_for_all_trials(trials_df):
+def average_dff_for_all_trials(trials_df, rs_thr=0.2):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
     Args:
         trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
+        rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
     """
     depth_list = find_depth_list(trials_df)
-    trials_df["trial_mean_dff"] = trials_df.apply(
-        lambda x: np.nanmean(x.dff_stim, axis=1), axis=1
-    )
+    if rs_thr is None:
+        trials_df["trial_mean_dff"] = trials_df.apply(
+            lambda x: np.nanmean(x.dff_stim, axis=1), axis=1
+        )
+    else:
+        trials_df["trial_mean_dff"] = trials_df.apply(
+            lambda x: np.nanmean(x.dff_stim[:, x.RS_stim >= rs_thr], axis=1), axis=1
+        )
     grouped_trials = trials_df.groupby(by="depth")
 
     mean_dff_arr = []
@@ -182,7 +188,9 @@ def average_dff_for_all_trials(trials_df):
     return mean_dff_arr
 
 
-def find_depth_neurons(project, mouse, session, protocol="SpheresPermTubeReward"):
+def find_depth_neurons(
+    project, mouse, session, protocol="SpheresPermTubeReward", rs_thr=0.2
+):
     """Find depth neurons from all ROIs segmented.
 
     Args:
@@ -190,6 +198,7 @@ def find_depth_neurons(project, mouse, session, protocol="SpheresPermTubeReward"
         mouse (str): mouse name.
         session (str): session name.
         protocol (str): protocol name. Defaults to "SpheresPermTubeReward"
+        rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
@@ -234,7 +243,7 @@ def find_depth_neurons(project, mouse, session, protocol="SpheresPermTubeReward"
 
     # Anova test to determine which neurons are depth neurons
     depth_list = find_depth_list(trials_df)
-    mean_dff_arr = average_dff_for_all_trials(trials_df)
+    mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
 
     for iroi in tqdm(np.arange(len(iscell))):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, iroi])
