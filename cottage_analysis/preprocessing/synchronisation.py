@@ -664,21 +664,21 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     # Assign RS array from imaging_df back to trials_df
     trials_df.RS_stim = trials_df.apply(
         lambda x: imaging_df.RS.loc[
-            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+            int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
         ].values,
         axis=1,
     )
 
     trials_df.RS_blank = trials_df.apply(
         lambda x: imaging_df.RS.loc[
-            x.imaging_frame_blank_start : x.imaging_frame_blank_stop
+            int(x.imaging_frame_blank_start) : int(x.imaging_frame_blank_stop)
         ].values,
         axis=1,
     )
 
     trials_df.RS_eye_stim = trials_df.apply(
         lambda x: imaging_df.RS_eye.loc[
-            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+            int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
         ].values,
         axis=1,
     )
@@ -688,7 +688,7 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     #     )
     trials_df.OF_stim = trials_df.apply(
         lambda x: imaging_df.OF.loc[
-            x.imaging_frame_stim_start : x.imaging_frame_stim_stop
+            int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
         ].values,
         axis=1,
     )
@@ -697,14 +697,14 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     dffs = np.load(trace_folder / "dffs_ast.npy")
     trials_df.dff_stim = trials_df.apply(
         lambda x: dffs[
-            :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
+            :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop) + 1
         ],
         axis=1,
     )
 
     trials_df.dff_blank = trials_df.apply(
         lambda x: dffs[
-            :, int(x.imaging_frame_blank_start) : int(x.imaging_frame_blank_stop)
+            :, int(x.imaging_frame_blank_start) : int(x.imaging_frame_blank_stop) + 1
         ],
         axis=1,
     )
