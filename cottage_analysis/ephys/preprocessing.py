@@ -40,6 +40,7 @@ def preprocess_exp(data, plot=True, plot_dir=None):
 
 
 
+
 def clean_di_channel(clock, values, window=2500):
     """Remove rapid flicker from digital input channel
 
@@ -72,7 +73,7 @@ def clean_di_channel(clock, values, window=2500):
     changes = np.hstack([True, np.diff(med_filtered) != 0])
     med_filtered = med_filtered[changes]
     clock = np.array(clock[changes])
-
+    
     return clock, med_filtered
 
 
