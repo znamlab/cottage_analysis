@@ -40,7 +40,8 @@ def preprocess_exp(data, plot=True, plot_dir=None):
 
 
 
-def clean_di_channel(clock, values, window=25000):
+
+def clean_di_channel(clock, values, window=2500):
     """Remove rapid flicker from digital input channel
 
     Also ensure that the output contains only actual changes on this channel.
@@ -48,7 +49,7 @@ def clean_di_channel(clock, values, window=25000):
     Args:
         clock (np.ndarray): clock data
         values (np.ndarray): digital input channel value (0 or 1)
-        window (int, optional): window size in samples. Defaults to 25000.
+        window (int, optional): window size in samples. Defaults to 2500 (10us).
     
     Returns:
         np.ndarray: cleaned clock times
@@ -59,7 +60,7 @@ def clean_di_channel(clock, values, window=25000):
     # Find when the value actually changes
     changes = np.hstack([True, np.diff(values) != 0])
     values = values[changes]
-    clock = np.array(clock[changes])
+    clock = clock[changes]
     
     # Median filter
     borders = clock.searchsorted(np.vstack([clock-window, clock+window]))
@@ -67,6 +68,12 @@ def clean_di_channel(clock, values, window=25000):
     cumsum = np.hstack([0, values.cumsum()])
     n_true = cumsum[borders[1]] - cumsum[borders[0]]
     med_filtered = n_true > batch_size // 2
+
+    # Keep only changes
+    changes = np.hstack([True, np.diff(med_filtered) != 0])
+    med_filtered = med_filtered[changes]
+    clock = np.array(clock[changes])
+    
     return clock, med_filtered
 
 
