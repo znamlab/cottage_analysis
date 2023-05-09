@@ -59,8 +59,8 @@ def regenerate_frames(
         assert output.shape == out_shape
 
     # for frames before and after the protocol, keep them 0s
-    before = frame_times < corridor_df.start_time.iloc[0]
-    after = frame_times > corridor_df.end_time.iloc[-1]
+    before = frame_times < trials_df.harptime_stim_start.iloc[0]
+    after = frame_times > trials_df.harptime_stim_stop.iloc[-1]
     if verbose:
         print(
             "Ignoring %d frames before and %d after the stimulus presentation"
