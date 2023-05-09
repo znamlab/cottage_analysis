@@ -341,6 +341,22 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         allow_exact_matches=True,
     )
 
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
+    harpmessage = np.load(p_msg)
+    mouse_z_harp_df = pd.DataFrame(
+        {
+            "onset_time": harpmessage["analog_time"],
+            "mouse_z_harp": np.cumsum(harpmessage["rotary_meter"]),
+        }
+    )
+    vs_df = pd.merge_asof(
+        left=vs_df,
+        right=mouse_z_harp_df,
+        on="onset_time",
+        direction="backward",
+        allow_exact_matches=True,
+    )
+
     # Indicate whether it's a closed loop or open loop session
     if "Playback" in protocol:
         vs_df["closed_loop"] = 0
