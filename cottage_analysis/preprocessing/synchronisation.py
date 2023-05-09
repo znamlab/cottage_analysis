@@ -539,7 +539,7 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
     imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values
 
     # Save df to pickle
-    vs_df.to_pickle(save_folder / "imaging_df.pickle")
+    imaging_df.to_pickle(save_folder / "imaging_df.pickle")
 
     return imaging_df
 
