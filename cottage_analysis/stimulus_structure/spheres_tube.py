@@ -1,7 +1,46 @@
-# import jax
+import jax
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
+
+
+def find_valid_frames(frame_times, trials_df, verbose=True):
+    """Find frame numbers that are valid (not gray period, or not before or after the imaging frames) and used for regenerating sphere stimuli.
+
+    Args:
+        frame_times (np.array): Array of time at which the frame should be regenerated
+        trials_df (pd.DataFrame): Dataframe contains information for each trial.
+        verbose (bool, optional): Print information. Defaults to True.
+
+    Returns:
+        frame_indices (np.array): Array of valid frame indices.
+    """
+    # for frames before and after the protocol, keep them 0s
+    before = frame_times < trials_df.harptime_stim_start.iloc[0]
+    after = frame_times > trials_df.harptime_stim_stop.iloc[-1]
+    if verbose:
+        print(
+            "Ignoring %d frames before and %d after the stimulus presentation"
+            % (np.sum(before), np.sum(after))
+        )
+    valid_frames = ~before & ~after
+
+    trial_index = (
+        trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
+    )
+    trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
+    trial_end = trials_df.loc[trial_index, "harptime_stim_stop"].values
+    grey_time = frame_times - trial_end > 0
+    if verbose:
+        print(
+            "Ignoring %d frames in grey inter-trial intervals"
+            % np.sum(grey_time & valid_frames)
+        )
+    valid_frames = valid_frames & (~grey_time)
+    frame_indices = np.where(valid_frames)[0]
+
+    return frame_indices
 
 
 def regenerate_frames(
@@ -21,7 +60,7 @@ def regenerate_frames(
     """Regenerate frames of sphere stimulus
 
     Args:
-        frame_times (np.array): Array of time at which the frame should be regenerated
+        frame_times (np.array): Array of time at which the frame should be regenerated.
         trials_df (pd.DataFrame): Dataframe contains information for each trial.
         vs_df (pd.DataFrame): Dataframe contains information for each monitor frame.
         param_logger (pd.DataFrame): Params saved by Bonsai logger
@@ -58,34 +97,18 @@ def regenerate_frames(
     else:
         assert output.shape == out_shape
 
-    # for frames before and after the protocol, keep them 0s
-    before = frame_times < trials_df.harptime_stim_start.iloc[0]
-    after = frame_times > trials_df.harptime_stim_stop.iloc[-1]
-    if verbose:
-        print(
-            "Ignoring %d frames before and %d after the stimulus presentation"
-            % (np.sum(before), np.sum(after))
-        )
-    valid_frames = ~before & ~after
-
+    # Find frame indices that are not grey or within the imaging time.
     trial_index = (
         trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
-    trial_end = trials_df.loc[trial_index, "harptime_stim_stop"].values
-    grey_time = frame_times - trial_end > 0
-    if verbose:
-        print(
-            "Ignoring %d frames in grey inter-trial intervals"
-            % np.sum(grey_time & valid_frames)
-        )
-    valid_frames = valid_frames & (~grey_time)
+    frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
-    frame_indices = np.where(valid_frames)[0]
+
     # now process the valid frames
     log_ends = param_logger[time_column].searchsorted(frame_times)
     draw_sph_jit = jax.jit(draw_spheres)
-    for frame_index in frame_indices:
+    for frame_index in tqdm(frame_indices):
         corridor = trials_df.loc[int(trial_index[frame_index])]
         logger = param_logger.iloc[corridor.param_log_start : log_ends[frame_index]]
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
