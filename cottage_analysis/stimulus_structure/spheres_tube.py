@@ -4,49 +4,11 @@ import pandas as pd
 import numpy as np
 
 
-def trial_structure(param_logger, time_column="HarpTime"):
-    """Generate a corridor dataframe
-
-    The dataframe has one entry per corridor with depth, start/end sample and
-    start/end time
-
-    Args:
-        param_logger (pd.DataFrame): DataFrame read from params logger of bonsai
-        time_column (str): Name of the column containing timing information
-
-    Returns:
-        corridor_df (pd.DataFrame): trial structure dataframe
-    """
-    depth = np.round(param_logger.Depth.values, 2)
-    trials_border = np.diff(np.hstack([-9999, depth]))
-    trials_onset = np.where(trials_border > 5000)[0]
-    trials_offset = np.where(trials_border < -5000)[0]
-    n_corridors = len(trials_onset)
-    if len(trials_offset) == n_corridors - 1:  # the last corridor is cut
-        trials_offset = np.hstack([trials_offset, len(depth) - 1])
-    elif len(trials_offset) != n_corridors:
-        raise IOError(
-            "Found %d corridor starts but %d ends... "
-            % (n_corridors, len(trials_offset))
-        )
-
-    corridor_df = dict(
-        trial=np.arange(n_corridors),
-        depth=depth[trials_onset],
-        start_sample=np.array(trials_onset, dtype=int),
-        end_sample=np.array(trials_offset, dtype=int),
-        start_time=param_logger.loc[trials_onset, time_column].values,
-        end_time=param_logger.loc[trials_offset, time_column].values,
-    )
-    return pd.DataFrame(corridor_df)
-
-
 def regenerate_frames(
     frame_times,
+    trials_df,
+    vs_df,
     param_logger,
-    mouse_pos_cm,
-    mouse_pos_time,
-    corridor_df=None,
     time_column="HarpTime",
     resolution=1,
     sphere_size=10,
@@ -60,10 +22,9 @@ def regenerate_frames(
 
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated
+        trials_df (pd.DataFrame): Dataframe contains information for each trial.
+        vs_df (pd.DataFrame): Dataframe contains information for each monitor frame.
         param_logger (pd.DataFrame): Params saved by Bonsai logger
-        mouse_pos_cm (np.array): position of the mouse in cm
-        mouse_pos_time (np.array): time of each mouse_pos_cm sample
-        corridor_df (pd.DataFrame): trial structure dataframe. One line per corridor
         time_column (str): Name of the column containing timing information in
                            dataframes (Default: 'HarpTime')
         resolution (float): size of a pixel in degrees
@@ -80,9 +41,13 @@ def regenerate_frames(
         virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
     """
     frame_times = np.array(frame_times, ndmin=1)
+    mouse_pos_cm = (
+        vs_df["eye_z"].values * 100
+    )  # (np.array): position of the mouse in cm
+    mouse_pos_time = vs_df[
+        "onset_harptime"
+    ].values  # (np.array): time of each mouse_pos_cm sample
 
-    if corridor_df is None:
-        corridor_df = trial_structure(param_logger, time_column)
     out_shape = (
         len(frame_times),
         int((elevation_limits[1] - elevation_limits[0]) / resolution),
@@ -103,10 +68,12 @@ def regenerate_frames(
         )
     valid_frames = ~before & ~after
 
-    corridor_index = corridor_df.start_time.searchsorted(frame_times, side="right") - 1
-    corridor_index = np.clip(corridor_index, 0, len(corridor_df) - 1)
-    corridor_end = corridor_df.loc[corridor_index, "end_time"].values
-    grey_time = frame_times - corridor_end > 0
+    trial_index = (
+        trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
+    )
+    trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
+    trial_end = trials_df.loc[trial_index, "harptime_stim_stop"].values
+    grey_time = frame_times - trial_end > 0
     if verbose:
         print(
             "Ignoring %d frames in grey inter-trial intervals"
@@ -119,23 +86,28 @@ def regenerate_frames(
     log_ends = param_logger[time_column].searchsorted(frame_times)
     draw_sph_jit = jax.jit(draw_spheres)
     for frame_index in frame_indices:
-        corridor = corridor_df.loc[int(corridor_index[frame_index])]
-        logger = param_logger.iloc[int(corridor.start_sample) : log_ends[frame_index]]
+        corridor = trials_df.loc[int(trial_index[frame_index])]
+        logger = param_logger.iloc[corridor.param_log_start : log_ends[frame_index]]
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
-        sphere_coordinates = sphere_coordinates.at[:, 2].set(
+        # sphere_coordinates = sphere_coordinates.at[:, 2].set(
+        #     sphere_coordinates[:, 2] - mouse_position[frame_index]
+        # )
+        sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
         )
+
         this_frame = draw_spheres(
             sphere_x=sphere_coordinates[:, 0],
             sphere_y=sphere_coordinates[:, 1],
             sphere_z=sphere_coordinates[:, 2],
-            depth=float(corridor.depth),
+            depth=float(corridor.depth) * 100,
             resolution=float(resolution),
             sphere_size=float(sphere_size),
             azimuth_limits=np.array(azimuth_limits, dtype=float),
             elevation_limits=np.array(elevation_limits, dtype=float),
         )
         output[frame_index] = this_frame
+
     return output
 
 
@@ -173,7 +145,7 @@ def draw_spheres(
     # we switch from trigo circle, counterclockwise with 0 on the right to azimuth,
     # clockwise with 0 in front
     az_compas = np.mod(-(azimuth - 90), 360)
-    az_compas = az_compas.at[az_compas > 180].set(az_compas[az_compas > 180] - 360)
+    az_compas[az_compas > 180] = az_compas[az_compas > 180] - 360
 
     # now prepare output
     azi_n = int((azimuth_limits[1] - azimuth_limits[0]) / resolution)
@@ -198,6 +170,7 @@ def draw_spheres(
     yy = np.outer(yy.reshape(-1), np.ones(len(el_on_screen)))
     ok = (xx - az_on_screen) ** 2 + (yy - el_on_screen) ** 2 - size**2
     ok = ok <= 0
+    # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
     return np.any(ok, axis=1).reshape((ele_n, azi_n))
 
 
