@@ -612,6 +612,8 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
             "imaging_frame_stim_stop",
             "imaging_frame_blank_start",
             "imaging_frame_blank_stop",
+            "param_log_start",  # which row of param log does this trial start
+            "param_log_stop",  # which row of param log does this trial stop
             "RS_stim",  # actual running speed, m/s
             "RS_blank",
             "RS_eye_stim",  # virtual running speed, m/s
@@ -724,6 +726,24 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         ],
         axis=1,
     )
+
+    # Add the start param logger row and stop param logger row to each trial
+    param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
+    start_idx = (
+        trials_df.harptime_stim_start.searchsorted(param_log.HarpTime) - 1
+    )  # trial index for each row of param log
+    start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
+    start_idx = pd.Series(start_idx)
+    start_idx = start_idx[start_idx.diff() != 0].index.values
+    trials_df["param_log_start"] = start_idx
+
+    stop_idx = trials_df.harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
+    stop_idx = pd.Series(stop_idx)
+    stop_idx = stop_idx[stop_idx.diff() != 0].index.values
+    if stop_idx[0] == 0:
+        stop_idx = stop_idx[1:]
+    stop_idx = stop_idx[: len(start_idx)]
+    trials_df["param_log_stop"] = stop_idx
 
     # Rename
     trials_df = trials_df.drop(columns=["imaging_frame_blank_start"])
