@@ -14,9 +14,9 @@ from scipy.optimize import curve_fit
 
 import flexiznam as flz
 
-from cottage_analysis.depth_analysis.filepath import generate_filepaths
+from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.depth_analysis.analysis import common_utils
+from cottage_analysis.analysis import common_utils
 
 
 MIN_SIGMA = 0.5
