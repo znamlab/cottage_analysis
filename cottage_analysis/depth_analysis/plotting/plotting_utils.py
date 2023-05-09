@@ -481,7 +481,7 @@ def plot_dFF_binned_speed(
             binned_stats["bin_centers"][idepth, :],
             tuning,
             color=linecolor,
-            label=f"{depth_list[idepth] * 100} cm",
+            label=f"{int(depth_list[idepth] * 100)} cm",
         )
         plt.errorbar(
             x=binned_stats["bin_centers"][idepth, :],

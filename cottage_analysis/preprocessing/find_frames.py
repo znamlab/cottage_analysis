@@ -640,6 +640,9 @@ def _match_fit_to_logger(
         ]
         frames_df.loc[ind, "sync_reason"] = " & ".join(reason)
         frames_df.loc[ind, "crosscorr_picked"] = lab
+        if verbose:
+            if ind%100==0:
+                print(str(ind/len(bad)), flush=True)
 
     if verbose:
         end = time.time()
