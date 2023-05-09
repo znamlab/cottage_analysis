@@ -470,10 +470,10 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
     dffs = np.load(trace_folder / "dffs_ast.npy")
     imaging_df.dffs = dffs.T.tolist()
 
-    # RS for each imaging frame: the speed of the previous imaging frame
+    # RS for each imaging frame: the speed of the previous imaging frame (recorded by harp)
     rs_img = (
         grouped_vs_df.apply(
-            lambda x: (x["mouse_z"].iloc[-1] - x["mouse_z"].iloc[0])
+            lambda x: (x["mouse_z_harp"].iloc[-1] - x["mouse_z_harp"].iloc[0])
             / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
         )
         .to_frame()
