@@ -2,7 +2,7 @@
 #
 #SBATCH --job-name=2p_exp_preprocess
 #SBATCH --ntasks=1
-#SBATCH --time=4:00:00
+#SBATCH --time=6:00:00
 #SBATCH --mem=96G
 #SBATCH --partition=cpu
 #SBATCH --mail-type=END,FAIL
