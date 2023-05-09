@@ -1,20 +1,26 @@
 import numpy as np
 
 
-def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
-                 frame_rate=144, delays=None, spk_per_frame=None, verbose=True):
+def sta_by_depth(
+    trials_df,
+    reconstructed_frames,
+    frame_times,
+    frame_rate,
+    delays=None,
+    spk_per_frame=None,
+    verbose=True,
+):
     """Spike triggered average of reconstructed frames by depth
 
     Delays, in second, are delay applied to the stimulus sequence. If delay is -100,
     that means that spikes were triggered by stimulus 100ms before them.
 
     Args:
-        corridor_df (pd.DataFrame): Stimulus structure, must have a 'depth',
-        'start_time' and 'end_time' columns
+        trials_df (pd.DataFrame): stimulus structure with each row as a trial.
         reconstructed_frames (np.array): n frames x n elev x n azim binary array of
                                          stimuli
         frame_times (np.array): time of each frame, same unit as corridor_df.start_time
-        frame_rate (float): frame rate to calculate delays
+        frame_rate (float): frame rate to calculate delays. 144 for monitor frames, 15 for imaging frames.
         delays (np.array): array of delays in seconds
         spk_per_frame (np.array): spike for each frame, use to weight average. If None
                                   will do simple average
@@ -31,19 +37,23 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
     if spk_per_frame is None:
         spk_per_frame = np.ones(reconstructed_frames.shape[0])
 
-    depths = np.sort(corridor_df.depth.unique())
+    depths = np.sort(trials_df.depth.unique())
     full_sta = np.zeros((len(depths), len(delays), *reconstructed_frames.shape[1:]))
     nspks = np.zeros(len(depths))
 
     for idepth, depth in enumerate(depths):
         if verbose:
-            print('... doing depth %d cm' % depth)
-        depth_df = corridor_df[corridor_df.depth == depth]
+            print(f"... doing depth {depth*100} cm")
+        depth_df = trials_df[trials_df.depth == depth]
         # find frames at this depth
-        starts = frame_times.searchsorted(depth_df.start_time)
-        ends = frame_times.searchsorted(depth_df.end_time)
-        frame_index = np.hstack([np.arange(s, e, dtype=int)
-                                 for s, e in zip(starts, ends)])
+        # starts = depth_df.imaging_frame_stim_start.values
+        # ends = depth_df.imaging_frame_stim_stop.values
+        starts = frame_times.searchsorted(depth_df.harptime_stim_start)
+        ends = frame_times.searchsorted(depth_df.harptime_stim_stop)
+        ends = ends[: len(starts)]
+        frame_index = np.hstack(
+            [np.arange(s, e, dtype=int) for s, e in zip(starts, ends)]
+        )
         # keep non-shifted spikes for all delay
         # do it like that to look for valid frames only once
         spk_per_frame_at_depth = spk_per_frame[frame_index]
@@ -51,13 +61,17 @@ def sta_by_depth(corridor_df, reconstructed_frames, frame_times,
         valid_frames = spk_per_frame_at_depth != 0
         for idelay, delay in enumerate(delays):
             if verbose:
-                print('... ... doing delay %d ms' % (delay * 1000))
+                print(f"... ... doing delay {delay * 1000} ms")
             shift = int(delay * frame_rate)
             # shift the stim
-            shifted_frames = np.clip(frame_index[valid_frames] + shift, 0,
-                                     len(frame_times))
-            stims = reconstructed_frames[shifted_frames].reshape(len(shifted_frames), -1)
+            shifted_frames = np.clip(
+                frame_index[valid_frames] + shift, 0, len(frame_times)
+            )
+            stims = reconstructed_frames[shifted_frames].reshape(
+                len(shifted_frames), -1
+            )
             sta = np.dot(stims.T, spk_per_frame_at_depth[valid_frames])
             sta = sta.reshape(reconstructed_frames.shape[1:])
             full_sta[idepth, idelay] = sta
+            # !! Needs to add normalized STA
     return full_sta, nspks, depths, delays
