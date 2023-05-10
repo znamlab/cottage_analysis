@@ -2,10 +2,8 @@ import functools
 
 print = functools.partial(print, flush=True)
 
-import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from pathlib import Path
 import pickle
 
@@ -71,8 +69,8 @@ def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False
     # save harp message into npz, or load existing npz file
     msg = Path(str(harpmessage_file).replace("csv", "bin"))
     p_msg = protocol_folder / "sync"
-    if not os.path.exists(p_msg):
-        os.makedirs(p_msg)
+    if not p_msg.exists():
+        p_msg.mkdir(parents=True)
     p_msg = p_msg / (msg.stem + ".npz")
     if (not p_msg.is_file()) or redo == True:
         print("Saving harp messages into npz...")
@@ -145,17 +143,8 @@ def find_monitor_frames(
         )
 
         frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
-        expected_sequence = (
-            pd.read_csv(
-                rawdata_folder / "random_sequence_5values_alternate.csv", header=None
-            )
-            .loc[:, 0]
-            .values
-        )
-        step_values = frame_log.PhotoQuadColor.unique()
         ao_time = harp_messages["analog_time"]
         photodiode = harp_messages["photodiode"]
-        ao_sampling = 1 / np.mean(np.diff(ao_time))
 
         print("Data loaded.")
         print(
@@ -185,8 +174,8 @@ def find_monitor_frames(
 
         # Save monitor frame dataframes
         save_folder = protocol_folder / "sync/monitor_frames"
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
+        if not save_folder.exists():
+            save_folder.mkdir(parents=True)
         frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
         with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
             pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -243,10 +232,7 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         recording_no=0,
     )
     save_folder = protocol_folder / "sync/monitor_frames/"
-    with open(save_folder / "monitor_db_dict.pickle", "rb") as handle:
-        monitor_db_dict = pickle.load(handle)
-    with open(save_folder / "monitor_frames_df.pickle", "rb") as handle:
-        monitor_frames_df = pickle.load(handle)
+    monitor_frames_df = pd.read_pickle(save_folder / "monitor_frames_df.pickle")
 
     # Find frames that are not skipped
     monitor_frame_valid = monitor_frames_df[monitor_frames_df.closest_frame.notnull()][
@@ -297,20 +283,9 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     save_folder = protocol_folder / "sync"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    ops = np.load(suite2p_folder / "ops.npy", allow_pickle=True)
-    ops = ops.item()
-    harpmessage_file = generate_filepaths.generate_logger_path(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=irecording,
-        flexilims_session=flexilims_session,
-        logger_name="harp_message",
-    )
+    if not save_folder.exists():
+        save_folder.mkdir(parents=True)
+    ops = np.load(suite2p_folder / "ops.npy", allow_pickle=True).item()
     p_msg = protocol_folder / "sync/harpmessage.npz"
     img_frame_logger = format_loggers.format_img_frame_logger(
         harpmessage_file=p_msg, register_address=32
@@ -435,8 +410,8 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         recording_no=0,
     )
     save_folder = protocol_folder / "sync"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
+    if not save_folder.exists():
+        save_folder.mkdir(parents=True)
 
     # Imaging_df: to find the RS/OF array for each imaging frame
     imaging_df = pd.DataFrame(
@@ -578,12 +553,6 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     sess_children_protocols = sess_children[
         sess_children["name"].str.contains("(SpheresPermTubeReward|Fourier|Retinotopy)")
     ]
-    folder_no = sess_children_protocols.index.get_loc(
-        sess_children_protocols[
-            sess_children_protocols.id
-            == all_protocol_recording_entries.iloc[irecording].id
-        ].index[0]
-    )
     (
         rawdata_folder,
         protocol_folder,
@@ -750,8 +719,8 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
 
     # Save df to pickle
     save_folder = protocol_folder / "sync"
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
+    if not save_folder.exists():
+        save_folder.mkdir(parents=True)
     trials_df.to_pickle(save_folder / "trials_df.pickle")
 
     return trials_df, imaging_df
