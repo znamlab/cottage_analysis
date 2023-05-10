@@ -1,11 +1,10 @@
 from functools import partial
 import numpy as np
 from pathlib import Path
-import pickle
 from tqdm import tqdm
-from scipy.optimize import curve_fit
 import flexiznam as flz
 from cottage_analysis.analysis import common_utils
+import pandas as pd
 
 print = partial(print, flush=True)
 
@@ -38,49 +37,6 @@ def gaussian_2d(
     return g
 
 
-def gaussian_2d_fit(X, y, lower_bounds, upper_bounds, min_sigma, niter=5):
-    """Fit a 2D gaussian to the data.
-
-    Args:
-        X: tuple of x and y coordinates
-        y: response
-        lower_bounds (list): lower bounds for the parameters
-        upper_bounds (list): upper bounds for the parameters
-        min_sigma (float): minimum sigma for the gaussian
-        niter (int): number of iterations to run the fitting.
-            The best fit is chosen based on the R squared value. Defaults to 5.
-
-    Returns:
-        popt_best (list): best fit parameters
-        rsq_best (float): R squared value of the best fit
-
-    """
-    popt_arr = []
-    rsq_arr = []
-    np.random.seed(42)
-    for _ in range(niter):
-        gaussian_2d_ = partial(gaussian_2d, min_sigma=min_sigma)
-        popt, _ = curve_fit(
-            gaussian_2d_,
-            X,
-            y,
-            maxfev=100000,
-            bounds=(
-                lower_bounds,
-                upper_bounds,
-            ),
-        )
-
-        dff_fit = gaussian_2d(np.array(X), *popt)
-        r_sq = common_utils.calculate_r_squared(y, dff_fit)
-        popt_arr.append(popt)
-        rsq_arr.append(r_sq)
-    idx_best = np.argmax(np.array(rsq_arr))
-    popt_best = popt_arr[idx_best]
-    rsq_best = rsq_arr[idx_best]
-    return popt_best, rsq_best
-
-
 def analyze_rs_of_tuning(
     project,
     mouse,
@@ -94,11 +50,9 @@ def analyze_rs_of_tuning(
     # Load files
     root = Path(flz.PARAMETERS["data_root"]["processed"])
     session_folder = root / project / mouse / session
+    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
+    neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
 
-    with open(session_folder / "plane0/trials_df.pickle", "rb") as handle:
-        trials_df = pickle.load(handle)
-    with open(session_folder / "plane0/neurons_df.pickle", "rb") as handle:
-        neurons_df = pickle.load(handle)
     neurons_df = neurons_df.assign(
         preferred_RS_closed_loop=np.nan,
         preferred_OF_closed_loop=np.nan,
@@ -119,7 +73,28 @@ def analyze_rs_of_tuning(
         protocols = [protocol, f"{protocol}Playback"]
     elif len(trials_df.closed_loop.unique()) == 1:
         protocols = [protocol]
-
+    rs_min = param_range["rs_min"] * 100  # m-->cm
+    rs_max = param_range["rs_max"] * 100  # m-->cm
+    of_min = param_range["of_min"]  # degrees/s
+    of_max = param_range["of_max"]  # degrees/s
+    lower_bounds = [
+        -np.inf,
+        np.log(rs_min),
+        np.log(of_min),
+        -np.inf,
+        -np.inf,
+        0,
+        -np.inf,
+    ]
+    upper_bounds = [
+        np.inf,
+        np.log(rs_max),
+        np.log(of_max),
+        np.inf,
+        np.inf,
+        np.radians(90),
+        np.inf,
+    ]
     # Loop through all protocols
     for iprotocol, protocol in enumerate(protocols):
         print(f"---------Process protocol {iprotocol+1}/{len(protocols)}---------")
@@ -152,45 +127,23 @@ def analyze_rs_of_tuning(
         else:
             rs_arrays = [np.log(rs * 100), np.log(rs_eye * 100)]  # m-->cm
         of = np.log(np.degrees(of))  # rad-->deg
-        rs_min = param_range["rs_min"] * 100  # m-->cm
-        rs_max = param_range["rs_max"] * 100  # m-->cm
-        of_min = param_range["of_min"]  # degrees/s
-        of_max = param_range["of_max"]  # degrees/s
-        lower_bounds = [
-            -np.inf,
-            np.log(rs_min),
-            np.log(of_min),
-            -np.inf,
-            -np.inf,
-            0,
-            -np.inf,
-        ]
-        upper_bounds = [
-            np.inf,
-            np.log(rs_max),
-            np.log(of_max),
-            np.inf,
-            np.inf,
-            np.radians(90),
-            np.inf,
-        ]
         for i_rs, rs_to_use in enumerate(rs_arrays):
             if is_closedloop:
                 rs_type = ""
+            elif i_rs == 0:
+                rs_type = "_actual"
             else:
-                if i_rs == 0:
-                    rs_type = "_actual"
-                else:
-                    rs_type = "_virtual"
+                rs_type = "_virtual"
             print(f"Fitting {protocol_sfx}{rs_type} running...")
             for iroi in tqdm(range(dff.shape[0])):
-                popt, rsq = gaussian_2d_fit(
+                gaussian_2d_ = partial(gaussian_2d, min_sigma=min_sigma)
+                popt, rsq = common_utils.iterate_fit(
+                    gaussian_2d_,
                     (rs_to_use, of),
                     dff[iroi, :],
                     lower_bounds,
                     upper_bounds,
-                    min_sigma,
-                    niter,
+                    niter=niter,
                 )
 
                 neurons_df.loc[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = (

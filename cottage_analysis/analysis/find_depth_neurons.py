@@ -1,30 +1,21 @@
-import functools
-
-print = functools.partial(print, flush=True)
-
-import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from pathlib import Path
-import pickle
 from tqdm import tqdm
 import scipy
-from scipy.optimize import curve_fit
-
 import flexiznam as flz
 
 from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import common_utils
 
+from functools import partial
 
-MIN_SIGMA = 0.5
+print = partial(print, flush=True)
 
 
-def gaussian_func(x, a, x0, log_sigma, b):
-    a = a
-    sigma = np.exp(log_sigma) + MIN_SIGMA
+def gaussian_func(x, a, x0, log_sigma, b, min_sigma):
+    sigma = np.exp(log_sigma) + min_sigma
     return (a * np.exp(-((x - x0) ** 2)) / (2 * sigma**2)) + b
 
 
@@ -36,12 +27,13 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
         mouse (str): mouse name
         session (str): session name
         protocol (str): protocol name of the closed loop experiment. Default = 'SpheresPermTubeReward'
+
     """
     # Make folder for this protocol (closedloop/playback)
     root = Path(flz.PARAMETERS["data_root"]["processed"])
     session_analysis_folder = root / project / mouse / session
-    if not os.path.exists(session_analysis_folder / "plane0"):
-        os.makedirs(session_analysis_folder / "plane0")
+    if not (session_analysis_folder / "plane0").exists():
+        (session_analysis_folder / "plane0").mkdir(parents=True)
 
     flexilims_session = flz.get_flexilims_session(project_id=project)
     sess_children = generate_filepaths.get_session_children(
@@ -100,17 +92,14 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
                 trials_df_all = trials_df.copy()
                 trials_df_all["recording_no"] = irecording
             else:
-                with open(
-                    session_analysis_folder / "plane0/vs_df.pickle", "rb"
-                ) as handle:
-                    vs_df_all = pickle.load(handle)
+                vs_df_all = pd.read_pickle(
+                    session_analysis_folder / "plane0/vs_df.pickle"
+                )
                 vs_df["recording_no"] = irecording
                 vs_df_all = vs_df_all.append(vs_df, ignore_index=True)
-
-                with open(
-                    session_analysis_folder / "plane0/trials_df.pickle", "rb"
-                ) as handle:
-                    trials_df_all = pickle.load(handle)
+                trials_df_all = pd.read_pickle(
+                    session_analysis_folder / "plane0/trials_df.pickle"
+                )
                 if protocol == protocols[0]:
                     is_closedloop = 1
                 else:
@@ -121,13 +110,9 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
                 trials_df["recording_no"] = irecording
                 trials_df["trial_no"] = trials_df["trial_no"] + previous_trial_num
                 trials_df_all = trials_df_all.append(trials_df, ignore_index=True)
+            vs_df_all.to_pickle(session_analysis_folder / "plane0/vs_df.pickle")
+            trials_df_all.to_pickle(session_analysis_folder / "plane0/trials_df.pickle")
 
-            with open(session_analysis_folder / "plane0/vs_df.pickle", "wb") as handle:
-                pickle.dump(vs_df_all, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            with open(
-                session_analysis_folder / "plane0/trials_df.pickle", "wb"
-            ) as handle:
-                pickle.dump(trials_df_all, handle, protocol=pickle.HIGHEST_PROTOCOL)
             print(
                 f"Appended recording {irecording}/{len(all_protocol_recording_entries)}",
                 flush=True,
@@ -135,13 +120,16 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
 
 
 def find_depth_list(df):
-    """Return the depth list from a dataframe that contains all the depth information from a certain session
+    """Return the depth list from a dataframe that contains all the depth information from
+    a session
 
     Args:
-        df (DataFrame): A dataframe (such as vs_df or trials_df) that contains all the depth information from a certain session
+        df (DataFrame): A dataframe (such as vs_df or trials_df) that contains all the depth
+            information from a session
 
     Returns:
         depth_list (list): list of depth values occurred in a session
+
     """
     depth_list = df["depth"].unique()
     depth_list = np.round(depth_list, 2)
@@ -198,10 +186,12 @@ def find_depth_neurons(
         mouse (str): mouse name.
         session (str): session name.
         protocol (str): protocol name. Defaults to "SpheresPermTubeReward"
-        rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
+        rs_thr (float, optional): threshold of running speed to be counted into
+            depth tuning analysis. Defaults to 0.2 m/s.
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
+
     """
     root = Path(flz.PARAMETERS["data_root"]["processed"])
     session_folder = root / project / mouse / session
@@ -209,7 +199,7 @@ def find_depth_neurons(
         _,
         _,
         _,
-        suite2p_folder,
+        suite2p_path,
         _,
     ) = generate_filepaths.generate_file_folders(
         project=project,
@@ -221,18 +211,17 @@ def find_depth_neurons(
         flexilims_session=None,
     )
     # Load files
-    with open(session_folder / "plane0/trials_df.pickle", "rb") as handle:
-        trials_df = pickle.load(handle)
-    iscell = np.load(suite2p_folder / "iscell.npy", allow_pickle=True)[:, 0]
+    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
+    iscell = np.load(suite2p_path / "iscell.npy", allow_pickle=True)[:, 0]
 
     # Make an empty dataframe for saving depth neuron properties
     neurons_df = pd.DataFrame(
         columns=[
             "roi",  # ROI number
             "is_cell",  # bool, is it a cell or not
-            "is_depth_neuron",  # bool, is it a depth neuron or not
+            "is_depth_neuron",  # bool, is it a depth-selective neuron or not
             "depth_neuron_anova_p",  # float, p value for depth neuron anova test
-            "max_depth",  # #, depth with the maximum average response
+            "best_depth",  # #, depth with the maximum average response
         ]
     )
     neurons_df["roi"] = np.arange(len(iscell))
@@ -249,19 +238,11 @@ def find_depth_neurons(
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, iroi])
 
         neurons_df.loc[iroi, "depth_neuron_anova_p"] = p
-        if p < 0.05:
-            neurons_df.loc[iroi, "is_depth_neuron"] = 1
-        else:
-            neurons_df.loc[iroi, "is_depth_neuron"] = 0
-        neurons_df.loc[iroi, "max_depth"] = depth_list[
-            np.where(
-                np.average(mean_dff_arr[:, :, iroi], axis=1)
-                == np.max(np.average(mean_dff_arr[:, :, iroi], axis=1))
-            )[0][0]
+        neurons_df.loc[iroi, "is_depth_neuron"] = p < 0.05
+        neurons_df.loc[iroi, "best_depth"] = depth_list[
+            np.argmax(np.mean(mean_dff_arr[:, :, iroi], axis=1))
         ]
-
-    with open(session_folder / "plane0/neurons_df.pickle", "wb") as handle:
-        pickle.dump(neurons_df, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 
     return neurons_df
 
@@ -270,10 +251,10 @@ def fit_preferred_depth(
     project,
     mouse,
     session,
-    protocol="SpheresPermTubeReward",
     depth_min=0.02,
     depth_max=20,
-    batch_num=10,
+    niter=10,
+    min_sigma=0.5,
 ):
     """Fit depth tuning with 1d gaussian function to find the preferred depth of neurons in closed loop.
 
@@ -288,15 +269,14 @@ def fit_preferred_depth(
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
+
     """
     root = Path(flz.PARAMETERS["data_root"]["processed"])
     session_folder = root / project / mouse / session
 
     # Load files
-    with open(session_folder / "plane0/trials_df.pickle", "rb") as handle:
-        trials_df = pickle.load(handle)
-    with open(session_folder / "plane0/neurons_df.pickle", "rb") as handle:
-        neurons_df = pickle.load(handle)
+    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
+    neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
 
     depth_list = find_depth_list(trials_df)
     depth_min = depth_min * 100  # m --> cm
@@ -312,49 +292,33 @@ def fit_preferred_depth(
 
     # Fit gaussian function to the average dffs for each trial (depth tuning)
     x = np.log(np.repeat(np.array(depth_list) * 100, mean_dff_arr.shape[1]))
+
+    def p0_func():
+        return np.concatenate(
+            (
+                np.exp(np.random.normal(size=1)),
+                np.atleast_1d(np.log(neurons_df.loc[iroi, "best_depth"] * 100)),
+                np.exp(np.random.normal(size=1)),
+                np.random.normal(size=1),
+            )
+        ).flatten()
+
     for iroi in tqdm(range(mean_dff_arr.shape[2])):
-        popt_arr = []
-        r_sq_arr = []
-        for ibatch in range(batch_num):
-            np.random.seed(ibatch)
-            p0 = np.concatenate(
-                (
-                    np.abs(np.random.normal(size=1)),
-                    np.atleast_1d(np.log(neurons_df.loc[iroi, "max_depth"] * 100)),
-                    np.abs(np.random.normal(size=1)),
-                    np.random.normal(size=1),
-                )
-            ).flatten()
-            popt, pcov = curve_fit(
-                gaussian_func,
-                x,
-                mean_dff_arr[:, :, iroi].flatten(),
-                p0=p0,
-                maxfev=100000,
-                bounds=(
-                    [0, np.log(depth_min), 0, -np.inf],
-                    [np.inf, np.log(depth_max), np.inf, np.inf],
-                ),
-            )
-            y_pred = gaussian_func(x, *popt)
-            r_sq = common_utils.calculate_R_squared(
-                mean_dff_arr[:, :, iroi].flatten(), y_pred
-            )
-            popt_arr.append(popt)
-            r_sq_arr.append(r_sq)
-        idx_best = np.argmax(r_sq_arr)
-        popt_best = popt_arr[idx_best]
-        rsq_best = r_sq_arr[idx_best]
+        gaussian_func_ = partial(gaussian_func, min_sigma=min_sigma)
+        popt, rsq = common_utils.iterate_fit(
+            gaussian_func_,
+            x,
+            mean_dff_arr[:, :, iroi].flatten(),
+            lower_bounds=[0, np.log(depth_min), 0, -np.inf],
+            upper_bounds=[np.inf, np.log(depth_max), np.inf, np.inf],
+            niter=niter,
+            p0_func=p0_func,
+        )
 
-        neurons_df.loc[iroi, "preferred_depth_closed_loop"] = (
-            np.exp(popt_best[1]) / 100
-        )  # m
-        neurons_df["gaussian_depth_tuning_popt"].iloc[
-            iroi
-        ] = popt_best  # !! USE LOG(DEPTH LIST IN CM) WHEN CALCULATING, x = np.log(depth_list*100)
-        neurons_df.loc[iroi, "gaussian_depth_tuning_r_squared"] = rsq_best
+        neurons_df.loc[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1]) / 100  # m
+        # !! USE LOG(DEPTH LIST IN CM) WHEN CALCULATING, x = np.log(depth_list*100)
+        neurons_df["gaussian_depth_tuning_popt"].iloc[iroi] = popt
+        neurons_df.loc[iroi, "gaussian_depth_tuning_r_squared"] = rsq
 
-    with open(session_folder / "plane0/neurons_df.pickle", "wb") as handle:
-        pickle.dump(neurons_df, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
+    neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
     return neurons_df
