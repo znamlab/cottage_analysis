@@ -307,10 +307,10 @@ def fit_preferred_depth(
             p0_func=p0_func,
         )
 
-        neurons_df.loc[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
+        neurons_df.at[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
         # !! USE LOG(DEPTH LIST IN CM) WHEN CALCULATING, x = np.log(depth_list*100)
-        neurons_df["gaussian_depth_tuning_popt"].iloc[iroi] = popt
-        neurons_df.loc[iroi, "gaussian_depth_tuning_r_squared"] = rsq
+        neurons_df.at[iroi, "gaussian_depth_tuning_popt"] = popt
+        neurons_df.at[iroi, "gaussian_depth_tuning_r_squared"] = rsq
 
     neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
     return neurons_df

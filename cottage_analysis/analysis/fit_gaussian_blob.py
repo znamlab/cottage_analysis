@@ -142,17 +142,16 @@ def analyze_rs_of_tuning(
                     niter=niter,
                 )
 
-                neurons_df.loc[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
+                neurons_df.at[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
                     popt[1]
                 )
-                neurons_df.loc[
+                neurons_df.at[
                     iroi, f"preferred_OF_{protocol_sfx}{rs_type}"
                 ] = np.radians(
                     np.exp(popt[2])
                 )  # rad/s
-                neurons_df[f"gaussian_blob_popt_{protocol_sfx}{rs_type}"].iloc[
-                    iroi
-                ] = popt  # !! Calculated with RS in m and OF in degrees/s
+                # !! Calculated with RS in m and OF in degrees/s
+                neurons_df.at[iroi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"] = popt  
                 neurons_df.loc[iroi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
     neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 
