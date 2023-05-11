@@ -18,16 +18,6 @@ def calculate_r_squared(y, y_hat):
     return r_squared
 
 
-def threshold(arr, lower_thr=None, upper_thr=None):
-    arr_cp = arr.copy()
-    if lower_thr != None:
-        arr_cp[arr_cp < lower_thr] = lower_thr
-    if upper_thr != None:
-        arr_cp[arr_cp > upper_thr] = upper_thr
-
-    return arr_cp
-
-
 def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
     """Iterate fitting to avoid local minima.
 
