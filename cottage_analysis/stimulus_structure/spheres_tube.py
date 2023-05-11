@@ -1,6 +1,3 @@
-import jax
-import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
@@ -107,7 +104,6 @@ def regenerate_frames(
 
     # now process the valid frames
     log_ends = param_logger[time_column].searchsorted(frame_times)
-    draw_sph_jit = jax.jit(draw_spheres)
     for frame_index in tqdm(frame_indices):
         corridor = trials_df.loc[int(trial_index[frame_index])]
         logger = param_logger.iloc[corridor.param_log_start : np.max([log_ends[frame_index],corridor.param_log_start+1])]
