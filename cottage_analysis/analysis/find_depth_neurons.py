@@ -132,7 +132,6 @@ def find_depth_list(df):
 
     """
     depth_list = df["depth"].unique()
-    depth_list = np.round(depth_list, 2)
     depth_list = depth_list[~np.isnan(depth_list)].tolist()
     depth_list.sort()
 
@@ -177,7 +176,7 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2):
 
 
 def find_depth_neurons(
-    project, mouse, session, protocol="SpheresPermTubeReward", rs_thr=0.2
+    project, mouse, session, protocol="SpheresPermTubeReward", rs_thr=0.2, alpha=0.05
 ):
     """Find depth neurons from all ROIs segmented.
 
@@ -188,6 +187,7 @@ def find_depth_neurons(
         protocol (str): protocol name. Defaults to "SpheresPermTubeReward"
         rs_thr (float, optional): threshold of running speed to be counted into
             depth tuning analysis. Defaults to 0.2 m/s.
+        alpha (float, optional): significance level for depth tuning analysis. Defaults to 0.05.
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
@@ -195,13 +195,7 @@ def find_depth_neurons(
     """
     root = Path(flz.PARAMETERS["data_root"]["processed"])
     session_folder = root / project / mouse / session
-    (
-        _,
-        _,
-        _,
-        suite2p_path,
-        _,
-    ) = generate_filepaths.generate_file_folders(
+    (_, _, _, suite2p_path, _) = generate_filepaths.generate_file_folders(
         project=project,
         mouse=mouse,
         session=session,
@@ -238,7 +232,7 @@ def find_depth_neurons(
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, iroi])
 
         neurons_df.loc[iroi, "depth_neuron_anova_p"] = p
-        neurons_df.loc[iroi, "is_depth_neuron"] = p < 0.05
+        neurons_df.loc[iroi, "is_depth_neuron"] = p < alpha
         neurons_df.loc[iroi, "best_depth"] = depth_list[
             np.argmax(np.mean(mean_dff_arr[:, :, iroi], axis=1))
         ]
@@ -279,8 +273,6 @@ def fit_preferred_depth(
     neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
 
     depth_list = find_depth_list(trials_df)
-    depth_min = depth_min * 100  # m --> cm
-    depth_max = depth_max * 100  # m --> cm
 
     neurons_df["preferred_depth_closed_loop"] = np.nan
     neurons_df["gaussian_depth_tuning_popt"] = [[np.nan]] * len(neurons_df)
@@ -291,13 +283,13 @@ def fit_preferred_depth(
     mean_dff_arr = average_dff_for_all_trials(trials_df)
 
     # Fit gaussian function to the average dffs for each trial (depth tuning)
-    x = np.log(np.repeat(np.array(depth_list) * 100, mean_dff_arr.shape[1]))
+    x = np.log(np.repeat(np.array(depth_list), mean_dff_arr.shape[1]))
 
     def p0_func():
         return np.concatenate(
             (
                 np.exp(np.random.normal(size=1)),
-                np.atleast_1d(np.log(neurons_df.loc[iroi, "best_depth"] * 100)),
+                np.atleast_1d(np.log(neurons_df.loc[iroi, "best_depth"])),
                 np.exp(np.random.normal(size=1)),
                 np.random.normal(size=1),
             )
@@ -315,7 +307,7 @@ def fit_preferred_depth(
             p0_func=p0_func,
         )
 
-        neurons_df.loc[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1]) / 100  # m
+        neurons_df.loc[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
         # !! USE LOG(DEPTH LIST IN CM) WHEN CALCULATING, x = np.log(depth_list*100)
         neurons_df["gaussian_depth_tuning_popt"].iloc[iroi] = popt
         neurons_df.loc[iroi, "gaussian_depth_tuning_r_squared"] = rsq

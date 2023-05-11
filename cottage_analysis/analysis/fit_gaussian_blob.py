@@ -73,14 +73,10 @@ def analyze_rs_of_tuning(
         protocols = [protocol, f"{protocol}Playback"]
     elif len(trials_df.closed_loop.unique()) == 1:
         protocols = [protocol]
-    rs_min = param_range["rs_min"] * 100  # m-->cm
-    rs_max = param_range["rs_max"] * 100  # m-->cm
-    of_min = param_range["of_min"]  # degrees/s
-    of_max = param_range["of_max"]  # degrees/s
     lower_bounds = [
         -np.inf,
-        np.log(rs_min),
-        np.log(of_min),
+        np.log(param_range["rs_min"]),
+        np.log(param_range["of_min"]),
         -np.inf,
         -np.inf,
         0,
@@ -88,8 +84,8 @@ def analyze_rs_of_tuning(
     ]
     upper_bounds = [
         np.inf,
-        np.log(rs_max),
-        np.log(of_max),
+        np.log(param_range["rs_max"]),
+        np.log(param_range["of_max"]),
         np.inf,
         np.inf,
         np.radians(90),
@@ -123,9 +119,9 @@ def analyze_rs_of_tuning(
 
         # Fit data to 2D gaussian function
         if is_closedloop:
-            rs_arrays = [np.log(rs * 100)]  # m-->cm
+            rs_arrays = [np.log(rs)]
         else:
-            rs_arrays = [np.log(rs * 100), np.log(rs_eye * 100)]  # m-->cm
+            rs_arrays = [np.log(rs), np.log(rs_eye)]
         of = np.log(np.degrees(of))  # rad-->deg
         for i_rs, rs_to_use in enumerate(rs_arrays):
             if is_closedloop:
@@ -146,9 +142,9 @@ def analyze_rs_of_tuning(
                     niter=niter,
                 )
 
-                neurons_df.loc[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = (
-                    np.exp(popt[1]) / 100
-                )  # m
+                neurons_df.loc[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
+                    popt[1]
+                )
                 neurons_df.loc[
                     iroi, f"preferred_OF_{protocol_sfx}{rs_type}"
                 ] = np.radians(
@@ -156,7 +152,7 @@ def analyze_rs_of_tuning(
                 )  # rad/s
                 neurons_df[f"gaussian_blob_popt_{protocol_sfx}{rs_type}"].iloc[
                     iroi
-                ] = popt  # !! Calculated with RS in cm and OF in degrees/s
+                ] = popt  # !! Calculated with RS in m and OF in degrees/s
                 neurons_df.loc[iroi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
     neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 
