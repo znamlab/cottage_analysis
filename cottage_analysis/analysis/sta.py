@@ -1,4 +1,79 @@
 import numpy as np
+import pandas as pd
+import pickle
+from cottage_analysis.stimulus_structure import spheres_tube
+from cottage_analysis.analysis import common_utils
+from cottage_analysis.filepath import generate_filepaths
+
+
+# Regenerate sphere stimuli for each recording
+def regenerate_stimuli(project, mouse, session, protocol):
+    def regenerate_stimuli_each_recording(
+        project,
+        mouse,
+        session,
+        protocols,
+        protocol,
+        irecording,
+        nrecordings,
+    ):
+        (
+            rawdata_folder,
+            protocol_folder,
+            _,
+            _,
+            _,
+        ) = generate_filepaths.generate_file_folders(
+            project=project,
+            mouse=mouse,
+            session=session,
+            protocol=protocol,
+            all_protocol_recording_entries=None,
+            recording_no=0,
+        )
+
+        param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
+        param_log = param_log.rename(columns={"Radius": "Depth"})
+
+        with open(protocol_folder / "sync/imaging_df.pickle", "rb") as handle:
+            imaging_df = pickle.load(handle)
+        with open(protocol_folder / "sync/vs_df.pickle", "rb") as handle:
+            vs_df = pickle.load(handle)
+        with open(protocol_folder / "sync/trials_df.pickle", "rb") as handle:
+            trials_df = pickle.load(handle)
+        output = spheres_tube.regenerate_frames(
+            frame_times=imaging_df[
+                "harptime_imaging_trigger"
+            ].values,  # using imaging frames as the list of timepoints to reconstruct stimuli
+            trials_df=trials_df,
+            vs_df=vs_df,
+            param_logger=param_log,
+            time_column="HarpTime",
+            resolution=1,
+            sphere_size=10,
+            azimuth_limits=(-120, 120),
+            elevation_limits=(-40, 40),
+            verbose=True,
+            output_datatype="int16",
+            output=None,
+        )
+
+        np.save(protocol_folder / "stimuli.npy", output)
+
+        return output
+
+    outputs = []
+    output = common_utils.loop_through_recordings(
+        project=project,
+        mouse=mouse,
+        session=session,
+        protocol=protocol,
+        func=regenerate_stimuli_each_recording,
+    )
+    outputs.append(output)
+    outputs = np.stack(output)
+
+    return output
 
 
 def sta_by_depth(
