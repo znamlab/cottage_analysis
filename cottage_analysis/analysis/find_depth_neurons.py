@@ -91,14 +91,21 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
 
                 trials_df_all = trials_df.copy()
                 trials_df_all["recording_no"] = irecording
+
+                imaging_df_all = imaging_df.copy()
+                imaging_df_all["recording_no"] = irecording
             else:
                 vs_df_all = pd.read_pickle(
                     session_analysis_folder / "plane0/vs_df.pickle"
                 )
                 vs_df["recording_no"] = irecording
                 vs_df_all = vs_df_all.append(vs_df, ignore_index=True)
+
                 trials_df_all = pd.read_pickle(
                     session_analysis_folder / "plane0/trials_df.pickle"
+                )
+                imaging_df_all = pd.read_pickle(
+                    session_analysis_folder / "plane0/imaging_df.pickle"
                 )
                 if protocol == protocols[0]:
                     is_closedloop = 1
@@ -109,9 +116,14 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
                 )
                 trials_df["recording_no"] = irecording
                 trials_df["trial_no"] = trials_df["trial_no"] + previous_trial_num
+                imaging_df["recording_no"] = irecording
                 trials_df_all = trials_df_all.append(trials_df, ignore_index=True)
+                imaging_df_all = imaging_df_all.append(imaging_df, ignore_index=True)
             vs_df_all.to_pickle(session_analysis_folder / "plane0/vs_df.pickle")
             trials_df_all.to_pickle(session_analysis_folder / "plane0/trials_df.pickle")
+            imaging_df_all.to_pickle(
+                session_analysis_folder / "plane0/imaging_df.pickle"
+            )
 
             print(
                 f"Appended recording {irecording}/{len(all_protocol_recording_entries)}",
