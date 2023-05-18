@@ -1,4 +1,4 @@
-"""This script is intended to be copied and edited by find_pupil.fit_ellipses"""
+"""This script is intended to be copied and edited by slurm_job.fit_ellipses"""
 
 from pathlib import Path
 from cottage_analysis.eye_tracking import eye_model_fitting

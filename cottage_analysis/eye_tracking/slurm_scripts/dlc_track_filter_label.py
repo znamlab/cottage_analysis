@@ -1,4 +1,4 @@
-"""This script is intended to be copied and edited by find_pupil.dlc_track"""
+"""This script is intended to be copied and edited by slurm_job.slurm_dlc_pupil"""
 import deeplabcut
 import yaml
 import numpy as np
@@ -12,10 +12,37 @@ filter = "XXX_FILTER_XXX"
 label = "XXX_LABEL_XXX"
 origin_id = "XXX_ORIGIN_ID_XXX"
 project = "XXX_PROJECT_XXX"
-crop = "XXX_CROP_XXX"
+crop_info = "XXX_CROP_INFO_XXX"
+
+if isinstance(crop_info, str):
+    crop_info = None
+else:
+    assert len(crop_info) == 4, "crop_info must be [xmin, xmax, ymin, ymax]"
 
 if origin_id.startswith("XXX_"):
     origin_id = None
+else:
+    # set up flexilims but do not upload
+    assert not project.startswith("XXX_"), "Project must be provided to use origin_id"
+    assert isinstance(origin_id, str), "origin_id must be a string"
+    assert len(origin_id) == 24, "origin_id must be 24 characters long"
+    import flexiznam as flz
+    from flexiznam.schema import Dataset
+
+    flm_sess = flz.get_flexilims_session(project)
+
+    ds = Dataset.from_origin(
+        origin_id=origin_id,
+        dataset_type="dlc_tracking",
+        flexilims_session=flm_sess,
+        conflicts="append",
+    )
+    # the conflict argument is not important here as we will change the dataset name.
+    # conflict handling is done in slurm_job.py
+    # dataset_name is changed by updating the last value of the genealogy list
+    ds.genealogy = list(ds.genealogy[:-1]) + [Path(target_folder).name]
+    ds.path = ds.path.with_name(Path(target_folder).name)  # update path to match change
+    assert str(target_folder) == str(ds.path_full)
 
 print(f"Doing %s" % video)
 
@@ -29,7 +56,7 @@ analyse_kwargs = dict(
     gputouse=None,
     save_as_csv=False,
     in_random_order=True,
-    destfolder=target_folder,
+    destfolder=str(target_folder),
     batchsize=None,
     cropping=None,
     TFGPUinference=True,
@@ -47,21 +74,10 @@ analyse_kwargs = dict(
 target_folder = Path(target_folder)
 video = Path(video)
 
-if isinstance(crop, bool) and crop:
-    crop_file = target_folder / f"{video.stem}_crop_tracking.yml"
-    if crop_file.exists():
-        print("Cropping using crop file info", flush=True)
-        with open(crop_file, "r") as fhandle:
-            crop_info = yaml.safe_load(fhandle)
-            analyse_kwargs["cropping"] = [
-                crop_info["xmin"],
-                crop_info["xmax"],
-                crop_info["ymin"],
-                crop_info["ymax"],
-            ]
-        print(f'New crop: {analyse_kwargs["cropping"]}')
-    else:
-        raise IOError("No cropping info found")
+if crop_info is not None:
+    assert len(crop_info) == 4, "crop_info must be [xmin, xmax, ymin, ymax]"
+    analyse_kwargs["cropping"] = crop_info
+    print(f'New crop: {analyse_kwargs["cropping"]}')
 
 print("Analyzing", flush=True)
 out = deeplabcut.analyze_videos(**analyse_kwargs)
@@ -73,20 +89,10 @@ if not dlc_output.exists():
 # Adding to flexilims if origin_id is provided
 if origin_id is not None:
     print("Updating flexilims", flush=True)
-    # imports here to keep the rest independant
-    import flexiznam as flz
-    from flexiznam.schema import Dataset
-
-    flm_sess = flz.get_flexilims_session(project)
-    ds = Dataset.from_origin(
-        origin_id=origin_id,
-        dataset_type="dlc_tracking",
-        flexilims_session=flm_sess,
-        base_name=f"dlc_tracking_{video.stem}",
-        conflicts="overwrite",
+    ds.extra_attributes = dict(
+        analyse_kwargs, dlc_prefix=out, dlc_file=f"{video.stem}{out}.h5"
     )
-    ds.extra_attributes = analyse_kwargs
-    ds.path = dlc_output.relative_to(flz.PARAMETERS["data_root"]["processed"])
+    ds.path = target_folder.relative_to(flz.PARAMETERS["data_root"]["processed"])
     ds.update_flexilims(mode="overwrite")
 
 
