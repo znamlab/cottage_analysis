@@ -47,7 +47,6 @@ def create_slurm_sbatch(
         boiler += "\n".join(
             [
                 "ml Anaconda3",
-                "source /camp/apps/eb/software/Anaconda/conda.env.sh",
                 "source activate base",
                 f"conda activate {conda_env}",
                 f"export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/{conda_env}/lib/",
@@ -61,6 +60,17 @@ def create_slurm_sbatch(
 
 
 def python_script_from_template(target_folder, source_script, arguments=None):
+    """Create a python script from a template
+
+    Arguments in the template should be of the form XXX_ARGUMENT_XXX. They will be
+    replaced by the value of `arguments["ARGUMENT"]`
+
+    Args:
+        target_folder (str): Where to write the script?
+        source_script (str): Path to the template script
+        arguments (dict, optional): Dictionary of arguments to replace in the template.
+            Defaults to None.
+    """
     if arguments is None:
         arguments = {}
     source = Path(source_script).read_text()
