@@ -9,6 +9,54 @@ from cottage_analysis.eye_tracking import slurm_job
 from cottage_analysis.eye_tracking import eye_model_fitting
 
 
+def run_all(camera_ds, flexilims_session, dlc_model, redo=False, use_slurm=True):
+    """Run all preprocessing steps for a session
+
+    Args:
+        camera_ds (flexiznam.Schema.CameraDataset or str): Hexadecimal id of camera
+            dataset on flexilims or camera dataset object
+        flexilims_session (flexilims.Session): Flexilims session
+        dlc_model (str): Name of the dlc model to use, must be in the `DLC_MODELS`
+            project
+        redo (bool, optional): Redo step if data already exists. Defaults to False.
+        use_slurm (bool, optional): Start slurm jobs. Defaults to True.
+
+    Returns:
+        pandas.DataFrame: Log of job id of each step
+    """
+
+    log = dict(dataset_name=camera_ds.full_name)
+
+    # Run uncropped DLC
+    job_id = run_dlc(
+        camera_ds, flexilims_session, dlc_model=dlc_model, crop=False, redo=redo
+    )
+    log["dlc_uncropped"] = job_id if job_id is not None else "Done"
+
+    # Run cropped DLC
+    job_id = run_dlc(
+        camera_ds,
+        flexilims_session,
+        dlc_model=dlc_model,
+        crop=True,
+        redo=redo,
+        job_dependency=job_id,
+    )
+    log["dlc_cropped"] = job_id if job_id is not None else "Done"
+
+    # Run ellipse fit
+    job_id = run_fit_ellipse(
+        camera_ds,
+        flexilims_session,
+        likelihood_threshold=None,
+        job_dependency=job_id,
+        use_slurm=True,
+    )
+    log["ellipse"] = job_id if job_id is not None else "Done"
+
+    return pd.DataFrame(log)
+
+
 def run_dlc(
     camera_ds,
     flexilims_session,
@@ -119,6 +167,7 @@ def dlc_pupil(
     Args:
         video_path (str): Path to the video file
         model_name (str): Name of the dlc model to use. Must be in the `DLC_models`
+            project
         origin_id (str): hex code of the origin on flexilims
         project (str): Name of the project on flexilims
         crop (bool, optional): Whether to crop the video. Defaults to False.
