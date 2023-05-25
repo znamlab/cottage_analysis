@@ -20,4 +20,7 @@ For now, this step is manual (too annoying to set up something that waits for th
 finish and then submit the next one as the job needs to be finished to defined the parameters
 of the next slurm job).
 
+To run the tracking on slurm, you need conda environment called `dlc_nogui` with
+deeplabcut and cottage_analysis installed. This was done separately from the main
+conda environment as deeplabcut is a pain to install.
 
