@@ -229,10 +229,20 @@ def load_bno055(
         output[what] = data
     return output
 
-
 def load_camera_times(camera_dir, acquisition):
+    """
+    Loads the metadata of the setup cameras. 
+    Args:
+        camera_dir(str or Path): the complete path to the camera output directory
+        acquisition(str): one of either 'headfixed' or 'freely_moving'
+    Returns:
+        output(dict): a dictionary containing one key per camera. Inside, a dictionary with the metadata of the camera. 
+    """
+    camera_dir = Path(camera_dir)
     if acquisition == "freely_moving":
-        camlist = ["cam1_camera", "cam2_camera", "cam3_camera"]
+        camlist = ["cam1_camera", 
+                   "cam2_camera", 
+                   "cam3_camera"]
     if acquisition == "headfixed":
         camlist = [
             "letfeye_camera",
@@ -245,8 +255,7 @@ def load_camera_times(camera_dir, acquisition):
         raise IOError("%s is not a directory" % folder)
     output = dict()
     for cam in camlist:
-        cam_folder = folder / cam
-        valid_files = list(cam_folder.glob("*timestamp*"))
+        valid_files = list(folder.glob(f"{cam}*timestamps*"))
         if not len(valid_files):
             raise IOError(f"Could not find any timestamp files in {folder}")
         for possible_file in valid_files:
