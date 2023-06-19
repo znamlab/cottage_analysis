@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 from scipy.optimize import curve_fit
 import flexiznam as flz
 from cottage_analysis.filepath import generate_filepaths
