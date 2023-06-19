@@ -14,7 +14,7 @@ ml CUDA/11.1.1-GCC-10.2.0
 ml cuDNN/8.0.5.39-CUDA-11.1.1
 ml Anaconda3/2020.07
 
-source /camp/apps/eb/software/Anaconda/conda.env.sh
+source activate base
 
 conda activate 2p_analysis_cottage
 
