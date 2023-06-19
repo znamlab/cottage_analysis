@@ -6,7 +6,7 @@ from matplotlib import cm
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
-from cottage_analysis.depth_analysis.plotting.plotting_utils import *
+from cottage_analysis.depth_analysis.plotting import plotting_utils
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
 
 
@@ -166,6 +166,67 @@ def plot_spatial_distribution(
 
     plt.imshow(im)
     plt.axis("off")
+
+
+def plot_depth_tuning_curve(
+    neurons_df,
+    trials_df,
+    roi,
+    rs_thr=0.2,
+    plot_fit=True,
+    linewidth=3,
+    linecolor="k",
+    fit_linecolor="r",
+):
+    """
+    Plot depth tuning curve for one neuron.
+
+    Args:
+        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        rs_thr (float, optional): Threshold to cut off non-running frames. Defaults to 0.2. (m/s)
+        plot_fit (bool, optional): Whether to plot fitted tuning curve or not. Defaults to True.
+        linewidth (int, optional): linewidth. Defaults to 3.
+        linecolor (str, optional): linecolor of true data. Defaults to "k".
+        fit_linecolor (str, optional): linecolor of fitted curve. Defaults to "r".
+    """
+
+    # Load average activity and confidence interval for this roi
+    depth_list = np.array(find_depth_neurons.find_depth_list(trials_df))
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(
+        trials_df, rs_thr=rs_thr
+    )[:, :, roi]
+    CI_low, CI_high = common_utils.get_confidence_interval(mean_dff_arr)
+    mean_arr = np.mean(mean_dff_arr, axis=1)
+
+    # Load gaussian fit params for this roi
+    if plot_fit:
+        min_sigma = 0.5
+        [a, x0, log_sigma, b] = neurons_df.loc[roi, "gaussian_depth_tuning_popt"]
+        x = np.geomspace(depth_list[0], depth_list[-1], num=100)
+        gaussian_arr = find_depth_neurons.gaussian_func(
+            np.log(x), a, x0, log_sigma, b, min_sigma
+        )
+
+    # Plotting
+    plt.plot(np.log(depth_list), mean_arr, color=linecolor)
+    plt.fill_between(
+        np.log(depth_list),
+        CI_low,
+        CI_high,
+        color=linecolor,
+        alpha=0.3,
+        edgecolor=None,
+        rasterized=False,
+    )
+    if plot_fit:
+        plt.plot(np.log(x), gaussian_arr, color=fit_linecolor)
+    plt.xticks(np.log(depth_list), depth_list)
+    plt.xlabel("Preferred depth (cm)")
+    plt.ylabel("\u0394F/F")
+
+    plotting_utils.despine()
 
 
 # -------OLD----------------
@@ -398,144 +459,6 @@ def gaussian_func(x, a, x0, log_sigma, b):
     a = a
     sigma = np.exp(log_sigma) + MIN_SIGMA
     return (a * np.exp(-((x - x0) ** 2)) / (2 * sigma**2)) + b
-
-
-def plot_depth_tuning_curve(
-    dffs,
-    speeds,
-    roi,
-    speed_thr_cal,
-    depth_list,
-    stim_dict,
-    depth_neurons,
-    gaussian_depth,
-    fontsize_dict,
-    this_depth=None,
-    ylim=None,
-    frame_rate=15,
-    linewidth=3,
-    ax=None,
-):
-    trace_arr_noblank, _ = create_trace_arr_per_roi(
-        which_roi=roi,
-        dffs=dffs,
-        depth_list=depth_list,
-        stim_dict=stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-    speed_arr_noblank, _ = create_speed_arr(
-        speeds=speeds,
-        depth_list=depth_list,
-        stim_dict=stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-
-    trace_arr_noblank[speed_arr_noblank < speed_thr_cal] = np.nan
-    trace_arr_mean_eachtrial = np.nanmean(trace_arr_noblank, axis=2)
-    CI_lows = np.zeros(len(depth_list))
-    CI_highs = np.zeros(len(depth_list))
-    for idepth in range(len(depth_list)):
-        CI_lows[idepth], CI_highs[idepth] = get_confidence_interval(
-            trace_arr_mean_eachtrial[idepth, :],
-            mean_arr=np.nanmean(trace_arr_mean_eachtrial, axis=1)[idepth].reshape(
-                -1, 1
-            ),
-        )
-
-    if (this_depth == None) or (
-        this_depth != len(depth_list)
-    ):  # we can't plot the tuning curve for non-depth-selective neurons
-        plot_line_with_error(
-            arr=np.nanmean(trace_arr_mean_eachtrial, axis=1),
-            CI_low=CI_lows,
-            CI_high=CI_highs,
-            linecolor="b",
-            fontsize=fontsize_dict["title"],
-            linewidth=linewidth,
-        )
-
-        trace_arr_mean_eachtrial = np.nanmean(trace_arr_noblank, axis=2)
-        x = np.log(np.repeat(np.array(depth_list), trace_arr_mean_eachtrial.shape[1]))
-        roi_number = np.where(depth_neurons == roi)[0][0]
-        [a, x0, log_sigma, b] = (
-            gaussian_depth[gaussian_depth.ROI == roi][
-                ["a", "x0_logged", "log_sigma", "b"]
-            ]
-            .values[0]
-            .astype("float32")
-        )
-        plt.plot(
-            np.linspace(0, len(depth_list) - 1, 100),
-            gaussian_func(
-                np.linspace(
-                    np.log(depth_list[0] * 100), np.log(depth_list[-1] * 100), 100
-                ),
-                a,
-                x0,
-                log_sigma,
-                b,
-            ),
-            "gray",
-            linewidth=3,
-        )
-
-        plt.xticks(
-            np.arange(len(depth_list)),
-            (np.array(depth_list) * 100).astype("int"),
-            fontsize=fontsize_dict["xticks"],
-        )
-        plt.yticks(fontsize=fontsize_dict["yticks"])
-        plt.ylabel("dF/F", fontsize=fontsize_dict["ylabel"])
-        plt.xlabel("Depth (cm/s)", fontsize=fontsize_dict["xlabel"])
-        plt.title("Depth tuning (Closeloop)", fontsize=fontsize_dict["title"])
-        ylim = [0, plt.gca().get_ylim()[1]]
-        despine()
-    else:
-        ylim = None
-
-    plot_line_with_error(
-        arr=np.nanmean(trace_arr_mean_eachtrial, axis=1),
-        CI_low=CI_lows,
-        CI_high=CI_highs,
-        linecolor="b",
-        fontsize=fontsize_dict["title"],
-        linewidth=linewidth,
-        ax=ax,
-    )
-    if ax == None:
-        plt.xticks(
-            np.arange(len(depth_list)),
-            (np.array(depth_list) * 100).astype("int"),
-            fontsize=fontsize_dict["xticks"],
-        )
-        plt.ylabel("dF/F", fontsize=fontsize_dict["ylabel"])
-        plt.xlabel("Depth (cm)", fontsize=fontsize_dict["xlabel"])
-        plt.title("Depth tuning (CloseLoop)", fontsize=fontsize_dict["title"])
-        if ylim != None:
-            plt.ylim(ylim)
-        else:
-            ylim = plt.gca().get_ylim()
-    else:
-        # xticks = ax.get_xticks()
-        # plt.xticks(xticks, (np.array(depth_list) * 100).astype('int'))
-        # ax.set_tick_params(axis='x', labelsize=fontsize_dict['xticks'])
-        ax.set_ylabel("dF/F", fontsize=fontsize_dict["ylabel"])
-        ax.set_xlabel("Depth (cm)", fontsize=fontsize_dict["xlabel"])
-        ax.set_title("Depth tuning (CloseLoop)", fontsize=fontsize_dict["title"])
-        if ylim != None:
-            ax.set_ylim(ylim)
-        else:
-            ylim = ax.get_ylim()
-
-    despine()
-
-    return ylim
 
 
 # --- RS/OF - trace heatmap --- #
