@@ -48,7 +48,9 @@ def get_session_children(project, mouse, session, flexilims_session=None):
     return sess_children
 
 
-def get_all_recording_entries(project, mouse, session, protocol, flexilims_session=None):
+def get_all_recording_entries(
+    project, mouse, session, protocol, flexilims_session=None
+):
     """
     Get all flexilims entries (children) of a recording
     :param str project:
@@ -64,13 +66,23 @@ def get_all_recording_entries(project, mouse, session, protocol, flexilims_sessi
         flexilims_session = flz.get_flexilims_session(project_id=project)
 
     sess_children = get_session_children(project, mouse, session, flexilims_session)
-    
-    all_protocol_recording_entries = sess_children[sess_children['name'].str[-len(protocol):].str.contains(protocol)]
-    
+
+    all_protocol_recording_entries = sess_children[
+        sess_children["name"].str[-len(protocol) :].str.contains(protocol)
+    ]
+
     return all_protocol_recording_entries
 
 
-def get_recording_entries(project, mouse, session, protocol, all_protocol_recording_entries=None, recording_no=0, flexilims_session=None):
+def get_recording_entries(
+    project,
+    mouse,
+    session,
+    protocol,
+    all_protocol_recording_entries=None,
+    recording_no=0,
+    flexilims_session=None,
+):
     """
     Get all flexilims entries (children) of a recording
     :param str project:
@@ -85,7 +97,7 @@ def get_recording_entries(project, mouse, session, protocol, all_protocol_record
             "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
         )
         flexilims_session = flz.get_flexilims_session(project_id=project)
-    
+
     if all_protocol_recording_entries is None:
         warn(
             f"all_protocol_recording_entries not given, assume only one recording for protocol {protocol} in this session.\n \
@@ -101,7 +113,7 @@ def get_recording_entries(project, mouse, session, protocol, all_protocol_record
         protocol_recording = all_protocol_recording_entries.iloc[recording_no]
     recording_entries = flz.get_children(
         protocol_recording.id, project_id=project, flexilims_session=flexilims_session
-        )
+    )
     recording_path = protocol_recording.path
 
     return recording_entries, recording_path
@@ -163,10 +175,13 @@ def generate_file_folders(
 
     # find recording paths
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol, 
+        project,
+        mouse,
+        session,
+        protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
         recording_no=recording_no,
-        flexilims_session=flexilims_session
+        flexilims_session=flexilims_session,
     )
 
     rawdata_root = rawdata_root / recording_path
@@ -175,14 +190,20 @@ def generate_file_folders(
     analysis_folder = root / project / "Analysis" / recording_path[len(project) + 1 :]
 
     suite2p_ds = sess_children[sess_children.dataset_type == "suite2p_rois"]
-    assert len(suite2p_ds) == 1
-    suite2p_ds = suite2p_ds.iloc[0]
-    suite2p_folder = root / suite2p_ds.path / "suite2p" / "plane0"
+    if len(suite2p_ds) != 1:
+        print(f"WARNING: {len(suite2p_ds)} suite2p folders detected.")
+        suite2p_folder = []
+    else:
+        suite2p_ds = suite2p_ds.iloc[0]
+        suite2p_folder = root / suite2p_ds.path / "suite2p" / "plane0"
 
     trace_ds = recording_entries[recording_entries.dataset_type == "suite2p_traces"]
-    assert len(trace_ds) == 1
-    trace_ds = trace_ds.iloc[0]
-    trace_folder = root / trace_ds.path
+    if len(trace_ds) != 1:
+        print(f"WARNING: {len(suite2p_ds)} traces detected.")
+        trace_folder = []
+    else:
+        trace_ds = trace_ds.iloc[0]
+        trace_folder = root / trace_ds.path
 
     return (
         rawdata_root,
@@ -194,8 +215,16 @@ def generate_file_folders(
 
 
 def generate_logger_path(
-    project, mouse, session, protocol, logger_name, rawdata_root=None, root=None, 
-    all_protocol_recording_entries=None, recording_no=None, flexilims_session=None
+    project,
+    mouse,
+    session,
+    protocol,
+    logger_name,
+    rawdata_root=None,
+    root=None,
+    all_protocol_recording_entries=None,
+    recording_no=None,
+    flexilims_session=None,
 ):
     """
     Generate paths for param loggers
@@ -238,10 +267,13 @@ def generate_logger_path(
         warn("Project will be read from flexilims_session. Ignore project argument")
 
     recording_entries, recording_path = get_recording_entries(
-        project, mouse, session, protocol, 
+        project,
+        mouse,
+        session,
+        protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
         recording_no=recording_no,
-        flexilims_session=flexilims_session
+        flexilims_session=flexilims_session,
     )
 
     # Find logger entries
@@ -261,14 +293,14 @@ def generate_logger_path(
 
 
 def generate_analysis_session_folder(
-     project, mouse, session, root=None, flexilims_session=None
+    project, mouse, session, root=None, flexilims_session=None
 ):
     if flexilims_session is None:
         warn(
             "flexilims_session will become mandatory", DeprecationWarning, stacklevel=2
         )
         flexilims_session = flz.get_flexilims_session(project_id=project)
-        
+
     if root is None:
         root = Path(flz.PARAMETERS["data_root"]["processed"])
     else:
