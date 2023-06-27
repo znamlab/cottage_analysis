@@ -3,6 +3,8 @@ import scipy
 from scipy.optimize import curve_fit
 import flexiznam as flz
 from cottage_analysis.filepath import generate_filepaths
+from cottage_analysis.preprocessing import synchronisation
+from pathlib import Path
 
 
 def calculate_r_squared(y, y_hat):
@@ -149,9 +151,9 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
     else:
         protocols = [protocol]
 
-    for protocol in protocols:
+    for iprotocol, protocol in enumerate(protocols):
         print(
-            f"---------Process protocol {protocol+1}/{len(protocols)}---------",
+            f"---------Process protocol {iprotocol+1}/{len(protocols)}---------",
             flush=True,
         )
         # ----- STEP1: Generate file path -----
@@ -183,7 +185,7 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
                 irecording=irecording,
             )
             print(
-                f"Synchronised recording {irecording}/{len(all_protocol_recording_entries)}",
+                f"Synchronised recording {irecording+1}/{len(all_protocol_recording_entries)}",
                 flush=True,
             )
 
@@ -228,7 +230,7 @@ def concatenate_recordings(project, mouse, session, protocol="SpheresPermTubeRew
             )
 
             print(
-                f"Appended recording {irecording}/{len(all_protocol_recording_entries)}",
+                f"Appended recording {irecording+1}/{len(all_protocol_recording_entries)}",
                 flush=True,
             )
 
@@ -249,11 +251,11 @@ def load_is_cell_file(project, mouse, session, protocol="SpheresPermTubeReward")
     return iscell
 
 
-def get_confidence_interval(arr, sig_level=0.05):
+def get_confidence_interval(arr, axis=1, sig_level=0.05):
     """Get confidence interval of an input array.
 
     Args:
-        arr (np.ndarray): 2d array, ntrials x time to calculate confidence interval across trials.
+        arr (np.ndarray): 2d array, for example ndepths x ntrials to calculate confidence interval across trials.
         sig_level (float, optional): Significant level. Default 0.05.
 
     Returns:
@@ -262,14 +264,7 @@ def get_confidence_interval(arr, sig_level=0.05):
     """
 
     z = scipy.stats.norm.ppf((1 - sig_level / 2))
-    if len(sem) > 0:
-        sem = sem
-    else:
-        sem = scipy.stats.sem(arr, nan_policy="omit")
-    if len(mean_arr) > 0:
-        CI_low = mean_arr - z * sem
-        CI_high = mean_arr + z * sem
-    else:
-        CI_low = np.average(arr, axis=0) - z * sem
-        CI_high = np.average(arr, axis=0) + z * sem
+    sem = scipy.stats.sem(arr, axis=axis, nan_policy="omit")
+    CI_low = np.average(arr, axis=axis) - z * sem
+    CI_high = np.average(arr, axis=axis) + z * sem
     return CI_low, CI_high
