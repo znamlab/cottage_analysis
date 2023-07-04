@@ -84,7 +84,14 @@ def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False
 
 
 def find_monitor_frames(
-    project, mouse, session, protocol, irecording=0, redo=True, redo_harpnpz=False
+    project,
+    mouse,
+    session,
+    protocol,
+    irecording=0,
+    photodiode_protocol=5,
+    redo=True,
+    redo_harpnpz=False,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them into monitor_frames_df.pickle and monitor_db_dict.pickle under the path {trace_folder/'sync/monitor_frames/'}
 
@@ -94,6 +101,7 @@ def find_monitor_frames(
         session (str): session name (Sdate)
         protocol (str): protocol name
         irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         redo (bool, optional): re-sync the monitor frames or not. Defaults to True.
         redo_harpnpz (bool, optional): re-transform harp bin file into npz file or not. Defaults to False.
@@ -124,6 +132,10 @@ def find_monitor_frames(
     )
 
     if redo:
+        save_folder = protocol_folder / "sync/monitor_frames"
+        if not save_folder.exists():
+            save_folder.mkdir(parents=True)
+
         # Load files
         harp_messages = load_harpmessage(
             project=project,
@@ -134,43 +146,61 @@ def find_monitor_frames(
             redo=redo_harpnpz,
         )
 
-        frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
-        ao_time = harp_messages["analog_time"]
-        photodiode = harp_messages["photodiode"]
+        # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
+        if photodiode_protocol == 2:
+            ao_time = harp_messages["analog_time"]
+            photodiode = harp_messages["photodiode"]
+            print("Data loaded.")
+            print("Recording is %d s long." % (ao_time[-1] - ao_time[0]))
+            # Synchronisation
+            frames_df = find_frames.sync_by_frame_alternating(
+                photodiode=photodiode,
+                analog_time=ao_time,
+                frame_rate=144,
+                photodiode_sampling=1000,
+                plot=True,
+                plot_start=10000,
+                plot_range=1000,
+                plot_dir=save_folder,
+            )
+            # Save monitor frame dataframes
+            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
 
-        print("Data loaded.")
-        print(
-            "Recording is %d s long."
-            % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
-        )
+        elif photodiode_protocol == 5:
+            frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
+            ao_time = harp_messages["analog_time"]
+            photodiode = harp_messages["photodiode"]
 
-        # Synchronisation
-        frame_rate = 144
-        frames_df, db_dict = find_frames.sync_by_correlation(
-            frame_log,
-            ao_time,
-            photodiode,
-            time_column="HarpTime",
-            sequence_column="PhotoQuadColor",
-            num_frame_to_corr=6,
-            maxlag=3.0 / frame_rate,
-            expected_lag=2.0 / frame_rate,
-            frame_rate=frame_rate,
-            correlation_threshold=0.8,
-            relative_corr_thres=0.02,
-            minimum_lag=1.0 / frame_rate,
-            do_plot=False,
-            verbose=True,
-            debug=True,
-        )
+            print("Data loaded.")
+            print(
+                "Recording is %d s long."
+                % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
+            )
 
-        # Save monitor frame dataframes
-        save_folder = protocol_folder / "sync/monitor_frames"
-        if not save_folder.exists():
-            save_folder.mkdir(parents=True)
-        frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
-        with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
-            pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            # Synchronisation
+            frame_rate = 144
+            frames_df, db_dict = find_frames.sync_by_correlation(
+                frame_log,
+                ao_time,
+                photodiode,
+                time_column="HarpTime",
+                sequence_column="PhotoQuadColor",
+                num_frame_to_corr=6,
+                maxlag=3.0 / frame_rate,
+                expected_lag=2.0 / frame_rate,
+                frame_rate=frame_rate,
+                correlation_threshold=0.8,
+                relative_corr_thres=0.02,
+                minimum_lag=1.0 / frame_rate,
+                do_plot=False,
+                verbose=True,
+                debug=True,
+            )
+
+            # Save monitor frame dataframes
+            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
+            with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
+                pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def generate_vs_df(project, mouse, session, protocol, irecording=0):
