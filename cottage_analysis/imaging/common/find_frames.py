@@ -154,20 +154,18 @@ def find_imaging_frames(
     register_address=32,
     exposure_time_tolerance=0.0002,
 ):
-    """TODO: key function, so please provide docstring
+    """Find imaging triggers and the corresponding harptime from formatted harpmessage.
 
     Args:
-        harp_message (_type_): _description_
-        frame_number (_type_): _description_
-        exposure_time (float, optional): _description_. Defaults to 0.015.
-        register_address (int, optional): _description_. Defaults to 32.
-        exposure_time_tolerance (float, optional): _description_. Defaults to 0.0002.
+        harp_message (pd.DataFrame): Dataframe of formatted harpmessage.
+        frame_number (int): Correct frame number extracted from suite2o
+        exposure_time (float, optional): Exposure time of a frame in s. Defaults to 0.015. For widefield: 0.015, for 2p: 0.0324*2 (15Hz)
+        register_address (int, optional): Register channel in harpmessage for imaging triggers. Defaults to 32.
+        exposure_time_tolerance (float, optional): Error tolerance for exposure time. Defaults to 0.0002. For widefield: 0.0002, for 2p: 0.001
 
     Returns:
-        _type_: _description_
+        frame_triggers (pd.DataFrame): DataFrame containing harptime for each imaging frame trigger.
     """
-    # exposure_time for widefield: 0.015, for 2p: 0.0324
-    # exposure_time_tolerance for widefield: 0.0002, for 2p: 0.001
     frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
     frame_triggers = frame_triggers.rename(
         columns={"Timestamp": "HarpTime"}, inplace=False
@@ -220,7 +218,11 @@ def find_imaging_frames(
             flush=True,
         )
     else:
-        print("ERROR: FRAME NUMBER NOT CORRECT!!!", flush=True)
+        print(
+            "ERROR: FRAME NUMBER NOT CORRECT!!! Assumed bonsai brashing at the end. Cut the end",
+            flush=True,
+        )
+        frame_triggers = frame_triggers[:frame_number]
     frame_triggers = frame_triggers.drop(
         columns=["HarpTime_diff", "Exposure", "RegisterAddress"]
     )
