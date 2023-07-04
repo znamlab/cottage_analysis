@@ -269,6 +269,7 @@ def plot_raster_all_depths(
     nbins=60,
     frame_rate=15,
     vmax=1,
+    plot=True,
 ):
     """Raster plot for neuronal activity for each depth
 
@@ -314,9 +315,11 @@ def plot_raster_all_depths(
     WhRdcmap = generate_cmap(cmap_name="WhRd")
 
     # plot each depth as a heatmap
-    for idepth, depth in enumerate(depth_list):
-        plt.subplot(1, len(depth_list), idepth + 1)
-        plt.imshow(dffs_binned[idepth], cmap=WhRdcmap, vmin=0, vmax=vmax)
+    if plot:
+        for idepth, depth in enumerate(depth_list):
+            plt.subplot(1, len(depth_list), idepth + 1)
+            plt.imshow(dffs_binned[idepth], cmap=WhRdcmap, vmin=0, vmax=vmax)
+    return dffs_binned
 
 
 def plot_speed_tuning(
@@ -489,106 +492,157 @@ def plot_speed_tuning(
         plt.xscale("log")
 
 
-# -------OLD----------------
-
-
-# --- PSTH --- #
 def plot_PSTH(
-    values,
-    dffs,
-    depth_list,
-    img_VS,
-    stim_dict,
-    distance_bins,
-    line_colors,
-    heatmap_cmap,
-    fontsize_dict,
-    is_trace=True,
-    roi=0,
-    ylim=None,
-    title="",
+    neurons_df,
+    trials_df,
+    roi,
+    is_closed_loop,
+    max_distance=6,
+    nbins=20,
     frame_rate=15,
-    distance_max=6,
 ):
-    if is_trace:
-        values_arr, _ = create_trace_arr_per_roi(
-            roi,
-            dffs,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
+    """PSTH of a neuron for each depth and blank period.
+
+    Args:
+        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        is_closed_loop (bool): plotting the closed loop or open loop results.
+        max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
+        nbins (int, optional): number of bins to bin the activity. Defaults to 20.
+        frame_rate (int, optional): imaging frame rate. Defaults to 15.
+    """
+
+    # choose the trials with closed or open loop to visualize
+    trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
+
+    depth_list = find_depth_neurons.find_depth_list(trials_df)
+    grouped_trials = trials_df.groupby(by="depth")
+    trial_number = len(trials_df) // len(depth_list)
+
+    # bin dff according to distance travelled for each trial
+    all_tuning = np.zeros(((len(depth_list) + 1), nbins))
+    all_ci = np.zeros(((len(depth_list) + 1), nbins))
+    for idepth, depth in enumerate(depth_list):
+        all_dff = []
+        all_distance = []
+        for itrial in np.arange(len(all_dffs)):
+            if itrial < trial_number:
+                dff = grouped_trials.get_group(depth).dff_stim.values[itrial][roi]
+                rs_arr = grouped_trials.get_group(depth).RS_stim.values[itrial]
+                distance = np.cumsum(rs_arr / frame_rate)
+                all_dff.append(dff)
+                all_distance.append(distance)
+
+        all_dff = np.array([j for i in all_dff for j in i])
+        all_distance = np.array([j for i in all_distance for j in i])
+        bins = np.linspace(start=0, stop=max_distance, num=nbins + 1, endpoint=True)
+        bin_centers = (bins[1:] + bins[:-1]) / 2
+
+        # calculate speed tuning
+        bin_means, _, _ = scipy.stats.binned_statistic(
+            x=all_distance,
+            values=all_dff,
+            statistic="mean",
+            bins=bins,
         )
-        unit_scale = 1
-    else:
-        values_arr, _ = create_speed_arr(
-            values,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
+
+        bin_stds, _, _ = scipy.stats.binned_statistic(
+            x=all_distance,
+            values=all_dff,
+            statistic="std",
+            bins=bins,
         )
-        unit_scale = 100  # scale depth unit from m to cm
-    distance_arr, _ = create_speed_arr(
-        img_VS["EyeZ"],
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
+
+        bin_counts, _, _ = scipy.stats.binned_statistic(
+            x=all_distance,
+            values=all_dff,
+            statistic="count",
+            bins=bins,
+        )
+
+        tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+        all_tuning[idepth] = tuning
+
+        ci_range = 0.95
+        z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
+        ci = z * bin_stds / bin_counts
+        ci[np.isnan(ci)] = 0
+        all_ci[idepth] = ci
+
+    # Blank dff
+    dff = trials_df.dff_blank.values
+    rs = trials_df.RS_blank.values
+
+    all_dff = np.array([j for i in dff for j in i[roi, :]])
+    rs_arr = np.array([j for i in rs for j in i])
+    all_distance = np.cumsum(rs_arr / frame_rate)
+
+    # calculate speed tuning
+    bin_means, _, _ = scipy.stats.binned_statistic(
+        x=all_distance,
+        values=all_dff,
+        statistic="mean",
+        bins=bins,
     )
-    for idepth in range(distance_arr.shape[0]):
-        for itrial in range(distance_arr.shape[1]):
-            distance_arr[idepth, itrial, :] = (
-                distance_arr[idepth, itrial, :] - distance_arr[idepth, itrial, 0]
-            )
 
-    binned_stats = get_binned_arr(
-        xarr=distance_arr,
-        yarr=values_arr,
-        bin_number=distance_bins,
-        bin_edge_min=0,
-        bin_edge_max=6,
+    bin_stds, _, _ = scipy.stats.binned_statistic(
+        x=all_distance,
+        values=all_dff,
+        statistic="std",
+        bins=bins,
     )
 
-    for idepth, linecolor in zip(range(len(depth_list)), line_colors):
-        CI_low, CI_high = get_confidence_interval(
-            binned_stats["binned_yrr"][idepth] * unit_scale,
-            mean_arr=np.nanmean(
-                binned_stats["binned_yrr"][idepth] * unit_scale, axis=0
-            ),
-        )
-        plot_line_with_error(
-            xarr=np.linspace(0, distance_max * unit_scale, distance_bins),
-            arr=np.nanmean(binned_stats["binned_yrr"][idepth] * unit_scale, axis=0),
-            CI_low=CI_low,
-            CI_high=CI_high,
-            linecolor=linecolor,
-            label=str(int(depth_list[idepth] * 100)) + " cm",
-            fontsize=fontsize_dict["title"],
-            linewidth=3,
-        )
-        plt.legend(fontsize=fontsize_dict["legend"], framealpha=0.3)
-        plt.title("Running Speed (cm/s)", fontsize=fontsize_dict["title"])
-    plt.xlabel("Distance (cm)", fontsize=fontsize_dict["xlabel"])
-    plt.ylabel("Running speed (cm/s)", fontsize=fontsize_dict["ylabel"])
-    plt.xticks(fontsize=fontsize_dict["xticks"])
-    plt.yticks(fontsize=fontsize_dict["yticks"])
-    xlim = plt.gca().get_xlim()
-    if ylim == None:
-        ylim = [-0.2, plt.gca().get_ylim()[1]]
-        plt.ylim(ylim)
-    else:
-        ylim = ylim
-        plt.ylim(ylim)
-    despine()
+    bin_counts, _, _ = scipy.stats.binned_statistic(
+        x=all_distance,
+        values=all_dff,
+        statistic="count",
+        bins=bins,
+    )
 
-    return binned_stats, xlim, ylim
+    tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+    all_tuning[-1] = tuning
+
+    ci_range = 0.95
+    z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
+    ci = z * bin_stds / bin_counts
+    ci[np.isnan(ci)] = 0
+    all_ci[-1] = ci
+
+    for idepth, depth in enumerate(depth_list):
+        linecolor = get_depth_color(depth, depth_list, cmap=cm.cool.reversed())
+        plt.plot(
+            bin_centers,
+            all_tuning[idepth, :],
+            color=linecolor,
+            label=f"{int(depth_list[idepth] * 100)} cm",
+        )
+        plt.errorbar(
+            x=bin_centers,
+            y=all_tuning[idepth, :],
+            yerr=all_ci[idepth, :],
+            fmt="o",
+            color=linecolor,
+            ls="none",
+        )
+
+    plt.plot(
+        bin_centers,
+        all_tuning[-1, :],
+        color="gray",
+        label=f"{int(depth_list[idepth] * 100)} cm",
+    )
+    plt.errorbar(
+        x=bin_centers,
+        y=all_tuning[-1, :],
+        yerr=all_ci[-1, :],
+        fmt="o",
+        color="gray",
+        ls="none",
+    )
+
+
+# -------OLD----------------
 
 
 # --- RS/OF - trace heatmap --- #
