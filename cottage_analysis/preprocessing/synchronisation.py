@@ -50,13 +50,7 @@ def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False
         logger_name="harp_message",
     )
 
-    (
-        rawdata_folder,
-        protocol_folder,
-        analysis_folder,
-        suite2p_folder,
-        trace_folder,
-    ) = generate_filepaths.generate_file_folders(
+    (_, protocol_folder, _, _, _) = generate_filepaths.generate_file_folders(
         project=project,
         mouse=mouse,
         session=session,
@@ -116,9 +110,9 @@ def find_monitor_frames(
     (
         rawdata_folder,
         protocol_folder,
-        analysis_folder,
-        suite2p_folder,
-        trace_folder,
+        _,
+        _,
+        _,
     ) = generate_filepaths.generate_file_folders(
         project=project,
         mouse=mouse,
@@ -478,16 +472,16 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
     # depth for each imaging frame
     depth_img = grouped_vs_df.depth.min().to_frame().rename(columns={0: "depth"})
     depth_img = fill_in_missing_index(depth_img, value_col="depth")
-    imaging_df.depth = depth_img
-    imaging_df.is_stim = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
-    imaging_df.depth[imaging_df.depth.isna()] = 0
-    imaging_df.depth[imaging_df.depth < 0] = np.nan
-    imaging_df.depth = imaging_df.depth.fillna(method="ffill")
-    imaging_df.depth[imaging_df.depth == 0] = np.nan
+    imaging_df["depth"] = depth_img
+    imaging_df["is_stim"] = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
+    imaging_df.loc[imaging_df["depth"].isna(), "depth"] = 0
+    imaging_df.loc[imaging_df["depth"] < 0, "depth"] = np.nan
+    imaging_df["depth"] = imaging_df.depth.fillna(method="ffill")
+    imaging_df.loc[imaging_df["depth"] == 0, "depth"] = np.nan
 
     # OF for each imaging frame
-    imaging_df.OF = imaging_df.RS_eye / imaging_df.depth
-    imaging_df.OF[imaging_df.is_stim == 0] = np.nan
+    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
+    imaging_df.loc[imaging_df.is_stim == 0, "OF"] = np.nan
 
     # closed loop status for each imaging frame
     if "Playback" in protocol:
@@ -552,9 +546,6 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         session=session,
         flexilims_session=flexilims_session,
     )
-    sess_children_protocols = sess_children[
-        sess_children["name"].str.contains("(SpheresPermTubeReward|Fourier|Retinotopy)")
-    ]
     (
         rawdata_folder,
         protocol_folder,
@@ -676,9 +667,6 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         axis=1,
     )
 
-    # trials_df.OF_stim = trials_df.apply(
-    #         lambda x: x["RS_eye_stim"] / x["depth"], axis=1
-    #     )
     trials_df.OF_stim = trials_df.apply(
         lambda x: imaging_df.OF.loc[
             int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop)
@@ -704,9 +692,8 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
 
     # Add the start param logger row and stop param logger row to each trial
     param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
-    start_idx = (
-        trials_df.harptime_stim_start.searchsorted(param_log.HarpTime) - 1
-    )  # trial index for each row of param log
+    # trial index for each row of param log
+    start_idx = trials_df.harptime_stim_start.searchsorted(param_log.HarpTime) - 1
     start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
     start_idx = pd.Series(start_idx)
     start_idx = start_idx[start_idx.diff() != 0].index.values
