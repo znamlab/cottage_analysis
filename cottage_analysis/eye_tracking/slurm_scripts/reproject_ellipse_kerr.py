@@ -12,7 +12,7 @@ from cottage_analysis.eye_tracking import eye_model_fitting as emf
 
 
 PROJECT = "XXX_PROJECT_XXX"
-CAMERA_DATASET_NAME = "XXX_CAMERA_DATASET_NAME_XXX"
+CAMERA_DATASET_ID = "XXX_CAMERA_DS_ID_XXX"
 save_folder = "XXX_TARGET_FOLDER_XXX"
 phi0 = "XXX_PHI0_XXX"
 theta0 = "XXX_THETA0_XXX"
@@ -20,9 +20,7 @@ PLOT = True
 
 # get the data
 flm_sess = flz.get_flexilims_session(project_id=PROJECT)
-camera = flz.Dataset.from_flexilims(
-    flexilims_session=flm_sess, name=CAMERA_DATASET_NAME
-)
+camera = flz.Dataset.from_flexilims(flexilims_session=flm_sess, id=CAMERA_DATASET_ID)
 dlc_res, data = analeyesis.get_data(
     camera,
     flexilims_session=flm_sess,

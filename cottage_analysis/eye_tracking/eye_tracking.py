@@ -5,56 +5,108 @@ import pandas as pd
 import numpy as np
 from functools import partial
 import flexiznam as flz
-from cottage_analysis.eye_tracking import slurm_job
-from cottage_analysis.eye_tracking import eye_model_fitting
+from znamutils import slurm_it
+from cottage_analysis.eye_tracking import slurm_job, diagnostic, eye_model_fitting
 
+envs = flz.PARAMETERS["conda_envs"]
 
-def run_all(camera_ds, flexilims_session, dlc_model, redo=False, use_slurm=True):
+def run_all(
+    flexilims_session,
+    dlc_model,
+    camera_ds_id=None,
+    camera_ds_name=None,
+    redo=False,
+    use_slurm=True,
+    dependency=None,
+):
     """Run all preprocessing steps for a session
 
     Args:
-        camera_ds (flexiznam.Schema.CameraDataset or str): Hexadecimal id of camera
-            dataset on flexilims or camera dataset object
         flexilims_session (flexilims.Session): Flexilims session
         dlc_model (str): Name of the dlc model to use, must be in the `DLC_MODELS`
             project
+        camera_ds_id (flexiznam.Schema.CameraDataset or str): Hexadecimal id of camera
+            dataset on flexilims or camera dataset object. Defaults to None.
+        camera_ds_name (str): Name of the camera dataset on flexilims. Ignored if
+            camera_ds_id is not None. Defaults to None.
         redo (bool, optional): Redo step if data already exists. Defaults to False.
         use_slurm (bool, optional): Start slurm jobs. Defaults to True.
+        dependency (str, optional): Dependency for slurm. Defaults to None.
 
     Returns:
         pandas.DataFrame: Log of job id of each step
     """
 
+    if camera_ds_id is None:
+        assert (
+            camera_ds_name is not None
+        ), "Must provide camera_ds_name if camera_ds_id is None"
+        camera_ds = flz.Dataset.from_flexilims(
+            name=camera_ds_name, flexilims_session=flexilims_session
+        )
+    elif isinstance(camera_ds_id, str):
+        camera_ds = flz.Dataset.from_flexilims(
+            id=camera_ds_id, flexilims_session=flexilims_session
+        )
+    else:
+        camera_ds = camera_ds_id
+
     log = dict(dataset_name=camera_ds.full_name)
 
     # Run uncropped DLC
-    job_id = run_dlc(
-        camera_ds, flexilims_session, dlc_model=dlc_model, crop=False, redo=redo
+    job_id, slurm_folder = run_dlc(
+        camera_ds,
+        flexilims_session,
+        dlc_model=dlc_model,
+        crop=False,
+        redo=redo,
+        use_slurm=use_slurm,
+        job_dependency=dependency,
     )
     log["dlc_uncropped"] = job_id if job_id is not None else "Done"
+    if not use_slurm and (job_id is not None):
+        print("Cannot chain jobs without slurm, skipping cropping and ellipse fit")
+        return pd.DataFrame(log)
 
     # Run cropped DLC
-    job_id = run_dlc(
+    job_id, slurm_folder = run_dlc(
         camera_ds,
         flexilims_session,
         dlc_model=dlc_model,
         crop=True,
         redo=redo,
         job_dependency=job_id,
+        use_slurm=use_slurm,
     )
     log["dlc_cropped"] = job_id if job_id is not None else "Done"
+    if not use_slurm and (job_id is not None):
+        print("Cannot chain jobs without slurm, skipping ellipse fit")
+        return pd.DataFrame(log)
 
     # Run ellipse fit
-    job_id = run_fit_ellipse(
+    job_id, slurm_folder = run_fit_ellipse(
         camera_ds,
         flexilims_session,
         likelihood_threshold=None,
         job_dependency=job_id,
-        use_slurm=True,
+        use_slurm=use_slurm,
+        slurm_folder=slurm_folder,
     )
     log["ellipse"] = job_id if job_id is not None else "Done"
 
-    return pd.DataFrame(log)
+    # Run reprojection
+    job_id, slurm_folder = run_reproject_eye(
+        camera_ds=camera_ds,
+        slurm_folder=slurm_folder,
+        theta0=np.deg2rad(20),
+        phi0=0,
+        job_dependency=job_id,
+        use_slurm=True,
+        redo=False,
+    )
+    log["reprojection"] = job_id if job_id is not None else "Done"
+
+    return pd.Series(log)
 
 
 def run_dlc(
@@ -98,7 +150,7 @@ def run_dlc(
     if ds is not None:
         if not redo:
             print("  Already done. Skip")
-            return
+            return None, ds.path_full
         else:
             print("  Erasing previous tracking to redo")
             # delete labeled and filtered version too. DLC would just not do anything
@@ -115,14 +167,97 @@ def run_dlc(
     else:
         func = dlc_pupil
 
-    process = func(
+    process, slurm_folder = func(
         camera_ds_id=camera_ds.id,
         model_name=dlc_model,
         origin_id=camera_ds.origin_id,
         project=camera_ds.project,
         crop=crop,
     )
-    return process
+    return process, slurm_folder
+
+
+def run_fit_ellipse(
+    camera_ds,
+    flexilims_session,
+    likelihood_threshold=None,
+    job_dependency=None,
+    redo=False,
+    use_slurm=True,
+    slurm_folder=None,
+):
+    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
+    if ds_dict["cropped"] is not None:
+        dlc_ds = ds_dict["cropped"]
+        dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
+        target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
+        if target.exists():
+            if not redo:
+                print("  Already done. Skip")
+                return None, target.parent
+            os.remove(target)
+    if use_slurm:
+        if slurm_folder is None:
+            slurm_folder = dlc_ds.path_full
+        func = partial(
+            slurm_job.fit_ellipses,
+            job_dependency=job_dependency,
+            slurm_folder=slurm_folder,
+        )
+    else:
+        if ds_dict["cropped"] is None:
+            raise IOError("No cropped dataset found")
+        func = fit_ellipse
+    job_id = func(
+        camera_ds_id=camera_ds.id,
+        project_id=camera_ds.project_id,
+        likelihood_threshold=likelihood_threshold,
+    )
+    return job_id, slurm_folder
+
+
+def run_reproject_eye(
+    camera_ds,
+    slurm_folder,
+    theta0=np.deg2rad(20),
+    phi0=0,
+    job_dependency=None,
+    use_slurm=True,
+    redo=False,
+):
+    """Run the reproject_eye function on a camera dataset
+
+    DLC and ellipse fitting must have been done first
+
+    Args:
+        camera_ds (flexiznam.Dataset): The camera dataset to reproject
+        slurm_folder (str): Path to the folder where to create the slurm scripts
+            and slurm logs.
+        theta0 (float, optional): Initial guess for the theta angle. Defaults to
+            np.deg2rad(20).
+        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
+        job_dependency (str, optional): Job id to wait for before starting the job.
+            Defaults to None.
+        use_slurm (bool, optional): Whether to use slurm to run the job. Defaults to
+            True.
+        redo (bool, optional): Whether to redo the reprojection if it already exists.
+            Defaults to False.
+    """
+    if not use_slurm:
+        raise NotImplementedError("Only slurm is implemented for now")
+    target = Path(slurm_folder) / f"{camera_ds.dataset_name}_eye_rotation_by_frame.npy"
+    if target.exists() and not redo:
+        print("  Already done. Skip")
+        return None, target.parent
+
+    job_id, path = slurm_job.reproject_pupils(
+        camera_ds=camera_ds,
+        target_folder=slurm_folder,
+        theta0=theta0,
+        phi0=phi0,
+        job_dependency=job_dependency,
+    )
+    return job_id, path
 
 
 def delete_tracking_dataset(ds, flexilims_session):
@@ -151,6 +286,11 @@ def delete_tracking_dataset(ds, flexilims_session):
     flexilims_session.delete(ds.id)
 
 
+@slurm_it(conda_env=envs['dlc'], slurm_modules="cuDNN/8.1.1.33-CUDA-11.2.1", slurm_options=dict(ntasks=1,
+        time="12:00:00",
+        mem="32G",
+        gres="gpu:1",
+        partition="gpu"))
 def dlc_pupil(
     camera_ds_id,
     model_name,
@@ -259,6 +399,11 @@ def dlc_pupil(
     )
     ds.update_flexilims(mode="overwrite")
 
+    # Save diagnostic plot
+    print("Saving diagnostic plot", flush=True)
+    diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds)
+    return ds, ds.path_full
+
 
 def get_tracking_datasets(camera_ds, flexilims_session):
     """Get the dlc tracking datasets corresponding to a camera dataset
@@ -332,6 +477,7 @@ def create_crop_file(camera_ds, dlc_ds):
 
     with open(metadata_path, "r") as fhandle:
         metadata = yaml.safe_load(fhandle)
+    metadata = {k.lower(): v for k, v in metadata.items()}
     dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
     print("Creating crop file")
     dlc_res = pd.read_hdf(dlc_file)
@@ -352,7 +498,7 @@ def create_crop_file(camera_ds, dlc_ds):
 
     borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
     borders += ((np.diff(borders, axis=0) * 0.2).T @ np.array([[-1, 1]])).T
-    for i, w in enumerate(["Width", "Height"]):
+    for i, w in enumerate(["width", "height"]):
         borders[:, i] = np.clip(borders[:, i], 0, metadata[w])
     borders = borders.astype(int)
     crop_info = dict(
@@ -367,44 +513,6 @@ def create_crop_file(camera_ds, dlc_ds):
         yaml.dump(crop_info, fhandle)
     print("Crop file created")
     return crop_info
-
-
-def run_fit_ellipse(
-    camera_ds,
-    flexilims_session,
-    likelihood_threshold=None,
-    job_dependency=None,
-    redo=False,
-    use_slurm=True,
-    slurms_folder=None,
-):
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
-    if ds_dict["cropped"] is None:
-        raise IOError("No cropped dataset found")
-    dlc_ds = ds_dict["cropped"]
-    dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
-    target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
-    if target.exists():
-        if not redo:
-            print("  Already done. Skip")
-            return
-        os.remove(target)
-    if use_slurm:
-        if slurms_folder is None:
-            slurms_folder = dlc_ds.path_full
-        func = partial(
-            slurm_job.fit_ellipses,
-            job_dependency=job_dependency,
-            slurm_folder=slurms_folder,
-        )
-    else:
-        func = fit_ellipse
-    job_id = func(
-        camera_ds_id=camera_ds.id,
-        project_id=camera_ds.project_id,
-        likelihood_threshold=likelihood_threshold,
-    )
-    return job_id
 
 
 def fit_ellipse(
