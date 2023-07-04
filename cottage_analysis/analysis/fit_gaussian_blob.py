@@ -53,6 +53,9 @@ def analyze_rs_of_tuning(
     trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
     neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
 
+    iscell = common_utils.load_is_cell_file(project, mouse, session, protocol)
+    neurons_df["is_cell"] = iscell
+
     neurons_df = neurons_df.assign(
         preferred_RS_closed_loop=np.nan,
         preferred_OF_closed_loop=np.nan,
@@ -151,7 +154,9 @@ def analyze_rs_of_tuning(
                     np.exp(popt[2])
                 )  # rad/s
                 # !! Calculated with RS in m and OF in degrees/s
-                neurons_df.at[iroi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"] = popt  
+                neurons_df.at[
+                    iroi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"
+                ] = popt
                 neurons_df.loc[iroi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
     neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 

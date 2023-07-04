@@ -11,7 +11,7 @@
 ml purge
 
 ml Anaconda3/2020.07
-source /camp/apps/eb/software/Anaconda/conda.env.sh
+source activate base
 
 conda activate 2p_analysis_cottage
 

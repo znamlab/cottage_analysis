@@ -94,7 +94,7 @@ def regenerate_frames(
     else:
         assert output.shape == out_shape
 
-    # Find frame indices that are not grey or within the imaging time.
+    # Find frame indices that are not grey and within the imaging time.
     trial_index = (
         trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
     )
@@ -106,7 +106,11 @@ def regenerate_frames(
     log_ends = param_logger[time_column].searchsorted(frame_times)
     for frame_index in tqdm(frame_indices):
         corridor = trials_df.loc[int(trial_index[frame_index])]
-        logger = param_logger.iloc[corridor.param_log_start : np.max([log_ends[frame_index],corridor.param_log_start+1])]
+        logger = param_logger.iloc[
+            corridor.param_log_start : np.max(
+                [log_ends[frame_index], corridor.param_log_start + 1]
+            )
+        ]
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
         sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
@@ -122,6 +126,9 @@ def regenerate_frames(
             azimuth_limits=np.array(azimuth_limits, dtype=float),
             elevation_limits=np.array(elevation_limits, dtype=float),
         )
+        if this_frame is None:
+            this_frame = np.zeros((out_shape[1], out_shape[2]))
+            print(f"Warning: failed to reconstruct frame {frame_index}")
         output[frame_index] = this_frame
 
     return output
