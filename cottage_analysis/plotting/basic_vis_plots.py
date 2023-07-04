@@ -3,33 +3,37 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from matplotlib.colors import ListedColormap
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
-from cottage_analysis.depth_analysis.plotting import plotting_utils
+from cottage_analysis.plotting import plotting_utils
+from cottage_analysis.analysis import (
+    find_depth_neurons,
+    fit_gaussian_blob,
+    common_utils,
+)
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
 
 
 def plot_depth_neuron_distribution(
-    project,
-    mouse,
-    session,
     neurons_df,
+    iscell,
     trials_df,
     protocol="SpheresPermTubeReward",
     depth_min=0.02,
     depth_max=20,
     bin_number=50,
     mode="discrete",
+    color="gray",
+    alpha=1,
 ):
     """
     Plot distribution of neurons' depth preferences in one session.
 
     Args:
-        project (str): project name
-        mouse (str): mouse name
-        session (str): session name
         neurons_df (pd.DataFrame): Dataframe containing analyzed info of all rois
+        iscell(np.1darray): 1d array of 0s and 1s indicating whether rois in neurons_df are cells or not.
         trials_df (pd.DataFrame): Dataframe containing info of all trials
         protocol (str, optional): protocol name. Defaults to 'SpheresPermTubeReward'.
         depth_min (float, optional): minimum fitted depth. Defaults to 0.02.
@@ -38,19 +42,25 @@ def plot_depth_neuron_distribution(
         mode (str, optional): 'discrete' for bar graph, 'continuous' for histogram. Defaults to 'discrete'.
     """
     # Reload iscell file and filter out non-neuron rois
-    iscell = common_utils.load_is_cell_file(project, mouse, session, protocol)
-    neurons_df.iscell = iscell
-    neurons_df = neurons_df[neurons_df.iscell == 1]
+    neurons_df.is_cell = iscell
+    neurons_df = neurons_df[neurons_df.is_cell == 1]
 
     if mode == "continuous":
         all_preferred_depths = (
             neurons_df[neurons_df.is_depth_neuron == 1]
         ).preferred_depth_closed_loop
         bins = np.geomspace(depth_min, depth_max, num=bin_number)
-        plt.hist(all_preferred_depths, bins=bins)
+        plt.hist(
+            all_preferred_depths,
+            bins=bins,
+            color=color,
+            alpha=alpha,
+            weights=np.ones(len(all_preferred_depths))
+            / len(neurons_df[neurons_df.is_depth_neuron == 1]),
+        )
         plt.xscale("log")
         plt.xlabel("Preferred depth (m)")
-        plt.ylabel("Frequency")
+        plt.ylabel("Depth neuron%")
 
     elif mode == "discrete":
         depth_list = find_depth_neurons.find_depth_list(trials_df)
@@ -108,7 +118,7 @@ def plot_spatial_distribution(
         cmap (matplotlib object, optional): Matplotlib colormao. Defaults to cm.cool.reversed().
     """
     # Reload iscell file and filter out non-neuron rois
-    neurons_df.iscell = iscell
+    neurons_df.is_cell = iscell
 
     # set cmap
     line_colors = []
@@ -131,7 +141,7 @@ def plot_spatial_distribution(
     #  Assign color to pixels of neuronal mask
     # careful imshow color in BGR not RGB, but colormap seems to swap it already
     for n in (
-        neurons_df[(neurons_df.iscell == 1) & (neurons_df.is_depth_neuron == 1)]
+        neurons_df[(neurons_df.is_cell == 1) & (neurons_df.is_depth_neuron == 1)]
     ).roi:
         ypix = stat[n]["ypix"][~stat[n]["overlap"]]
         xpix = stat[n]["xpix"][~stat[n]["overlap"]]
@@ -152,7 +162,7 @@ def plot_spatial_distribution(
             ).T
 
     non_depth_neurons = (
-        neurons_df[(neurons_df.iscell == 1) & (neurons_df.is_depth_neuron != 1)]
+        neurons_df[(neurons_df.is_cell == 1) & (neurons_df.is_depth_neuron != 1)]
     ).roi
     for n in non_depth_neurons:
         ypix = stat[n]["ypix"][~stat[n]["overlap"]]
@@ -177,6 +187,7 @@ def plot_depth_tuning_curve(
     linewidth=3,
     linecolor="k",
     fit_linecolor="r",
+    closed_loop=1,
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -223,133 +234,262 @@ def plot_depth_tuning_curve(
     if plot_fit:
         plt.plot(np.log(x), gaussian_arr, color=fit_linecolor)
     plt.xticks(np.log(depth_list), depth_list)
-    plt.xlabel("Preferred depth (cm)")
+    plt.xlabel("Preferred depth (m)")
     plt.ylabel("\u0394F/F")
 
     plotting_utils.despine()
 
 
-# -------OLD----------------
+def generate_cmap(cmap_name="WhRd"):
+    """Generate common colormap
+
+    Args:
+        cmap_name (str, optional): color map mame. Defaults to 'WhRd'.
+
+    Returns:
+        cmap (matplotlib.cmap object): matplotlib colormap
+    """
+    if cmap_name == "WhRd":
+        N = 256
+        vals = np.ones((N, 4))
+        vals[:, 0] = np.linspace(1, 1, N)
+        vals[:, 1] = np.linspace(1, 0, N)
+        vals[:, 2] = np.linspace(1, 0, N)
+        cmap = ListedColormap(vals)
+
+    return cmap
 
 
-# --- Raster plot for different depths (running speed or dFF) --- #
 def plot_raster_all_depths(
-    values,
-    dffs,
-    depth_list,
-    img_VS,
-    stim_dict,
-    distance_bins,
-    plot_rows,
-    plot_cols,
-    which_row,
-    which_col,
-    heatmap_cmap,
-    fontsize_dict,
-    is_trace=True,
-    roi=0,
-    title="",
+    neurons_df,
+    trials_df,
+    roi,
+    is_closed_loop,
+    max_distance=6,
+    nbins=60,
     frame_rate=15,
-    distance_max=6,
-    vmax=None,
-    landscape=False,
+    vmax=1,
 ):
-    if is_trace:
-        values_arr, _ = create_trace_arr_per_roi(
-            roi,
-            dffs,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
+    """Raster plot for neuronal activity for each depth
+
+    Args:
+        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        is_closed_loop (bool): plotting the closed loop or open loop results.
+        max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
+        nbins (int, optional): number of bins to bin the activity. Defaults to 60.
+        frame_rate (int, optional): imaging frame rate. Defaults to 15.
+        vmax (int, optional): vmax to plot the heatmap. Defaults to 1.
+    """
+    # choose the trials with closed or open loop to visualize
+    trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
+
+    depth_list = find_depth_neurons.find_depth_list(trials_df)
+    grouped_trials = trials_df.groupby(by="depth")
+    trial_number = len(trials_df) // len(depth_list)
+
+    # bin dff according to distance travelled for each trial
+    dffs_binned = np.zeros((len(depth_list), trial_number, nbins))
+    for idepth, depth in enumerate(depth_list):
+        all_dffs = grouped_trials.get_group(depth).dff_stim.values
+        all_rs = grouped_trials.get_group(depth).RS_stim.values
+        for itrial in np.arange(len(all_dffs)):
+            if itrial < trial_number:
+                dff = all_dffs[itrial][roi]
+                rs_arr = all_rs[itrial]
+                distance = np.cumsum(rs_arr / frame_rate)
+                bins = np.linspace(
+                    start=0, stop=max_distance, num=nbins + 1, endpoint=True
+                )
+                bin_means, _, _ = scipy.stats.binned_statistic(
+                    x=distance,
+                    values=dff,
+                    statistic="mean",
+                    bins=nbins,
+                )
+                dffs_binned[idepth, itrial, :] = bin_means
+
+    # colormap
+    WhRdcmap = generate_cmap(cmap_name="WhRd")
+
+    # plot each depth as a heatmap
+    for idepth, depth in enumerate(depth_list):
+        plt.subplot(1, len(depth_list), idepth + 1)
+        plt.imshow(dffs_binned[idepth], cmap=WhRdcmap, vmin=0, vmax=vmax)
+
+
+def plot_speed_tuning(
+    neurons_df,
+    trials_df,
+    roi,
+    is_closed_loop,
+    nbins=20,
+    which_speed="RS",
+    speed_min=0.01,
+    speed_max=1.5,
+    speed_thr=0.01,
+):
+    """Plot a neuron's speed tuning to either running speed or optic flow speed.
+
+    Args:
+        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        is_closed_loop (bool): plotting the closed loop or open loop results.
+        nbins (int, optional): number of bins to bin the tuning curve. Defaults to 20.
+        which_speed (str, optional): 'RS': running speed; 'OF': optic flow speed. Defaults to 'RS'.
+        speed_min (float, optional): min RS speed for the bins (m/s). Defaults to 0.01.
+        speed_max (float, optional): max RS speed for the bins (m/s). Defaults to 1.5.
+        speed_thr (float, optional): thresholding RS for logging (m/s). Defaults to 0.01.
+    """
+    trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
+    depth_list = find_depth_neurons.find_depth_list(trials_df)
+    grouped_trials = trials_df.groupby(by="depth")
+
+    if which_speed == "RS":
+        speed_tuning = np.zeros(((len(depth_list) + 1), nbins))
+        speed_ci = np.zeros(((len(depth_list) + 1), nbins))
+        bins = np.geomspace(
+            start=speed_min, stop=speed_max, num=nbins + 1, endpoint=True
         )
-        unit_scale = 1
-    else:
-        values_arr, _ = create_speed_arr(
-            values,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
-        )
-        unit_scale = 100
-    distance_arr, _ = create_speed_arr(
-        img_VS["EyeZ"],
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-    for idepth in range(distance_arr.shape[0]):
-        for itrial in range(distance_arr.shape[1]):
-            distance_arr[idepth, itrial, :] = (
-                distance_arr[idepth, itrial, :] - distance_arr[idepth, itrial, 0]
+
+    elif which_speed == "OF":
+        speed_tuning = np.zeros(((len(depth_list)), nbins))
+        speed_ci = np.zeros(((len(depth_list)), nbins))
+    bin_centers = np.zeros(((len(depth_list)), nbins))
+
+    # Find all speed and dff of this ROI for a specific depth
+    for idepth, depth in enumerate(depth_list):
+        all_speed = grouped_trials.get_group(depth)[f"{which_speed}_stim"].values
+        speed_arr = np.array([j for i in all_speed for j in i])
+        all_dff = grouped_trials.get_group(depth)["dff_stim"].values
+        dff_arr = np.array([j for i in all_dff for j in i[roi, :]])
+
+        if which_speed == "OF":
+            speed_arr = np.degrees(speed_arr)  # rad --> degrees
+        # threshold speed
+        dff_arr = dff_arr[speed_arr > speed_thr]
+        speed_arr = speed_arr[speed_arr > speed_thr]
+
+        if which_speed == "OF":
+            bins = np.geomspace(
+                start=np.nanmin(speed_arr),
+                stop=np.nanmax(speed_arr),
+                num=nbins + 1,
+                endpoint=True,
             )
+        bin_centers[idepth] = (bins[:-1] + bins[1:]) / 2
 
-    binned_stats = get_binned_arr(
-        xarr=distance_arr,
-        yarr=values_arr,
-        bin_number=distance_bins,
-        bin_edge_min=0,
-        bin_edge_max=6,
-    )
-    if vmax == None:
-        vmax = np.nanmax(binned_stats["binned_yrr"]) * unit_scale
-    else:
-        vmax = vmax
-    for idepth in range(0, len(depth_list)):
-        depth = depth_list[idepth]
-        if landscape:
-            plt.subplot2grid([plot_rows, plot_cols], [which_row, which_col + idepth])
-        else:
-            plt.subplot2grid([plot_rows, plot_cols], [which_row + idepth, which_col])
-        if idepth == 0:
-            title_on = True
-        else:
-            title_on = False
-        # title = f'ROI {roi} {title}, \n'
-        title = f"{title}"
-        # if idepth!=len(depth_list)-1:
-        #     colorbar_on = False
-        # else:
-        #     colorbar_on = True
-        colorbar_on = False
-        plot_raster(
-            arr=np.array(binned_stats["binned_yrr"][idepth]) * unit_scale,
-            vmin=0,
-            vmax=vmax,
-            cmap=heatmap_cmap,
-            title=title,
-            title_on=title_on,
-            suffix="Depth: " + str(int(depth_list[idepth] * 100)) + " cm",
-            fontsize_dict=fontsize_dict,
-            frame_rate=frame_rate,
-            extent=[
-                0,
-                distance_max * 100,
-                binned_stats["binned_yrr"][idepth].shape[0],
-                1,
-            ],
-            set_nan_cmap=False,
-            colorbar_on=colorbar_on,
+        # calculate speed tuning
+        bin_means, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="mean",
+            bins=bins,
         )
-        if idepth == 0:
-            plt.ylabel("Trial no.", fontsize=fontsize_dict["ylabel"])
-            plt.xticks(fontsize=fontsize_dict["xticks"], rotation=45)
-            plt.yticks(fontsize=fontsize_dict["yticks"])
-            plt.xlabel("Corridor \n position (cm)", fontsize=fontsize_dict["xlabel"])
-        else:
-            plt.xticks(fontsize=fontsize_dict["xticks"], rotation=45)
-            plt.yticks([])
-            plt.xlabel("Corridor \n position (cm)", fontsize=fontsize_dict["xlabel"])
 
-    return binned_stats
+        bin_stds, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="std",
+            bins=bins,
+        )
+
+        bin_counts, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="count",
+            bins=bins,
+        )
+
+        tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+
+        ci_range = 0.95
+        z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
+        ci = z * bin_stds / bin_counts
+        ci[np.isnan(ci)] = 0
+
+        speed_tuning[idepth] = tuning
+        speed_ci[idepth] = ci
+
+    # Find tuning for blank period for RS
+    if which_speed == "RS":
+        all_speed = trials_df[f"{which_speed}_blank"].values
+        speed_arr = np.array([j for i in all_speed for j in i])
+        all_dff = trials_df["dff_blank"].values
+        dff_arr = np.array([j for i in all_dff for j in i[roi, :]])
+
+        # threshold speed
+        dff_arr = dff_arr[speed_arr > speed_thr]
+        speed_arr = speed_arr[speed_arr > speed_thr]
+
+        # calculate speed tuning
+        bin_means, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="mean",
+            bins=bins,
+        )
+
+        bin_stds, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="std",
+            bins=bins,
+        )
+
+        bin_counts, _, _ = scipy.stats.binned_statistic(
+            x=speed_arr,
+            values=dff_arr,
+            statistic="count",
+            bins=bins,
+        )
+
+        tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+
+        ci = z * bin_stds / bin_counts
+        ci[np.isnan(ci)] = 0
+
+        speed_tuning[-1] = tuning
+        speed_ci[-1] = ci
+
+    for idepth, depth in enumerate(depth_list):
+        linecolor = get_depth_color(depth, depth_list, cmap=cm.cool.reversed())
+        plt.plot(
+            bin_centers[idepth, :],
+            speed_tuning[idepth, :],
+            color=linecolor,
+            label=f"{int(depth_list[idepth] * 100)} cm",
+        )
+        plt.errorbar(
+            x=bin_centers[idepth, :],
+            y=speed_tuning[idepth, :],
+            yerr=speed_ci[idepth, :],
+            fmt="o",
+            color=linecolor,
+            ls="none",
+        )
+
+        if which_speed == "RS":
+            plt.plot(
+                bin_centers[-1, :],
+                speed_tuning[-1, :],
+                color="gray",
+                label=f"{int(depth_list[idepth] * 100)} cm",
+            )
+            plt.errorbar(
+                x=bin_centers[-1, :],
+                y=speed_tuning[-1, :],
+                yerr=speed_ci[-1, :],
+                fmt="o",
+                color="gray",
+                ls="none",
+            )
+        plt.xscale("log")
+
+
+# -------OLD----------------
 
 
 # --- PSTH --- #
@@ -449,16 +589,6 @@ def plot_PSTH(
     despine()
 
     return binned_stats, xlim, ylim
-
-
-# --- Depth tuning curve --- #
-MIN_SIGMA = 0.5
-
-
-def gaussian_func(x, a, x0, log_sigma, b):
-    a = a
-    sigma = np.exp(log_sigma) + MIN_SIGMA
-    return (a * np.exp(-((x - x0) ** 2)) / (2 * sigma**2)) + b
 
 
 # --- RS/OF - trace heatmap --- #
