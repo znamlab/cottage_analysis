@@ -136,9 +136,7 @@ def find_monitor_frames(
             mouse=mouse,
             session=session,
             protocol=protocol,
-            all_protocol_recording_entries=all_protocol_recording_entries,
             irecording=irecording,
-            flexilims_session=flexilims_session,
             redo=redo_harpnpz,
         )
 
@@ -229,7 +227,7 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
     save_folder = protocol_folder / "sync/monitor_frames/"
     monitor_frames_df = pd.read_pickle(save_folder / "monitor_frames_df.pickle")
@@ -272,6 +270,8 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         columns={"HarpTime": "harptime_sphere", "Radius": "depth"}
     )
     param_log_simple["onset_time"] = param_log_simple["harptime_sphere"]
+    if np.isnan(param_log_simple["depth"].iloc[-1]):
+        param_log_simple = param_log_simple[:-1]
     vs_df = pd.merge_asof(
         left=vs_df,
         right=param_log_simple,
@@ -407,7 +407,7 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
     save_folder = protocol_folder / "sync"
     if not save_folder.exists():
@@ -439,11 +439,11 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         print(
             f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
         )
-    imaging_df.imaging_frame = np.arange(frame_number)
+    imaging_df.imaging_frame = np.arange(max_frame_in_vs_df + 1)
 
     # dffs for each imaging frame: ncells x 1 frame
-    dffs = np.load(trace_folder / "dffs_ast.npy")
-    imaging_df.dffs = dffs.T.tolist()
+    dffs = np.load(trace_folder / "dff_ast.npy")
+    imaging_df.dffs = dffs.T.tolist()[: len(imaging_df)]
 
     # RS for each imaging frame: the speed of the previous imaging frame (recorded by harp)
     rs_img = (
@@ -511,7 +511,9 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
             register_address=32,
             exposure_time_tolerance=0.001,
         )
-    imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values
+    imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
+        : len(imaging_df)
+    ]
 
     # Save df to pickle
     imaging_df.to_pickle(save_folder / "imaging_df.pickle")
@@ -565,7 +567,7 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
 
     # trials_df
@@ -635,6 +637,10 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         start_idx_blank
     ].imaging_frame.values
     trials_df.imaging_frame_blank_stop = vs_df.loc[stop_idx_blank].imaging_frame.values
+    if np.isnan(
+        trials_df.imaging_frame_blank_stop.iloc[-1]
+    ):  # If the blank stop of last trial is beyond the number of imaging frames
+        trials_df.imaging_frame_blank_stop.iloc[-1] = len(imaging_df) - 1
     trials_df.imaging_frame_stim_stop = trials_df.imaging_frame_blank_start - 1
 
     mask = (
@@ -681,7 +687,7 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     )
 
     # Assign dffs array to trials_df
-    dffs = np.load(trace_folder / "dffs_ast.npy")
+    dffs = np.load(trace_folder / "dff_ast.npy")
     trials_df.dff_stim = trials_df.apply(
         lambda x: dffs[
             :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop) + 1
