@@ -73,18 +73,25 @@ def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False
             di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
         )
         p_msg.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(p_msg, **harp_messages)
+        np.savez(protocol_folder / "sync/harpmessage.npz", **harp_messages)
         print("Harp messages saved.")
     elif (p_msg.is_file()) and (redo == False):
         print("harpmessage.npz already exists. Loading harpmessage.npz...")
-    harp_messages = np.load(p_msg)
+    harp_messages = np.load(protocol_folder / "sync/harpmessage.npz")
     print("harpmessage loaded.")
 
     return harp_messages
 
 
 def find_monitor_frames(
-    project, mouse, session, protocol, irecording=0, redo=True, redo_harpnpz=False
+    project,
+    mouse,
+    session,
+    protocol,
+    irecording=0,
+    photodiode_protocol=5,
+    redo=True,
+    redo_harpnpz=False,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them into monitor_frames_df.pickle and monitor_db_dict.pickle under the path {trace_folder/'sync/monitor_frames/'}
 
@@ -94,6 +101,7 @@ def find_monitor_frames(
         session (str): session name (Sdate)
         protocol (str): protocol name
         irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         redo (bool, optional): re-sync the monitor frames or not. Defaults to True.
         redo_harpnpz (bool, optional): re-transform harp bin file into npz file or not. Defaults to False.
@@ -124,58 +132,80 @@ def find_monitor_frames(
     )
 
     if redo:
+        save_folder = protocol_folder / "sync/monitor_frames"
+        if not save_folder.exists():
+            save_folder.mkdir(parents=True)
+
         # Load files
         harp_messages = load_harpmessage(
             project=project,
             mouse=mouse,
             session=session,
             protocol=protocol,
-            all_protocol_recording_entries=all_protocol_recording_entries,
             irecording=irecording,
-            flexilims_session=flexilims_session,
             redo=redo_harpnpz,
         )
 
-        frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
-        ao_time = harp_messages["analog_time"]
-        photodiode = harp_messages["photodiode"]
+        # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
+        if photodiode_protocol == 2:
+            ao_time = harp_messages["analog_time"]
+            photodiode = harp_messages["photodiode"]
+            print("Data loaded.")
+            print("Recording is %d s long." % (ao_time[-1] - ao_time[0]))
+            # Synchronisation
+            frames_df = find_frames.sync_by_frame_alternating(
+                photodiode=photodiode,
+                analog_time=ao_time,
+                frame_rate=144,
+                photodiode_sampling=1000,
+                plot=True,
+                plot_start=10000,
+                plot_range=1000,
+                plot_dir=save_folder,
+            )
+            # Save monitor frame dataframes
+            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
 
-        print("Data loaded.")
-        print(
-            "Recording is %d s long."
-            % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
-        )
+        elif photodiode_protocol == 5:
+            frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
+            ao_time = harp_messages["analog_time"]
+            photodiode = harp_messages["photodiode"]
 
-        # Synchronisation
-        frame_rate = 144
-        frames_df, db_dict = find_frames.sync_by_correlation(
-            frame_log,
-            ao_time,
-            photodiode,
-            time_column="HarpTime",
-            sequence_column="PhotoQuadColor",
-            num_frame_to_corr=6,
-            maxlag=3.0 / frame_rate,
-            expected_lag=2.0 / frame_rate,
-            frame_rate=frame_rate,
-            correlation_threshold=0.8,
-            relative_corr_thres=0.02,
-            minimum_lag=1.0 / frame_rate,
-            do_plot=False,
-            verbose=True,
-            debug=True,
-        )
+            print("Data loaded.")
+            print(
+                "Recording is %d s long."
+                % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
+            )
 
-        # Save monitor frame dataframes
-        save_folder = protocol_folder / "sync/monitor_frames"
-        if not save_folder.exists():
-            save_folder.mkdir(parents=True)
-        frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
-        with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
-            pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            # Synchronisation
+            frame_rate = 144
+            frames_df, db_dict = find_frames.sync_by_correlation(
+                frame_log,
+                ao_time,
+                photodiode,
+                time_column="HarpTime",
+                sequence_column="PhotoQuadColor",
+                num_frame_to_corr=6,
+                maxlag=3.0 / frame_rate,
+                expected_lag=2.0 / frame_rate,
+                frame_rate=frame_rate,
+                correlation_threshold=0.8,
+                relative_corr_thres=0.02,
+                minimum_lag=1.0 / frame_rate,
+                do_plot=False,
+                verbose=True,
+                debug=True,
+            )
+
+            # Save monitor frame dataframes
+            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
+            with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
+                pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def generate_vs_df(project, mouse, session, protocol, irecording=0):
+def generate_vs_df(
+    project, mouse, session, protocol, irecording=0, photodiode_protocol=5
+):
     """Generate a dataframe that contains information for each monitor frame. This requires monitor frames to be synced first.
 
     Args:
@@ -184,6 +214,7 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         session (str): session name (Sdate)
         protocol (str): protocol name
         irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -223,49 +254,111 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
     save_folder = protocol_folder / "sync/monitor_frames/"
     monitor_frames_df = pd.read_pickle(save_folder / "monitor_frames_df.pickle")
 
-    # Find frames that are not skipped
-    monitor_frame_valid = monitor_frames_df[monitor_frames_df.closest_frame.notnull()][
-        ["closest_frame", "onset_time", "offset_time", "peak_time"]
-    ]
-    monitor_frame_valid["closest_frame"] = monitor_frame_valid["closest_frame"].astype(
-        "int"
-    )
-    monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
+    if photodiode_protocol == 5:
+        # Find frames that are not skipped
+        monitor_frame_valid = monitor_frames_df[
+            monitor_frames_df.closest_frame.notnull()
+        ][["closest_frame", "onset_time", "offset_time", "peak_time"]]
+        monitor_frame_valid["closest_frame"] = monitor_frame_valid[
+            "closest_frame"
+        ].astype("int")
+        monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
-    # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-    frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
-    frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
-    frame_log_z = frame_log_z.rename(
-        columns={
-            "FrameIndex": "closest_frame",
-            "HarpTime": "harptime_framelog",
-            "MouseZ": "mouse_z",
-            "EyeZ": "eye_z",
-        }
-    )
-    frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
-    frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
-    vs_df = pd.merge_asof(
-        left=monitor_frame_valid,
-        right=frame_log_z,
-        on="closest_frame",
-        direction="nearest",
-        allow_exact_matches=True,
-    )
+        # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
+        frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
+        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
+        frame_log_z = frame_log_z.rename(
+            columns={
+                "FrameIndex": "closest_frame",
+                "HarpTime": "harptime_framelog",
+                "MouseZ": "mouse_z",
+                "EyeZ": "eye_z",
+            }
+        )
+        frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
+        frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
+        vs_df = pd.merge_asof(
+            left=monitor_frame_valid,
+            right=frame_log_z,
+            on="closest_frame",
+            direction="nearest",
+            allow_exact_matches=True,
+        )
+
+    if photodiode_protocol == 2:
+        monitor_frame_valid = monitor_frames_df[["closest_frame", "peak_time"]]
+        # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
+        monitor_frame_valid = monitor_frame_valid.rename(
+            columns={"peak_time": "onset_time"}
+        )
+        monitor_frame_valid["closest_frame"] = monitor_frame_valid[
+            "closest_frame"
+        ].astype("int")
+        monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
+
+        # Merge MouseZ and EyeZ from RotaryEncoder.csv to frame_df according to HarpTime
+        encoder_path = generate_filepaths.generate_logger_path(
+            project=project,
+            mouse=mouse,
+            session=session,
+            protocol=protocol,
+            logger_name="RotaryEncoder",
+            rawdata_root=None,
+            root=None,
+            all_protocol_recording_entries=None,
+            recording_no=irecording,
+            flexilims_session=flexilims_session,
+        )
+        mouse_z_df = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
+        mouse_z_df = mouse_z_df[mouse_z_df.Frame.diff() != 0]
+        mouse_z_df = mouse_z_df.rename(
+            columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
+        )
+        mouse_z_df = mouse_z_df.drop(columns={"Frame"})
+
+        mouse_z_df["mouse_z"] = mouse_z_df["mouse_z"] / 100  # convert cm to m
+        mouse_z_df["eye_z"] = mouse_z_df["eye_z"] / 100  # convert cm to m
+        vs_df = pd.merge_asof(
+            left=monitor_frame_valid,
+            right=mouse_z_df,
+            on="onset_time",
+            direction="nearest",
+            allow_exact_matches=True,
+        )
 
     # Align sphere parameter with the frame (harptime later than the logged sphere time)
     vs_df = vs_df.sort_values("onset_time")
-    param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
-    param_log_simple = param_log[["HarpTime", "Radius"]]
-    param_log_simple = param_log_simple.rename(
-        columns={"HarpTime": "harptime_sphere", "Radius": "depth"}
+    paramlog_path = generate_filepaths.generate_logger_path(
+        project=project,
+        mouse=mouse,
+        session=session,
+        protocol=protocol,
+        logger_name="NewParams",
+        rawdata_root=None,
+        root=None,
+        all_protocol_recording_entries=None,
+        recording_no=irecording,
+        flexilims_session=flexilims_session,
     )
+    param_log = pd.read_csv(paramlog_path)
+    if "Radius" in param_log.columns:
+        param_log_simple = param_log[["HarpTime", "Radius"]]
+        param_log_simple = param_log_simple.rename(
+            columns={"HarpTime": "harptime_sphere", "Radius": "depth"}
+        )
+    elif "Depth" in param_log.columns:
+        param_log_simple = param_log[["HarpTime", "Depth"]]
+        param_log_simple = param_log_simple.rename(
+            columns={"HarpTime": "harptime_sphere", "Depth": "depth"}
+        )
     param_log_simple["onset_time"] = param_log_simple["harptime_sphere"]
+    if np.isnan(param_log_simple["depth"].iloc[-1]):
+        param_log_simple = param_log_simple[:-1]
     vs_df = pd.merge_asof(
         left=vs_df,
         right=param_log_simple,
@@ -334,16 +427,18 @@ def generate_vs_df(project, mouse, session, protocol, irecording=0):
 
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
-    vs_df = vs_df.drop(
-        columns=["harptime_framelog", "harptime_sphere", "harptime_imaging_trigger"]
-    )
-    vs_df = vs_df.rename(
-        columns={
-            "onset_time": "onset_harptime",
-            "offset_time": "offset_harptime",
-            "peak_time": "peak_harptime",
-        }
-    )
+    for col in ["harptime_framelog", "harptime_sphere", "harptime_imaging_trigger"]:
+        if col in vs_df.columns:
+            vs_df = vs_df.drop(columns=[col])
+    for col in ["onset_time", "offset_time", "peak_time"]:
+        if col in vs_df.columns:
+            vs_df = vs_df.rename(
+                columns={
+                    "onset_time": "onset_harptime",
+                    "offset_time": "offset_harptime",
+                    "peak_time": "peak_harptime",
+                }
+            )
 
     # Save df to pickle
     vs_df.to_pickle(save_folder / "vs_df.pickle")
@@ -401,7 +496,7 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
     save_folder = protocol_folder / "sync"
     if not save_folder.exists():
@@ -433,11 +528,11 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         print(
             f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
         )
-    imaging_df.imaging_frame = np.arange(frame_number)
+    imaging_df.imaging_frame = np.arange(max_frame_in_vs_df + 1)
 
     # dffs for each imaging frame: ncells x 1 frame
-    dffs = np.load(trace_folder / "dffs_ast.npy")
-    imaging_df.dffs = dffs.T.tolist()
+    dffs = np.load(trace_folder / "dff_ast.npy")
+    imaging_df.dffs = dffs.T.tolist()[: len(imaging_df)]
 
     # RS for each imaging frame: the speed of the previous imaging frame (recorded by harp)
     rs_img = (
@@ -505,7 +600,9 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
             register_address=32,
             exposure_time_tolerance=0.001,
         )
-    imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values
+    imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
+        : len(imaging_df)
+    ]
 
     # Save df to pickle
     imaging_df.to_pickle(save_folder / "imaging_df.pickle")
@@ -556,7 +653,7 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         session=session,
         protocol=protocol,
         all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=0,
+        recording_no=irecording,
     )
 
     # trials_df
@@ -626,6 +723,10 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
         start_idx_blank
     ].imaging_frame.values
     trials_df.imaging_frame_blank_stop = vs_df.loc[stop_idx_blank].imaging_frame.values
+    if np.isnan(
+        trials_df.imaging_frame_blank_stop.iloc[-1]
+    ):  # If the blank stop of last trial is beyond the number of imaging frames
+        trials_df.imaging_frame_blank_stop.iloc[-1] = len(imaging_df) - 1
     trials_df.imaging_frame_stim_stop = trials_df.imaging_frame_blank_start - 1
 
     mask = (
@@ -669,7 +770,7 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     )
 
     # Assign dffs array to trials_df
-    dffs = np.load(trace_folder / "dffs_ast.npy")
+    dffs = np.load(trace_folder / "dff_ast.npy")
     trials_df.dff_stim = trials_df.apply(
         lambda x: dffs[
             :, int(x.imaging_frame_stim_start) : int(x.imaging_frame_stim_stop) + 1
@@ -685,7 +786,19 @@ def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
     )
 
     # Add the start param logger row and stop param logger row to each trial
-    param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
+    paramlog_path = generate_filepaths.generate_logger_path(
+        project=project,
+        mouse=mouse,
+        session=session,
+        protocol=protocol,
+        logger_name="NewParams",
+        rawdata_root=None,
+        root=None,
+        all_protocol_recording_entries=None,
+        recording_no=irecording,
+        flexilims_session=flexilims_session,
+    )
+    param_log = pd.read_csv(paramlog_path)
     # trial index for each row of param log
     start_idx = trials_df.harptime_stim_start.searchsorted(param_log.HarpTime) - 1
     start_idx = np.clip(start_idx, 0, len(trials_df) - 1)

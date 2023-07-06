@@ -4,6 +4,7 @@ Module to find frames based on photodiode flicker
 import time
 import numpy as np
 import pandas as pd
+from pathlib import Path
 import scipy.signal as scsi
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -849,4 +850,102 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
             and (not c.endswith("aft"))
         ]
         return pd.DataFrame(frames_df[cols])
+    return frames_df
+
+
+def sync_by_frame_alternating(
+    photodiode,
+    analog_time,
+    frame_rate=144,
+    photodiode_sampling=1000,
+    plot=False,
+    plot_start=10000,
+    plot_range=1000,
+    plot_dir=None,
+):
+    """Find frame refresh based on photodiode signal
+
+    Signal is expected to alternate between high and low at each frame (flickering quad
+    between white and black)
+
+    Args:
+        photodiode (np.ndarray): photodiode series extracted from harp
+        analog_time (np.ndarray): analog time series extracted from harp
+        frame_rate (float): Expected frame rate. Peaks separated by less than half a
+                            frame will be ignored. Default to 144.
+        photodiode_sampling (float): Sampling rate of the photodiode signal in Hz. Default to 1000.
+        plot (bool): Should a summary figure be generated? Default to False.
+        plot_start (int): sample to start the plot. Default to 10000.
+        plot_range (int): samples to plot after plot_start. Default to 1000.
+        plot_dir (Path or str): directory to save the figure. Default to None.
+
+    Returns:
+        frames_df (pd.DataFrame): a dataframe containing detected frame timing.
+            It contains:
+                - 'photodiode': photodiode value at peak
+                - 'closest_frame': peak frame index.
+                - 'peak_time': harptime for the photodiode to peak at each frame.
+    """
+    upper_thr = np.percentile(
+        photodiode, 80
+    )  # Photodiode value above which the quad is considered white
+    lower_thr = np.percentile(
+        photodiode, 20
+    )  # Photodiode value above which the quad is considered black
+    photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
+    # Find peaks of photodiode
+    distance = int(1 / frame_rate * 2 * photodiode_sampling)
+    high_peaks, _ = find_peaks(photodiode, height=upper_thr, distance=distance)
+    first_frame = high_peaks[0]
+    low_peaks, _ = find_peaks(-photodiode, height=-lower_thr, distance=distance)
+    low_peaks = low_peaks[low_peaks > first_frame]
+
+    # Get rid of framedrops
+    photodiode_df["FramePeak"] = None
+    photodiode_df.FramePeak.iloc[high_peaks] = 1
+    photodiode_df.FramePeak.iloc[low_peaks] = 0
+    frames_df = photodiode_df[photodiode_df.FramePeak.notnull()]
+    frames_df = frames_df[frames_df.FramePeak.diff() != 0]
+    frames_df["closest_frame"] = np.arange(len(frames_df))
+    frames_df = frames_df.drop(columns=["FramePeak"])
+    frames_df = frames_df.rename(columns={"analog_time": "peak_time"})
+
+    if plot:
+        plt.figure()
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            photodiode[plot_start : (plot_start + plot_range)],
+        )
+        all_frame_idxs = frames_df.index.values.reshape(-1)
+        take_start = np.argmin(np.abs(all_frame_idxs - plot_start))
+        take_stop = np.argmin(np.abs(all_frame_idxs - plot_start - plot_range))
+        take_idxs = all_frame_idxs[take_start:take_stop]
+
+        plot_peaks = np.intersect1d(
+            all_frame_idxs, (np.arange(plot_start, (plot_start + plot_range), step=1))
+        )
+        plt.figure()
+        plt.plot(
+            frames_df.loc[take_idxs, "peak_time"],
+            frames_df.loc[take_idxs, "photodiode"],
+        )
+        plt.plot(analog_time[plot_peaks], photodiode[plot_peaks], "x")
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            + upper_thr,
+            "--",
+            color="gray",
+        )
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            + lower_thr,
+            "--",
+            color="gray",
+        )
+        plt.xlabel("Time(s)")
+    if plot_dir is not None:
+        plt.savefig(Path(plot_dir) / "Frame_finder_check.png")
+
     return frames_df

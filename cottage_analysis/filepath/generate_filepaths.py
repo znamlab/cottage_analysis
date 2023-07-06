@@ -129,6 +129,8 @@ def generate_file_folders(
     all_protocol_recording_entries=None,
     recording_no=0,
     flexilims_session=None,
+    filter_attribute='anatomical_only',
+    filter_value=3
 ):
     """Generate folders for raw data, preprocessed data and analyzed data
 
@@ -142,6 +144,8 @@ def generate_file_folders(
         root (pathlib.Path, optional): Path to processed data. Defaults to None.
         flexilims_session (flexilims.Session, optional): Flexilims session to interact
             with database. Defaults to None.
+        filter_attribute (str): Dataset attribute to be filtered. Defaults to 'anatomical_only'.
+        filter_value (int or str): Dataset attribute value to be filtered. Defaults to 3.
 
     Returns:
         rawdata_root (pathlib.Path):
@@ -190,20 +194,18 @@ def generate_file_folders(
     analysis_folder = root / project / "Analysis" / recording_path[len(project) + 1 :]
 
     suite2p_ds = sess_children[sess_children.dataset_type == "suite2p_rois"]
+    suite2p_ds = suite2p_ds[suite2p_ds[filter_attribute]==filter_value]
     if len(suite2p_ds) != 1:
-        print(f"WARNING: {len(suite2p_ds)} suite2p folders detected.")
-        suite2p_folder = []
-    else:
-        suite2p_ds = suite2p_ds.iloc[0]
-        suite2p_folder = root / suite2p_ds.path / "suite2p" / "plane0"
+        print(f"WARNING: {len(suite2p_ds)} suite2p folders detected. Return the first path found.")
+    suite2p_ds = suite2p_ds.iloc[0]
+    suite2p_folder = root / suite2p_ds.path / "suite2p" / "plane0"
 
     trace_ds = recording_entries[recording_entries.dataset_type == "suite2p_traces"]
+    trace_ds = trace_ds[trace_ds[filter_attribute]==filter_value]
     if len(trace_ds) != 1:
-        print(f"WARNING: {len(suite2p_ds)} traces detected.")
-        trace_folder = []
-    else:
-        trace_ds = trace_ds.iloc[0]
-        trace_folder = root / trace_ds.path
+        print(f"WARNING: {len(suite2p_ds)} traces detected. Return the first path found.")
+    trace_ds = trace_ds.iloc[0]
+    trace_folder = root / trace_ds.path
 
     return (
         rawdata_root,
