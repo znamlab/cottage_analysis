@@ -349,25 +349,18 @@ def generate_vs_df(
     )
     param_log = pd.read_csv(paramlog_path)
     if "Radius" in param_log.columns:
-        param_log_simple = param_log[["HarpTime", "Radius"]]
-        param_log_simple = param_log_simple.rename(
-            columns={"HarpTime": "onset_time", "Radius": "depth"}
-        )
+        param_log = param_log.rename(columns={"Radius": "depth"})
     elif "Depth" in param_log.columns:
-        param_log_simple = param_log[["HarpTime", "Depth"]]
-        param_log_simple = param_log_simple.rename(
-            columns={"HarpTime": "onset_time", "Depth": "depth"}
-        )
-    else:
-        param_log_simple = param_log[["HarpTime"]]
-        param_log_simple = param_log_simple.rename(columns={"HarpTime": "onset_time"})
-    if "depth" in param_log_simple.columns:
-        param_log_simple["depth"] = param_log_simple["depth"] / 100  # convert cm to m
-        if np.isnan(param_log_simple["depth"].iloc[-1]):
-            param_log_simple = param_log_simple[:-1]
+        param_log = param_log.rename(columns={"Depth": "depth"})
+    if "depth" in param_log.columns:
+        param_log["depth"] = param_log["depth"] / 100  # convert cm to m
+        if np.isnan(param_log["depth"].iloc[-1]):
+            param_log = param_log[:-1]
+    param_log = param_log.rename(columns={"HarpTime": "onset_time"})
+
     vs_df = pd.merge_asof(
         left=vs_df,
-        right=param_log_simple,
+        right=param_log,
         on="onset_time",
         direction="backward",
         allow_exact_matches=False,
@@ -618,14 +611,16 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
 
 
 def generate_trials_df(project, mouse, session, protocol, vs_df, irecording=0):
-    """Generate a dataframe that contains information for each trial. This requires monitor frames to be synced and vs_df to be generated first.
+    """Generate a dataframe that contains information for each trial. This requires monitor frames to be synced and
+    vs_df to be generated first.
 
     Args:
         project (str): project name
         mouse (str): mouse name
         session (str): session name (Sdate)
         protocol (str): protocol name
-        irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
+        irecording (int, optional): which recording is the current recording out of all entries in
+            all_protocol_recording_entries. Defaults to 0.
         vs_df (DataFrame): contains information for each monitor frame.
 
     Returns:
