@@ -132,7 +132,7 @@ def find_monitor_frames(
     )
 
     if redo:
-        save_folder = protocol_folder / "sync/monitor_frames"
+        save_folder = protocol_folder / "sync" / "monitor_frames"
         if not save_folder.exists():
             save_folder.mkdir(parents=True)
 
@@ -206,7 +206,7 @@ def find_monitor_frames(
 def generate_vs_df(
     project, mouse, session, protocol, irecording=0, photodiode_protocol=5
 ):
-    """Generate a dataframe that contains information for each monitor frame. This requires monitor frames to be synced first.
+    """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
     Args:
         project (str): project name
@@ -234,7 +234,9 @@ def generate_vs_df(
         flexilims_session=flexilims_session,
     )
     sess_children_protocols = sess_children[
-        sess_children["name"].str.contains("(SpheresPermTubeReward|Fourier|Retinotopy)")
+        sess_children["name"].str.contains(
+            "(SpheresPermTubeReward|Fourier|Retinotopy|OrientMap)"
+        )
     ]
     folder_no = sess_children_protocols.index.get_loc(
         sess_children_protocols[
@@ -256,7 +258,7 @@ def generate_vs_df(
         all_protocol_recording_entries=all_protocol_recording_entries,
         recording_no=irecording,
     )
-    save_folder = protocol_folder / "sync/monitor_frames/"
+    save_folder = protocol_folder / "sync" / "monitor_frames"
     monitor_frames_df = pd.read_pickle(save_folder / "monitor_frames_df.pickle")
 
     if photodiode_protocol == 5:
@@ -349,16 +351,20 @@ def generate_vs_df(
     if "Radius" in param_log.columns:
         param_log_simple = param_log[["HarpTime", "Radius"]]
         param_log_simple = param_log_simple.rename(
-            columns={"HarpTime": "harptime_sphere", "Radius": "depth"}
+            columns={"HarpTime": "onset_time", "Radius": "depth"}
         )
     elif "Depth" in param_log.columns:
         param_log_simple = param_log[["HarpTime", "Depth"]]
         param_log_simple = param_log_simple.rename(
-            columns={"HarpTime": "harptime_sphere", "Depth": "depth"}
+            columns={"HarpTime": "onset_time", "Depth": "depth"}
         )
-    param_log_simple["onset_time"] = param_log_simple["harptime_sphere"]
-    if np.isnan(param_log_simple["depth"].iloc[-1]):
-        param_log_simple = param_log_simple[:-1]
+    else:
+        param_log_simple = param_log[["HarpTime"]]
+        param_log_simple = param_log_simple.rename(columns={"HarpTime": "onset_time"})
+    if "depth" in param_log_simple.columns:
+        param_log_simple["depth"] = param_log_simple["depth"] / 100  # convert cm to m
+        if np.isnan(param_log_simple["depth"].iloc[-1]):
+            param_log_simple = param_log_simple[:-1]
     vs_df = pd.merge_asof(
         left=vs_df,
         right=param_log_simple,
@@ -366,24 +372,25 @@ def generate_vs_df(
         direction="backward",
         allow_exact_matches=False,
     )  # Does not allow exact match of sphere rendering time and frame onset time?
-    vs_df["depth"] = vs_df["depth"] / 100  # convert cm to m
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     save_folder = protocol_folder / "sync"
     if not save_folder.exists():
         save_folder.mkdir(parents=True)
     ops = np.load(suite2p_folder / "ops.npy", allow_pickle=True).item()
-    p_msg = protocol_folder / "sync/harpmessage.npz"
+    p_msg = protocol_folder / "sync" / "harpmessage.npz"
     img_frame_logger = format_loggers.format_img_frame_logger(
         harpmessage_file=p_msg, register_address=32
     )
     frame_number = ops["frames_per_folder"][folder_no]
+    # frame period calculated based of the frame rate in ops.npy
+    # subtracting 1 ms to account for the duration of the triggers
     img_frame_logger = find_img_frames.find_imaging_frames(
         harp_message=img_frame_logger,
-        frame_number=frame_number,
-        exposure_time=0.0324 * 2,
+        frame_number=frame_number * ops["nplanes"],
+        frame_period=(1 / ops["fs"]) / ops["nplanes"] - 0.001,
         register_address=32,
-        exposure_time_tolerance=0.001,
+        frame_period_tolerance=0.001,
     )
 
     img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
@@ -596,9 +603,9 @@ def generate_imaging_df(project, mouse, session, protocol, vs_df, irecording=0):
         img_frame_logger = find_img_frames.find_imaging_frames(
             harp_message=img_frame_logger,
             frame_number=frame_number,
-            exposure_time=0.0324 * 2,
+            frame_period=0.0324 * 2,
             register_address=32,
-            exposure_time_tolerance=0.001,
+            frame_period_tolerance=0.001,
         )
     imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
         : len(imaging_df)
