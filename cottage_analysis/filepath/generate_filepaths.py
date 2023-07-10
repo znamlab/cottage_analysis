@@ -10,7 +10,6 @@ Generate filepaths for importing data files or saving analysis results
 import flexiznam as flz
 from pathlib import Path
 from warnings import warn
-from flexiznam.schema import Dataset
 
 
 def get_session_children(project, mouse, session, flexilims_session=None):
