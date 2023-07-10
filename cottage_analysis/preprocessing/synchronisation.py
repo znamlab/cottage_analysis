@@ -395,6 +395,9 @@ def generate_vs_df(
         }
     )
     img_frame_logger["onset_time"] = img_frame_logger["harptime_imaging_trigger"]
+    img_frame_logger["imaging_volume"] = (
+        img_frame_logger["imaging_frame"] / ops["nplanes"]
+    ).astype(int)
     vs_df = pd.merge_asof(
         left=vs_df,
         right=img_frame_logger,
