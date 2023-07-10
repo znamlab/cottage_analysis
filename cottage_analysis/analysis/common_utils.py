@@ -55,7 +55,9 @@ def calculate_r_squared(y, y_hat):
     return r_squared
 
 
-def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
+def iterate_fit(
+    func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None, verbose=False
+):
     """Iterate fitting to avoid local minima.
 
     Args:
@@ -75,11 +77,18 @@ def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
     popt_arr = []
     rsq_arr = []
     np.random.seed(42)
-    for _ in range(niter):
+    for i_iter in range(niter):
         if p0_func is not None:
             p0 = p0_func()
         else:
-            p0 = None
+            # generate random initial parameters from a standard normal distribution for unbounded parameters
+            # otherwise, draw from a uniform distribution between lower and upper bounds
+            p0 = np.random.normal(0, 1, len(lower_bounds))
+            for i in range(len(lower_bounds)):
+                if np.isinf(lower_bounds[i]) or np.isinf(upper_bounds[i]):
+                    continue
+                else:
+                    p0[i] = np.random.uniform(lower_bounds[i], upper_bounds[i])
         popt, _ = curve_fit(
             func,
             X,
@@ -96,6 +105,8 @@ def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
         r_sq = calculate_r_squared(y, pred)
         popt_arr.append(popt)
         rsq_arr.append(r_sq)
+        if verbose:
+            print(f"Iteration {i_iter}, R^2 = {r_sq}")
     idx_best = np.argmax(np.array(rsq_arr))
     popt_best = popt_arr[idx_best]
     rsq_best = rsq_arr[idx_best]
