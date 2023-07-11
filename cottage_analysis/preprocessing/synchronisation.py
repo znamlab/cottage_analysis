@@ -204,7 +204,7 @@ def find_monitor_frames(
 
 
 def generate_vs_df(
-    project, mouse, session, protocol, irecording=0, photodiode_protocol=5
+    recording, photodiode_protocol=5, flexilims_session=None, project=None
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
@@ -219,47 +219,15 @@ def generate_vs_df(
     Returns:
         DataFrame: contains information for each monitor frame.
     """
-    flexilims_session = flz.get_flexilims_session(project_id=project)
-    all_protocol_recording_entries = generate_filepaths.get_all_recording_entries(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        flexilims_session=flexilims_session,
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+    raw_path = Path(flz.PARAMETERS["data_root"]["raw"]) / recording.path
+    processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
+    monitor_frames_path = (
+        processed_path / "sync" / "monitor_frames" / "monitor_frames_df.pickle"
     )
-    sess_children = generate_filepaths.get_session_children(
-        project=project,
-        mouse=mouse,
-        session=session,
-        flexilims_session=flexilims_session,
-    )
-    sess_children_protocols = sess_children[
-        sess_children["name"].str.contains(
-            "(SpheresPermTubeReward|Fourier|Retinotopy|OrientMap)"
-        )
-    ]
-    folder_no = sess_children_protocols.index.get_loc(
-        sess_children_protocols[
-            sess_children_protocols.id
-            == all_protocol_recording_entries.iloc[irecording].id
-        ].index[0]
-    )
-    (
-        rawdata_folder,
-        protocol_folder,
-        analysis_folder,
-        suite2p_folder,
-        trace_folder,
-    ) = generate_filepaths.generate_file_folders(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=irecording,
-    )
-    save_folder = protocol_folder / "sync" / "monitor_frames"
-    monitor_frames_df = pd.read_pickle(save_folder / "monitor_frames_df.pickle")
+    monitor_frames_df = pd.read_pickle(monitor_frames_path)
 
     if photodiode_protocol == 5:
         # Find frames that are not skipped
@@ -272,7 +240,7 @@ def generate_vs_df(
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
+        frame_log = pd.read_csv(raw_path / "FrameLog.csv")
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z.rename(
             columns={
@@ -303,19 +271,7 @@ def generate_vs_df(
         ].astype("int")
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
-        # Merge MouseZ and EyeZ from RotaryEncoder.csv to frame_df according to HarpTime
-        encoder_path = generate_filepaths.generate_logger_path(
-            project=project,
-            mouse=mouse,
-            session=session,
-            protocol=protocol,
-            logger_name="RotaryEncoder",
-            rawdata_root=None,
-            root=None,
-            all_protocol_recording_entries=None,
-            recording_no=irecording,
-            flexilims_session=flexilims_session,
-        )
+        encoder_path = raw_path / "RotaryEncoder.csv"
         mouse_z_df = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         mouse_z_df = mouse_z_df[mouse_z_df.Frame.diff() != 0]
         mouse_z_df = mouse_z_df.rename(
@@ -335,18 +291,7 @@ def generate_vs_df(
 
     # Align sphere parameter with the frame (harptime later than the logged sphere time)
     vs_df = vs_df.sort_values("onset_time")
-    paramlog_path = generate_filepaths.generate_logger_path(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        logger_name="NewParams",
-        rawdata_root=None,
-        root=None,
-        all_protocol_recording_entries=None,
-        recording_no=irecording,
-        flexilims_session=flexilims_session,
-    )
+    paramlog_path = raw_path / "NewParams.csv"
     param_log = pd.read_csv(paramlog_path)
     if "Radius" in param_log.columns:
         param_log = param_log.rename(columns={"Radius": "depth"})
@@ -367,21 +312,25 @@ def generate_vs_df(
     )  # Does not allow exact match of sphere rendering time and frame onset time?
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
-    save_folder = protocol_folder / "sync"
+    suite2p_dataset = get_child_dataset(
+        flexilims_session, recording.name, "suite2p_traces"
+    )
+    save_folder = processed_path / "sync"
     if not save_folder.exists():
         save_folder.mkdir(parents=True)
-    ops = np.load(suite2p_folder / "ops.npy", allow_pickle=True).item()
-    p_msg = protocol_folder / "sync" / "harpmessage.npz"
+    p_msg = processed_path / "sync" / "harpmessage.npz"
     img_frame_logger = format_loggers.format_img_frame_logger(
         harpmessage_file=p_msg, register_address=32
     )
-    frame_number = ops["frames_per_folder"][folder_no]
+    frame_number = float(suite2p_dataset.extra_attributes["nframes"])
+    nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
+    fs = float(suite2p_dataset.extra_attributes["fs"])
     # frame period calculated based of the frame rate in ops.npy
     # subtracting 1 ms to account for the duration of the triggers
     img_frame_logger = find_img_frames.find_imaging_frames(
         harp_message=img_frame_logger,
-        frame_number=frame_number * ops["nplanes"],
-        frame_period=(1 / ops["fs"]) / ops["nplanes"] - 0.001,
+        frame_number=frame_number * nplanes,
+        frame_period=(1 / fs) / nplanes - 0.001,
         register_address=32,
         frame_period_tolerance=0.001,
     )
@@ -396,7 +345,7 @@ def generate_vs_df(
     )
     img_frame_logger["onset_time"] = img_frame_logger["harptime_imaging_trigger"]
     img_frame_logger["imaging_volume"] = (
-        img_frame_logger["imaging_frame"] / ops["nplanes"]
+        img_frame_logger["imaging_frame"] / nplanes
     ).astype(int)
     vs_df = pd.merge_asof(
         left=vs_df,
@@ -423,7 +372,7 @@ def generate_vs_df(
     )
 
     # Indicate whether it's a closed loop or open loop session
-    if "Playback" in protocol:
+    if "Playback" in recording.name:
         vs_df["closed_loop"] = 0
     else:
         vs_df["closed_loop"] = 1
@@ -448,7 +397,72 @@ def generate_vs_df(
     return vs_df
 
 
+def fill_missing_imaging_volumes(df):
+    """
+    Create a dataframe with a single row for each imaging volume, by forward filling
+    the values from the previous imaging volume.
+
+    Args:
+        df (DataFrame): DataFrame, e.g. output of generate_vs_df
+
+    Returns:
+        DataFrame: DataFrame with a single row for each imaging volume
+
+    """
+    img_df = pd.DataFrame({"imaging_volume": np.arange(df["imaging_volume"].max())})
+    img_df = pd.merge_asof(
+        left=img_df,
+        right=df,
+        on="imaging_volume",
+        direction="forward",
+        allow_exact_matches=True,
+    )
+    return img_df
+
+
+def get_child_dataset(flz_session, parent_name, dataset_type):
+    """
+    Get the last dataset of a given type for a given parent entity.
+
+    Args:
+        flz_session (flexilims_session): flexilims session
+        parent_name (str): name of the parent entity
+        dataset_type (str): type of the dataset
+
+    Returns:
+        Dataset: the last dataset of the given type for the given parent entity
+
+    """
+    all_children = flz.get_children(
+        parent_name=parent_name,
+        children_datatype="dataset",
+        flexilims_session=flz_session,
+    )
+    selected_datasets = all_children[all_children["dataset_type"] == dataset_type]
+    if len(selected_datasets) == 0:
+        raise ValueError(f"No {dataset_type} dataset found for session {parent_name}")
+    elif len(selected_datasets) > 1:
+        print(
+            f"{len(selected_datasets)} {dataset_type} datasets found for session {parent_name}"
+        )
+        print("Will return the last one...")
+    return flz.Dataset.from_dataseries(
+        selected_datasets.iloc[-1], flexilims_session=flz_session
+    )
+
+
+def load_imaging_data(recording, flexilims_session):
+    suite2p_traces = get_child_dataset(flexilims_session, recording, "suite2p_traces")
+    dfs = []
+    for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):
+        plane_path = suite2p_traces.path_full / f"plane{iplane}"
+        dfs.append(pd.DataFrame(np.load(plane_path / "dff_ast.npy")))
+    return pd.concat(dfs, axis=0, ignore_index=True)
+
+
 def fill_in_missing_index(df, value_col):
+    # suggestion to use `fill_missing_imaging_volumes` instead?
+
     # Fill in the value of the missing imaging frame from vs_df, if the monitor frames drop for more than one imaging frame
     # reindex dataframe to create continuous index
     new_index = pd.RangeIndex(start=df.index.min(), stop=df.index.max() + 1)
