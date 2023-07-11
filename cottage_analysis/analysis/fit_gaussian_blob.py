@@ -25,7 +25,7 @@ GratingParams = namedtuple(
         "theta",
         "offset",
         "alpha0",
-        "log_dir_width",
+        "log_kappa",
         "dsi",
     ],
 )
@@ -90,7 +90,7 @@ def grating_tuning(
     theta,
     offset,
     alpha0,
-    log_dir_width,
+    log_kappa,
     dsi,
     min_sigma,
 ):
@@ -107,7 +107,7 @@ def grating_tuning(
         offset,
         min_sigma,
     )
-    tuning = direction_tuning(alpha, alpha0, log_dir_width, dsi)
+    tuning = direction_tuning(alpha, alpha0, log_kappa, dsi)
     return gaussian * tuning
 
 
@@ -264,7 +264,7 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
         theta=0,
         offset=-np.inf,
         alpha0=0,
-        log_dir_width=-np.inf,
+        log_kappa=-np.inf,
         dsi=0,
     )
     upper_bounds = GratingParams(
@@ -276,7 +276,7 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
         theta=0.5 * np.pi,
         offset=np.inf,
         alpha0=2 * np.pi,
-        log_dir_width=np.inf,
+        log_kappa=np.inf,
         dsi=1,
     )
 
@@ -291,7 +291,7 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
             theta=np.random.uniform(0, 0.5 * np.pi),
             offset=np.random.normal(),
             alpha0=trials_df.groupby("Angle_rad")[roi].mean().idxmax(),
-            log_dir_width=np.random.normal(),
+            log_kappa=np.random.normal(),
             dsi=np.random.uniform(0, 1),
         )
 
