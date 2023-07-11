@@ -209,15 +209,14 @@ def generate_vs_df(
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
     Args:
-        project (str): project name
-        mouse (str): mouse name
-        session (str): session name (Sdate)
-        protocol (str): protocol name
-        irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
+        recording (Series): recording entry returned by flexiznam.get_entities
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
+
     """
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
@@ -319,17 +318,16 @@ def generate_vs_df(
     if not save_folder.exists():
         save_folder.mkdir(parents=True)
     p_msg = processed_path / "sync" / "harpmessage.npz"
-    img_frame_logger = format_loggers.format_img_frame_logger(
-        harpmessage_file=p_msg, register_address=32
-    )
     frame_number = float(suite2p_dataset.extra_attributes["nframes"])
     nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
     fs = float(suite2p_dataset.extra_attributes["fs"])
     # frame period calculated based of the frame rate in ops.npy
     # subtracting 1 ms to account for the duration of the triggers
     img_frame_logger = find_img_frames.find_imaging_frames(
-        harp_message=img_frame_logger,
-        frame_number=frame_number * nplanes,
+        harp_message=format_loggers.format_img_frame_logger(
+            harpmessage_file=p_msg, register_address=32
+        ),
+        frame_number=int(frame_number * nplanes),
         frame_period=(1 / fs) / nplanes - 0.001,
         register_address=32,
         frame_period_tolerance=0.001,
@@ -339,11 +337,10 @@ def generate_vs_df(
     img_frame_logger.to_pickle(save_folder / "img_frame_logger.pickle")
     img_frame_logger = img_frame_logger.rename(
         columns={
-            "HarpTime": "harptime_imaging_trigger",
+            "HarpTime": "onset_time",
             "ImagingFrame": "imaging_frame",
         }
     )
-    img_frame_logger["onset_time"] = img_frame_logger["harptime_imaging_trigger"]
     img_frame_logger["imaging_volume"] = (
         img_frame_logger["imaging_frame"] / nplanes
     ).astype(int)
@@ -410,9 +407,10 @@ def fill_missing_imaging_volumes(df):
 
     """
     img_df = pd.DataFrame({"imaging_volume": np.arange(df["imaging_volume"].max())})
+    # select rows of df where imaging_volume is not nan
     img_df = pd.merge_asof(
         left=img_df,
-        right=df,
+        right=df[df["imaging_volume"].notna()],
         on="imaging_volume",
         direction="forward",
         allow_exact_matches=True,
@@ -453,11 +451,11 @@ def get_child_dataset(flz_session, parent_name, dataset_type):
 
 def load_imaging_data(recording, flexilims_session):
     suite2p_traces = get_child_dataset(flexilims_session, recording, "suite2p_traces")
-    dfs = []
+    dffs = []
     for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
-        dfs.append(pd.DataFrame(np.load(plane_path / "dff_ast.npy")))
-    return pd.concat(dfs, axis=0, ignore_index=True)
+        dffs.append(np.load(plane_path / "dff_ast.npy"))
+    return np.concatenate(dffs, axis=0).T
 
 
 def fill_in_missing_index(df, value_col):
