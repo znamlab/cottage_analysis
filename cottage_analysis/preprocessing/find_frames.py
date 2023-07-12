@@ -1,6 +1,7 @@
 """
 Module to find frames based on photodiode flicker
 """
+import warnings
 import time
 import numpy as np
 import pandas as pd
@@ -214,11 +215,9 @@ def sync_by_correlation(
     # `bef`, `center` and `aft` agree or if I can identify the best)
     frames_df = _match_fit_to_logger(
         frames_df,
-        frame_log,
         correlation_threshold=correlation_threshold,
         relative_corr_thres=relative_corr_thres,
         minimum_lag=minimum_lag,
-        clean_df=not debug,
         verbose=verbose,
     )
     extra_out = {}
@@ -228,9 +227,14 @@ def sync_by_correlation(
         extra_out["debug_info"] = db_dict
 
     # Finally, clean-up the matched frames to ensure that the sequence is logical
-    frames_df = _cleanup_match_order(
-        frames_df, frame_log, verbose=verbose, clean_df=not debug
-    )
+    frames_corrected = 1
+    nr = 0
+    while frames_corrected:
+        nr += 1
+        print(f"MATCHING FRAMES, ITERATION {nr}")
+        frames_df, frames_corrected = _cleanup_match_order(
+            frames_df, frame_log, verbose=True, clean_df=False
+        )
     return frames_df, extra_out
 
 
@@ -742,8 +746,8 @@ def _crosscorr_befcentaft(
         + np.array(w * num_frame_to_corr / frame_rate * pd_sampling, dtype="int")
         for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]
     ]
-    # for bef window, we add 1 frame to have the current frame included
-    window[0] += int(1 / frame_rate * pd_sampling)
+    # for bef window, we add 1.5 frame to have half of the current frame included
+    window[0] += int(1.5 / frame_rate * pd_sampling)
     # for center window, we shift by 0.5 frame to center
     window[1] += int(0.5 / frame_rate * pd_sampling)
 
@@ -873,7 +877,9 @@ def _match_fit_to_logger(
     did_not_fit = peak_correlations < correlation_threshold
 
     # and impossible lags
-    impossible_lag = frames_df.loc[:, ["lag_%s" % l for l in labels]] < minimum_lag
+    impossible_lag = (
+        frames_df.loc[:, ["lag_%s" % l for l in labels]].values < minimum_lag
+    )
     bad = did_not_fit | impossible_lag
 
     # find frames for which all good correlation agree
@@ -881,7 +887,11 @@ def _match_fit_to_logger(
         float
     )
     frames[bad] = np.nan
-    good = np.nansum(np.abs(frames - frames[:, 0, np.newaxis]), axis=1) == 0
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Mean of empty slice")
+        mean_frame = np.nanmean(frames, axis=1)
+    good = np.nansum(np.abs(frames - mean_frame[:, np.newaxis]), axis=1) == 0
     # remove the all bad lines (3 nans, wich return 0 when nansummed)
     all_bad = np.all(bad, axis=1)
     good[all_bad] = False
@@ -946,7 +956,7 @@ def _match_fit_to_logger(
     sequence_value = frames_df.loc[:, ["quadcolor_%s" % l for l in labels]].values
     dst2photodiode = np.abs(sequence_value - frames_df.photodiode.values[:, np.newaxis])
     # put the distance of invalid correlation to high value
-    dst2photodiode[bad.values | ~valid_corr] = 2
+    dst2photodiode[bad | ~valid_corr] = 2
     closest = np.argmin(dst2photodiode, axis=1)
 
     lab = [labels[i] for i in closest[remaining]]
@@ -1163,7 +1173,7 @@ def plot_one_frame_check(
             for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]
         ]
         # for bef window, we add 1 frame to have the current frame included
-        window[0] += int(1 / frame_rate)
+        window[0] += int(1.5 / frame_rate)
         # for center window, we shift by 0.5 frame to center
         window[1] += int(0.5 / frame_rate)
 
@@ -1240,40 +1250,30 @@ def plot_one_frame_check(
 
     return fig
 
-    fs = frames_df.loc[frame]
-    win = np.array([-20, 20])
-    t0 = fs.onset_time
-    fig = plt.figure(figsize=(5, 6))
-    d = dict(bef="onset_time", center="peak_time", aft="offset_time")
-    iax = 1
-    for w in ["bef", "center", "aft"]:
-        plt.subplot(3, 1, iax)
-        i = fs["closest_frame_%s" % w] + np.arange(-3, 4, dtype=int)
-        i0 = fs["closest_frame_%s" % w]
-        plt.axvspan(fs.onset_time - t0, fs.offset_time - t0, color="purple", alpha=0.5)
-        plt.axvline(fs[d[w]] - t0, color="k", ls="--")
-        plt.plot(
-            photodiode_time[slice(*win + fs.peak_sample)] - t0,
-            db_dict["normed_pd"][slice(*win + fs.peak_sample)],
-        )
-        plt.plot(
-            photodiode_time[slice(*win + fs.peak_sample)] - t0 + fs["lag_%s" % w],
-            db_dict["ideal_pd"][slice(*win + fs.peak_sample)],
-        )
-        plt.plot(
-            frame_log.loc[i, "HarpTime"] + fs["lag_%s" % w] - t0,
-            frame_log.loc[i, "PhotoQuadColor"],
-            drawstyle="steps-post",
-        )
-        plt.plot(
-            frame_log.loc[[i0, i0 + 1], "HarpTime"] + fs["lag_%s" % w] - t0,
-            np.zeros(2) + frame_log.loc[i0, "PhotoQuadColor"],
-            "k",
-            lw=4,
-        )
-        plt.axvline(
-            frame_log.loc[i0, "HarpTime"] + fs["lag_%s" % w] - t0, color="k", ls=":"
-        )
-        plt.ylabel(w)
-        iax += 1
-    plt.show()
+
+def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
+    """Plot the cross correlation matrix.
+
+    It is the amplitude of the correlation for each frame/lag pair, selecting the
+    picked `bef`, `center` or `aft` window for each frame.
+
+    Args:
+        ax (plt.Axes): the axes to plot on
+        cc_dict (dict): the cross correlation dictionary
+        lags (np.array): the lags used for the cross correlation
+        frames_df (pd.DataFrame): the dataframe with the frame detection
+
+    Returns:
+        None
+    """
+    cc = np.zeros(cc_dict["center"].shape) + np.nan
+    for i, picked in frames_df.crosscorr_picked.items():
+        if picked == "none":
+            continue
+        cc[i] = cc_dict[picked][i]
+
+    ax.imshow(
+        cc, cmap="RdBu_r", vmin=-1, vmax=1, extent=[lags[0], lags[-1], 0, len(cc)]
+    )
+    ax.set_xlabel("Frame")
+    ax.set_ylabel("Lag")
