@@ -9,7 +9,7 @@ import scipy.signal as scsi
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from cottage_analysis.utilities import continuous_data_analysis as cda
-from cottage_analysis.utilities.time_series_analysis import searchclosest
+from znamutils.decorators import slurm_it
 
 
 def sync_by_frame_alternating(
@@ -109,6 +109,7 @@ def sync_by_frame_alternating(
     return frames_df
 
 
+@slurm_it(conda_env="cottage_analysis")
 def sync_by_correlation(
     frame_log,
     photodiode_time,
