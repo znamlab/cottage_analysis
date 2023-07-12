@@ -7,6 +7,38 @@ from cottage_analysis.preprocessing import synchronisation
 from pathlib import Path
 
 
+def get_confidence_interval(arr, sem=[], alpha=0.05, mean_arr=[]):
+    """
+    Get confidence interval of an input array using normal approximation.
+
+    Args:
+        arr (np.ndarray): 2d array, for example ndepths x ntrials to calculate
+            confidence interval across trials.
+        sem (np.ndarray): 1d array, for example ndepths to calculate confidence
+            interval across depths.
+        alpha (float, optional): Significant level. Default 0.05.
+        mean_arr (np.ndarray): 1d array, for example ndepths to calculate confidence
+            interval across depths.
+
+    Returns:
+        CI_low (np.1darray): lower bound of confidence interval.
+        CI_high (np.1darray): upper bound of confidence interval.
+
+    """
+    z = scipy.stats.norm.ppf((1 - alpha / 2))
+    if len(sem) > 0:
+        sem = sem
+    else:
+        sem = scipy.stats.sem(arr, nan_policy="omit")
+    if len(mean_arr) > 0:
+        CI_low = mean_arr - z * sem
+        CI_high = mean_arr + z * sem
+    else:
+        CI_low = np.average(arr, axis=0) - z * sem
+        CI_high = np.average(arr, axis=0) + z * sem
+    return CI_low, CI_high
+
+
 def calculate_r_squared(y, y_hat):
     """Calculate R squared as the fraction of variance explained.
 
@@ -23,7 +55,9 @@ def calculate_r_squared(y, y_hat):
     return r_squared
 
 
-def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
+def iterate_fit(
+    func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None, verbose=False
+):
     """Iterate fitting to avoid local minima.
 
     Args:
@@ -43,11 +77,18 @@ def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
     popt_arr = []
     rsq_arr = []
     np.random.seed(42)
-    for _ in range(niter):
+    for i_iter in range(niter):
         if p0_func is not None:
             p0 = p0_func()
         else:
-            p0 = None
+            # generate random initial parameters from a standard normal distribution for unbounded parameters
+            # otherwise, draw from a uniform distribution between lower and upper bounds
+            p0 = np.random.normal(0, 1, len(lower_bounds))
+            for i in range(len(lower_bounds)):
+                if np.isinf(lower_bounds[i]) or np.isinf(upper_bounds[i]):
+                    continue
+                else:
+                    p0[i] = np.random.uniform(lower_bounds[i], upper_bounds[i])
         popt, _ = curve_fit(
             func,
             X,
@@ -64,6 +105,8 @@ def iterate_fit(func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None):
         r_sq = calculate_r_squared(y, pred)
         popt_arr.append(popt)
         rsq_arr.append(r_sq)
+        if verbose:
+            print(f"Iteration {i_iter}, R^2 = {r_sq}")
     idx_best = np.argmax(np.array(rsq_arr))
     popt_best = popt_arr[idx_best]
     rsq_best = rsq_arr[idx_best]
