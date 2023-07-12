@@ -14,6 +14,7 @@ setup(
         "pandas",
         "pathlib",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
+        "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
         "matplotlib",
         "scipy",
         "tables",
