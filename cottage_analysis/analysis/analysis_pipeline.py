@@ -1,13 +1,5 @@
-from functools import partial
-
-print = partial(print, flush=True)
-
-import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
-import pickle
 import defopt
 
 import flexiznam as flz
@@ -15,6 +7,9 @@ from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import find_depth_neurons, fit_gaussian_blob
 from cottage_analysis.stimulus_structure import spheres_tube
+from functools import partial
+
+print = partial(print, flush=True)
 
 redo_dict = {
     "monitor_frames": 0,

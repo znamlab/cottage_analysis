@@ -1,16 +1,12 @@
-import pandas as pd
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
-from sklearn.metrics import mutual_info_score
-from typing import Sequence, Dict, Any
 import scipy
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.analysis import (
     find_depth_neurons,
-    fit_gaussian_blob,
     common_utils,
 )
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
