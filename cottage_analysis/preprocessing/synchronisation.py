@@ -31,55 +31,59 @@ def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False
         np.array: loaded harpmessages as numpy array
     """
     flexilims_session = flz.get_flexilims_session(project_id=project)
-    all_protocol_recording_entries = generate_filepaths.get_all_recording_entries(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
+    recordings = flz.get_children(
+        parent_name=f"{mouse}_{session}",
+        children_datatype="recording",
         flexilims_session=flexilims_session,
     )
-    # Find harpmessage path
-    harpmessage_file = generate_filepaths.generate_logger_path(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=irecording,
+    recordings = recordings[recordings["protocol"] == protocol]
+    recording = recordings.iloc[irecording]
+
+    npz_ds = flz.Dataset.from_origin(
+        origin_id=recording["id"],
+        dataset_type="numpy_file",
+        base_name="harp_npz",
         flexilims_session=flexilims_session,
-        logger_name="harp_message",
+        conflicts="skip",
     )
 
-    (_, protocol_folder, _, _, _) = generate_filepaths.generate_file_folders(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=irecording,
+    if (npz_ds.flexilims_status() != "not online") and not redo:
+        print("Loading existing harp_npz file...")
+        return np.load(npz_ds.path_full)
+
+    # find raw data
+    datasets = flz.get_children(
+        parent_id=recording["id"],
         flexilims_session=flexilims_session,
+        children_datatype="dataset",
     )
 
-    # save harp message into npz, or load existing npz file
-    msg = Path(str(harpmessage_file).replace("csv", "bin"))
-    p_msg = protocol_folder / "sync"
-    if not p_msg.exists():
-        p_msg.mkdir(parents=True)
-    p_msg = p_msg / (msg.stem + ".npz")
-    if (not p_msg.is_file()) or redo == True:
-        print("Saving harp messages into npz...")
-        harp_messages = harp.load_harp(
-            msg,
-            di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
+    harp_ds = datasets[datasets["dataset_type"] == "harp"]
+    if len(harp_ds) != 1:
+        raise ValueError(
+            f"Found {len(harp)} harp datasets for in {mouse}/{session}/{protocol}."
         )
-        p_msg.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(protocol_folder / "sync/harpmessage.npz", **harp_messages)
-        print("Harp messages saved.")
-    elif (p_msg.is_file()) and (redo == False):
-        print("harpmessage.npz already exists. Loading harpmessage.npz...")
-    harp_messages = np.load(protocol_folder / "sync/harpmessage.npz")
-    print("harpmessage loaded.")
+    harp_ds = flz.Dataset.from_dataseries(
+        harp_ds.iloc[0], flexilims_session=flexilims_session
+    )
+    npz_ds.path = npz_ds.path.parent / "sync" / f"harpmessage.npz"
 
+    print("Saving harp messages into npz...")
+    params = dict(
+        harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
+        di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
+    )
+    harp_messages = harp.load_harp(**params)
+
+    # save npz
+    npz_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(npz_ds.path_full, **harp_messages)
+
+    # update flexilims
+    npz_ds.extra_attributes.update(params)
+    npz_ds.update_flexilims(mode="overwrite")
+
+    print("Harp messages saved.")
     return harp_messages
 
 
