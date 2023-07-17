@@ -32,10 +32,14 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation="pe
         correlation (np.array): crosscorrelation, shape = maxlag * 2
         lags (np.array): corresponding lags, same shape as correlation
     """
-    assert signal1.ndim == signal2.ndim == 1
-    assert len(signal2) == len(signal1)
-    assert len(signal2) > (maxlag * 2 + expected_lag)
-    assert expected_lag >= 0
+    assert signal1.ndim == signal2.ndim == 1, "signal1 and signal2 must be 1D arrays"
+    assert len(signal2) == len(signal1), (
+        f"signal1 and signal2 must have same length. Got {len(signal1)} and "+
+        f"{len(signal2)}")
+    assert len(signal2) > (maxlag * 2 + expected_lag), (
+        "signal1 and signal2 must be longer than 2 * maxlag + expected_lag"
+    )
+    assert expected_lag >= 0, "expected_lag must be positive"
     y = signal2[: len(signal2) - expected_lag]
     x = signal1[maxlag + expected_lag : -maxlag + 1]
     lags = scsi.correlation_lags(len(x), len(y), mode="valid")
