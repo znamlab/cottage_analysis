@@ -248,29 +248,9 @@ def generate_vs_df(
     # Filter monitor frame index and get rid of frames when diff is negative
     frame_idx_dff = vs_df.monitor_frame.diff()
     frame_idx_dff[0] = 1
-    vs_df = vs_df[~((frame_idx_dff < 0) | (frame_idx_dff.shift(-1) < 0))]
+    vs_df = vs_df[~(frame_idx_dff.shift(-1) < 0)]
 
-    # Align sphere parameter with the frame (harptime later than the logged sphere time)
     vs_df = vs_df.sort_values("onset_time")
-    paramlog_path = raw_path / "NewParams.csv"
-    param_log = pd.read_csv(paramlog_path)
-    if "Radius" in param_log.columns:
-        param_log = param_log.rename(columns={"Radius": "depth"})
-    elif "Depth" in param_log.columns:
-        param_log = param_log.rename(columns={"Depth": "depth"})
-    if "depth" in param_log.columns:
-        param_log["depth"] = param_log["depth"] / 100  # convert cm to m
-        if np.isnan(param_log["depth"].iloc[-1]):
-            param_log = param_log[:-1]
-    param_log = param_log.rename(columns={"HarpTime": "onset_time"})
-
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=param_log,
-        on="onset_time",
-        direction="backward",
-        allow_exact_matches=False,
-    )  # Does not allow exact match of sphere rendering time and frame onset time?
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     if is_imaging:
