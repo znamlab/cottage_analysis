@@ -17,7 +17,7 @@ def plot_sftf_fit(
         theta=neuron_series["theta"],
         offset=neuron_series["offset"],
         alpha0=neuron_series["alpha0"],
-        log_kappa=neuron_series["log_dir_width"],
+        log_kappa=neuron_series["log_kappa"],
         dsi=neuron_series["dsi"],
     )
     # plot polar plot of direction tuning at the preferred SF and TF

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pickle
-from cottage_analysis.stimulus_structure import spheres_tube
+from cottage_analysis.analysis import spheres
 from cottage_analysis.analysis import common_utils
 from cottage_analysis.filepath import generate_filepaths
 
@@ -41,7 +41,7 @@ def regenerate_stimuli(project, mouse, session, protocol):
             vs_df = pickle.load(handle)
         with open(protocol_folder / "sync/trials_df.pickle", "rb") as handle:
             trials_df = pickle.load(handle)
-        output = spheres_tube.regenerate_frames(
+        output = spheres.regenerate_frames(
             frame_times=imaging_df[
                 "harptime_imaging_trigger"
             ].values,  # using imaging frames as the list of timepoints to reconstruct stimuli
