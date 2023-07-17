@@ -852,7 +852,7 @@ def scatter_plot_fit_line(
         score, coef, intercept, y_pred = linear_regression(
             X=np.log(X), y=np.log(y), x2=np.log(x2), model=model
         )
-        print(coef, intercept)
+        # print(coef, intercept)
         plt.scatter(X, y, s=s, alpha=alpha, c=c)
 
         y_pred_exp = []

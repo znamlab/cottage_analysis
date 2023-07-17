@@ -38,13 +38,14 @@ def find_depth_list(df):
     return depth_list
 
 
-def average_dff_for_all_trials(trials_df, rs_thr=0.2):
+def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
     Args:
         trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
         rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
     """
+    trials_df = trials_df[trials_df.closed_loop == 1]
     depth_list = find_depth_list(trials_df)
     if rs_thr is None:
         trials_df["trial_mean_dff"] = trials_df.apply(

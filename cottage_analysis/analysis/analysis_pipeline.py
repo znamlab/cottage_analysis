@@ -5,7 +5,11 @@ import defopt
 import flexiznam as flz
 from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.analysis import find_depth_neurons, fit_gaussian_blob
+from cottage_analysis.analysis import (
+    find_depth_neurons,
+    fit_gaussian_blob,
+    common_utils,
+)
 from cottage_analysis.stimulus_structure import spheres_tube
 from functools import partial
 
@@ -13,11 +17,11 @@ print = partial(print, flush=True)
 
 redo_dict = {
     "monitor_frames": 0,
-    "sync": 1,
-    "find_depth_neurons": 1,
-    "fit_gaussian_blob": 1,
-    "regenerate_spheres": 1,
-    "sta": 1,
+    "sync": 0,
+    "find_depth_neurons": 0,
+    "fit_gaussian_blob": 0,
+    "regenerate_spheres": 0,
+    "sta": 0,
 }
 
 

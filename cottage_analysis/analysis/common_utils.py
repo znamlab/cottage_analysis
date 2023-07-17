@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+import pandas as pd
 from scipy.optimize import curve_fit
 import flexiznam as flz
 from cottage_analysis.filepath import generate_filepaths
@@ -294,11 +295,13 @@ def load_is_cell_file(project, mouse, session, protocol="SpheresPermTubeReward")
     return iscell
 
 
-def get_confidence_interval(arr, axis=1, sig_level=0.05):
+def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0.05):
     """Get confidence interval of an input array.
 
     Args:
-        arr (np.ndarray): 2d array, for example ndepths x ntrials to calculate confidence interval across trials.
+        arr (np.ndarray, optional): 2d array, for example ndepths x ntrials to calculate confidence interval across trials.
+        mean_arr (np.ndarray, optional): mean array, if the original array is not provided.
+        sem_arr (np.ndarray, optional): SEM array, if the original array is not provided.
         sig_level (float, optional): Significant level. Default 0.05.
 
     Returns:
@@ -307,7 +310,15 @@ def get_confidence_interval(arr, axis=1, sig_level=0.05):
     """
 
     z = scipy.stats.norm.ppf((1 - sig_level / 2))
-    sem = scipy.stats.sem(arr, axis=axis, nan_policy="omit")
-    CI_low = np.average(arr, axis=axis) - z * sem
-    CI_high = np.average(arr, axis=axis) + z * sem
+    if len(arr) > 0:
+        sem = scipy.stats.sem(arr, axis=axis, nan_policy="omit")
+        CI_low = np.average(arr, axis=axis) - z * sem
+        CI_high = np.average(arr, axis=axis) + z * sem
+    elif len(mean_arr) > 0 and len(sem_arr) > 0:
+        CI_low = mean_arr - z * sem
+        CI_high = mean_arr + z * sem
+    else:
+        print("Error: you need to input either [arr] or [mean_arr and sem_arr]")
+        CI_low = []
+        CI_high = []
     return CI_low, CI_high
