@@ -272,6 +272,12 @@ def sync_params_with_vs_df(recording, vs_df, flexilims_session=None, project=Non
             param_log = param_log[:-1]
     param_log = param_log.rename(columns={"HarpTime": "onset_time"})
 
+    # Indicate whether it's a closed loop or open loop session
+    if "Playback" in recording.name:
+        vs_df["closed_loop"] = 0
+    else:
+        vs_df["closed_loop"] = 1
+
     vs_df = pd.merge_asof(
         left=vs_df,
         right=param_log,
@@ -279,6 +285,8 @@ def sync_params_with_vs_df(recording, vs_df, flexilims_session=None, project=Non
         direction="backward",
         allow_exact_matches=False,
     )  # Does not allow exact match of sphere rendering time and frame onset time?
+
+    return vs_df
 
 
 def generate_imaging_df(recording, vs_df, flexilims_session=None, project=None):
