@@ -15,58 +15,50 @@ from cottage_analysis.imaging.common import find_frames as find_img_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
 
-def load_harpmessage(project, mouse, session, protocol, irecording=0, redo=False):
+def load_harpmessage(recording, flexilims_session, conflicts="skip"):
     """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
 
     Args:
-        project (str): project name
-        mouse (str): mouse name
-        session (str): session name (Sdate)
-        protocol (str): protocol name
-        irecording (int, optional): which recording is the current recording out of all entries in all_protocol_recording_entries. Defaults to 0.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        redo (bool, optional): re-transform harp bin file into npz file or not. Defaults to False.
+        recording (str or pandas.Series): recording name or recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
 
     Returns:
         np.array: loaded harpmessages as numpy array
+
     """
-    flexilims_session = flz.get_flexilims_session(project_id=project)
-    recordings = flz.get_children(
-        parent_name=f"{mouse}_{session}",
-        children_datatype="recording",
-        flexilims_session=flexilims_session,
-    )
-    recordings = recordings[recordings["protocol"] == protocol]
-    recording = recordings.iloc[irecording]
+    assert conflicts in ["skip", "overwrite", "abort"]
+    if type(recording) == str:
+        recording = flz.get_entity(
+            datatype="recording", name=recording, flexilims_session=flexilims_session
+        )
 
     npz_ds = flz.Dataset.from_origin(
         origin_id=recording["id"],
         dataset_type="numpy_file",
         base_name="harp_npz",
         flexilims_session=flexilims_session,
-        conflicts="skip",
+        conflicts=conflicts,
     )
 
-    if (npz_ds.flexilims_status() != "not online") and not redo:
-        print("Loading existing harp_npz file...")
-        return np.load(npz_ds.path_full)
+    if npz_ds.flexilims_status() != "not online":
+        if conflicts == "skip":
+            print("Loading existing harp_npz file...")
+            return np.load(npz_ds.path_full)
+        elif conflicts == "abort":
+            raise ValueError(
+                f"harp_npz dataset already exists for {recording.name} and conflicts == abort."
+            )
 
     # find raw data
-    datasets = flz.get_children(
-        parent_id=recording["id"],
-        flexilims_session=flexilims_session,
-        children_datatype="dataset",
+    harp_ds = flz.get_child_datasets(
+        flexilims_session,
+        recording["name"],
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
     )
-
-    harp_ds = datasets[datasets["dataset_type"] == "harp"]
-    if len(harp_ds) != 1:
-        raise ValueError(
-            f"Found {len(harp)} harp datasets for in {mouse}/{session}/{protocol}."
-        )
-    harp_ds = flz.Dataset.from_dataseries(
-        harp_ds.iloc[0], flexilims_session=flexilims_session
-    )
-    npz_ds.path = npz_ds.path.parent / "sync" / f"harpmessage.npz"
+    npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
 
     print("Saving harp messages into npz...")
     params = dict(
