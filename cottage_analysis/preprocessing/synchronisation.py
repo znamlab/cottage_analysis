@@ -204,15 +204,20 @@ def find_monitor_frames(
 
 
 def generate_vs_df(
-    recording, photodiode_protocol=5, flexilims_session=None, project=None
+    recording,
+    photodiode_protocol=5,
+    flexilims_session=None,
+    project=None,
+    is_imaging=True,
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
     Args:
-        recording (Series): recording entry returned by flexiznam.get_entities
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project)
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        is_imaging (bool): is the data imaging data? Defaults to True. If it is imaging data, imaging trigger log will be synced with vs_df.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -288,6 +293,11 @@ def generate_vs_df(
             allow_exact_matches=True,
         )
 
+    # Filter monitor frame index and get rid of frames when diff is negative
+    frame_idx_dff = vs_df.monitor_frame.diff()
+    frame_idx_dff[0] = 1
+    vs_df = vs_df[~((frame_idx_dff < 0) | (frame_idx_dff.shift(-1) < 0))]
+
     # Align sphere parameter with the frame (harptime later than the logged sphere time)
     vs_df = vs_df.sort_values("onset_time")
     paramlog_path = raw_path / "NewParams.csv"
@@ -311,46 +321,47 @@ def generate_vs_df(
     )  # Does not allow exact match of sphere rendering time and frame onset time?
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
-    suite2p_dataset = get_child_dataset(
-        flexilims_session, recording.name, "suite2p_traces"
-    )
-    save_folder = processed_path / "sync"
-    if not save_folder.exists():
-        save_folder.mkdir(parents=True)
-    p_msg = processed_path / "sync" / "harpmessage.npz"
-    frame_number = float(suite2p_dataset.extra_attributes["nframes"])
-    nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
-    fs = float(suite2p_dataset.extra_attributes["fs"])
-    # frame period calculated based of the frame rate in ops.npy
-    # subtracting 1 ms to account for the duration of the triggers
-    img_frame_logger = find_img_frames.find_imaging_frames(
-        harp_message=format_loggers.format_img_frame_logger(
-            harpmessage_file=p_msg, register_address=32
-        ),
-        frame_number=int(frame_number * nplanes),
-        frame_period=(1 / fs) / nplanes - 0.001,
-        register_address=32,
-        frame_period_tolerance=0.001,
-    )
+    if is_imaging:
+        suite2p_dataset = get_child_dataset(
+            flexilims_session, recording.name, "suite2p_traces"
+        )
+        save_folder = processed_path / "sync"
+        if not save_folder.exists():
+            save_folder.mkdir(parents=True)
+        p_msg = processed_path / "sync" / "harpmessage.npz"
+        frame_number = float(suite2p_dataset.extra_attributes["nframes"])
+        nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
+        fs = float(suite2p_dataset.extra_attributes["fs"])
+        # frame period calculated based of the frame rate in ops.npy
+        # subtracting 1 ms to account for the duration of the triggers
+        img_frame_logger = find_img_frames.find_imaging_frames(
+            harp_message=format_loggers.format_img_frame_logger(
+                harpmessage_file=p_msg, register_address=32
+            ),
+            frame_number=int(frame_number * nplanes),
+            frame_period=(1 / fs) / nplanes - 0.001,
+            register_address=32,
+            frame_period_tolerance=0.001,
+        )
 
-    img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
-    img_frame_logger.to_pickle(save_folder / "img_frame_logger.pickle")
-    img_frame_logger = img_frame_logger.rename(
-        columns={
-            "HarpTime": "onset_time",
-            "ImagingFrame": "imaging_frame",
-        }
-    )
-    img_frame_logger["imaging_volume"] = (
-        img_frame_logger["imaging_frame"] / nplanes
-    ).astype(int)
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=img_frame_logger,
-        on="onset_time",
-        direction="forward",
-        allow_exact_matches=True,
-    )
+        img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
+        img_frame_logger.to_pickle(save_folder / "img_frame_logger.pickle")
+        img_frame_logger = img_frame_logger.rename(
+            columns={
+                "HarpTime": "onset_time",
+                "ImagingFrame": "imaging_frame",
+            }
+        )
+        img_frame_logger["imaging_volume"] = (
+            img_frame_logger["imaging_frame"] / nplanes
+        ).astype(int)
+        vs_df = pd.merge_asof(
+            left=vs_df,
+            right=img_frame_logger,
+            on="onset_time",
+            direction="forward",
+            allow_exact_matches=True,
+        )
 
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
     harpmessage = np.load(p_msg)
@@ -389,8 +400,6 @@ def generate_vs_df(
                 }
             )
 
-    # Save df to pickle
-    vs_df.to_pickle(save_folder / "vs_df.pickle")
     return vs_df
 
 
