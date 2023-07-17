@@ -127,6 +127,7 @@ def sync_by_correlation(
     do_plot=False,
     verbose=True,
     debug=False,
+    save_folder=None,
 ):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -158,6 +159,8 @@ def sync_by_correlation(
                         return the figure handles
         verbose (bool): Print progress and general info.
         debug (bool): False by default. If True, returns a dict with intermediary results
+        save_folder (str): If not None, and plot is True save figures results in this
+            folder
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -174,14 +177,15 @@ def sync_by_correlation(
 
     # First step: Frame detection
     frames_df, db_dict, figs = create_frame_df(
-        frame_log,
-        photodiode_time,
-        normed_pd,
-        time_column,
-        frame_rate,
-        do_plot,
-        verbose,
-        debug,
+        frame_log=frame_log,
+        photodiode_time=photodiode_time,
+        photodiode_signal=normed_pd,
+        time_column=time_column,
+        frame_rate=frame_rate,
+        do_plot=do_plot,
+        verbose=verbose,
+        debug=debug,
+        save_folder=save_folder,
     )
 
     if db_dict is not None:
@@ -248,6 +252,7 @@ def create_frame_df(
     do_plot=False,
     verbose=True,
     debug=False,
+    save_folder=None,
 ):
     """Create a dataframe with the frame information
 
@@ -265,6 +270,8 @@ def create_frame_df(
                         return the figure handles
         verbose (bool): Print progress and general info.
         debug (bool): False by default. If True, returns a dict with intermediary results
+        save_folder (str): If not None, and plot is True save figures results in this
+            folder
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -329,6 +336,9 @@ def create_frame_df(
             photodiode_sampling=pd_sampling,
             highcut=frame_rate * 3,
         )
+        if save_folder is not None:
+            for ifig, fig in enumerate(figs):
+                fig.savefig(Path(save_folder) / f"frame_detection_fig{ifig}.png")
 
     return frames_df, db_dict, figs
 
