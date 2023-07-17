@@ -184,13 +184,13 @@ def find_imaging_frames(
         frame_triggers = frame_triggers
     elif (n_frame_triggers - frame_number) == 1:
         frame_triggers = frame_triggers[:-1]
-        print("WARNING: SAVED VIDEO FRAME IS 1 FRAME LESS THAN FRAME TRIGGERS!!!")
+        print("WARNING: SAVED VIDEO FRAMES ARE 1 FRAME LESS THAN FRAME TRIGGERS!!!")
     elif (len(frame_triggers[frame_triggers.FramePeriod == 1]) - frame_number) == 2:
         frame_triggers = frame_triggers[:-2]
-        print("WARNING: SAVED VIDEO FRAME IS 2 FRAMES LESS THAN FRAME TRIGGERS!!!")
+        print("WARNING: SAVED VIDEO FRAMES ARE 2 FRAMES LESS THAN FRAME TRIGGERS!!!")
     else:
         print(
-            "ERROR: FRAME NUMBER NOT CORRECT!!! Assumed bonsai crashing at the end. Cut the end"
+            "FRAME NUMBER NOT CORRECT likely due to incomplete imaging volume at the end of the stack or bonsai crash."
         )
         frame_triggers = frame_triggers[:frame_number]
     frame_triggers = frame_triggers.drop(

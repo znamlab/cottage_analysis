@@ -10,7 +10,7 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     common_utils,
 )
-from cottage_analysis.stimulus_structure import spheres_tube
+from cottage_analysis.analysis import spheres
 from functools import partial
 
 print = partial(print, flush=True)
@@ -194,7 +194,7 @@ def main(
         param_log = pd.read_csv(rawdata_folder / "NewParams.csv")
         param_log = param_log.rename(columns={"Radius": "Depth"})
 
-        output = spheres_tube.regenerate_frames(
+        output = spheres.regenerate_frames(
             frame_times=imaging_df["harptime_imaging_trigger"].values,
             trials_df=trials_df,
             vs_df=vs_df,
