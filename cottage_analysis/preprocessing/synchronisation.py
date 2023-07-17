@@ -90,8 +90,10 @@ def find_monitor_frames(
     protocol,
     irecording=0,
     photodiode_protocol=5,
-    redo=True,
     redo_harpnpz=False,
+    use_slurm=False,
+    conflicts="abort",
+    verbose=True,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them into monitor_frames_df.pickle and monitor_db_dict.pickle under the path {trace_folder/'sync/monitor_frames/'}
 
@@ -105,102 +107,134 @@ def find_monitor_frames(
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         redo (bool, optional): re-sync the monitor frames or not. Defaults to True.
         redo_harpnpz (bool, optional): re-transform harp bin file into npz file or not. Defaults to False.
+        use_slurm (bool, optional): use slurm or not. Defaults to True.
+        conflicts (str, optional): how to deal with conflicts (one of "skip",
+            "overwrite", "append", "abort). Defaults to "abort".
+        verbose (bool, optional): print out progress or not. Defaults to True.
     """
     # Find paths
     flexilims_session = flz.get_flexilims_session(project_id=project)
-    all_protocol_recording_entries = generate_filepaths.get_all_recording_entries(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
+    recordings = flz.get_children(
+        parent_name=f"{mouse}_{session}",
+        children_datatype="recording",
         flexilims_session=flexilims_session,
     )
-    (
-        rawdata_folder,
-        protocol_folder,
-        _,
-        _,
-        _,
-    ) = generate_filepaths.generate_file_folders(
-        project=project,
-        mouse=mouse,
-        session=session,
-        protocol=protocol,
-        all_protocol_recording_entries=all_protocol_recording_entries,
-        recording_no=irecording,
-        flexilims_session=flexilims_session,
-    )
-
-    if redo:
-        save_folder = protocol_folder / "sync" / "monitor_frames"
-        if not save_folder.exists():
-            save_folder.mkdir(parents=True)
-
-        # Load files
-        harp_messages = load_harpmessage(
-            project=project,
-            mouse=mouse,
-            session=session,
-            protocol=protocol,
-            irecording=irecording,
-            redo=redo_harpnpz,
+    if recordings is None:
+        raise ValueError(
+            f"No recording found for {mouse}_{session} in project {project}."
+        )
+    recordings = recordings[recordings.protocol == protocol]
+    if not len(recordings) > 0:
+        raise ValueError(
+            f"No recording found for {mouse}_{session} with protocol {protocol}."
         )
 
-        # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
-        if photodiode_protocol == 2:
-            ao_time = harp_messages["analog_time"]
-            photodiode = harp_messages["photodiode"]
-            print("Data loaded.")
-            print("Recording is %d s long." % (ao_time[-1] - ao_time[0]))
-            # Synchronisation
-            frames_df = find_frames.sync_by_frame_alternating(
-                photodiode=photodiode,
-                analog_time=ao_time,
-                frame_rate=144,
-                photodiode_sampling=1000,
-                plot=True,
-                plot_start=10000,
-                plot_range=1000,
-                plot_dir=save_folder,
-            )
-            # Save monitor frame dataframes
-            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
+    recording = recordings.iloc[irecording]
 
-        elif photodiode_protocol == 5:
-            frame_log = pd.read_csv(rawdata_folder / "FrameLog.csv")
-            ao_time = harp_messages["analog_time"]
-            photodiode = harp_messages["photodiode"]
+    frame_ds = flz.Dataset.from_origin(
+        origin_id=recording.id,
+        flexilims_session=flexilims_session,
+        conflicts=conflicts,
+        dataset_type="pickle_file",
+        base_name="monitor_frames",
+    )
 
-            print("Data loaded.")
-            print(
-                "Recording is %d s long."
-                % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
-            )
+    if conflicts == "skip" and frame_ds.flexilims_status() != "not online":
+        if verbose:
+            print(f"Skipping {frame_ds.name} because it is already online.")
+        return frame_ds
 
-            # Synchronisation
-            frame_rate = 144
-            frames_df, db_dict = find_frames.sync_by_correlation(
-                frame_log,
-                ao_time,
-                photodiode,
-                time_column="HarpTime",
-                sequence_column="PhotoQuadColor",
-                num_frame_to_corr=6,
-                maxlag=3.0 / frame_rate,
-                expected_lag=2.0 / frame_rate,
-                frame_rate=frame_rate,
-                correlation_threshold=0.8,
-                relative_corr_thres=0.02,
-                minimum_lag=1.0 / frame_rate,
-                do_plot=False,
-                verbose=True,
-                debug=True,
-            )
+    # we want to create subfolders
+    frame_ds.path = (
+        frame_ds.path.parent
+        / "sync"
+        / "monitor_frames"
+        / f"{frame_ds.dataset_name}.pickle"
+    )
+    frame_ds.extra_attributes.update(dict(photodiode_protocol=5))
 
-            # Save monitor frame dataframes
-            frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
-            with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
-                pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    save_folder = frame_ds.path_full.parent
+    if not save_folder.exists():
+        save_folder.mkdir(parents=True)
+
+    # Load files
+    harp_messages = load_harpmessage(
+        project=project,
+        mouse=mouse,
+        session=session,
+        protocol=protocol,
+        irecording=irecording,
+        redo=redo_harpnpz,
+    )
+
+    # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
+    if photodiode_protocol == 2:
+        ao_time = harp_messages["analog_time"]
+        photodiode = harp_messages["photodiode"]
+        print("Data loaded.")
+        print("Recording is %d s long." % (ao_time[-1] - ao_time[0]))
+        # Synchronisation
+        frames_df = find_frames.sync_by_frame_alternating(
+            photodiode=photodiode,
+            analog_time=ao_time,
+            frame_rate=144,
+            photodiode_sampling=1000,
+            plot=True,
+            plot_start=10000,
+            plot_range=1000,
+            plot_dir=save_folder,
+        )
+        # Save monitor frame dataframes
+        frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
+
+    elif photodiode_protocol == 5:
+        harp_ds = flz.get_children(
+            parent_id=recording.id,
+            children_datatype="dataset",
+            flexilims_session=flexilims_session,
+        )
+        harp_ds = harp_ds[harp_ds.dataset_type == "harp"]
+        assert (
+            len(harp_ds) == 1
+        ), f"More than one harp dataset found for {recording.name}"
+        harp_ds = flz.Dataset.from_dataseries(harp_ds.iloc[0])
+        frame_log = pd.read_csv(harp_ds.path_full / "FrameLog.csv")
+        ao_time = harp_messages["analog_time"]
+        photodiode = harp_messages["photodiode"]
+
+        print("Data loaded.")
+        print(
+            "Recording is %d s long."
+            % (frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0])
+        )
+
+        # Synchronisation
+        frame_rate = 144
+        frames_df, db_dict = find_frames.sync_by_correlation(
+            frame_log,
+            ao_time,
+            photodiode,
+            time_column="HarpTime",
+            sequence_column="PhotoQuadColor",
+            num_frame_to_corr=6,
+            maxlag=3.0 / frame_rate,
+            expected_lag=2.0 / frame_rate,
+            frame_rate=frame_rate,
+            correlation_threshold=0.8,
+            relative_corr_thres=0.02,
+            minimum_lag=1.0 / frame_rate,
+            do_plot=True,
+            verbose=True,
+            debug=True,
+            use_slurm=use_slurm,
+            save_folder=save_folder,
+        )
+
+        # Save monitor frame dataframes
+        frames_df.to_pickle(save_folder / "monitor_frames_df.pickle")
+        with open(save_folder / "monitor_db_dict.pickle", "wb") as handle:
+            pickle.dump(db_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    frame_ds.update_flexilims(mode="overwrite" if conflicts == "overwrite" else "safe")
 
 
 def generate_vs_df(
@@ -418,37 +452,6 @@ def fill_missing_imaging_volumes(df):
         allow_exact_matches=True,
     )
     return img_df
-
-
-def get_child_dataset(flz_session, parent_name, dataset_type):
-    """
-    Get the last dataset of a given type for a given parent entity.
-
-    Args:
-        flz_session (flexilims_session): flexilims session
-        parent_name (str): name of the parent entity
-        dataset_type (str): type of the dataset
-
-    Returns:
-        Dataset: the last dataset of the given type for the given parent entity
-
-    """
-    all_children = flz.get_children(
-        parent_name=parent_name,
-        children_datatype="dataset",
-        flexilims_session=flz_session,
-    )
-    selected_datasets = all_children[all_children["dataset_type"] == dataset_type]
-    if len(selected_datasets) == 0:
-        raise ValueError(f"No {dataset_type} dataset found for session {parent_name}")
-    elif len(selected_datasets) > 1:
-        print(
-            f"{len(selected_datasets)} {dataset_type} datasets found for session {parent_name}"
-        )
-        print("Will return the last one...")
-    return flz.Dataset.from_dataseries(
-        selected_datasets.iloc[-1], flexilims_session=flz_session
-    )
 
 
 def load_imaging_data(recording, flexilims_session):
