@@ -42,14 +42,11 @@ def load_harpmessage(recording, flexilims_session, conflicts="skip"):
     harp_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording["name"],
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording["name"],
         dataset_type="harp",
         allow_multiple=False,
         return_dataseries=False,
     )
-    if npz_ds.flexilims_status() != "not online" and conflicts == "skip":
+    if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
 
