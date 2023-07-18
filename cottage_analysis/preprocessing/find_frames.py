@@ -1,6 +1,7 @@
 """
 Module to find frames based on photodiode flicker
 """
+import warnings
 import time
 import numpy as np
 import pandas as pd
@@ -9,9 +10,107 @@ import scipy.signal as scsi
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from cottage_analysis.utilities import continuous_data_analysis as cda
-from cottage_analysis.utilities.time_series_analysis import searchclosest
+from znamutils.decorators import slurm_it
 
 
+def sync_by_frame_alternating(
+    photodiode,
+    analog_time,
+    frame_rate=144,
+    photodiode_sampling=1000,
+    plot=False,
+    plot_start=10000,
+    plot_range=1000,
+    plot_dir=None,
+):
+    """Find frame refresh based on photodiode signal
+
+    Signal is expected to alternate between high and low at each frame (flickering quad
+    between white and black)
+
+    Args:
+        photodiode (np.ndarray): photodiode series extracted from harp
+        analog_time (np.ndarray): analog time series extracted from harp
+        frame_rate (float): Expected frame rate. Peaks separated by less than half a
+                            frame will be ignored. Default to 144.
+        photodiode_sampling (float): Sampling rate of the photodiode signal in Hz. Default to 1000.
+        plot (bool): Should a summary figure be generated? Default to False.
+        plot_start (int): sample to start the plot. Default to 10000.
+        plot_range (int): samples to plot after plot_start. Default to 1000.
+        plot_dir (Path or str): directory to save the figure. Default to None.
+
+    Returns:
+        frames_df (pd.DataFrame): a dataframe containing detected frame timing.
+            It contains:
+                - 'photodiode': photodiode value at peak
+                - 'closest_frame': peak frame index.
+                - 'peak_time': harptime for the photodiode to peak at each frame.
+    """
+
+    # Photodiode value above which the quad is considered white
+    upper_thr = np.percentile(photodiode, 80)
+    # Photodiode value above which the quad is considered black
+    lower_thr = np.percentile(photodiode, 20)
+    photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
+    # Find peaks of photodiode
+    distance = int(1 / frame_rate * 2 * photodiode_sampling)
+    high_peaks, _ = scsi.find_peaks(photodiode, height=upper_thr, distance=distance)
+    first_frame = high_peaks[0]
+    low_peaks, _ = scsi.find_peaks(-photodiode, height=-lower_thr, distance=distance)
+    low_peaks = low_peaks[low_peaks > first_frame]
+
+    # Get rid of framedrops
+    photodiode_df["FramePeak"] = None
+    photodiode_df.FramePeak.iloc[high_peaks] = 1
+    photodiode_df.FramePeak.iloc[low_peaks] = 0
+    frames_df = photodiode_df[photodiode_df.FramePeak.notnull()]
+    frames_df = frames_df[frames_df.FramePeak.diff() != 0]
+    frames_df["closest_frame"] = np.arange(len(frames_df))
+    frames_df = frames_df.drop(columns=["FramePeak"])
+    frames_df = frames_df.rename(columns={"analog_time": "peak_time"})
+
+    if plot:
+        plt.figure()
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            photodiode[plot_start : (plot_start + plot_range)],
+        )
+        all_frame_idxs = frames_df.index.values.reshape(-1)
+        take_start = np.argmin(np.abs(all_frame_idxs - plot_start))
+        take_stop = np.argmin(np.abs(all_frame_idxs - plot_start - plot_range))
+        take_idxs = all_frame_idxs[take_start:take_stop]
+
+        plot_peaks = np.intersect1d(
+            all_frame_idxs, (np.arange(plot_start, (plot_start + plot_range), step=1))
+        )
+        plt.figure()
+        plt.plot(
+            frames_df.loc[take_idxs, "peak_time"],
+            frames_df.loc[take_idxs, "photodiode"],
+        )
+        plt.plot(analog_time[plot_peaks], photodiode[plot_peaks], "x")
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            + upper_thr,
+            "--",
+            color="gray",
+        )
+        plt.plot(
+            analog_time[plot_start : (plot_start + plot_range)],
+            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            + lower_thr,
+            "--",
+            color="gray",
+        )
+        plt.xlabel("Time(s)")
+    if plot_dir is not None:
+        plt.savefig(Path(plot_dir) / "Frame_finder_check.png")
+
+    return frames_df
+
+
+@slurm_it(conda_env="cottage_analysis")
 def sync_by_correlation(
     frame_log,
     photodiode_time,
@@ -28,6 +127,7 @@ def sync_by_correlation(
     do_plot=False,
     verbose=True,
     debug=False,
+    save_folder=None,
 ):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -59,6 +159,8 @@ def sync_by_correlation(
                         return the figure handles
         verbose (bool): Print progress and general info.
         debug (bool): False by default. If True, returns a dict with intermediary results
+        save_folder (str): If not None, and plot is True save figures results in this
+            folder
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -75,14 +177,15 @@ def sync_by_correlation(
 
     # First step: Frame detection
     frames_df, db_dict, figs = create_frame_df(
-        frame_log,
-        photodiode_time,
-        normed_pd,
-        time_column,
-        frame_rate,
-        do_plot,
-        verbose,
-        debug,
+        frame_log=frame_log,
+        photodiode_time=photodiode_time,
+        photodiode_signal=normed_pd,
+        time_column=time_column,
+        frame_rate=frame_rate,
+        do_plot=do_plot,
+        verbose=verbose,
+        debug=debug,
+        save_folder=save_folder,
     )
 
     if db_dict is not None:
@@ -112,14 +215,13 @@ def sync_by_correlation(
     if db_di is not None:
         db_dict.update(db_di)
 
-    # Now attempt the matching
+    # Now attempt the matching of the correlated frames to the logger (i.e. find if
+    # `bef`, `center` and `aft` agree or if I can identify the best)
     frames_df = _match_fit_to_logger(
         frames_df,
-        frame_log,
         correlation_threshold=correlation_threshold,
         relative_corr_thres=relative_corr_thres,
         minimum_lag=minimum_lag,
-        clean_df=not debug,
         verbose=verbose,
     )
     extra_out = {}
@@ -127,6 +229,16 @@ def sync_by_correlation(
         extra_out["figures"] = fig_dict
     if debug:
         extra_out["debug_info"] = db_dict
+
+    # Finally, clean-up the matched frames to ensure that the sequence is logical
+    frames_corrected = 1
+    nr = 0
+    while frames_corrected:
+        nr += 1
+        print(f"MATCHING FRAMES, ITERATION {nr}")
+        frames_df, frames_corrected = _cleanup_match_order(
+            frames_df, frame_log, verbose=True, clean_df=False
+        )
     return frames_df, extra_out
 
 
@@ -140,6 +252,7 @@ def create_frame_df(
     do_plot=False,
     verbose=True,
     debug=False,
+    save_folder=None,
 ):
     """Create a dataframe with the frame information
 
@@ -157,6 +270,8 @@ def create_frame_df(
                         return the figure handles
         verbose (bool): Print progress and general info.
         debug (bool): False by default. If True, returns a dict with intermediary results
+        save_folder (str): If not None, and plot is True save figures results in this
+            folder
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -221,6 +336,9 @@ def create_frame_df(
             photodiode_sampling=pd_sampling,
             highcut=frame_rate * 3,
         )
+        if save_folder is not None:
+            for ifig, fig in enumerate(figs):
+                fig.savefig(Path(save_folder) / f"frame_detection_fig{ifig}.png")
 
     return frames_df, db_dict, figs
 
@@ -433,13 +551,31 @@ def run_cross_correlation(
     maxlag_samples = int(np.round(maxlag * pd_sampling))
     expected_lag_samples = int(np.round(expected_lag * pd_sampling))
 
+    # make an idealised photodiode signal
+    ideal_time, ideal_seqi_trace, ideal_pd = ideal_photodiode(
+        frame_log,
+        sampling_rate=pd_sampling,
+        sequence_column="PhotoQuadColor",
+        time_column="HarpTime",
+        pad_frames=(maxlag + num_frame_to_corr) * 2,
+        highcut=150,
+    )
+
+    # find the closest switch time for each frame according to computer time
+    real_switch_times = frame_log[time_column].values
+    closest_switch = real_switch_times.searchsorted(photodiode_time[frame_onsets])
+    frames_df["closest_frame_log_index"] = closest_switch
+    # and the corresponding ideal photodiode sample
+    ideal_onset = frame_log["ideal_switch_samples"].iloc[closest_switch].values
+
     # run the cross correlation
     out = _crosscorr_befcentaft(
         frame_onsets,
         photodiode_time=photodiode_time,
         photodiode_signal=photodiode_signal,
-        switch_time=frame_log[time_column].values,
-        sequence=frame_log[sequence_column].values,
+        ideal_onset_samples=ideal_onset,
+        ideal_photodiode_trace=ideal_pd,
+        ideal_frame_index=ideal_seqi_trace,
         expected_lag=expected_lag_samples,
         maxlag=maxlag_samples,
         num_frame_to_corr=num_frame_to_corr,
@@ -447,37 +583,50 @@ def run_cross_correlation(
         verbose=verbose,
         debug=debug,
     )
+
     if debug:
-        cc_dict, lags, db = out
+        cc_dict, id_dict, lags, db = out
         db_dict.update(db)
         db_dict["lags_sample"] = lags
         db_dict["cc_dict"] = cc_dict
-    else:
-        cc_dict, lags = out
+        db_dict["ideal_pd"] = ideal_pd
 
-    # add that to the dataframe
+    else:
+        cc_dict, id_dict, lags = out
+
+    # add lag and corresponding frame index to the dataframe
     if verbose:
         print("Adding cross correlation results to dataframe")
-    align = dict(bef="onset_time", center="peak_time", aft="offset_time")
-    func = dict(bef=searchclosest, center=np.searchsorted, aft=searchclosest)
-    shift = dict(bef=0, center=-1, aft=-1)
+
     for iw, which in enumerate(["bef", "center", "aft"]):
-        frames_df["lag_%s" % which] = lags[cc_dict[which].argmax(axis=1)] / pd_sampling
-        frames_df["peak_corr_%s" % which] = cc_dict[which].max(axis=1)
-        # find the closest frame, looking at onset for before, peak for center and
-        # offset for after.
-        cl = func[which](
-            frame_log[time_column].values,
-            (frames_df[align[which]] - frames_df["lag_%s" % which]).values,
+        cc = cc_dict[which]
+        frames_df["lag_%s" % which] = lags[cc.argmax(axis=1)] / pd_sampling
+        frames_df["peak_corr_%s" % which] = cc.max(axis=1)
+        # to find the match between photiodiode and frame log, we want to look at what is
+        # the value of the lag-shifed sequence index in during the real frame.
+        # The sync is made the closest computer frame log time
+        time_of_match = (
+            frame_log["ideal_switch_times"]
+            .iloc[frames_df.closest_frame_log_index]
+            .values
         )
-        # To lag each element from frames_df by a different lag, I subtract the lag
-        # instead of adding to frame_log
-        # To have the proper number of element I search frame_log in frames_df instead
-        # of the converse. That means that I get the index of frame_log that is >=
-        # frames_df
-        cl += shift[which]
-        cl = np.clip(cl, 0, len(frame_log) - 1)
-        frames_df["closest_frame_%s" % which] = cl
+        # we remove the lag to frames_df instead of adding it to frame_log
+        time_of_match -= frames_df["lag_%s" % which].values
+        # This gives us the time relative to the onset of the real photodiode signal
+        # However, if there is a frame drop, onset is uselss when matchin after
+        # So we match:
+        # * onset + 0.3 frame for bef
+        # * peak - 0.1 frame for center, as peak is usually toward the end of the frame
+        # * offset - 0.3 frame for aft
+        matching_type = ["onset", "peak", "offset"][iw]
+        time_to_onset = (
+            frames_df[f"{matching_type}_time"].values - frames_df["onset_time"].values
+        )
+        time_of_match += time_to_onset
+        time_of_match += [0.3, -0.1, -0.3][iw] / frame_rate
+        index_of_match = ideal_time.searchsorted(time_of_match)
+        cl = ideal_seqi_trace[index_of_match]
+        frames_df[f"closest_frame_{which}"] = cl
         frames_df["quadcolor_%s" % which] = frame_log.iloc[cl][sequence_column].values
 
     # also add photodiode value at peak
@@ -491,86 +640,79 @@ def run_cross_correlation(
     return frames_df, db_dict
 
 
-def ideal_photodiode(time_base, switch_time, sequence, highcut=150):
+def ideal_photodiode(
+    frame_log,
+    sampling_rate,
+    sequence_column="PhotoQuadColor",
+    time_column="HarpTime",
+    pad_frames=10,
+    highcut=150,
+):
     """Make an idealise photodiode trace from sequence
 
     The photodiode is imaging a quad that changes color every frame but the photodiode
     filter and the pixel response time make this alternation smooth and not step-wise.
     This function attempts to filter the raw sequence to re-create an ideal version of
-    what the photodiode signal should look like
+    what the photodiode signal should look like.
 
+    The output will have the first frame of the sequence at sample 0 and nth frame at
+    sample `n / frame_rate * sampling_rate`. This will not correspond to real photodiode
+    signal since it does not include any frame drop
+
+    This will also had 2 columns in frame_log: "ideal_switch_times" and
+    "ideal_switch_samples"
 
     Args:
-        time_base (np.array): Time of the real photodiode signal, will be the shape of
-                              the output
-        switch_time (np.array): Time points at which the photodiode changes colour
-        sequence (np.array): Values of the photodiode for each of the switch time
-        highcut (float): Frequency for low pass filter
+        frame_log (pd.DataFrame): DataFrame with the frame log
+        sampling_rate (float): Sampling rate of the photodiode signal
+        sequence_column (str, optional): Name of the column in frame_log that contains
+            the sequence. Defaults to "PhotoQuadColor".
+        time_column (str, optional): Name of the column in frame_log that contains the
+            computer time of the frame. Defaults to "HarpTime".
+        pad_frames (int, optional): Number of frames to pad at the beginning and end of
+            the trace. Defaults to 10.
+        highcut (float, optional): Frequency for low pass filter. Defaults to 150.
 
     Returns:
-        perfect_sequence (np.array): Continuous version of photodiode_value (same size as
-                                     time_base)
+        ideal_time (np.array): Time base for the ideal photodiode
+        ideal_frame_index (np.array): Continuous index of the sequence index
         fake_photodiode (np.array): Filtered version of perfect_sequence
     """
-    sampling = 1 / np.mean(np.diff(time_base))
-    change_indices = time_base.searchsorted(switch_time)
-    perfect_sequence = np.zeros_like(time_base)
-    for i, v in enumerate(sequence[:-1]):
-        perfect_sequence[change_indices[i] : change_indices[i + 1]] = v
 
-    freq = highcut / sampling
+    sequence = frame_log[sequence_column].values
+    computer_switch_time = frame_log[time_column].values
+    actual_rate = 1 / np.median(np.diff(computer_switch_time))
+    ideal_switch_times = np.arange(len(sequence) + 1) / actual_rate
+    frame_log["ideal_switch_times"] = ideal_switch_times[:-1]
+    samples_one_frame = int(sampling_rate / actual_rate)
+
+    # add padding at the beginning and end
+    padding_samples = int(pad_frames * samples_one_frame)
+
+    switch_samples = (ideal_switch_times * sampling_rate + padding_samples).astype(int)
+    frame_log["ideal_switch_samples"] = switch_samples[:-1]
+    ideal_time = np.arange(-padding_samples, switch_samples[-1] + padding_samples + 1)
+    ideal_time = ideal_time.astype(float) / sampling_rate
+
+    perfect_sequence = np.zeros_like(ideal_time)
+    ideal_frame_index = np.zeros_like(ideal_time, dtype=int) - 1
+    for i, v in enumerate(sequence):
+        perfect_sequence[switch_samples[i] : switch_samples[i + 1]] = v
+        ideal_frame_index[switch_samples[i] : switch_samples[i + 1]] = i
+
+    freq = highcut / sampling_rate
     sos = scsi.butter(N=1, Wn=freq, btype="lowpass", output="sos")
     fake_photodiode = scsi.sosfilt(sos, perfect_sequence)
-    return perfect_sequence, fake_photodiode
-
-
-def plot_on_frame_check(frame, frames_df, frame_log, db_dict):
-
-    fs = frames_df.loc[frame]
-    win = np.array([-20, 20])
-    t0 = fs.onset_time
-    fig = plt.figure(figsize=(5, 6))
-    d = dict(bef="onset_time", center="peak_time", aft="offset_time")
-    iax = 1
-    for w in ["bef", "center", "aft"]:
-        plt.subplot(3, 1, iax)
-        i = fs["closest_frame_%s" % w] + np.arange(-3, 4, dtype=int)
-        i0 = fs["closest_frame_%s" % w]
-        plt.axvspan(fs.onset_time - t0, fs.offset_time - t0, color="purple", alpha=0.5)
-        plt.axvline(fs[d[w]] - t0, color="k", ls="--")
-        plt.plot(
-            photodiode_time[slice(*win + fs.peak_sample)] - t0,
-            db_dict["normed_pd"][slice(*win + fs.peak_sample)],
-        )
-        plt.plot(
-            photodiode_time[slice(*win + fs.peak_sample)] - t0 + fs["lag_%s" % w],
-            db_dict["ideal_pd"][slice(*win + fs.peak_sample)],
-        )
-        plt.plot(
-            frame_log.loc[i, "HarpTime"] + fs["lag_%s" % w] - t0,
-            frame_log.loc[i, "PhotoQuadColor"],
-            drawstyle="steps-post",
-        )
-        plt.plot(
-            frame_log.loc[[i0, i0 + 1], "HarpTime"] + fs["lag_%s" % w] - t0,
-            np.zeros(2) + frame_log.loc[i0, "PhotoQuadColor"],
-            "k",
-            lw=4,
-        )
-        plt.axvline(
-            frame_log.loc[i0, "HarpTime"] + fs["lag_%s" % w] - t0, color="k", ls=":"
-        )
-        plt.ylabel(w)
-        iax += 1
-    plt.show()
+    return ideal_time, ideal_frame_index, fake_photodiode
 
 
 def _crosscorr_befcentaft(
     frame_onsets,
     photodiode_time,
     photodiode_signal,
-    switch_time,
-    sequence,
+    ideal_onset_samples,
+    ideal_photodiode_trace,
+    ideal_frame_index,
     expected_lag,
     maxlag,
     num_frame_to_corr,
@@ -588,7 +730,11 @@ def _crosscorr_befcentaft(
                                     sampled
         photodiode_signal (np.array): Photodiode signal, same size as photodiode time
         switch_time (np.array): Time of all changes of photodiode quad colour
-        sequence (np.array): Value of the quad colour after each switch.
+        ideal_onset_samples (np.array): Esitmated onset sample of each frame of frames_df
+            in the ideal photodiode, assuming 0 lag.
+        ideal_photodiode_trace (np.array): Continuous version of photodiode_value (same
+            sampling as actual photodiode)
+        ideal_frame_index (np.array): Continuous index of the sequence index
         expected_lag (int): expected lag (in samples) to center search
         maxlag (int): Maximum lag tested (in samples, centered on expected_lag).
         num_frame_to_corr (int): number of frame around frame_time to keep for correlation
@@ -602,45 +748,71 @@ def _crosscorr_befcentaft(
         lags (np.array): lag in samples
         db_dict (dict): only if debug=True. Dictionnary with intermediary results
     """
-    photodiode_sampling = 1 / np.mean(np.diff(photodiode_time))
-    seq_trace, ideal_pd = ideal_photodiode(
-        time_base=photodiode_time, switch_time=switch_time, sequence=sequence
-    )
+    pd_sampling = 1 / np.mean(np.diff(photodiode_time))
 
+    # define the 3 correlation windows, bef, center and aft
     window = [
         np.array([-1, 1]) * maxlag
-        + np.array(
-            w * num_frame_to_corr / frame_rate * photodiode_sampling, dtype="int"
-        )
+        + np.array(w * num_frame_to_corr / frame_rate * pd_sampling, dtype="int")
         for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]
     ]
-    # for bef window, we add 1 frame to have the current frame included
-    window[0] += int(1 / frame_rate * photodiode_sampling)
+    # for bef window, we add 1.5 frame to have half of the current frame included
+    window[0] += int(1.5 / frame_rate * pd_sampling)
     # for center window, we shift by 0.5 frame to center
-    window[1] += int(0.5 / frame_rate * photodiode_sampling)
+    window[1] += int(0.5 / frame_rate * pd_sampling)
 
     if verbose:
         start = time.time()
         print("Starting crosscorrelation", flush=True)
     cc_mat = np.zeros((len(window), len(frame_onsets), maxlag * 2)) + np.nan
-
+    eq_ind = np.zeros((len(window), len(frame_onsets), maxlag * 2), dtype="int") - 1
     for iframe, foi in tqdm(enumerate(frame_onsets), total=len(frame_onsets)):
         for iw, win in enumerate(window):
-            if (win[0] + foi) < 0 and verbose:
-                print(
-                    "Frame %d at sample %d is too close from start of recording"
-                    % (iframe, foi)
-                )
+            if (win[0] + foi) < 0:
+                if verbose:
+                    print(
+                        "Frame %d at sample %d is too close from start of recording"
+                        % (iframe, foi)
+                    )
                 continue
-            elif (win[1] + foi) > (len(photodiode_signal) - expected_lag) and verbose:
-                print(
-                    "Frame %d at sample %d is too close from end of recording"
-                    % (iframe, foi)
-                )
+            elif (win[1] + foi) > (len(photodiode_signal) - expected_lag):
+                if verbose:
+                    print(
+                        "Frame %d at sample %d is too close from end of recording"
+                        % (iframe, foi)
+                    )
                 continue
+            elif (win[0] + ideal_onset_samples[iframe] - expected_lag) < 0:
+                if verbose:
+                    print(
+                        "Frame %d at sample %d is too close from start of ideal pd"
+                        % (iframe, foi)
+                    )
+                continue
+            elif (win[1] + ideal_onset_samples[iframe] - expected_lag) > len(
+                ideal_photodiode_trace
+            ):
+                if verbose:
+                    print(
+                        "Frame %d at sample %d is too close from end of ideal pd"
+                        % (iframe, foi)
+                    )
+                continue
+            # ideal_pd is drifting, so we need to look for the closest computer time
+            id_t = ideal_frame_index[
+                slice(*win + ideal_onset_samples[iframe] - expected_lag)
+            ]
+            # we want the middle "maxlag * 2" samples, which is where correlation can
+            # be done
+            eq_ind[iw, iframe] = id_t[
+                int(len(id_t) / 2 - maxlag) : int(len(id_t) / 2 + maxlag)
+            ]
+
             corr, lags = cda.crosscorrelation(
                 photodiode_signal[slice(*win + foi)],
-                ideal_pd[slice(*win + foi - expected_lag)],
+                ideal_photodiode_trace[
+                    slice(*win + ideal_onset_samples[iframe] - expected_lag)
+                ],
                 maxlag=maxlag,
                 expected_lag=0,
                 normalisation="pearson",
@@ -651,10 +823,11 @@ def _crosscorr_befcentaft(
         end = time.time()
         print("done (%d s)" % (end - start), flush=True)
     cc_dict = {l: cc_mat[i] for i, l in enumerate(["bef", "center", "aft"])}
+    id_dict = {l: eq_ind[i] for i, l in enumerate(["bef", "center", "aft"])}
     if debug:
-        db_dict = dict(window=window, seq_trace=seq_trace, ideal_pd=ideal_pd)
-        return cc_dict, lags, db_dict
-    return cc_dict, lags
+        db_dict = dict(window=window)
+        return cc_dict, id_dict, lags, db_dict
+    return cc_dict, id_dict, lags
 
 
 def _match_fit_to_logger(
@@ -714,7 +887,9 @@ def _match_fit_to_logger(
     did_not_fit = peak_correlations < correlation_threshold
 
     # and impossible lags
-    impossible_lag = frames_df.loc[:, ["lag_%s" % l for l in labels]] < minimum_lag
+    impossible_lag = (
+        frames_df.loc[:, ["lag_%s" % l for l in labels]].values < minimum_lag
+    )
     bad = did_not_fit | impossible_lag
 
     # find frames for which all good correlation agree
@@ -722,7 +897,11 @@ def _match_fit_to_logger(
         float
     )
     frames[bad] = np.nan
-    good = np.nansum(np.abs(frames - frames[:, 0, np.newaxis]), axis=1) == 0
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Mean of empty slice")
+        mean_frame = np.nanmean(frames, axis=1)
+    good = np.nansum(np.abs(frames - mean_frame[:, np.newaxis]), axis=1) == 0
     # remove the all bad lines (3 nans, wich return 0 when nansummed)
     all_bad = np.all(bad, axis=1)
     good[all_bad] = False
@@ -787,7 +966,7 @@ def _match_fit_to_logger(
     sequence_value = frames_df.loc[:, ["quadcolor_%s" % l for l in labels]].values
     dst2photodiode = np.abs(sequence_value - frames_df.photodiode.values[:, np.newaxis])
     # put the distance of invalid correlation to high value
-    dst2photodiode[bad.values | ~valid_corr] = 2
+    dst2photodiode[bad | ~valid_corr] = 2
     closest = np.argmin(dst2photodiode, axis=1)
 
     lab = [labels[i] for i in closest[remaining]]
@@ -830,25 +1009,121 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
     Returns:
         pd.DataFrame: the cleaned-up dataframe
     """
+    frames_corrected = 0
+    # define some utility functions
+    def _get_frame_diff(frames_df, index_to_test, diff_size=1, verbose=True):
+        bef = np.clip(index_to_test - 1, 0, len(frames_df) - 1)
+        aft = np.clip(index_to_test + diff_size, 0, len(frames_df) - 1)
+        frame_bef = frames_df.loc[bef, "closest_frame"].values
+        frame_aft = frames_df.loc[aft, "closest_frame"].values
+        n_skiped = frame_aft - frame_bef
+        return bef, aft, n_skiped
 
-    # after the initial match, clean-up parts where the order is wrong
-    time_travel = np.where(np.diff(frames_df.closest_frame.values) < 1)[0]
-    time_travel = time_travel[(time_travel > 0) & (time_travel < len(frames_df) - 2)]
-    # Two options: either frame n is shifted forward or n+1 is shifted backward,
-    # just look at both
-    for shift in [0, 1]:
-        baddies = time_travel + shift
-        nm1 = frames_df.closest_frame[baddies - 1].values
-        np1 = frames_df.closest_frame[baddies + 1].values
-        n = frames_df.closest_frame[baddies].values
-        to_replace = baddies[(np1 - nm1) == 2]
-        # set lag to unknown
-        frames_df.loc[to_replace, "lag"] = np.nan
-        reason = "fixing time travel (%s)" % ("to future" if not shift else "to past")
-        frames_df.loc[to_replace, "sync_reason"] = reason
-        frames_df.loc[to_replace, "closest_frame"] = (
-            frames_df.loc[to_replace - 1, "closest_frame"].values + 1
+    def fill_gap(frames_df, index_to_test, reason="filled gap", verbose=True):
+        """Fill a gap in the frame matching
+
+        Args:
+            frames_df (pd.DataFrame): the dataframe with the initial match
+            index_to_test (int): the index of the frame to test
+            reason (str, optional): the reason for filling the gap. Defaults to "filled gap".
+
+            verbose (bool, optional): print progress. Defaults to True.
+        """
+        bef, _, n_skiped = _get_frame_diff(frames_df, index_to_test, 1, verbose)
+        skiped = n_skiped == 2
+        skipi = index_to_test[skiped]
+        frames_df.loc[skipi, "sync_reason"] = reason
+        frames_df.loc[skipi, "closest_frame"] = (
+            frames_df.loc[bef[skiped], "closest_frame"].values + 1
         )
+        frames_df.loc[skipi, "lag"] = frames_df.loc[bef[skiped], "lag"].values
+
+        if verbose and np.sum(skiped) != 0:
+            print(
+                f"`{reason}` filled in {np.sum(skiped)}/{len(skiped)} frames. "
+                + f"That's {np.sum(skiped) / len(skiped) * 100:.1f}% of the occurence.",
+                flush=True,
+            )
+        return np.sum(skiped)
+
+    # First fill the not sync'ed frames with the closest sync'ed frame if there is just a
+    # single gap
+    not_sync = frames_df[np.isnan(frames_df.closest_frame)].index
+    frames_corrected += fill_gap(
+        frames_df, not_sync, reason="filled gap", verbose=verbose
+    )
+
+    # Do the same for cases where there is a frame from the past
+    time_travel = frames_df.iloc[:-1][np.diff(frames_df.closest_frame.values) < 0].index
+    frames_corrected += fill_gap(
+        frames_df, time_travel, reason="time travel", verbose=verbose
+    )
+
+    # And the double detection
+    time_travel = frames_df.iloc[:-1][
+        np.diff(frames_df.closest_frame.values) == 0
+    ].index
+    frames_corrected += fill_gap(
+        frames_df, time_travel, reason="double detect", verbose=verbose
+    )
+
+    # now deal with double detected frames
+    no_increase = frames_df.iloc[:-1][
+        np.diff(frames_df.closest_frame.values) == 0
+    ].index
+    _, _, n_skiped = _get_frame_diff(frames_df, no_increase, 2, verbose)
+    double_frame = n_skiped == 3
+    dfi = no_increase[double_frame]
+    for w in ["time", "sample"]:
+        frames_df.loc[dfi, f"offset_{w}"] = frames_df.loc[dfi + 1, f"offset_{w}"].values
+    frames_df.drop(dfi + 1, inplace=True)
+    frames_df.reset_index(drop=True, inplace=True)
+    frames_corrected += np.sum(double_frame)
+    if verbose and np.sum(double_frame):
+        print(
+            f"{np.sum(double_frame)} frames are double and will be removed. "
+            + f"That's {np.sum(double_frame) / len(double_frame) * 100:.1f}% of the "
+            + "cases where the closest frame is the same.",
+            flush=True,
+        )
+
+    # we will look only at NaN for which the previous and next frame are sync'ed
+    start, end = frames_df[~np.isnan(frames_df.closest_frame)].index[[0, -1]]
+    not_sync = frames_df[np.isnan(frames_df.closest_frame)].index
+    not_sync = not_sync[(not_sync > start) & (not_sync < end)]
+    bef = np.clip(not_sync - 1, 0, len(frames_df) - 1)
+    aft = np.clip(not_sync + 1, 0, len(frames_df) - 1)
+    frame_bef = frames_df.loc[bef, "closest_frame"].values
+    frame_aft = frames_df.loc[aft, "closest_frame"].values
+    ok = ~np.isnan(frame_bef) & ~np.isnan(frame_aft)
+    frame_bef = frame_bef[ok]
+    frame_aft = frame_aft[ok]
+    not_sync = not_sync[ok]
+    labels = ["bef", "center", "aft"]
+
+    # for these NaNs, we will look at the best correlation
+    best_corr = np.argmax(
+        frames_df.loc[not_sync, [f"peak_corr_{l}" for l in labels]].values, axis=1
+    )
+    best_corr = np.array([labels[i] for i in best_corr])
+    closest_frame = np.array(
+        [frames_df.loc[g, f"closest_frame_{l}"] for g, l in zip(not_sync, best_corr)]
+    )
+    lag = np.array([frames_df.loc[g, f"lag_{l}"] for g, l in zip(not_sync, best_corr)])
+
+    # now look if these are in between the previous and next frame
+    inbetween = (closest_frame > frame_bef) & (closest_frame < frame_aft)
+    # if they are, then we can use them
+    frames_df.loc[not_sync[inbetween], "sync_reason"] = "best corr"
+    frames_df.loc[not_sync[inbetween], "closest_frame"] = closest_frame[inbetween]
+    frames_df.loc[not_sync[inbetween], "lag"] = lag[inbetween]
+
+    if verbose and np.sum(inbetween):
+        print(
+            f"Sync'ed {np.sum(inbetween)}/{np.sum(ok)} of NaN frames based on best correlation."
+        )
+
+    frames_corrected += np.sum(inbetween)
 
     # Finally add the color from the sequence
     frames_df["quadcolor"] = np.nan
@@ -856,10 +1131,11 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
     frames_df.loc[matched, "quadcolor"] = frame_log.loc[
         frames_df.loc[matched, "closest_frame"], "PhotoQuadColor"
     ].values
+
     if verbose:
         non_synced = np.sum(frames_df.sync_reason == "not synced")
         print(
-            "%d frames are not synced. That"
+            "%d frames are still not synced. That"
             "s %.2f %%" % (non_synced, non_synced / len(frames_df * 100))
         )
     if clean_df:
@@ -871,101 +1147,143 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
             and (not c.endswith("aft"))
         ]
         return pd.DataFrame(frames_df[cols])
-    return frames_df
+    return frames_df, frames_corrected
 
 
-def sync_by_frame_alternating(
-    photodiode,
-    analog_time,
-    frame_rate=144,
-    photodiode_sampling=1000,
-    plot=False,
-    plot_start=10000,
-    plot_range=1000,
-    plot_dir=None,
+def plot_one_frame_check(
+    frame,
+    frames_df,
+    frame_log,
+    real_time,
+    normed_pd,
+    ideal_time,
+    ideal_pd,
+    num_frame_to_corr=None,
 ):
-    """Find frame refresh based on photodiode signal
-
-    Signal is expected to alternate between high and low at each frame (flickering quad
-    between white and black)
+    """Plot the photodiode signand the frame detection for one frame.
 
     Args:
-        photodiode (np.ndarray): photodiode series extracted from harp
-        analog_time (np.ndarray): analog time series extracted from harp
-        frame_rate (float): Expected frame rate. Peaks separated by less than half a
-                            frame will be ignored. Default to 144.
-        photodiode_sampling (float): Sampling rate of the photodiode signal in Hz. Default to 1000.
-        plot (bool): Should a summary figure be generated? Default to False.
-        plot_start (int): sample to start the plot. Default to 10000.
-        plot_range (int): samples to plot after plot_start. Default to 1000.
-        plot_dir (Path or str): directory to save the figure. Default to None.
+        frame (int): the frame to plot
+        frames_df (pd.DataFrame): the dataframe with the frame detection
+        frame_log (pd.DataFrame): the dataframe with the frame log
+        real_time (np.array): the time of the photodiode signal
+        normed_pd (np.array): the photodiode signal
+        ideal_time (np.array): the idealised time of the photodiode signal
+        ideal_pd (np.array): the idealised photodiode signal
+        num_frame_to_corr (int, optional): the number of frame to use for the
+            correlation. If provide will indicate area of correlation. Defaults to None.
 
     Returns:
-        frames_df (pd.DataFrame): a dataframe containing detected frame timing.
-            It contains:
-                - 'photodiode': photodiode value at peak
-                - 'closest_frame': peak frame index.
-                - 'peak_time': harptime for the photodiode to peak at each frame.
+        None
     """
+    if num_frame_to_corr is not None:
+        frame_rate = 1 / np.median(np.diff(frame_log["HarpTime"].values))
+        window = [
+            np.array(w * num_frame_to_corr / frame_rate)
+            for w in [np.array([-1, 0]), np.array([-0.5, 0.5]), np.array([0, 1])]
+        ]
+        # for bef window, we add 1 frame to have the current frame included
+        window[0] += int(1.5 / frame_rate)
+        # for center window, we shift by 0.5 frame to center
+        window[1] += int(0.5 / frame_rate)
 
-    # Photodiode value above which the quad is considered white
-    upper_thr = np.percentile(photodiode, 80)
-    # Photodiode value above which the quad is considered black
-    lower_thr = np.percentile(photodiode, 20)
-    photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
-    # Find peaks of photodiode
-    distance = int(1 / frame_rate * 2 * photodiode_sampling)
-    high_peaks, _ = scsi.find_peaks(photodiode, height=upper_thr, distance=distance)
-    first_frame = high_peaks[0]
-    low_peaks, _ = scsi.find_peaks(-photodiode, height=-lower_thr, distance=distance)
-    low_peaks = low_peaks[low_peaks > first_frame]
+    fig = plt.figure(figsize=(12, 8))
+    for iw, which in enumerate(["bef", "center", "aft"]):
+        ax = fig.add_subplot(3, 1, iw + 1)
 
-    # Get rid of framedrops
-    photodiode_df["FramePeak"] = None
-    photodiode_df.FramePeak.iloc[high_peaks] = 1
-    photodiode_df.FramePeak.iloc[low_peaks] = 0
-    frames_df = photodiode_df[photodiode_df.FramePeak.notnull()]
-    frames_df = frames_df[frames_df.FramePeak.diff() != 0]
-    frames_df["closest_frame"] = np.arange(len(frames_df))
-    frames_df = frames_df.drop(columns=["FramePeak"])
-    frames_df = frames_df.rename(columns={"analog_time": "peak_time"})
+        fd = frames_df.loc[frame]
+        fl = frame_log.iloc[int(fd["closest_frame_log_index"])]
 
-    if plot:
-        plt.figure()
-        plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            photodiode[plot_start : (plot_start + plot_range)],
+        # plot real photodiode signal
+        real_t0 = fd.onset_time
+        w = np.array([-100, 100]) + fd["onset_sample"]
+        ax.plot(
+            real_time[slice(*w)] - real_t0,
+            normed_pd[slice(*w)],
+            label="photodiode",
+            color="C0",
         )
-        all_frame_idxs = frames_df.index.values.reshape(-1)
-        take_start = np.argmin(np.abs(all_frame_idxs - plot_start))
-        take_stop = np.argmin(np.abs(all_frame_idxs - plot_start - plot_range))
-        take_idxs = all_frame_idxs[take_start:take_stop]
+        if num_frame_to_corr is not None:
+            t = real_time[slice(*w)] - real_t0
+            ok = (t > window[iw][0]) & (t < window[iw][1])
+            ax.plot(
+                t[ok], normed_pd[slice(*w)][ok], label="__nolegend__", lw=3, color="C0"
+            )
 
-        plot_peaks = np.intersect1d(
-            all_frame_idxs, (np.arange(plot_start, (plot_start + plot_range), step=1))
+        ax.axvspan(
+            fd.onset_time - real_t0,
+            fd.offset_time - real_t0,
+            alpha=0.2,
+            ymax=0.5,
+            color="k",
         )
-        plt.figure()
-        plt.plot(
-            frames_df.loc[take_idxs, "peak_time"],
-            frames_df.loc[take_idxs, "photodiode"],
+        ax.text(
+            fd.onset_time
+            - real_t0
+            + (fd.offset_time - real_t0 - fd.onset_time + real_t0) / 2,
+            0.3,
+            f"{frame}, matching {fd[f'closest_frame_{which}']}",
+            ha="center",
+            va="center",
         )
-        plt.plot(analog_time[plot_peaks], photodiode[plot_peaks], "x")
-        plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
-            + upper_thr,
-            "--",
-            color="gray",
-        )
-        plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
-            + lower_thr,
-            "--",
-            color="gray",
-        )
-        plt.xlabel("Time(s)")
-    if plot_dir is not None:
-        plt.savefig(Path(plot_dir) / "Frame_finder_check.png")
 
-    return frames_df
+        # plot idealised photodiode signal
+        w = np.array([-100, 100]) + int(fl["ideal_switch_samples"])
+        ideal_t0 = fl["ideal_switch_times"]
+        ax.plot(
+            ideal_time[slice(*w)] - ideal_t0 + fd[f"lag_{which}"],
+            ideal_pd[slice(*w)],
+            label="ideal",
+            color="C1",
+        )
+
+        for i in np.arange(-6, 6, dtype=int):
+            index = int(fd["closest_frame_log_index"]) + i
+            id_swt = frame_log.loc[index : index + 1, "ideal_switch_times"]
+            b, e = id_swt - ideal_t0 + fd[f"lag_{which}"]
+            ax.axvspan(b, e, alpha=0.2, ymin=0.5, color=f"C{i%2}")
+            ax.text(
+                b + (e - b) / 2, 0.9, f"{index}", ha="center", va="center", rotation=90
+            )
+        pc = fd[f"peak_corr_{which}"]
+        if "crosscorr_picked" not in fd:
+            ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
+        elif fd.crosscorr_picked == which:
+            ax.set_ylabel(f"{which} (c={pc:.2f}, {fd.sync_reason})", color="r")
+        else:
+            ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
+        if iw < 2:
+            ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlim(-70e-3, 70e-3)
+    fig.subplots_adjust(hspace=0)
+
+    return fig
+
+
+def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
+    """Plot the cross correlation matrix.
+
+    It is the amplitude of the correlation for each frame/lag pair, selecting the
+    picked `bef`, `center` or `aft` window for each frame.
+
+    Args:
+        ax (plt.Axes): the axes to plot on
+        cc_dict (dict): the cross correlation dictionary
+        lags (np.array): the lags used for the cross correlation
+        frames_df (pd.DataFrame): the dataframe with the frame detection
+
+    Returns:
+        None
+    """
+    cc = np.zeros(cc_dict["center"].shape) + np.nan
+    for i, picked in frames_df.crosscorr_picked.items():
+        if picked == "none":
+            continue
+        cc[i] = cc_dict[picked][i]
+
+    ax.imshow(
+        cc, cmap="RdBu_r", vmin=-1, vmax=1, extent=[lags[0], lags[-1], 0, len(cc)]
+    )
+    ax.set_xlabel("Frame")
+    ax.set_ylabel("Lag")
