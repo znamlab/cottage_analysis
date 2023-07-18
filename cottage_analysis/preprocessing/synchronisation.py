@@ -41,9 +41,9 @@ def load_harpmessage(recording, flexilims_session, conflicts="skip"):
         conflicts=conflicts,
     )
     # find raw data
-    harp_ds = flz.get_child_datasets(
-        flexilims_session,
-        recording["name"],
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording["name"],
         dataset_type="harp",
         allow_multiple=False,
         return_dataseries=False,
@@ -161,6 +161,7 @@ def generate_vs_df(
     flexilims_session=None,
     project=None,
     is_imaging=True,
+    filter_datasets={None: None},
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
@@ -170,6 +171,7 @@ def generate_vs_df(
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
         is_imaging (bool): is the data imaging data? Defaults to True. If it is imaging data, imaging trigger log will be synced with vs_df.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to {None:None}.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -254,8 +256,12 @@ def generate_vs_df(
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     if is_imaging:
-        suite2p_dataset = get_child_dataset(
-            flexilims_session, recording.name, "suite2p_traces"
+        suite2p_dataset = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="suite2p_traces",
+            filter_datasets=filer_datasets,
+            allow_multiple=False,
         )
         save_folder = processed_path / "sync"
         if not save_folder.exists():
@@ -353,39 +359,26 @@ def fill_missing_imaging_volumes(df):
     return img_df
 
 
-def get_child_dataset(flz_session, parent_name, dataset_type):
-    """
-    Get the last dataset of a given type for a given parent entity.
+def load_imaging_data(recording, flexilims_session, filter_datasets={None:None}):
+    """Load imaging data
 
     Args:
-        flz_session (flexilims_session): flexilims session
-        parent_name (str): name of the parent entity
-        dataset_type (str): type of the dataset
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project)
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to {None:None}.
 
     Returns:
-        Dataset: the last dataset of the given type for the given parent entity
-
+        np.array: dffs from all planes
     """
-    all_children = flz.get_children(
-        parent_name=parent_name,
-        children_datatype="dataset",
-        flexilims_session=flz_session,
+    
+    suite2p_dataset = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="suite2p_traces",
+        filter_datasets=filer_datasets,
+        allow_multiple=False,
     )
-    selected_datasets = all_children[all_children["dataset_type"] == dataset_type]
-    if len(selected_datasets) == 0:
-        raise ValueError(f"No {dataset_type} dataset found for session {parent_name}")
-    elif len(selected_datasets) > 1:
-        print(
-            f"{len(selected_datasets)} {dataset_type} datasets found for session {parent_name}"
-        )
-        print("Will return the last one...")
-    return flz.Dataset.from_dataseries(
-        selected_datasets.iloc[-1], flexilims_session=flz_session
-    )
-
-
-def load_imaging_data(recording, flexilims_session):
-    suite2p_traces = get_child_dataset(flexilims_session, recording, "suite2p_traces")
     dffs = []
     for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
