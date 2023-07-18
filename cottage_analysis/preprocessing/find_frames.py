@@ -209,7 +209,7 @@ def sync_by_correlation(
         expected_lag,
         frame_rate,
         verbose,
-        debug,
+        debug or do_plot,
         pd_sampling,
     )
     if db_di is not None:
@@ -239,6 +239,43 @@ def sync_by_correlation(
         frames_df, frames_corrected = _cleanup_match_order(
             frames_df, frame_log, verbose=True, clean_df=False
         )
+    if do_plot and (save_folder is not None):
+        if verbose:
+            print("Plotting diagnostic figures")
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 2, 1)
+        plot_crosscorr_matrix(ax, db_dict["cc_dict"], db_dict["lags_sample"], frames_df)
+        ax = fig.add_subplot(1, 2, 2)
+        plot_crosscorr_matrix(ax, db_dict["cc_dict"], db_dict["lags_sample"], frames_df)
+        xl = ax.get_xlim()
+        mid = (xl[0] + xl[1]) / 2
+        ax.set_xlim(mid - 100, mid + 100)
+        fig.savefig(save_folder / "crosscorr_matrix.png")
+        extra_out["figures"]["crosscorr_matrix"] = fig
+
+        # plot a few example sync that succeeded and failed
+        rng = np.random.default_rng(42)
+        good = frames_df[frames_df.sync_reason == "consensus of 3"]
+        good = good.sample(min(2, len(good)), random_state=rng).index
+        bad = (
+            frames_df[frames_df.closest_frame.diff() < 0]
+            .sample(2, random_state=rng)
+            .index
+        )
+        toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1)
+        for frame in toplot:
+            fig = plot_one_frame_check(
+                frame,
+                frames_df,
+                frame_log,
+                real_time=photodiode_time,
+                normed_pd=normed_pd,
+                ideal_time=db_dict["ideal_time"],
+                ideal_pd=db_dict["ideal_photodiode_trace"],
+                num_frame_to_corr=None,
+            )
+            fig.suptitle(f"Frame {frame}")
+            fig.savefig(save_folder / f"frame_{frame}_check.png")
     return frames_df, extra_out
 
 
@@ -560,6 +597,10 @@ def run_cross_correlation(
         pad_frames=(maxlag + num_frame_to_corr) * 2,
         highcut=150,
     )
+    if debug:
+        db_dict["ideal_photodiode_trace"] = ideal_pd
+        db_dict["ideal_time"] = ideal_time
+        db_dict["ideal_seqi_trace"] = ideal_seqi_trace
 
     # find the closest switch time for each frame according to computer time
     real_switch_times = frame_log[time_column].values
@@ -1283,7 +1324,12 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
         cc[i] = cc_dict[picked][i]
 
     ax.imshow(
-        cc, cmap="RdBu_r", vmin=-1, vmax=1, extent=[lags[0], lags[-1], 0, len(cc)]
+        cc,
+        cmap="RdBu_r",
+        vmin=-1,
+        vmax=1,
+        extent=[lags[0], lags[-1], 0, len(cc)],
+        aspect="auto",
     )
     ax.set_xlabel("Frame")
     ax.set_ylabel("Lag")
