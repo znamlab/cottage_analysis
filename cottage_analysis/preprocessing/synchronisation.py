@@ -358,10 +358,10 @@ def fill_missing_imaging_volumes(df):
     return img_df
 
 
-def load_imaging_data(recordin_name, flexilims_session):
+def load_imaging_data(recording_name, flexilims_session):
     suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
-        origin_name=recordin_name,
+        origin_name=recording_name,
         dataset_type="suite2p_traces",
         allow_multiple=False,
     )
