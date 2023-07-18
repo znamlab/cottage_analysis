@@ -5,12 +5,10 @@ print = functools.partial(print, flush=True)
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import pickle
 
 import flexiznam as flz
 from cottage_analysis.io_module import harp
 from cottage_analysis.preprocessing import find_frames
-
 from cottage_analysis.imaging.common import find_frames as find_img_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
@@ -48,7 +46,7 @@ def load_harpmessage(recording, flexilims_session, conflicts="skip"):
         allow_multiple=False,
         return_dataseries=False,
     )
-    if npz_ds.flexilims_status() != "not online" and conflicts == "skip":
+    if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
 
@@ -170,6 +168,7 @@ def generate_vs_df(
     flexilims_session=None,
     project=None,
     sync_imaging=True,
+    filter_datasets=None,
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
@@ -179,6 +178,7 @@ def generate_vs_df(
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
         sync_imaging (bool): is the data imaging data? Defaults to True. If it is imaging data, imaging trigger log will be synced with vs_df.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -187,12 +187,12 @@ def generate_vs_df(
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
-    raw_path = Path(flz.PARAMETERS["data_root"]["raw"]) / recording.path
-    processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
-    monitor_frames_path = (
-        processed_path / "sync" / "monitor_frames" / "monitor_frames_df.pickle"
+    monitor_frames_df = find_monitor_frames(
+        recording=recording,
+        flexilims_session=flexilims_session,
+        photodiode_protocol=photodiode_protocol,
+        conflicts="skip",
     )
-    monitor_frames_df = pd.read_pickle(monitor_frames_path)
 
     if photodiode_protocol == 5:
         # Find frames that are not skipped
@@ -205,7 +205,15 @@ def generate_vs_df(
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log = pd.read_csv(raw_path / "FrameLog.csv")
+        harp_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp",
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
+        frame_log = pd.read_csv(frame_log_path)
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z.rename(
             columns={
@@ -236,7 +244,7 @@ def generate_vs_df(
         ].astype("int")
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
-        encoder_path = raw_path / "RotaryEncoder.csv"
+        encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         mouse_z_df = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         mouse_z_df = mouse_z_df[mouse_z_df.Frame.diff() != 0]
         mouse_z_df = mouse_z_df.rename(
@@ -255,6 +263,7 @@ def generate_vs_df(
         )
 
     # Filter monitor frame index and get rid of frames when diff is negative
+    vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
     frame_idx_dff = vs_df.monitor_frame.diff()
     frame_idx_dff[0] = 1
     vs_df = vs_df[~(frame_idx_dff.shift(-1) < 0)]
@@ -267,13 +276,17 @@ def generate_vs_df(
             flexilims_session=flexilims_session,
             origin_name=recording.name,
             dataset_type="suite2p_traces",
+            filter_datasets=filter_datasets,
             allow_multiple=False,
             return_dataseries=False,
         )
-        save_folder = processed_path / "sync"
-        if not save_folder.exists():
-            save_folder.mkdir(parents=True)
-        p_msg = processed_path / "sync" / "harpmessage.npz"
+        p_msg = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp_npz",
+            allow_multiple=False,
+            return_dataseries=False,
+        ).path_full
         frame_number = float(suite2p_dataset.extra_attributes["nframes"])
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
         fs = float(suite2p_dataset.extra_attributes["fs"])
@@ -290,7 +303,6 @@ def generate_vs_df(
         )
 
         img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
-        img_frame_logger.to_pickle(save_folder / "img_frame_logger.pickle")
         img_frame_logger = img_frame_logger.rename(
             columns={
                 "HarpTime": "onset_time",
@@ -366,12 +378,13 @@ def fill_missing_imaging_volumes(df):
     return img_df
 
 
-def load_imaging_data(recording_name, flexilims_session):
+def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
     suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording_name,
         dataset_type="suite2p_traces",
         allow_multiple=False,
+        filter_datasets=filter_datasets,
     )
     dffs = []
     for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):
