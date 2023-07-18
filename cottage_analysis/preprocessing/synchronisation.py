@@ -186,7 +186,7 @@ def generate_vs_df(
         conflicts="skip",
     )
 
-    # Remove frames with wrong order of frame indices
+    # Remove monitor frames with wrong order of frame indices
     print(f"Removed frames in wrong order of frame indices.")
     removed_frames = True
     while removed_frames:
