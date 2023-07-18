@@ -179,11 +179,13 @@ def generate_vs_df(
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
-    raw_path = Path(flz.PARAMETERS["data_root"]["raw"]) / recording.path
-    processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
-    monitor_frames_path = (
-        processed_path / "sync" / "monitor_frames" / "monitor_frames_df.pickle"
-    )
+    monitor_frames_path = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="monitor_frames",
+        allow_multiple=False,
+        return_dataseries=False,
+    ).path_full
     monitor_frames_df = pd.read_pickle(monitor_frames_path)
 
     if photodiode_protocol == 5:
@@ -197,7 +199,15 @@ def generate_vs_df(
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log = pd.read_csv(raw_path / "FrameLog.csv")
+        harp_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp",
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
+        frame_log = pd.read_csv(frame_log_path)
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z.rename(
             columns={
@@ -228,7 +238,7 @@ def generate_vs_df(
         ].astype("int")
         monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
 
-        encoder_path = raw_path / "RotaryEncoder.csv"
+        encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         mouse_z_df = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         mouse_z_df = mouse_z_df[mouse_z_df.Frame.diff() != 0]
         mouse_z_df = mouse_z_df.rename(
@@ -264,10 +274,13 @@ def generate_vs_df(
             allow_multiple=False,
             return_dataseries=False,
         )
-        save_folder = processed_path / "sync"
-        if not save_folder.exists():
-            save_folder.mkdir(parents=True)
-        p_msg = processed_path / "sync" / "harpmessage.npz"
+        p_msg = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp_npz",
+            allow_multiple=False,
+            return_dataseries=False,
+        ).path_full
         dff = np.load(suite2p_dataset.path_full / "dff_ast.npy")
         frame_number = float(dff.shape[1])
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
