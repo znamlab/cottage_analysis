@@ -179,14 +179,12 @@ def generate_vs_df(
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
-    monitor_frames_path = flz.get_datasets(
+    monitor_frames_df = find_monitor_frames(
+        recording=recording,
         flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="monitor_frames",
-        allow_multiple=False,
-        return_dataseries=False,
-    ).path_full
-    monitor_frames_df = pd.read_pickle(monitor_frames_path)
+        photodiode_protocol=photodiode_protocol,
+        conflicts="skip",
+    )
 
     if photodiode_protocol == 5:
         # Find frames that are not skipped
@@ -281,8 +279,7 @@ def generate_vs_df(
             allow_multiple=False,
             return_dataseries=False,
         ).path_full
-        dff = np.load(suite2p_dataset.path_full / "dff_ast.npy")
-        frame_number = float(dff.shape[1])
+        frame_number = float(suite2p_dataset.extra_attributes["nframes"])
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
         fs = float(suite2p_dataset.extra_attributes["fs"])
         # frame period calculated based of the frame rate in ops.npy
@@ -298,7 +295,6 @@ def generate_vs_df(
         )
 
         img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
-        img_frame_logger.to_pickle(save_folder / "img_frame_logger.pickle")
         img_frame_logger = img_frame_logger.rename(
             columns={
                 "HarpTime": "onset_time",
