@@ -5,12 +5,10 @@ print = functools.partial(print, flush=True)
 import numpy as np
 import pandas as pd
 from pathlib import Path
-import pickle
 
 import flexiznam as flz
 from cottage_analysis.io_module import harp
 from cottage_analysis.preprocessing import find_frames
-from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.imaging.common import find_frames as find_img_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
