@@ -276,6 +276,12 @@ def sync_by_correlation(
             )
             fig.suptitle(f"Frame {frame}")
             fig.savefig(save_folder / f"frame_{frame}_check.png")
+    if not debug:
+        # run the cleanup a last time, to clean the dataframe
+        #  this won't remove any frame but remove the bef,aft,center columns
+        frames_df, frames_corrected = _cleanup_match_order(
+            frames_df, frame_log, verbose=False, clean_df=True
+        )
     return frames_df, extra_out
 
 
