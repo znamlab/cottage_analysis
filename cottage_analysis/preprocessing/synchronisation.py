@@ -198,6 +198,39 @@ def generate_vs_df(
         conflicts="skip",
     )
 
+    # Remove monitor frames with wrong order of frame indices
+    print(f"Removed frames in wrong order of frame indices.")
+    removed_frames = True
+    while removed_frames:
+        frame_idx_dff = monitor_frames_df.closest_frame.diff()
+        frame_idx_dff[0] = 1
+        bad_frames_after = monitor_frames_df[frame_idx_dff < 0].closest_frame.values
+        bad_frames_before = (
+            monitor_frames_df[frame_idx_dff < 0].shift(1).closest_frame.values
+        )
+        bad_frames_before2 = (
+            monitor_frames_df[frame_idx_dff < 0].shift(2).closest_frame.values
+        )
+        # 2 senarios where a negative diff between 2 frame indices can exist.
+        # 1,2,0,5; 1,2,1,5: the first gap (1,2) is smaller than or equal to second gap (2,0): we need to remove 0
+        # 1,4,2,5: the first gap (1,4) is greater than second gap (4,2): we need to remove 4
+        diff1 = np.abs(bad_frames_before - bad_frames_before2)
+        diff2 = np.abs(bad_frames_after - bad_frames_before)
+        remove_after = bad_frames_after[diff1 <= diff2]
+        remove_before = (bad_frames_before)[diff1 > diff2]
+        remove = np.sort(np.concatenate((remove_before, remove_after)).flatten())
+        monitor_frames_df = monitor_frames_df[
+            ~monitor_frames_df.closest_frame.isin(remove)
+        ]
+
+        # Then remove the duplicates
+        monitor_frames_df = monitor_frames_df[
+            ~(monitor_frames_df.closest_frame.diff() == 0)
+        ]
+        print(f"Removed {len(remove)} frames.")
+        if len(remove) == 0:
+            removed_frames = False
+
     if photodiode_protocol == 5:
         # Find frames that are not skipped
         monitor_frame_valid = monitor_frames_df[
@@ -265,14 +298,6 @@ def generate_vs_df(
             direction="nearest",
             allow_exact_matches=True,
         )
-
-    # Filter monitor frame index and get rid of frames when diff is negative
-    vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
-    frame_idx_dff = vs_df.monitor_frame.diff()
-    frame_idx_dff[0] = 1
-    vs_df = vs_df[~(frame_idx_dff.shift(-1) < 0)]
-
-    vs_df = vs_df.sort_values("onset_time")
 
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     if sync_imaging:
