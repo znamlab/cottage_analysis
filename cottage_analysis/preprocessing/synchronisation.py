@@ -214,7 +214,7 @@ def generate_vs_df(
             monitor_frames_df[frame_idx_dff < 0].shift(2).closest_frame.values
         )
         # 2 senarios where a negative diff between 2 frame indices can exist.
-        # 1,2,0,5; 1,2,1,5: the first gap (1,2) is smaller than or equal to second gap (2,0): we need to remove 0
+        # 1,2,0,5: the first gap (1,2) is smaller than or equal to second gap (2,0): we need to remove 0
         # 1,4,2,5: the first gap (1,4) is greater than second gap (4,2): we need to remove 4
         diff1 = np.abs(bad_frames_before - bad_frames_before2)
         diff2 = np.abs(bad_frames_after - bad_frames_before)
@@ -229,7 +229,9 @@ def generate_vs_df(
         monitor_frames_df = monitor_frames_df[
             ~(monitor_frames_df.closest_frame.diff() == 0)
         ]
-        print(f"Removed {len(remove)} frames.")
+        print(
+            f"Removed {len(remove)+len(monitor_frames_df[(monitor_frames_df.closest_frame.diff() == 0)])} frames."
+        )
         if len(remove) == 0:
             removed_frames = False
 
@@ -366,6 +368,21 @@ def generate_vs_df(
         direction="backward",
         allow_exact_matches=True,
     )
+
+    # Align paramLog with vs_df
+    paramlog_path = (
+        raw_path / "NewParams.csv"
+    )  #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
+    param_log = frame_log_path = harp_ds.path_full / harp_ds.csv_files["ParamLog"]
+    param_log = param_log.rename(columns={"HarpTime": "onset_time"})
+
+    vs_df = pd.merge_asof(
+        left=vs_df,
+        right=param_log,
+        on="onset_time",
+        direction="backward",
+        allow_exact_matches=False,
+    )  # Does not allow exact match of sphere rendering time and frame onset time?
 
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
