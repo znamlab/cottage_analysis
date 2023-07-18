@@ -257,12 +257,14 @@ def sync_by_correlation(
         rng = np.random.default_rng(42)
         good = frames_df[frames_df.sync_reason == "consensus of 3"]
         good = good.sample(min(2, len(good)), random_state=rng).index
+        ampl = frames_df[frames_df.sync_reason == "closest to photodiode"]
+        ampl = ampl.sample(min(2, len(ampl)), random_state=rng).index
         bad = (
             frames_df[frames_df.closest_frame.diff() < 0]
             .sample(2, random_state=rng)
             .index
         )
-        toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1)
+        toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1) + list(ampl)
         for frame in toplot:
             fig = plot_one_frame_check(
                 frame,
