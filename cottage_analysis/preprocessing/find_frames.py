@@ -1201,7 +1201,7 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
             and (not c.endswith("center"))
             and (not c.endswith("aft"))
         ]
-        return pd.DataFrame(frames_df[cols])
+        return pd.DataFrame(frames_df[cols]), frames_corrected
     return frames_df, frames_corrected
 
 
@@ -1300,6 +1300,10 @@ def plot_one_frame_check(
             ax.text(
                 b + (e - b) / 2, 0.9, f"{index}", ha="center", va="center", rotation=90
             )
+        ax.axvline(
+            fd[f"ideal_time_of_match_{which}"] - ideal_t0 + fd[f"lag_{which}"],
+            color="C1",
+        )
         pc = fd[f"peak_corr_{which}"]
         if "crosscorr_picked" not in fd:
             ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
@@ -1338,7 +1342,7 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
         cc[i] = cc_dict[picked][i]
 
     ax.imshow(
-        cc,
+        cc.T,
         cmap="RdBu_r",
         vmin=-1,
         vmax=1,
