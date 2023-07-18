@@ -228,7 +228,7 @@ def generate_vs_df(
             ~(monitor_frames_df.closest_frame.diff() == 0)
         ]
         print(
-            f"Removed {len(remove)+len(monitor_frames_df[~(monitor_frames_df.closest_frame.diff() == 0)])} frames."
+            f"Removed {len(remove)+len(monitor_frames_df[(monitor_frames_df.closest_frame.diff() == 0)])} frames."
         )
         if len(remove) == 0:
             removed_frames = False
