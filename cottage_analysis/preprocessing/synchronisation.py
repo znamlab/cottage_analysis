@@ -160,7 +160,7 @@ def generate_vs_df(
     flexilims_session=None,
     project=None,
     sync_imaging=True,
-    filter_datasets={None: None},
+    filter_datasets=None,
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
 
@@ -170,7 +170,7 @@ def generate_vs_df(
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
         sync_imaging (bool): is the data imaging data? Defaults to True. If it is imaging data, imaging trigger log will be synced with vs_df.
-        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to {None:None}.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -374,7 +374,7 @@ def fill_missing_imaging_volumes(df):
     return img_df
 
 
-def load_imaging_data(recording_name, flexilims_session, filter_datasets={None: None}):
+def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
     suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording_name,
