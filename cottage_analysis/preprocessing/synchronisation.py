@@ -10,7 +10,7 @@ import pickle
 import flexiznam as flz
 from cottage_analysis.io_module import harp
 from cottage_analysis.preprocessing import find_frames
-from cottage_analysis.filepath import generate_filepaths
+
 from cottage_analysis.imaging.common import find_frames as find_img_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
@@ -122,21 +122,21 @@ def find_monitor_frames(
     print(f"Recording is {recording_duration:.0f} s long.")
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
     if photodiode_protocol == 2:
-        frames_df = find_frames.sync_by_frame_alternating(
-            photodiode=harp_messages["photodiode"],
-            analog_time=harp_messages["analog_time"],
-            frame_rate=frame_rate,
+        params = dict(
             photodiode_sampling=1000,
             plot=True,
             plot_start=10000,
             plot_range=1000,
             plot_dir=monitor_frames_ds.path_full.parent,
         )
+        frames_df = find_frames.sync_by_frame_alternating(
+            photodiode=harp_messages["photodiode"],
+            analog_time=harp_messages["analog_time"],
+            frame_rate=frame_rate,
+            **params,
+        )
     elif photodiode_protocol == 5:
-        frames_df, _ = find_frames.sync_by_correlation(
-            frame_log,
-            harp_messages["analog_time"],
-            harp_messages["photodiode"],
+        params = dict(
             time_column="HarpTime",
             sequence_column="PhotoQuadColor",
             num_frame_to_corr=6,
@@ -146,12 +146,20 @@ def find_monitor_frames(
             correlation_threshold=0.8,
             relative_corr_thres=0.02,
             minimum_lag=1.0 / frame_rate,
-            do_plot=False,
+            do_plot=True,
+            save_folder=monitor_frames_ds.path_full.parent,
             verbose=True,
         )
+        frames_df, _ = find_frames.sync_by_correlation(
+            frame_log,
+            harp_messages["analog_time"],
+            harp_messages["photodiode"],
+            **params,
+        )
+    params["photodiode_protocol"] = photodiode_protocol
     # Save monitor frame dataframes
     frames_df.to_pickle(monitor_frames_ds.path_full)
-    monitor_frames_ds.extra_attributes["photodiode_protocol"] = photodiode_protocol
+    monitor_frames_ds.extra_attributes = params
     monitor_frames_ds.update_flexilims(mode="overwrite")
     return frames_df
 
