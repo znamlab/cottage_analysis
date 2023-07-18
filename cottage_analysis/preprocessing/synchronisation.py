@@ -107,7 +107,7 @@ def find_monitor_frames(
         return pd.read_pickle(monitor_frames_ds.path_full)
 
     harp_messages, harp_ds = load_harpmessage(
-        recording=recording, flexilims_session=flexilims_session, conflicts=conflicts
+        recording=recording, flexilims_session=flexilims_session, conflicts="skip"
     )
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
 
@@ -119,13 +119,17 @@ def find_monitor_frames(
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
+    diagnostics_folder = (
+        monitor_frames_ds.path_full.parent / "diagnostics" / "frame_sync"
+    )
+    diagnostics_folder.mkdir(parents=True, exist_ok=True)
     if photodiode_protocol == 2:
         params = dict(
             photodiode_sampling=1000,
             plot=True,
             plot_start=10000,
             plot_range=1000,
-            plot_dir=monitor_frames_ds.path_full.parent,
+            plot_dir=diagnostics_folder,
         )
         frames_df = find_frames.sync_by_frame_alternating(
             photodiode=harp_messages["photodiode"],
@@ -145,7 +149,7 @@ def find_monitor_frames(
             relative_corr_thres=0.02,
             minimum_lag=1.0 / frame_rate,
             do_plot=True,
-            save_folder=monitor_frames_ds.path_full.parent,
+            save_folder=diagnostics_folder,
             verbose=True,
         )
         frames_df, _ = find_frames.sync_by_correlation(
