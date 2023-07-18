@@ -247,6 +247,7 @@ def generate_vs_df(
         )
 
     # Filter monitor frame index and get rid of frames when diff is negative
+    vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
     frame_idx_dff = vs_df.monitor_frame.diff()
     frame_idx_dff[0] = 1
     vs_df = vs_df[~(frame_idx_dff.shift(-1) < 0)]
@@ -259,7 +260,7 @@ def generate_vs_df(
             flexilims_session=flexilims_session,
             origin_name=recording.name,
             dataset_type="suite2p_traces",
-            filter_datasets=filer_datasets,
+            filter_datasets=filter_datasets,
             allow_multiple=False,
             return_dataseries=False,
         )
@@ -267,7 +268,8 @@ def generate_vs_df(
         if not save_folder.exists():
             save_folder.mkdir(parents=True)
         p_msg = processed_path / "sync" / "harpmessage.npz"
-        frame_number = float(suite2p_dataset.extra_attributes["nframes"])
+        dff = np.load(suite2p_dataset.path_full / "dff_ast.npy")
+        frame_number = float(dff.shape[1])
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
         fs = float(suite2p_dataset.extra_attributes["fs"])
         # frame period calculated based of the frame rate in ops.npy
