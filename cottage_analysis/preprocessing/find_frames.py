@@ -1346,7 +1346,7 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
         cmap="RdBu_r",
         vmin=-1,
         vmax=1,
-        extent=[lags[0], lags[-1], 0, len(cc)],
+        extent=[0, len(cc), lags[0], lags[-1]],
         aspect="auto",
     )
     ax.set_xlabel("Frame")
