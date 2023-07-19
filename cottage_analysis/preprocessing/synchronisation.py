@@ -235,14 +235,14 @@ def generate_vs_df(
         if len(remove) == 0:
             removed_frames = False
 
-    if photodiode_protocol == 5:
-        # Find frames that are not skipped
-        monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
-        monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
-            "int"
-        )
-        monitor_frames_df = monitor_frames_df.sort_values("closest_frame")
 
+    monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
+    monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
+        "int"
+    )
+    monitor_frames_df = monitor_frames_df.sort_values("closest_frame")
+    
+    if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         harp_ds = flz.get_datasets(
             flexilims_session=flexilims_session,
@@ -265,12 +265,8 @@ def generate_vs_df(
 
     if photodiode_protocol == 2:
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
-        monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
-        )
-        monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
-            "int"
         )
 
         encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
