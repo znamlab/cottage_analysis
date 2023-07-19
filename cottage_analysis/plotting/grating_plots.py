@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
 from functools import partial
@@ -66,11 +67,11 @@ def plot_sftf_tuning(dff_mean, roi):
     # plot a polar plot of dff as a function of angle
     plt.subplot(3, 3, 5, projection="polar")
     dir_tuning = dff_mean.groupby("Angle").max()
-    # append the first angle to the end to close the circle
-    dir_tuning = dir_tuning.append(dir_tuning.iloc[0])
+    # concatenate the first row to the end to close the circle
+    dir_tuning = pd.concat([dir_tuning, dir_tuning.iloc[0:1]])
     plt.plot(
-        np.deg2rad(dir_tuning.index),
-        dir_tuning[roi],
+        np.deg2rad(dir_tuning.index.values),
+        dir_tuning[roi].values,
         color="k",
     )
     plt.fill_between(
