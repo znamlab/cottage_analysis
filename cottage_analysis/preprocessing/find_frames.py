@@ -1066,6 +1066,7 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
         pd.DataFrame: the cleaned-up dataframe
     """
     frames_corrected = 0
+
     # define some utility functions
     def _get_frame_diff(frames_df, index_to_test, diff_size=1, verbose=True):
         bef = np.clip(index_to_test - 1, 0, len(frames_df) - 1)
@@ -1373,3 +1374,36 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
     )
     ax.set_xlabel("Frame")
     ax.set_ylabel("Lag")
+
+
+def remove_frames_in_wrong_order(monitor_frames_df):
+    monitor_frames_df = monitor_frames_df.copy()
+    # Remove monitor frames with wrong order of frame indices
+    print(f"Removing frames in wrong order of frame indices.")
+    removed_frames = True
+    while removed_frames:
+        old_length = len(monitor_frames_df)
+        diffs = monitor_frames_df.closest_frame.diff()
+        diffs.iloc[0] = 1
+        # check whether the negative diff precedes or follows a large positive diff
+        # if it precedes, remove the frame with the negative diff
+        # if it follows, remove the frame with the large positive diff
+        diffs_before = diffs.shift(1, fill_value=1).values
+        diffs_after = diffs.shift(-1, fill_value=1).values
+        remove_before = np.roll(
+            np.logical_and(diffs.values < 0, diffs_before > diffs_after), -1
+        )
+        remove_negative_diff = np.logical_and(
+            diffs.values < 0, diffs_before <= diffs_after
+        )
+        monitor_frames_df = monitor_frames_df[~(remove_before | remove_negative_diff)]
+        # Then remove the duplicates
+        duplicates = monitor_frames_df.closest_frame.diff() == 0
+        monitor_frames_df = monitor_frames_df[~duplicates]
+        new_length = len(monitor_frames_df)
+        print(f"Removed {old_length - new_length} frames including:")
+        print(f"{np.sum(remove_before | remove_negative_diff)} negative diffs.")
+        print(f"{np.sum(duplicates)} duplicates.")
+        if new_length == old_length:
+            removed_frames = False
+    return monitor_frames_df
