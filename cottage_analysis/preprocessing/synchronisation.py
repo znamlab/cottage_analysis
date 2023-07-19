@@ -235,13 +235,11 @@ def generate_vs_df(
 
     if photodiode_protocol == 5:
         # Find frames that are not skipped
-        monitor_frame_valid = monitor_frames_df[
-            monitor_frames_df.closest_frame.notnull()
-        ][["closest_frame", "onset_time", "offset_time", "peak_time"]]
-        monitor_frame_valid["closest_frame"] = monitor_frame_valid[
-            "closest_frame"
-        ].astype("int")
-        monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
+        monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
+        monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
+            "int"
+        )
+        monitor_frames_df = monitor_frames_df.sort_values("closest_frame")
 
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         harp_ds = flz.get_datasets(
@@ -262,45 +260,46 @@ def generate_vs_df(
                 "EyeZ": "eye_z",
             }
         )
+
+    if photodiode_protocol == 2:
+        # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
+        monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
+        monitor_frames_df = monitor_frames_df.rename(
+            columns={"peak_time": "onset_time"}
+        )
+        monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
+            "int"
+        )
+
+        encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
+        frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
+        frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
+        frame_log_z = frame_log_z.rename(
+            columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
+        )
+        frame_log_z = frame_log_z.drop(columns={"Frame"})
+
         frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
         frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
         vs_df = pd.merge_asof(
-            left=monitor_frame_valid,
+            left=monitor_frames_df[["closest_frame", "onset_time"]],
             right=frame_log_z,
-            on="closest_frame",
-            direction="nearest",
-            allow_exact_matches=True,
-        )
-
-    if photodiode_protocol == 2:
-        monitor_frame_valid = monitor_frames_df[["closest_frame", "peak_time"]]
-        # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
-        monitor_frame_valid = monitor_frame_valid.rename(
-            columns={"peak_time": "onset_time"}
-        )
-        monitor_frame_valid["closest_frame"] = monitor_frame_valid[
-            "closest_frame"
-        ].astype("int")
-        monitor_frame_valid = monitor_frame_valid.sort_values("closest_frame")
-
-        encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
-        mouse_z_df = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
-        mouse_z_df = mouse_z_df[mouse_z_df.Frame.diff() != 0]
-        mouse_z_df = mouse_z_df.rename(
-            columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
-        )
-        mouse_z_df = mouse_z_df.drop(columns={"Frame"})
-
-        mouse_z_df["mouse_z"] = mouse_z_df["mouse_z"] / 100  # convert cm to m
-        mouse_z_df["eye_z"] = mouse_z_df["eye_z"] / 100  # convert cm to m
-        vs_df = pd.merge_asof(
-            left=monitor_frame_valid,
-            right=mouse_z_df,
             on="onset_time",
             direction="nearest",
             allow_exact_matches=True,
         )
 
+    frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
+    frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
+    vs_df = pd.merge_asof(
+        left=monitor_frames_df[["closest_frame", "onset_time"]],
+        right=frame_log_z,
+        on="closest_frame",
+        direction="nearest",
+        allow_exact_matches=True,
+    )
+
+    vs_df = vs_df.sort_values("onset_time")
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
     if sync_imaging:
         suite2p_dataset = flz.get_datasets(
@@ -318,7 +317,12 @@ def generate_vs_df(
             allow_multiple=False,
             return_dataseries=False,
         ).path_full
-        frame_number = float(suite2p_dataset.extra_attributes["nframes"])
+        if "nframes" in suite2p_dataset.extra_attributes:
+            frame_number = float(suite2p_dataset.extra_attributes["nframes"])
+        else:
+            frame_number = float(
+                np.load(suite2p_dataset.path_full / "dff_ast.npy").shape[1]
+            )
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
         fs = float(suite2p_dataset.extra_attributes["fs"])
         # frame period calculated based of the frame rate in ops.npy
@@ -369,9 +373,9 @@ def generate_vs_df(
 
     # Align paramLog with vs_df
     paramlog_path = (
-        raw_path / "NewParams.csv"
+        harp_ds.path_full / harp_ds.csv_files["NewParams"]
     )  #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = frame_log_path = harp_ds.path_full / harp_ds.csv_files["ParamLog"]
+    param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "onset_time"})
 
     vs_df = pd.merge_asof(
