@@ -9,7 +9,7 @@ from pathlib import Path
 import flexiznam as flz
 from cottage_analysis.io_module import harp
 from cottage_analysis.preprocessing import find_frames
-from cottage_analysis.imaging.common import find_frames as find_img_frames
+from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
 
@@ -191,6 +191,7 @@ def generate_vs_df(
 
     """
     assert flexilims_session is not None or project is not None
+    assert photodiode_protocol in [2, 5]
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
     monitor_frames_df = find_monitor_frames(
@@ -200,48 +201,12 @@ def generate_vs_df(
         conflicts="skip",
     )
 
-    # Remove monitor frames with wrong order of frame indices
-    print(f"Removed frames in wrong order of frame indices.")
-    removed_frames = True
-    while removed_frames:
-        frame_idx_dff = monitor_frames_df.closest_frame.diff()
-        frame_idx_dff[0] = 1
-        bad_frames_after = monitor_frames_df[frame_idx_dff < 0].closest_frame.values
-        bad_frames_before = (
-            monitor_frames_df[frame_idx_dff < 0].shift(1).closest_frame.values
-        )
-        bad_frames_before2 = (
-            monitor_frames_df[frame_idx_dff < 0].shift(2).closest_frame.values
-        )
-        # 2 senarios where a negative diff between 2 frame indices can exist.
-        # 1,2,0,5: the first gap (1,2) is smaller than or equal to second gap (2,0): we need to remove 0
-        # 1,4,2,5: the first gap (1,4) is greater than second gap (4,2): we need to remove 4
-        diff1 = np.abs(bad_frames_before - bad_frames_before2)
-        diff2 = np.abs(bad_frames_after - bad_frames_before)
-        remove_after = bad_frames_after[diff1 <= diff2]
-        remove_before = (bad_frames_before)[diff1 > diff2]
-        remove = np.sort(np.concatenate((remove_before, remove_after)).flatten())
-        monitor_frames_df = monitor_frames_df[
-            ~monitor_frames_df.closest_frame.isin(remove)
-        ]
-
-        # Then remove the duplicates
-        monitor_frames_df = monitor_frames_df[
-            ~(monitor_frames_df.closest_frame.diff() == 0)
-        ]
-        print(
-            f"Removed {len(remove)+len(monitor_frames_df[(monitor_frames_df.closest_frame.diff() == 0)])} frames."
-        )
-        if len(remove) == 0:
-            removed_frames = False
-
-
-    monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()]
+    monitor_frames_df = monitor_frames_df[monitor_frames_df.closest_frame.notnull()].copy()
+    monitor_frames_df = find_frames.remove_frames_in_wrong_order(monitor_frames_df)
     monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
         "int"
     )
-    monitor_frames_df = monitor_frames_df.sort_values("closest_frame")
-    
+
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         harp_ds = flz.get_datasets(
@@ -262,13 +227,11 @@ def generate_vs_df(
                 "EyeZ": "eye_z",
             }
         )
-
-    if photodiode_protocol == 2:
+    else:
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
         )
-
         encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
@@ -276,16 +239,6 @@ def generate_vs_df(
             columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
         )
         frame_log_z = frame_log_z.drop(columns={"Frame"})
-
-        frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
-        frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
-        vs_df = pd.merge_asof(
-            left=monitor_frames_df[["closest_frame", "onset_time"]],
-            right=frame_log_z,
-            on="onset_time",
-            direction="nearest",
-            allow_exact_matches=True,
-        )
 
     frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
     frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
@@ -297,8 +250,14 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
 
-    vs_df = vs_df.sort_values("onset_time")
     # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
+    harp_npz_path = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp_npz",
+        allow_multiple=False,
+        return_dataseries=False,
+    ).path_full
     if sync_imaging:
         suite2p_dataset = flz.get_datasets(
             flexilims_session=flexilims_session,
@@ -308,13 +267,6 @@ def generate_vs_df(
             allow_multiple=False,
             return_dataseries=False,
         )
-        p_msg = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=recording.name,
-            dataset_type="harp_npz",
-            allow_multiple=False,
-            return_dataseries=False,
-        ).path_full
         if "nframes" in suite2p_dataset.extra_attributes:
             frame_number = float(suite2p_dataset.extra_attributes["nframes"])
         else:
@@ -325,9 +277,9 @@ def generate_vs_df(
         fs = float(suite2p_dataset.extra_attributes["fs"])
         # frame period calculated based of the frame rate in ops.npy
         # subtracting 1 ms to account for the duration of the triggers
-        img_frame_logger = find_img_frames.find_imaging_frames(
+        img_frame_logger = find_imaging_frames(
             harp_message=format_loggers.format_img_frame_logger(
-                harpmessage_file=p_msg, register_address=32
+                harpmessage_file=harp_npz_path, register_address=32
             ),
             frame_number=int(frame_number * nplanes),
             frame_period=(1 / fs) / nplanes - 0.001,
@@ -354,7 +306,7 @@ def generate_vs_df(
         )
 
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
-    harpmessage = np.load(p_msg)
+    harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
         {
             "onset_time": harpmessage["analog_time"],
