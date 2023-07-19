@@ -257,12 +257,14 @@ def sync_by_correlation(
         rng = np.random.default_rng(42)
         good = frames_df[frames_df.sync_reason == "consensus of 3"]
         good = good.sample(min(2, len(good)), random_state=rng).index
+        ampl = frames_df[frames_df.sync_reason == "closest to photodiode"]
+        ampl = ampl.sample(min(2, len(ampl)), random_state=rng).index
         bad = (
             frames_df[frames_df.closest_frame.diff() < 0]
             .sample(2, random_state=rng)
             .index
         )
-        toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1)
+        toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1) + list(ampl)
         for frame in toplot:
             fig = plot_one_frame_check(
                 frame,
@@ -276,6 +278,12 @@ def sync_by_correlation(
             )
             fig.suptitle(f"Frame {frame}")
             fig.savefig(save_folder / f"frame_{frame}_check.png")
+    if not debug:
+        # run the cleanup a last time, to clean the dataframe
+        #  this won't remove any frame but remove the bef,aft,center columns
+        frames_df, frames_corrected = _cleanup_match_order(
+            frames_df, frame_log, verbose=False, clean_df=True
+        )
     return frames_df, extra_out
 
 
@@ -631,6 +639,7 @@ def run_cross_correlation(
         db_dict["lags_sample"] = lags
         db_dict["cc_dict"] = cc_dict
         db_dict["ideal_pd"] = ideal_pd
+        db_dict["ideal_onset"] = ideal_onset
 
     else:
         cc_dict, id_dict, lags = out
@@ -641,6 +650,7 @@ def run_cross_correlation(
 
     for iw, which in enumerate(["bef", "center", "aft"]):
         cc = cc_dict[which]
+
         frames_df["lag_%s" % which] = lags[cc.argmax(axis=1)] / pd_sampling
         frames_df["peak_corr_%s" % which] = cc.max(axis=1)
         # to find the match between photiodiode and frame log, we want to look at what is
@@ -654,17 +664,21 @@ def run_cross_correlation(
         # we remove the lag to frames_df instead of adding it to frame_log
         time_of_match -= frames_df["lag_%s" % which].values
         # This gives us the time relative to the onset of the real photodiode signal
-        # However, if there is a frame drop, onset is uselss when matchin after
+        # However, if there is a frame drop, onset is uselss when matching `aft`
+        # Furthermore the detected frame is almost centered on the offset of the frame
+        # as the signal is filtered strongly. So we have to look a bit before the detect
+        # frame to find the actual sequence value that produced the signal.
         # So we match:
-        # * onset + 0.3 frame for bef
-        # * peak - 0.1 frame for center, as peak is usually toward the end of the frame
-        # * offset - 0.3 frame for aft
+        # * onset + 0.2 frame for bef
+        # * peak - 0.3 frame for center
+        # * offset - 0.7 frame for aft
         matching_type = ["onset", "peak", "offset"][iw]
         time_to_onset = (
             frames_df[f"{matching_type}_time"].values - frames_df["onset_time"].values
         )
         time_of_match += time_to_onset
-        time_of_match += [0.3, -0.1, -0.3][iw] / frame_rate
+        time_of_match += [0.2, -0.3, -0.7][iw] / frame_rate
+        frames_df[f"ideal_time_of_match_{which}"] = time_of_match
         index_of_match = ideal_time.searchsorted(time_of_match)
         cl = ideal_seqi_trace[index_of_match]
         frames_df[f"closest_frame_{which}"] = cl
@@ -1187,7 +1201,7 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
             and (not c.endswith("center"))
             and (not c.endswith("aft"))
         ]
-        return pd.DataFrame(frames_df[cols])
+        return pd.DataFrame(frames_df[cols]), frames_corrected
     return frames_df, frames_corrected
 
 
@@ -1286,6 +1300,10 @@ def plot_one_frame_check(
             ax.text(
                 b + (e - b) / 2, 0.9, f"{index}", ha="center", va="center", rotation=90
             )
+        ax.axvline(
+            fd[f"ideal_time_of_match_{which}"] - ideal_t0 + fd[f"lag_{which}"],
+            color="C1",
+        )
         pc = fd[f"peak_corr_{which}"]
         if "crosscorr_picked" not in fd:
             ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
@@ -1324,11 +1342,11 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
         cc[i] = cc_dict[picked][i]
 
     ax.imshow(
-        cc,
+        cc.T,
         cmap="RdBu_r",
         vmin=-1,
         vmax=1,
-        extent=[lags[0], lags[-1], 0, len(cc)],
+        extent=[0, len(cc), lags[0], lags[-1]],
         aspect="auto",
     )
     ax.set_xlabel("Frame")

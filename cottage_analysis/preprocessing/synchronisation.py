@@ -95,6 +95,8 @@ def find_monitor_frames(
         recording = flz.get_entity(
             datatype="recording", name=recording, flexilims_session=flexilims_session
         )
+        if recording is None:
+            raise ValueError(f"Recording {recording} does not exist.")
     # Load files
     monitor_frames_ds = flz.Dataset.from_origin(
         origin_id=recording["id"],
