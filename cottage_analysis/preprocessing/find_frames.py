@@ -1065,6 +1065,7 @@ def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
         pd.DataFrame: the cleaned-up dataframe
     """
     frames_corrected = 0
+
     # define some utility functions
     def _get_frame_diff(frames_df, index_to_test, diff_size=1, verbose=True):
         bef = np.clip(index_to_test - 1, 0, len(frames_df) - 1)
@@ -1370,36 +1371,28 @@ def remove_frames_in_wrong_order(monitor_frames_df):
     print(f"Removing frames in wrong order of frame indices.")
     removed_frames = True
     while removed_frames:
-        bad_frame_idx = monitor_frames_df.closest_frame.diff() < 0
-        bad_frame_idx.iloc[0] = False
-        bad_frames_after = monitor_frames_df[bad_frame_idx].closest_frame.values
-        bad_frame_idx_before = bad_frame_idx.shift(1, fill_value=False)
-        bad_frames_before = (
-            monitor_frames_df[bad_frame_idx_before].closest_frame.values
+        old_length = len(monitor_frames_df)
+        diffs = monitor_frames_df.closest_frame.diff()
+        diffs.iloc[0] = 1
+        # check whether the negative diff precedes or follows a large positive diff
+        # if it precedes, remove the frame with the negative diff
+        # if it follows, remove the frame with the large positive diff
+        diffs_before = diffs.shift(1, fill_value=1).values
+        diffs_after = diffs.shift(-1, fill_value=1).values
+        remove_before = np.roll(
+            np.logical_and(diffs.values < 0, diffs_before > diffs_after), -1
         )
-        bad_frame_idx_before2 = bad_frame_idx.shift(2, fill_value=False)
-        bad_frames_before2 = (
-            monitor_frames_df[bad_frame_idx_before2].closest_frame.values
+        remove_negative_diff = np.logical_and(
+            diffs.values < 0, diffs_before <= diffs_after
         )
-        # 2 senarios where a negative diff between 2 frame indices can exist.
-        # 1,2,0,5: the first gap (1,2) is smaller than or equal to second gap (2,0): we need to remove 0
-        # 1,4,2,5: the first gap (1,4) is greater than second gap (4,2): we need to remove 4
-        diff1 = np.abs(bad_frames_before - bad_frames_before2)
-        diff2 = np.abs(bad_frames_after - bad_frames_before)
-        remove_after = bad_frames_after[diff1 <= diff2]
-        remove_before = bad_frames_before[diff1 > diff2]
-        remove = np.sort(np.concatenate((remove_before, remove_after)).flatten())
-        monitor_frames_df = monitor_frames_df[
-            ~monitor_frames_df.closest_frame.isin(remove)
-        ]
-
+        monitor_frames_df = monitor_frames_df[~(remove_before | remove_negative_diff)]
         # Then remove the duplicates
-        monitor_frames_df = monitor_frames_df[
-            ~(monitor_frames_df.closest_frame.diff() == 0)
-        ]
-        print(
-            f"Removed {len(remove)+len(monitor_frames_df[(monitor_frames_df.closest_frame.diff() == 0)])} frames."
-        )
-        if len(remove) == 0:
+        duplicates = monitor_frames_df.closest_frame.diff() == 0
+        monitor_frames_df = monitor_frames_df[~duplicates]
+        new_length = len(monitor_frames_df)
+        print(f"Removed {old_length - new_length} frames including:")
+        print(f"{np.sum(remove_before | remove_negative_diff)} negative diffs.")
+        print(f"{np.sum(duplicates)} duplicates.")
+        if new_length == old_length:
             removed_frames = False
     return monitor_frames_df
