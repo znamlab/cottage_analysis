@@ -243,9 +243,9 @@ def sync_by_correlation(
         if verbose:
             print("Plotting diagnostic figures")
         fig = plt.figure()
-        ax = fig.add_subplot(1, 2, 1)
+        ax = fig.add_subplot(2, 1, 1)
         plot_crosscorr_matrix(ax, db_dict["cc_dict"], db_dict["lags_sample"], frames_df)
-        ax = fig.add_subplot(1, 2, 2)
+        ax = fig.add_subplot(2, 1, 2)
         plot_crosscorr_matrix(ax, db_dict["cc_dict"], db_dict["lags_sample"], frames_df)
         xl = ax.get_xlim()
         mid = (xl[0] + xl[1]) / 2
@@ -1335,7 +1335,7 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
     Returns:
         None
     """
-    cc = np.zeros(cc_dict["center"].shape) + np.nan
+    cc = np.zeros(cc_dict["center"].shape) + 0
     for i, picked in frames_df.crosscorr_picked.items():
         if picked == "none":
             continue
@@ -1348,6 +1348,17 @@ def plot_crosscorr_matrix(ax, cc_dict, lags, frames_df):
         vmax=1,
         extent=[0, len(cc), lags[0], lags[-1]],
         aspect="auto",
+        origin="lower",
+    )
+    nans = np.where((frames_df.crosscorr_picked == "none").values)[0]
+    ax.scatter(
+        nans,
+        np.ones(nans.shape),
+        color="k",
+        marker="|",
+        alpha=0.1,
+        transform=ax.get_xaxis_transform(),
+        clip_on=False,
     )
     ax.set_xlabel("Frame")
     ax.set_ylabel("Lag")
