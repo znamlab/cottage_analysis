@@ -274,6 +274,7 @@ def sync_by_correlation(
                 normed_pd=normed_pd,
                 ideal_time=db_dict["ideal_time"],
                 ideal_pd=db_dict["ideal_photodiode_trace"],
+                ideal_seqi=db_dict["ideal_seqi_trace"],
                 num_frame_to_corr=None,
             )
             fig.suptitle(f"Frame {frame}")
@@ -1213,6 +1214,7 @@ def plot_one_frame_check(
     normed_pd,
     ideal_time,
     ideal_pd,
+    ideal_seqi,
     num_frame_to_corr=None,
 ):
     """Plot the photodiode signand the frame detection for one frame.
@@ -1225,6 +1227,7 @@ def plot_one_frame_check(
         normed_pd (np.array): the photodiode signal
         ideal_time (np.array): the idealised time of the photodiode signal
         ideal_pd (np.array): the idealised photodiode signal
+        ideal_seqi (np.array): the idealised sequence index
         num_frame_to_corr (int, optional): the number of frame to use for the
             correlation. If provide will indicate area of correlation. Defaults to None.
 
@@ -1292,19 +1295,27 @@ def plot_one_frame_check(
             color="C1",
         )
 
-        for i in np.arange(-6, 6, dtype=int):
-            index = int(fd["closest_frame_log_index"]) + i
-            id_swt = frame_log.loc[index : index + 1, "ideal_switch_times"]
-            b, e = id_swt - ideal_t0 + fd[f"lag_{which}"]
+        seq = ideal_seqi[slice(*w)]
+        t = ideal_time[slice(*w)] - ideal_t0 + fd[f"lag_{which}"]
+        switch = np.where(np.diff(seq) != 0)[0]
+        for i, s in enumerate(switch[:-1]):
+            b = t[s]
+            e = t[switch[i + 1]]
+            if b < -70e-3 or e > 70e-3:
+                continue
+
+            index = seq[s + 2]
             ax.axvspan(b, e, alpha=0.2, ymin=0.5, color=f"C{i%2}")
             ax.text(
                 b + (e - b) / 2, 0.9, f"{index}", ha="center", va="center", rotation=90
             )
+
         ax.axvline(
             fd[f"ideal_time_of_match_{which}"] - ideal_t0 + fd[f"lag_{which}"],
             color="C1",
         )
         pc = fd[f"peak_corr_{which}"]
+
         if "crosscorr_picked" not in fd:
             ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
         elif fd.crosscorr_picked == which:
