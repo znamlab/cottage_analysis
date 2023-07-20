@@ -3,7 +3,6 @@ import pandas as pd
 import pickle
 from cottage_analysis.analysis import spheres
 from cottage_analysis.analysis import common_utils
-from cottage_analysis.filepath import generate_filepaths
 
 
 # Regenerate sphere stimuli for each recording

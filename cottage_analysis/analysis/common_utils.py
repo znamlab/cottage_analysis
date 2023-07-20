@@ -3,7 +3,6 @@ import scipy
 import pandas as pd
 from scipy.optimize import curve_fit
 import flexiznam as flz
-from cottage_analysis.filepath import generate_filepaths
 from cottage_analysis.preprocessing import synchronisation
 from pathlib import Path
 

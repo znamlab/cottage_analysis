@@ -5,10 +5,7 @@ from tqdm import tqdm
 import scipy
 import flexiznam as flz
 
-from cottage_analysis.filepath import generate_filepaths
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import common_utils
-
 from functools import partial
 
 print = partial(print, flush=True)
