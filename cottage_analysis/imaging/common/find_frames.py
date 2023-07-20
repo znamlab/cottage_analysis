@@ -149,7 +149,7 @@ def find_imaging_frames(
 ):
     """Find imaging triggers and the corresponding harptime from formatted harpmessage.
 
-    Note that the resulting harp times correspond to the end of each frame, at least for
+    Note that the resulting harp times now correspond to the start of each frame, at least for
     scanimage recordings.
 
     Args:
@@ -167,7 +167,8 @@ def find_imaging_frames(
     frame_triggers = frame_triggers.rename(
         columns={"Timestamp": "HarpTime"}, inplace=False
     )
-    frame_triggers["HarpTime_diff"] = frame_triggers.HarpTime.diff()
+    # shift diff by -1 to get the start of the frame
+    frame_triggers["HarpTime_diff"] = frame_triggers.HarpTime.diff().shift(-1)
 
     frame_triggers["FramePeriod"] = np.nan
     frame_triggers.loc[
