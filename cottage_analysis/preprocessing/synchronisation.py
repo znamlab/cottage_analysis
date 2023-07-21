@@ -334,8 +334,8 @@ def generate_vs_df(
         left_on="closest_frame",
         right_on="Frameindex",
         direction="backward",
-        allow_exact_matches=False,
-    )  # Does not allow exact match of sphere rendering time and frame onset time?
+        allow_exact_matches=True,
+    )
 
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
