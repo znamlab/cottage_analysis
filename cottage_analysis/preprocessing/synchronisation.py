@@ -295,12 +295,13 @@ def generate_vs_df(
         )
         img_frame_logger["imaging_volume"] = (
             img_frame_logger["imaging_frame"] / nplanes
-        ).astype(int)
+        ).apply(np.floor).astype(int)
+        # select the imaging frame that is being imaged during the monitor refresh
         vs_df = pd.merge_asof(
             left=vs_df,
             right=img_frame_logger,
             on="onset_time",
-            direction="forward",
+            direction="backward",
             allow_exact_matches=True,
         )
 
@@ -330,7 +331,8 @@ def generate_vs_df(
     vs_df = pd.merge_asof(
         left=vs_df,
         right=param_log,
-        on="onset_time",
+        left_on="closest_frame",
+        right_on="Frameindex",
         direction="backward",
         allow_exact_matches=False,
     )  # Does not allow exact match of sphere rendering time and frame onset time?
