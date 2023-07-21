@@ -289,7 +289,7 @@ def generate_vs_df(
         img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
         img_frame_logger = img_frame_logger.rename(
             columns={
-                "HarpTime": "onset_time",
+                "HarpTime": "imaging_frame_harptime",
                 "ImagingFrame": "imaging_frame",
             }
         )
@@ -300,7 +300,8 @@ def generate_vs_df(
         vs_df = pd.merge_asof(
             left=vs_df,
             right=img_frame_logger,
-            on="onset_time",
+            left_on="onset_time",
+            right_on="imaging_frame_harptime",
             direction="backward",
             allow_exact_matches=True,
         )
@@ -326,7 +327,7 @@ def generate_vs_df(
         harp_ds.path_full / harp_ds.csv_files["NewParams"]
     )  #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
     param_log = pd.read_csv(paramlog_path)
-    param_log = param_log.rename(columns={"HarpTime": "onset_time"})
+    param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
 
     vs_df = pd.merge_asof(
         left=vs_df,
@@ -335,7 +336,7 @@ def generate_vs_df(
         right_on="Frameindex",
         direction="backward",
         allow_exact_matches=True,
-    )
+    )  # Does not allow exact match of sphere rendering time and frame onset time?
 
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
