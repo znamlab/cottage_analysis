@@ -1,6 +1,9 @@
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
+import flexiznam as flz
+from pathlib import Path
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -238,39 +241,26 @@ def _meshgrid(x, y):
     return xx, yy
 
 
-def sync_params_with_vs_df(recording, vs_df, flexilims_session=None, project=None):
-    """Sync vis-stim params to vs_df.
+def format_vs_df_params(recording, vs_df):
+    """Format sphere params in vs_df.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
         vs_df(pd.DataFrame): dataframe that contains info for each monitor frame.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
 
     Returns:
         DataFrame: contains information for each monitor frame and vis-stim.
 
     """
-    assert flexilims_session is not None or project is not None
-    if flexilims_session is None:
-        flexilims_session = flz.get_flexilims_session(project_id=project)
-    raw_path = Path(flz.PARAMETERS["data_root"]["raw"]) / recording.path
-    processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
 
-    # Align sphere parameter with the frame (harptime later than the logged sphere time)
-    paramlog_path = (
-        raw_path / "NewParams.csv"
-    )  #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(paramlog_path)
-    if "Radius" in param_log.columns:
-        param_log = param_log.rename(columns={"Radius": "depth"})
-    elif "Depth" in param_log.columns:
-        param_log = param_log.rename(columns={"Depth": "depth"})
-    if "depth" in param_log.columns:
-        param_log["depth"] = param_log["depth"] / 100  # convert cm to m
-        if np.isnan(param_log["depth"].iloc[-1]):
-            param_log = param_log[:-1]
-    param_log = param_log.rename(columns={"HarpTime": "onset_time"})
+    if "Radius" in vs_df.columns:
+        vs_df = vs_df.rename(columns={"Radius": "depth"})
+    elif "Depth" in vs_df.columns:
+        vs_df = vs_df.rename(columns={"Depth": "depth"})
+    if "depth" in vs_df.columns:
+        vs_df["depth"] = vs_df["depth"] / 100  # convert cm to m
+        if np.isnan(vs_df["depth"].iloc[-1]):
+            vs_df = vs_df[:-1]
 
     # Indicate whether it's a closed loop or open loop session
     if "Playback" in recording.name:
@@ -278,23 +268,88 @@ def sync_params_with_vs_df(recording, vs_df, flexilims_session=None, project=Non
     else:
         vs_df["closed_loop"] = 1
 
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=param_log,
-        on="onset_time",
-        direction="backward",
-        allow_exact_matches=False,
-    )  # Does not allow exact match of sphere rendering time and frame onset time?
-
     return vs_df
 
 
-def generate_imaging_df(recording, vs_df, flexilims_session=None, project=None):
+def init_neurons_df(
+    recording,
+    filter_datasets=None,
+    flexilims_session=None,
+    project=None,
+    conflicts="skip",
+):
+    """Initialize a dataframe containing basic information about rois in each session. This dataframe will be saved.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
+
+    """
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    neurons_df = pd.DataFrame(
+        columns=[
+            "roi",  # ROI number
+            "plane_no",  # plane number, which plane this roi is located in
+        ]
+    )
+    neurons_ds = flz.Dataset.from_origin(
+        origin_id=recording["id"],
+        dataset_type="neurons_df",
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    neurons_ds.path = neurons_ds.path.parent / f"neurons_df.pickle"
+
+    if (neurons_ds.flexilims_status() != "not online") and (conflicts == "skip"):
+        print("Loading existing neurons_df file...")
+        return np.load(neurons_ds.path_full), neurons_ds
+
+    suite2p_dataset = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_id=recording.origin_id,
+        dataset_type="suite2p_rois",
+        filter_datasets=None,
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    nplanes = suite2p_dataset.extra_attributes["nplanes"]
+    for iplane in range(nplanes):
+        F = np.load(
+            suite2p_dataset.path_full / f"plane{iplane}/F.npy", allow_pickle=True
+        )
+        append_neurons = pd.DataFrame(
+            {
+                "roi": np.arange(F.shape[0]),
+                "plane_no": np.repeat(iplane, F.shape[0]),
+            }
+        )
+        neurons_df = pd.concat([neurons_df, append_neurons], ignore_index=True)
+
+    # save neurons_df
+    neurons_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
+    neurons_df.to_pickle(neurons_ds.path_full)
+
+    # update flexilims
+    neurons_ds.update_flexilims(mode="overwrite")
+
+    return neurons_df, neurons_ds
+
+
+def generate_imaging_df(
+    recording, vs_df, filter_datasets=None, flexilims_session=None, project=None
+):
     """Generate a DataFrame that contains information for each imaging frame.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
         vs_df(pd.DataFrame): dataframe that contains info for each monitor frame.
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
 
@@ -309,12 +364,7 @@ def generate_imaging_df(recording, vs_df, flexilims_session=None, project=None):
     processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
 
     # Add vis-stim parameters to vs_df
-    vs_df = sync_params_with_vs_df(
-        recording=recording,
-        vs_df=vs_df,
-        flexilims_session=flexilims_session,
-        project=project,
-    )
+    vs_df = format_vs_df_params(recording=recording, vs_df=vs_df)
 
     # Imaging_df: to find the RS/OF array for each imaging frame
     imaging_df = pd.DataFrame(
@@ -322,7 +372,6 @@ def generate_imaging_df(recording, vs_df, flexilims_session=None, project=None):
             "imaging_frame",
             "harptime_imaging_trigger",
             "depth",
-            # "trial_no",
             "is_stim",
             "RS",  # actual running speed, m/s
             "RS_eye",  # virtual running speed, m/s
@@ -334,7 +383,15 @@ def generate_imaging_df(recording, vs_df, flexilims_session=None, project=None):
 
     # Imaging frame number
     grouped_vs_df = vs_df.groupby("imaging_frame")
-    ops = np.load(suite2p_folder / "ops.npy", allow_pickle=True)
+    suite2p_dataset = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_id=recording.origin_id,
+        dataset_type="suite2p_rois",
+        filter_datasets=filter_datasets,
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    ops = np.load(suite2p_dataset.path_full / "ops.npy", allow_pickle=True)
     ops = ops.item()
     frame_number = ops["frames_per_folder"][folder_no]
     max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
