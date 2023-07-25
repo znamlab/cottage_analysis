@@ -393,20 +393,3 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
         dffs.append(np.load(plane_path / "dff_ast.npy"))
     return np.concatenate(dffs, axis=0).T
-
-
-def fill_in_missing_index(df, value_col):
-    # suggestion to use `fill_missing_imaging_volumes` instead?
-
-    # Fill in the value of the missing imaging frame from vs_df, if the monitor frames drop for more than one imaging frame
-    # reindex dataframe to create continuous index
-    new_index = pd.RangeIndex(start=df.index.min(), stop=df.index.max() + 1)
-    df = df.reindex(new_index)
-
-    # insert NaN rows where the original index was missing
-    df.loc[df[value_col].isna(), :] = np.nan
-
-    # fill the NaN row with the previous valid value
-    df[value_col] = df[value_col].fillna(method="ffill")
-
-    return df

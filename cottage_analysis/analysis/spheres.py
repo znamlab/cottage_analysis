@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
+from cottage_analysis.imaging.common.find_frames import find_imaging_frames
+from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 import flexiznam as flz
 from pathlib import Path
 
@@ -310,7 +312,7 @@ def init_neurons_df(
         print("Loading existing neurons_df file...")
         return np.load(neurons_ds.path_full), neurons_ds
 
-    suite2p_dataset = flz.get_datasets(
+    suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_id=recording.origin_id,
         dataset_type="suite2p_rois",
@@ -318,10 +320,10 @@ def init_neurons_df(
         allow_multiple=False,
         return_dataseries=False,
     )
-    nplanes = suite2p_dataset.extra_attributes["nplanes"]
+    nplanes = suite2p_traces.extra_attributes["nplanes"]
     for iplane in range(nplanes):
         F = np.load(
-            suite2p_dataset.path_full / f"plane{iplane}/F.npy", allow_pickle=True
+            suite2p_traces.path_full / f"plane{iplane}/F.npy", allow_pickle=True
         )
         append_neurons = pd.DataFrame(
             {
@@ -360,8 +362,6 @@ def generate_imaging_df(
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
-    raw_path = Path(flz.PARAMETERS["data_root"]["raw"]) / recording.path
-    processed_path = Path(flz.PARAMETERS["data_root"]["processed"]) / recording.path
 
     # Add vis-stim parameters to vs_df
     vs_df = format_vs_df_params(recording=recording, vs_df=vs_df)
@@ -370,6 +370,7 @@ def generate_imaging_df(
     imaging_df = pd.DataFrame(
         columns=[
             "imaging_frame",
+            "imaging_volume",
             "harptime_imaging_trigger",
             "depth",
             "is_stim",
@@ -381,101 +382,111 @@ def generate_imaging_df(
         ]
     )
 
-    # Imaging frame number
-    grouped_vs_df = vs_df.groupby("imaging_frame")
-    suite2p_dataset = flz.get_datasets(
+    suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
-        origin_id=recording.origin_id,
-        dataset_type="suite2p_rois",
+        origin_name=recording.name,
+        dataset_type="suite2p_traces",
         filter_datasets=filter_datasets,
         allow_multiple=False,
         return_dataseries=False,
     )
-    ops = np.load(suite2p_dataset.path_full / "ops.npy", allow_pickle=True)
-    ops = ops.item()
-    frame_number = ops["frames_per_folder"][folder_no]
-    max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
-    if frame_number != max_frame_in_vs_df + 1:
-        print(
-            f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
+    # find imaging frame number logged in bonsai
+    if "nframes" in suite2p_traces.extra_attributes:
+        frame_number = float(suite2p_traces.extra_attributes["nframes"])
+    else:
+        frame_number = float(
+            np.load(suite2p_traces.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
-    imaging_df.imaging_frame = np.arange(max_frame_in_vs_df + 1)
+    nplanes = suite2p_traces.extra_attributes["nplanes"]
 
-    # dffs for each imaging frame: ncells x 1 frame
-    dffs = np.load(trace_folder / "dff_ast.npy")
-    imaging_df.dffs = dffs.T.tolist()[: len(imaging_df)]
+    # Find imaging frame trigger time
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp_npz",
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    img_frame_logger = format_loggers.format_img_frame_logger(
+        harpmessage_file=harp_ds.path_full, register_address=32
+    )
+    img_frame_logger = find_imaging_frames(
+        harp_message=img_frame_logger,
+        frame_number=frame_number * nplanes,
+        frame_period=0.0324 * 2,
+        register_address=32,
+        frame_period_tolerance=0.001,
+    )
 
-    # RS for each imaging frame: the speed of the previous imaging frame (recorded by harp)
-    rs_img = (
-        grouped_vs_df.apply(
+    # Loop through all planes
+    vs_df["imaging_plane"] = vs_df["imaging_frame"] % nplanes
+
+    for iplane in range(nplanes):
+        grouped_vs_df = (
+            vs_df.groupby("imaging_plane").get_group(iplane).groupby("imaging_volume")
+        )
+
+        max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
+        if frame_number != max_frame_in_vs_df + 1:
+            print(
+                f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
+            )
+        append_df = pd.DataFrame(columns=imaging_df.columns)
+        append_df["imaging_frame"] = np.arange(max_frame_in_vs_df + 1)
+        append_df["imaging_volume"] = (
+            (append_df.imaging_frame / nplanes).apply(np.floor).astype(int)
+        )
+        append_df.imaging_plane = iplane
+
+        # dffs for each imaging volume: ncells x 1 frame
+        dffs = np.load(suite2p_traces.path_full / f"plane{iplane}" / "dff_ast.npy")
+        append_df.dffs = dffs.T.tolist()[: len(append_df)]
+
+        # RS for each imaging volume: the speed of the previous imaging frame (recorded by harp)
+        volume_df = pd.DataFrame(columns=["imaging_volume", "rs", "rs_eye", "depth"])
+        volume_df.imaging_volume = np.array(list(grouped_vs_df.groups.keys()))
+        volume_df.rs = grouped_vs_df.apply(
             lambda x: (x["mouse_z_harp"].iloc[-1] - x["mouse_z_harp"].iloc[0])
             / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
         )
-        .to_frame()
-        .rename(columns={0: "RS"})
-    )
-    rs_img = synchronisation.fill_in_missing_index(
-        rs_img, value_col="RS"
-    )  #!!!SUBTITUTE WITH fill_in_missing_volume
-    rs_img = rs_img.RS.values
-    rs_img = np.insert(rs_img, 0, 0)
-    rs_img = rs_img[:-1]
-    imaging_df.RS = rs_img
-
-    # RS_eye for each imaging frame: the eye speed of the previous imaging frame
-    rs_eye_img = (
-        grouped_vs_df.apply(
+        volume_df.loc[0, "rs"] = 0
+        # RS_eye for each imaging volume: the eye speed of the previous imaging frame
+        volume_df.rs_eye = grouped_vs_df.apply(
             lambda x: (x["eye_z"].iloc[-1] - x["eye_z"].iloc[0])
             / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
         )
-        .to_frame()
-        .rename(columns={0: "RS_eye"})
-    )
-    rs_eye_img = synchronisation.fill_in_missing_index(rs_eye_img, value_col="RS_eye")
-    rs_eye_img = rs_eye_img.RS_eye.values
-    rs_eye_img = np.insert(rs_eye_img, 0, 0)
-    rs_eye_img = rs_eye_img[:-1]
-    imaging_df.RS_eye = rs_eye_img
+        volume_df.loc[0, "rs_eye"] = 0
 
-    # depth for each imaging frame
-    depth_img = grouped_vs_df.depth.min().to_frame().rename(columns={0: "depth"})
-    depth_img = synchronisation.fill_in_missing_index(depth_img, value_col="depth")
-    imaging_df["depth"] = depth_img
-    imaging_df["is_stim"] = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
-    imaging_df.loc[imaging_df["depth"].isna(), "depth"] = 0
-    imaging_df.loc[imaging_df["depth"] < 0, "depth"] = np.nan
-    imaging_df["depth"] = imaging_df.depth.fillna(method="ffill")
-    imaging_df.loc[imaging_df["depth"] == 0, "depth"] = np.nan
+        # depth for each imaging volume
+        volume_df.depth = grouped_vs_df.depth.min()
+        volume_df.is_stim = volume_df.apply(lambda x: int(x.depth > 0), axis=1)
+        volume_df.loc[volume_df["depth"].isna(), "depth"] = 0
+        volume_df.loc[volume_df["depth"] < 0, "depth"] = np.nan
+        volume_df["depth"] = volume_df.depth.fillna(method="ffill")
+        volume_df.loc[volume_df["depth"] == 0, "depth"] = np.nan
 
-    # OF for each imaging frame
-    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
-    imaging_df.loc[imaging_df.is_stim == 0, "OF"] = np.nan
+        # fill in missing imaging volume due to frame drop
+        volume_df = synchronisation.fill_missing_imaging_volumes(volume_df)
+        append_df.RS = volume_df.rs
+        append_df.RS_eye = volume_df.rs_eye
+        append_df.depth = volume_df.depth
+
+        # OF for each imaging frame
+        append_df["OF"] = append_df.RS_eye / append_df.depth
+        append_df.loc[append_df.is_stim == 0, "OF"] = np.nan
+
+        # Find imaging frame trigger time
+        append_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
+            iplane::nplanes
+        ][: len(append_df)]
+
+        imaging_df = pd.concat([imaging_df, append_df], ignore_index=True)
 
     # closed loop status for each imaging frame
-    if "Playback" in protocol:
+    if "Playback" in recording.name:
         imaging_df.closed_loop = 0
     else:
         imaging_df.closed_loop = 1
-
-    # Find imaging frame trigger time
-    if Path(save_folder / "img_frame_logger.pickle").is_file():
-        with open(save_folder / "img_frame_logger.pickle", "rb") as handle:
-            img_frame_logger = pickle.load(handle)
-    else:
-        p_msg = protocol_folder / "sync/harpmessage.npz"
-        img_frame_logger = format_loggers.format_img_frame_logger(
-            harpmessage_file=p_msg, register_address=32
-        )
-        img_frame_logger = find_img_frames.find_imaging_frames(
-            harp_message=img_frame_logger,
-            frame_number=frame_number,
-            frame_period=0.0324 * 2,
-            register_address=32,
-            frame_period_tolerance=0.001,
-        )
-    imaging_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
-        : len(imaging_df)
-    ]
 
     return imaging_df
 
