@@ -117,6 +117,7 @@ def sync_by_correlation(
     photodiode_signal,
     time_column="HarpTime",
     sequence_column="PhotoQuadColor",
+    frame_detection_height=0.1,
     num_frame_to_corr=5,
     maxlag=50e-3,
     expected_lag=15e-3,
@@ -143,6 +144,9 @@ def sync_by_correlation(
                            match photodiode_time (Default to HarpTime)
         sequence_column (str): Name of the column in `frame_log` containing sequence
                                information (Default to 'PhotoQuadColor')
+        frame_detection_height (float): Height of the peak of diff of filtered
+            photodiode signal to use for detection, relative to max diff peak. Default
+            to 0.1
         num_frame_to_corr (int): number of frame before and after frame_time to keep
                                  for correlation
         maxlag (float): Maximum lag tested (in s, centered on expected_lag).
@@ -164,8 +168,8 @@ def sync_by_correlation(
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
-        extra_out (dict): A dictionary containing figures if `do_plot` is True,
-                          debug information if debug is True. Empty if both are False
+        extra_out (dict): A dictionary containing info to log as well as figures if
+            `do_plot` is True, and debug information if debug is True.
     """
 
     pd_sampling = 1 / np.mean(np.diff(photodiode_time))
@@ -182,6 +186,7 @@ def sync_by_correlation(
         photodiode_signal=normed_pd,
         time_column=time_column,
         frame_rate=frame_rate,
+        height=frame_detection_height,
         do_plot=do_plot,
         verbose=verbose,
         debug=debug,
@@ -230,15 +235,11 @@ def sync_by_correlation(
     if debug:
         extra_out["debug_info"] = db_dict
 
-    # Finally, clean-up the matched frames to ensure that the sequence is logical
-    frames_corrected = 1
-    nr = 0
-    while frames_corrected:
-        nr += 1
-        print(f"MATCHING FRAMES, ITERATION {nr}")
-        frames_df, frames_corrected = _cleanup_match_order(
-            frames_df, frame_log, verbose=True, clean_df=False
-        )
+    # Then interpolate the missing frames
+    interpolate_sync(frames_df, verbose=verbose)
+    # and remove the last double detected frames
+    frames_df = _remove_double_frames(frames_df, verbose=True)
+
     if do_plot and (save_folder is not None):
         if verbose:
             print("Plotting diagnostic figures")
@@ -260,9 +261,7 @@ def sync_by_correlation(
         ampl = frames_df[frames_df.sync_reason == "closest to photodiode"]
         ampl = ampl.sample(min(2, len(ampl)), random_state=rng).index
         bad = (
-            frames_df[frames_df.closest_frame.diff() < 0]
-            .sample(2, random_state=rng)
-            .index
+            frames_df[frames_df.closest_frame.isna()].sample(4, random_state=rng).index
         )
         toplot = list(good) + list(bad) + list(bad + 1) + list(bad - 1) + list(ampl)
         for frame in toplot:
@@ -277,14 +276,14 @@ def sync_by_correlation(
                 ideal_seqi=db_dict["ideal_seqi_trace"],
                 num_frame_to_corr=None,
             )
-            fig.suptitle(f"Frame {frame}")
+            fig.suptitle(
+                f"Frame {frame} matching frame log "
+                f"{frames_df.loc[frame, 'closest_frame']}\n"
+                f"Is interpolated: {not frames_df.loc[frame, 'interpolation_seeds']}"
+            )
             fig.savefig(save_folder / f"frame_{frame}_check.png")
     if not debug:
-        # run the cleanup a last time, to clean the dataframe
-        #  this won't remove any frame but remove the bef,aft,center columns
-        frames_df, frames_corrected = _cleanup_match_order(
-            frames_df, frame_log, verbose=False, clean_df=True
-        )
+        clean_df(frames_df)
     return frames_df, extra_out
 
 
@@ -294,7 +293,7 @@ def create_frame_df(
     photodiode_signal,
     time_column="HarpTime",
     frame_rate=144,
-    height=0.05,
+    height=0.1,
     do_plot=False,
     verbose=True,
     debug=False,
@@ -311,7 +310,7 @@ def create_frame_df(
                            match photodiode_time (Default to HarpTime)
         frame_rate (float): Frame rate in Hz
         height (float): Height of the peak of diff of filtered photodiode signal to use
-            for detection, relative to max diff peak. Default to 0.05
+            for detection, relative to max diff peak. Default to 0.1
         do_plot (bool): If True generate some quality measure plots during run and
                         return the figure handles
         verbose (bool): Print progress and general info.
@@ -334,9 +333,9 @@ def create_frame_df(
         height=height,
     )
     if debug or do_plot:
-        frame_borders, peak_index, db_dict = out
+        frame_borders, peak_index, out_dict = out
     else:
-        db_dict = None
+        out_dict = {}
         frame_borders, peak_index = out
     # cut frame detected before the recording started
     t0 = frame_log[time_column].iloc[0]
@@ -357,16 +356,16 @@ def create_frame_df(
     frames_df["onset_time"] = photodiode_time[frames_df.onset_sample]
     frames_df["offset_time"] = photodiode_time[frames_df.offset_sample]
     frames_df["peak_time"] = photodiode_time[frames_df.peak_sample]
+    out_dict["detected_frames"] = len(frames_df)
+    out_dict["logged_frames"] = len(frame_log)
+    out_dict["percentage_drop"] = 100 * (1 - len(frames_df) / len(frame_log))
+    out_dict["dropped_frames"] = len(frame_log) - len(frames_df)
     if verbose:
         print(
-            "Found %d frames out of %d Render"
-            " (%d%%, %d dropped)"
-            % (
-                len(frames_df),
-                len(frame_log),
-                len(frames_df) / len(frame_log) * 100,
-                len(frame_log) - len(frames_df),
-            )
+            f"Found {out_dict['detected_frames']} frames out of "
+            f"{out_dict['logged_frames']} render"
+            f" ({out_dict['percentage_drop']:.2f}%,"
+            f" {out_dict['dropped_frames']} dropped)"
         )
     figs = None
     if do_plot:
@@ -374,7 +373,7 @@ def create_frame_df(
         figs = plot_frame_detection_report(
             border_index=frame_borders,
             peak_index=peak_index,
-            debug_dict=db_dict,
+            debug_dict=out_dict,
             num_examples=1,
             plot_window=plot_window,
             photodiode=photodiode_signal,
@@ -386,7 +385,7 @@ def create_frame_df(
             for ifig, fig in enumerate(figs):
                 fig.savefig(Path(save_folder) / f"frame_detection_fig{ifig}.png")
 
-    return frames_df, db_dict, figs
+    return frames_df, out_dict, figs
 
 
 def detect_frame_onset(
@@ -394,7 +393,7 @@ def detect_frame_onset(
     frame_rate=144.0,
     photodiode_sampling=1000.0,
     highcut=400.0,
-    height=0.05,
+    height=0.1,
     debug=False,
 ):
     """Detect frames from photodiode signal
@@ -409,7 +408,7 @@ def detect_frame_onset(
         photodiode_sampling (float, optional): Sampling rate of the photodiode signal
         highcut (float, optional): If not None, use low pass filter cutting components
             above `highcut` hertz
-        height (float, optional): Minimum height of a peak. Default to 0.05
+        height (float, optional): Minimum height of a peak. Default to 0.1
         debug (bool, optional): False by default. If True, returns a dict with
             intermediary results
 
@@ -469,10 +468,12 @@ def plot_frame_detection_report(
     photodiode_sampling=1000,
     highcut=400,
     plot_window=(-50, 50),
+    height=0.1,
     num_examples=1,
     border_index=None,
     peak_index=None,
     debug_dict=None,
+    example_frames=None,
 ):
     """Detect frames and generate a few debuging figures
 
@@ -490,28 +491,32 @@ def plot_frame_detection_report(
         highcut (float): If not None, use low pass filter cutting components
                          above `highcut` hertz
         plot_window ([int, int]): limit of the window to plot around each example frame
+        height (float): Minimum height of a peak. Default to 0.1
         num_examples (int): number of figures randomly selected and with frame drop to
                             plot (len(fig) == num_examples * 2)
         border_index (np.array): index of frame borders
         peak_index (np.array): index of peak of each frame, len(border_index) - 1
         debug_dict (dict): Dictionary of intermediary element. Only if `debug` == True
+        example_frames (np.array): If not None, use this array of frame index instead of
+            randomly selecting them
 
 
     Returns:
         figs (list): a list of figure handles
     """
-    if (border_index is None) or (debug_dict is None):
-        border_index, debug_dict = detect_frame_onset(
+    if (border_index is None) or (peak_index is None) or (debug_dict is None):
+        border_index, peak_index, debug_dict = detect_frame_onset(
             photodiode, frame_rate, photodiode_sampling, highcut, debug=True
         )
-    rng = np.random.default_rng(42)
-    skip = np.diff(border_index) > photodiode_sampling / frame_rate * 1.5
-    example_frames = np.hstack(
-        [
-            border_index[rng.integers(len(border_index), size=num_examples)],
-            border_index[:-1][skip][rng.integers(np.sum(skip), size=num_examples)],
-        ]
-    )
+    if example_frames is None:
+        rng = np.random.default_rng(42)
+        skip = np.diff(border_index) > photodiode_sampling / frame_rate * 1.5
+        example_frames = np.hstack(
+            [
+                border_index[rng.integers(len(border_index), size=num_examples)],
+                border_index[:-1][skip][rng.integers(np.sum(skip), size=num_examples)],
+            ]
+        )
     figs = []
     w = np.array(plot_window, dtype=int)
     i = np.arange(len(photodiode))
@@ -538,6 +543,7 @@ def plot_frame_detection_report(
         ax.set_title("Frame at sample %d" % f)
         ax = fig.add_subplot(2, 1, 2)
         ax.plot(debug_dict["diff_trace"][slice(*w + f)])
+        ax.axhline(height, color="k", ls="--")
         for iw, which_pk in enumerate([debug_dict["all_pks"], border_index]):
             v = which_pk[(which_pk > w[0] + f) & (which_pk < w[1] + f)]
             ax.scatter(i[v] - (w[0] + f), debug_dict["diff_trace"][v], **dot_kwargs[iw])
@@ -591,7 +597,7 @@ def run_cross_correlation(
     """
     if pd_sampling is None:
         pd_sampling = 1 / np.mean(np.diff(photodiode_time))
-    db_dict = {} if debug else None
+    out_dict = {}
     frame_onsets = frames_df["onset_sample"].values
     # make lags into samples
     maxlag_samples = int(np.round(maxlag * pd_sampling))
@@ -607,9 +613,9 @@ def run_cross_correlation(
         highcut=150,
     )
     if debug:
-        db_dict["ideal_photodiode_trace"] = ideal_pd
-        db_dict["ideal_time"] = ideal_time
-        db_dict["ideal_seqi_trace"] = ideal_seqi_trace
+        out_dict["ideal_photodiode_trace"] = ideal_pd
+        out_dict["ideal_time"] = ideal_time
+        out_dict["ideal_seqi_trace"] = ideal_seqi_trace
 
     # find the closest switch time for each frame according to computer time
     real_switch_times = frame_log[time_column].values
@@ -635,15 +641,15 @@ def run_cross_correlation(
     )
 
     if debug:
-        cc_dict, id_dict, lags, db = out
-        db_dict.update(db)
-        db_dict["lags_sample"] = lags
-        db_dict["cc_dict"] = cc_dict
-        db_dict["ideal_pd"] = ideal_pd
-        db_dict["ideal_onset"] = ideal_onset
+        cc_dict, id_dict, lags, db, residuals = out
+        out_dict.update(db)
+        out_dict["lags_sample"] = lags
+        out_dict["cc_dict"] = cc_dict
+        out_dict["ideal_pd"] = ideal_pd
+        out_dict["ideal_onset"] = ideal_onset
 
     else:
-        cc_dict, id_dict, lags = out
+        cc_dict, id_dict, lags, residuals = out
 
     # add lag and corresponding frame index to the dataframe
     if verbose:
@@ -651,9 +657,9 @@ def run_cross_correlation(
 
     for iw, which in enumerate(["bef", "center", "aft"]):
         cc = cc_dict[which]
-
-        frames_df["lag_%s" % which] = lags[cc.argmax(axis=1)] / pd_sampling
-        frames_df["peak_corr_%s" % which] = cc.max(axis=1)
+        frames_df[f"residuals_{which}"] = residuals[iw]
+        frames_df[f"lag_{which}"] = lags[cc.argmax(axis=1)] / pd_sampling
+        frames_df[f"peak_corr_{which}"] = cc.max(axis=1)
         # to find the match between photiodiode and frame log, we want to look at what is
         # the value of the lag-shifed sequence index in during the real frame.
         # The sync is made the closest computer frame log time
@@ -693,7 +699,7 @@ def run_cross_correlation(
     diff_sign = np.sign(np.diff(frames_df.photodiode))
     jumps = diff_sign[1:] == diff_sign[:-1]
     frames_df["is_jump"] = np.hstack([0, jumps, 0])
-    return frames_df, db_dict
+    return frames_df, out_dict
 
 
 def ideal_photodiode(
@@ -775,6 +781,7 @@ def _crosscorr_befcentaft(
     frame_rate,
     verbose=True,
     debug=False,
+    crosscorr_normalisation="pearson",
 ):
     """Run three crosscorrelations before, centered on and after each frame time
 
@@ -797,6 +804,8 @@ def _crosscorr_befcentaft(
         frame_rate (float): Frame rate in Hz
         verbose (bool): Print time taken. Default True
         debug (bool): Return intermediary results Default False
+        crosscorr_normalisation (str): Method to use for cross correlation. One of
+            `dot`, `pearson` or `difference`. Default `pearson`
 
     Returns:
         cc_mat (np.array): a (3 x len(frame_onsets) x len(lags)) array of correlation
@@ -822,6 +831,7 @@ def _crosscorr_befcentaft(
         print("Starting crosscorrelation", flush=True)
     cc_mat = np.zeros((len(window), len(frame_onsets), maxlag * 2)) + np.nan
     eq_ind = np.zeros((len(window), len(frame_onsets), maxlag * 2), dtype="int") - 1
+    residuals = np.zeros((len(window), len(frame_onsets))) + np.nan
     for iframe, foi in tqdm(enumerate(frame_onsets), total=len(frame_onsets)):
         for iw, win in enumerate(window):
             if (win[0] + foi) < 0:
@@ -871,9 +881,20 @@ def _crosscorr_befcentaft(
                 ],
                 maxlag=maxlag,
                 expected_lag=0,
-                normalisation="pearson",
+                normalisation=crosscorr_normalisation,
             )
+            if crosscorr_normalisation.lower() == "difference":
+                corr *= -1
             cc_mat[iw, iframe] = corr
+            lag = lags[corr.argmax()]
+            residuals[iw, iframe] = np.nanmean(
+                np.abs(
+                    photodiode_signal[slice(*win + foi)]
+                    - ideal_photodiode_trace[
+                        slice(*win + ideal_onset_samples[iframe] - expected_lag - lag)
+                    ]
+                )
+            )
     lags += expected_lag
     if verbose:
         end = time.time()
@@ -882,8 +903,8 @@ def _crosscorr_befcentaft(
     id_dict = {l: eq_ind[i] for i, l in enumerate(["bef", "center", "aft"])}
     if debug:
         db_dict = dict(window=window)
-        return cc_dict, id_dict, lags, db_dict
-    return cc_dict, id_dict, lags
+        return cc_dict, id_dict, lags, db_dict, residuals
+    return cc_dict, id_dict, lags, residuals
 
 
 def _match_fit_to_logger(
@@ -934,6 +955,7 @@ def _match_fit_to_logger(
     # Initialize the dataframe columns
     frames_df["closest_frame"] = np.nan
     frames_df["lag"] = np.nan
+    frames_df["residuals"] = np.nan
     frames_df["sync_reason"] = "not done"
     frames_df["crosscorr_picked"] = "not done"
 
@@ -973,6 +995,9 @@ def _match_fit_to_logger(
     frames_df.loc[good, "lag"] = [
         frames_df.loc[g, f"lag_{l}"] for g, l in zip(goodi, lab)
     ]
+    frames_df.loc[good, "residuals"] = [
+        frames_df.loc[g, f"residuals_{l}"] for g, l in zip(goodi, lab)
+    ]
     frames_df.loc[good, "sync_reason"] = [
         f"consensus of {n}" for n in np.sum(~bad[good], axis=1)
     ]
@@ -1006,6 +1031,9 @@ def _match_fit_to_logger(
     frames_df.loc[use_best, "closest_frame"] = [
         frames_df.loc[g, f"closest_frame_{l}"] for g, l in zip(ubi, lab)
     ]
+    frames_df.loc[use_best, "residuals"] = [
+        frames_df.loc[g, f"residuals_{l}"] for g, l in zip(ubi, lab)
+    ]
     frames_df.loc[use_best, "lag"] = [
         frames_df.loc[g, f"lag_{l}"] for g, l in zip(ubi, lab)
     ]
@@ -1034,7 +1062,11 @@ def _match_fit_to_logger(
     frames_df.loc[remaining, "lag"] = [
         frames_df.loc[g, f"lag_{l}"] for g, l in zip(ri, lab)
     ]
+    frames_df.loc[remaining, "residuals"] = [
+        frames_df.loc[g, f"residuals_{l}"] for g, l in zip(ri, lab)
+    ]
     frames_df.loc[remaining, "sync_reason"] = "closest to photodiode"
+
     if verbose:
         print(
             f"Sync'ed {np.sum(remaining)} frames based on photodiode value. "
@@ -1048,163 +1080,142 @@ def _match_fit_to_logger(
     return frames_df
 
 
-def _cleanup_match_order(frames_df, frame_log, verbose=True, clean_df=True):
-    """Clean-up the frame matching order, after the initial match
-
-    The initial match is done frame by frame in _match_fit_to_logger, but this does not
-    work for all frames. Look at inter-frame differences and see if they make sense and
-    fill gaps
+def interpolate_sync(frames_df, residuals_threshold=0.08, verbose=True):
+    """Interpolate closest_frame and lag for frames that could not be sync'ed
 
     Args:
         frames_df (pd.DataFrame): the dataframe with the initial match
-        frame_log (pd.DataFrame): the logger dataframe
         verbose (bool, optional): print progress. Defaults to True.
-        clean_df (bool, optional): clean-up the dataframe by removing rejected match.
-            Defaults to True.
+    """
+    # move initial value to other column
+    frames_df["closest_frame_initital_guess"] = frames_df.closest_frame
+    frames_df["lag_initial_guess"] = frames_df.lag
+
+    # remove double detected frames to avoid diff==0 later
+    _remove_double_frames(frames_df, verbose=True)
+
+    consensus_frames = frames_df.sync_reason == "consensus of 3"
+    ok_res = frames_df.residuals < residuals_threshold
+    non_nan = frames_df.closest_frame.notna()
+    good_frames = consensus_frames & ok_res & non_nan
+    if verbose:
+        print(f"Found {consensus_frames.sum()} consensus frames")
+        print(f"Found {ok_res.sum()} frames with residuals < {residuals_threshold}")
+        print(f"Found {non_nan.sum()} frames with non-nan closest_frame")
+        print(f"{np.sum(good_frames)}/{len(good_frames)} frames left for interpolation")
+
+    # interpolate closest_frame
+    closest_frame = frames_df.closest_frame.values
+    out_of_order = 1
+    while np.sum(out_of_order):
+        goodi = np.where(good_frames)[0]
+        out_of_order = np.diff(closest_frame[goodi]) <= 0
+        good_frames[goodi[1:][out_of_order]] = False
+        good_frames[goodi[:-1][out_of_order]] = False
+        if verbose:
+            print(f"Found {np.sum(out_of_order)} out of order frames")
+            print(f"{np.sum(good_frames)}/{len(good_frames)} frames left")
+
+    assert all(
+        np.diff(closest_frame[good_frames]) > 0
+    ), "closest_frame should be sorted"
+
+    frames_df["interpolation_seeds"] = False
+    frames_df.loc[good_frames, "interpolation_seeds"] = True
+
+    closest_frame[~good_frames] = np.interp(
+        frames_df.loc[~good_frames, "onset_time"],
+        frames_df.loc[good_frames, "onset_time"],
+        frames_df.loc[good_frames, "closest_frame"],
+        left=np.nan,
+        right=np.nan,
+    )
+    closest_frame = np.round(closest_frame)
+    frames_df.loc[:, "closest_frame"] = closest_frame
+    frames_df.loc[~good_frames, "lag"] = np.nan
+    if verbose:
+        out_of_order = np.diff(closest_frame) < 0
+        double_match = np.diff(closest_frame) == 0
+        print(
+            f"Found {np.sum(out_of_order)} out of order frames and "
+            f"{np.sum(double_match)} frames matching the same index "
+            "after interpolation"
+        )
+
+
+def _remove_double_frames(frames_df, verbose=True):
+    """Clean-up the frame matching order, after the initial match
+
+    The initial match is done frame by frame in _match_fit_to_logger, but this does not
+    work for all frames. In particular, sometimes 2 frames in a row are matched to the
+    same logger frame. This function tries to fix this.
+
+    Args:
+        frames_df (pd.DataFrame): the dataframe with the initial match
+        verbose (bool, optional): print progress. Defaults to True.
 
     Returns:
         pd.DataFrame: the cleaned-up dataframe
     """
-    frames_corrected = 0
 
-    # define some utility functions
-    def _get_frame_diff(frames_df, index_to_test, diff_size=1, verbose=True):
-        bef = np.clip(index_to_test - 1, 0, len(frames_df) - 1)
-        aft = np.clip(index_to_test + diff_size, 0, len(frames_df) - 1)
-        frame_bef = frames_df.loc[bef, "closest_frame"].values
-        frame_aft = frames_df.loc[aft, "closest_frame"].values
-        n_skiped = frame_aft - frame_bef
-        return bef, aft, n_skiped
-
-    def fill_gap(frames_df, index_to_test, reason="filled gap", verbose=True):
-        """Fill a gap in the frame matching
-
-        Args:
-            frames_df (pd.DataFrame): the dataframe with the initial match
-            index_to_test (int): the index of the frame to test
-            reason (str, optional): the reason for filling the gap. Defaults to "filled gap".
-
-            verbose (bool, optional): print progress. Defaults to True.
-        """
-        bef, _, n_skiped = _get_frame_diff(frames_df, index_to_test, 1, verbose)
-        skiped = n_skiped == 2
-        skipi = index_to_test[skiped]
-        frames_df.loc[skipi, "sync_reason"] = reason
-        frames_df.loc[skipi, "closest_frame"] = (
-            frames_df.loc[bef[skiped], "closest_frame"].values + 1
-        )
-        frames_df.loc[skipi, "lag"] = frames_df.loc[bef[skiped], "lag"].values
-
-        if verbose and np.sum(skiped) != 0:
-            print(
-                f"`{reason}` filled in {np.sum(skiped)}/{len(skiped)} frames. "
-                + f"That's {np.sum(skiped) / len(skiped) * 100:.1f}% of the occurence.",
-                flush=True,
-            )
-        return np.sum(skiped)
-
-    # First fill the not sync'ed frames with the closest sync'ed frame if there is just a
-    # single gap
-    not_sync = frames_df[np.isnan(frames_df.closest_frame)].index
-    frames_corrected += fill_gap(
-        frames_df, not_sync, reason="filled gap", verbose=verbose
-    )
-
-    # Do the same for cases where there is a frame from the past
-    time_travel = frames_df.iloc[:-1][np.diff(frames_df.closest_frame.values) < 0].index
-    frames_corrected += fill_gap(
-        frames_df, time_travel, reason="time travel", verbose=verbose
-    )
-
-    # And the double detection
-    time_travel = frames_df.iloc[:-1][
-        np.diff(frames_df.closest_frame.values) == 0
-    ].index
-    frames_corrected += fill_gap(
-        frames_df, time_travel, reason="double detect", verbose=verbose
-    )
-
-    # now deal with double detected frames
+    # Find frames that are matched to the same logger frame
     no_increase = frames_df.iloc[:-1][
         np.diff(frames_df.closest_frame.values) == 0
     ].index
-    _, _, n_skiped = _get_frame_diff(frames_df, no_increase, 2, verbose)
-    double_frame = n_skiped == 3
-    dfi = no_increase[double_frame]
+
+    # look if the frame at n-1 matches closest_frame-1 and n+2 matches closest_frame+1
+    bef = np.clip(no_increase - 1, 0, len(frames_df) - 1)
+    aft = np.clip(no_increase + 2, 0, len(frames_df) - 1)
+    frame_bef = frames_df.loc[bef, "closest_frame"].values
+    frame_aft = frames_df.loc[aft, "closest_frame"].values
+    n_skiped = frame_aft - frame_bef
+    # now three options:
+    # Option1: we have 1, 2, 2, 4, then 3 is missing and n_skiped == 3. We can fix that.
+    dfi = no_increase[n_skiped == 3]
+    frames_df.loc[dfi, "closest_frame"] = frame_bef[n_skiped == 3] + 1
+    frames_df.loc[dfi + 1, "closest_frame"] = frame_bef[n_skiped == 3] + 2
+    if verbose and np.sum(n_skiped == 3):
+        print(
+            f"{np.sum(n_skiped == 3)} frames of by one and will be fixed "
+            + f"{np.sum(n_skiped == 3) / len(n_skiped) * 100:.1f}%",
+            flush=True,
+        )
+
+    # Option2: we have 1, 2, 2, X with X larger than 4, (or x<3, 5, 5, 6) We can't fix
+    # that, put both frames to nan
+    frames_df.loc[no_increase[n_skiped > 3], "closest_frame"] = np.nan
+    frames_df.loc[no_increase[n_skiped > 3] + 1, "closest_frame"] = np.nan
+
+    # Option3: we have 1, 2, 2, 3, then 2 has been detected twice. n_skiped == 2, we
+    # merge the two frames
+    dfi = no_increase[n_skiped == 2]
     for w in ["time", "sample"]:
         frames_df.loc[dfi, f"offset_{w}"] = frames_df.loc[dfi + 1, f"offset_{w}"].values
     frames_df.drop(dfi + 1, inplace=True)
     frames_df.reset_index(drop=True, inplace=True)
-    frames_corrected += np.sum(double_frame)
-    if verbose and np.sum(double_frame):
+    if verbose and np.sum(n_skiped == 2):
         print(
-            f"{np.sum(double_frame)} frames are double and will be removed. "
-            + f"That's {np.sum(double_frame) / len(double_frame) * 100:.1f}% of the "
+            f"{np.sum(n_skiped == 2)} frames are double and will be removed. "
+            + f"That's {np.sum(n_skiped == 2) / len(n_skiped) * 100:.1f}% of the "
             + "cases where the closest frame is the same.",
             flush=True,
         )
+    return frames_df
 
-    # we will look only at NaN for which the previous and next frame are sync'ed
-    start, end = frames_df[~np.isnan(frames_df.closest_frame)].index[[0, -1]]
-    not_sync = frames_df[np.isnan(frames_df.closest_frame)].index
-    not_sync = not_sync[(not_sync > start) & (not_sync < end)]
-    bef = np.clip(not_sync - 1, 0, len(frames_df) - 1)
-    aft = np.clip(not_sync + 1, 0, len(frames_df) - 1)
-    frame_bef = frames_df.loc[bef, "closest_frame"].values
-    frame_aft = frames_df.loc[aft, "closest_frame"].values
-    ok = ~np.isnan(frame_bef) & ~np.isnan(frame_aft)
-    frame_bef = frame_bef[ok]
-    frame_aft = frame_aft[ok]
-    not_sync = not_sync[ok]
-    labels = ["bef", "center", "aft"]
 
-    # for these NaNs, we will look at the best correlation
-    best_corr = np.argmax(
-        frames_df.loc[not_sync, [f"peak_corr_{l}" for l in labels]].values, axis=1
-    )
-    best_corr = np.array([labels[i] for i in best_corr])
-    closest_frame = np.array(
-        [frames_df.loc[g, f"closest_frame_{l}"] for g, l in zip(not_sync, best_corr)]
-    )
-    lag = np.array([frames_df.loc[g, f"lag_{l}"] for g, l in zip(not_sync, best_corr)])
+def clean_df(frames_df):
+    """Remove columns that are not needed anymore
 
-    # now look if these are in between the previous and next frame
-    inbetween = (closest_frame > frame_bef) & (closest_frame < frame_aft)
-    # if they are, then we can use them
-    frames_df.loc[not_sync[inbetween], "sync_reason"] = "best corr"
-    frames_df.loc[not_sync[inbetween], "closest_frame"] = closest_frame[inbetween]
-    frames_df.loc[not_sync[inbetween], "lag"] = lag[inbetween]
+    Args:
+        frames_df (pd.DataFrame): the dataframe to clean-up
 
-    if verbose and np.sum(inbetween):
-        print(
-            f"Sync'ed {np.sum(inbetween)}/{np.sum(ok)} of NaN frames based on best correlation."
-        )
-
-    frames_corrected += np.sum(inbetween)
-
-    # Finally add the color from the sequence
-    frames_df["quadcolor"] = np.nan
-    matched = ~np.isnan(frames_df.closest_frame)
-    frames_df.loc[matched, "quadcolor"] = frame_log.loc[
-        frames_df.loc[matched, "closest_frame"], "PhotoQuadColor"
-    ].values
-
-    if verbose:
-        non_synced = np.sum(frames_df.sync_reason == "not synced")
-        print(
-            "%d frames are still not synced. That"
-            "s %.2f %%" % (non_synced, non_synced / len(frames_df * 100))
-        )
-    if clean_df:
-        cols = [
-            c
-            for c in frames_df.columns
-            if (not c.endswith("bef"))
-            and (not c.endswith("center"))
-            and (not c.endswith("aft"))
-        ]
-        return pd.DataFrame(frames_df[cols]), frames_corrected
-    return frames_df, frames_corrected
+    """
+    columns = [
+        c
+        for c in frames_df.columns
+        if ("_bef" in c) or ("_aft" in c) or ("_center" in c)
+    ]
+    frames_df.drop(columns, axis=1, inplace=True)
 
 
 def plot_one_frame_check(
@@ -1316,13 +1327,15 @@ def plot_one_frame_check(
             color="C1",
         )
         pc = fd[f"peak_corr_{which}"]
-
+        r = fd[f"residuals_{which}"]
         if "crosscorr_picked" not in fd:
-            ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
+            ax.set_ylabel(f"{which} (c={pc:.2f}, r={r:.2f})", color="k")
         elif fd.crosscorr_picked == which:
-            ax.set_ylabel(f"{which} (c={pc:.2f}, {fd.sync_reason})", color="r")
+            ax.set_ylabel(
+                f"{which} (c={pc:.2f}, r={r:.2f}\n{fd.sync_reason})", color="r"
+            )
         else:
-            ax.set_ylabel(f"{which} (c={pc:.2f})", color="k")
+            ax.set_ylabel(f"{which} (c={pc:.2f}, r={r:.2f})", color="k")
         if iw < 2:
             ax.set_xticks([])
         ax.set_yticks([])

@@ -15,8 +15,10 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation="pe
     correlation. If expected_lag is non-zero, the first `expected_lag` samples of
     signal2 will also be cut.
 
-    The output can either be the dot product (raw correlation, as returned by
-    np.correlate), or the pearson correlation coefficient (default).
+    The output can either be the `dot` to return the dot product (raw correlation, as
+    returned by np.correlate), `pearson` to return pearson correlation coefficient
+    (default). Or `difference` to return the average absolute difference between the two
+    signals.
     Inspired by:
     https://stackoverflow.com/questions/30677241/how-to-limit-cross-correlation-window-width-in-numpy
 
@@ -26,7 +28,7 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation="pe
         signal2 (np.array): Second signal, 1D array, same shape as signal2
         maxlag (int): maximum lag in sample to compute the correlation
         expected_lag (int): center lag in sample around which to compute the correlation
-        normalisation (str): `dot` or `pearson`
+        normalisation (str): `dot`, `pearson` or `difference`
 
     Returns:
         correlation (np.array): crosscorrelation, shape = maxlag * 2
@@ -34,11 +36,12 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation="pe
     """
     assert signal1.ndim == signal2.ndim == 1, "signal1 and signal2 must be 1D arrays"
     assert len(signal2) == len(signal1), (
-        f"signal1 and signal2 must have same length. Got {len(signal1)} and "+
-        f"{len(signal2)}")
-    assert len(signal2) > (maxlag * 2 + expected_lag), (
-        "signal1 and signal2 must be longer than 2 * maxlag + expected_lag"
+        f"signal1 and signal2 must have same length. Got {len(signal1)} and "
+        + f"{len(signal2)}"
     )
+    assert len(signal2) > (
+        maxlag * 2 + expected_lag
+    ), "signal1 and signal2 must be longer than 2 * maxlag + expected_lag"
     assert expected_lag >= 0, "expected_lag must be positive"
     y = signal2[: len(signal2) - expected_lag]
     x = signal1[maxlag + expected_lag : -maxlag + 1]
@@ -56,8 +59,10 @@ def crosscorrelation(signal1, signal2, maxlag, expected_lag=0, normalisation="pe
         corr = (circ_y.dot(x) / x.size - (circ_y.mean(axis=1) * x.mean())) / (
             np.std(circ_y, axis=1) * np.std(x)
         )
+    elif normalisation.lower() == "difference":
+        corr = np.nanmean(np.abs(circ_y - x[np.newaxis, :]), axis=1)
     else:
-        raise IOError("Normalisation must be `dot` or `pearson`")
+        raise IOError("Normalisation must be `dot`, `pearson` or `difference`")
     return corr, lags
 
 
