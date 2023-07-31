@@ -346,7 +346,7 @@ def init_neurons_df(
 def generate_imaging_df(
     recording, vs_df, filter_datasets=None, flexilims_session=None, project=None
 ):
-    """Generate a DataFrame that contains information for each imaging frame.
+    """Generate a DataFrame that contains information for each imaging volume.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
@@ -356,7 +356,7 @@ def generate_imaging_df(
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
 
     Returns:
-        DataFrame: contains information for each monitor frame.
+        DataFrame: contains information for each imaging volume.
 
     """
     assert flexilims_session is not None or project is not None
@@ -369,7 +369,6 @@ def generate_imaging_df(
     # Imaging_df: to find the RS/OF array for each imaging frame
     imaging_df = pd.DataFrame(
         columns=[
-            "imaging_frame",
             "imaging_volume",
             "harptime_imaging_trigger",
             "depth",
@@ -392,9 +391,9 @@ def generate_imaging_df(
     )
     # find imaging frame number logged in bonsai
     if "nframes" in suite2p_traces.extra_attributes:
-        frame_number = float(suite2p_traces.extra_attributes["nframes"])
+        frame_number = int(suite2p_traces.extra_attributes["nframes"])
     else:
-        frame_number = float(
+        frame_number = int(
             np.load(suite2p_traces.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
     nplanes = suite2p_traces.extra_attributes["nplanes"]
@@ -418,69 +417,54 @@ def generate_imaging_df(
         frame_period_tolerance=0.001,
     )
 
-    # Loop through all planes
-    vs_df["imaging_plane"] = vs_df["imaging_frame"] % nplanes
+    # find imaging volume number
+    max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
+    if frame_number != (max_frame_in_vs_df + 1):
+        print(
+            f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
+        )
+    imaging_df.imaging_volume = np.floor(
+        (np.arange(max_frame_in_vs_df + 1) / nplanes)
+    ).astype(int)
 
+    # Assign dff to each imaging volume
+    all_dff = []
     for iplane in range(nplanes):
-        grouped_vs_df = (
-            vs_df.groupby("imaging_plane").get_group(iplane).groupby("imaging_volume")
-        )
+        dff = np.load(suite2p_traces.path_full / f"plane{iplane}" / "dff_ast.npy")
+        dff = dff[:frame_number]
+        all_dff.append(dff)
+    all_dff = np.vstack(all_dff)  # nrois (for all planes) x nvolume
+    imaging_df.dffs = all_dff.T.tolist()
 
-        max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
-        if frame_number != max_frame_in_vs_df + 1:
-            print(
-                f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
-            )
-        append_df = pd.DataFrame(columns=imaging_df.columns)
-        append_df["imaging_frame"] = np.arange(max_frame_in_vs_df + 1)
-        append_df["imaging_volume"] = (
-            (append_df.imaging_frame / nplanes).apply(np.floor).astype(int)
-        )
-        append_df.imaging_plane = iplane
+    # average RS for each imaging volume
+    grouped_vs_df = vs_df.groupby("imaging_volume")
+    imaging_df.RS = grouped_vs_df.apply(
+        lambda x: (x["mouse_z_harp"].iloc[-1] - x["mouse_z_harp"].iloc[0])
+        / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
+    )
+    imaging_df.loc[0, "RS"] = 0
 
-        # dffs for each imaging volume: ncells x 1 frame
-        dffs = np.load(suite2p_traces.path_full / f"plane{iplane}" / "dff_ast.npy")
-        append_df.dffs = dffs.T.tolist()[: len(append_df)]
+    # average RS eye for each imaging volume
+    imaging_df.RS_eye = grouped_vs_df.apply(
+        lambda x: (x["eye_z"].iloc[-1] - x["eye_z"].iloc[0])
+        / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
+    )
+    imaging_df.loc[0, "RS_eye"] = 0
 
-        # RS for each imaging volume: the speed of the previous imaging frame (recorded by harp)
-        volume_df = pd.DataFrame(columns=["imaging_volume", "rs", "rs_eye", "depth"])
-        volume_df.imaging_volume = np.array(list(grouped_vs_df.groups.keys()))
-        volume_df.rs = grouped_vs_df.apply(
-            lambda x: (x["mouse_z_harp"].iloc[-1] - x["mouse_z_harp"].iloc[0])
-            / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
-        )
-        volume_df.loc[0, "rs"] = 0
-        # RS_eye for each imaging volume: the eye speed of the previous imaging frame
-        volume_df.rs_eye = grouped_vs_df.apply(
-            lambda x: (x["eye_z"].iloc[-1] - x["eye_z"].iloc[0])
-            / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
-        )
-        volume_df.loc[0, "rs_eye"] = 0
+    # depth for each imaging volume
+    imaging_df.depth = grouped_vs_df.depth.min()
+    imaging_df.is_stim = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
+    imaging_df.loc[imaging_df["depth"].isna(), "depth"] = 0
+    imaging_df.loc[imaging_df["depth"] < 0, "depth"] = np.nan
+    imaging_df["depth"] = imaging_df.depth.fillna(method="ffill")
+    imaging_df.loc[imaging_df["depth"] == 0, "depth"] = np.nan
 
-        # depth for each imaging volume
-        volume_df.depth = grouped_vs_df.depth.min()
-        volume_df.is_stim = volume_df.apply(lambda x: int(x.depth > 0), axis=1)
-        volume_df.loc[volume_df["depth"].isna(), "depth"] = 0
-        volume_df.loc[volume_df["depth"] < 0, "depth"] = np.nan
-        volume_df["depth"] = volume_df.depth.fillna(method="ffill")
-        volume_df.loc[volume_df["depth"] == 0, "depth"] = np.nan
+    # fill in missing imaging volume due to frame drop
+    imaging_df = synchronisation.fill_missing_imaging_volumes(imaging_df)
 
-        # fill in missing imaging volume due to frame drop
-        volume_df = synchronisation.fill_missing_imaging_volumes(volume_df)
-        append_df.RS = volume_df.rs
-        append_df.RS_eye = volume_df.rs_eye
-        append_df.depth = volume_df.depth
-
-        # OF for each imaging frame
-        append_df["OF"] = append_df.RS_eye / append_df.depth
-        append_df.loc[append_df.is_stim == 0, "OF"] = np.nan
-
-        # Find imaging frame trigger time
-        append_df.harptime_imaging_trigger = img_frame_logger.HarpTime.values[
-            iplane::nplanes
-        ][: len(append_df)]
-
-        imaging_df = pd.concat([imaging_df, append_df], ignore_index=True)
+    # OF for each imaging volume
+    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
+    imaging_df.loc[imaging_df.is_stim == 0, "OF"] = np.nan
 
     # closed loop status for each imaging frame
     if "Playback" in recording.name:
@@ -516,7 +500,7 @@ def generate_trials_df(recording, vs_df, flexilims_session=None, project=None):
         flexilims_session=flexilims_session,
         project=project,
     )
-
+    nplanes = imaging_df.imaging_plane.unique().max() + 1
     # trials_df
     trials_df = pd.DataFrame(
         columns=[
@@ -543,33 +527,38 @@ def generate_trials_df(recording, vs_df, flexilims_session=None, project=None):
         ]
     )
 
+    plane_df = pd.DataFrame(columns=trials_df.columns)
     # Find the start and stop of each trial
     blank_time = 10  # s
 
     vs_df["stim"] = np.nan
     vs_df.loc[vs_df.depth.notnull(), "stim"] = 1
     vs_df.loc[vs_df.depth < 0, "stim"] = 0
-    vs_df_simple = vs_df[(vs_df["stim"].diff() != 0) & (vs_df["stim"].notnull())]
-    vs_df_simple.depth = np.round(vs_df_simple.depth, 2)
+    for iplane in range(nplanes):
+        vs_df_plane = vs_df.groupby("imaging_plane").get_group(iplane)
+        vs_df_simple = vs_df_plane[
+            (vs_df_plane["stim"].diff() != 0) & (vs_df_plane["stim"].notnull())
+        ]
+        vs_df_simple.depth = np.round(vs_df_simple.depth, 2)
 
-    start_idx_stim = vs_df_simple[(vs_df_simple["stim"] == 1)].index
-    start_idx_blank = vs_df_simple[(vs_df_simple["stim"] == 0)].index
-    if len(start_idx_stim) != len(start_idx_blank):
-        if (len(start_idx_stim) - len(start_idx_blank)) == 1:
-            stop_idx_blank = start_idx_stim[1:] - 1
-            start_idx_stim = start_idx_stim[: len(start_idx_blank)]
+        start_idx_stim = vs_df_simple[(vs_df_simple["stim"] == 1)].index
+        start_idx_blank = vs_df_simple[(vs_df_simple["stim"] == 0)].index
+        if len(start_idx_stim) != len(start_idx_blank):
+            if (len(start_idx_stim) - len(start_idx_blank)) == 1:
+                stop_idx_blank = start_idx_stim[1:] - 1
+                start_idx_stim = start_idx_stim[: len(start_idx_blank)]
+            else:
+                print("Warning: incorrect stimulus trial structure! Double check!")
         else:
-            print("Warning: incorrect stimulus trial structure! Double check!")
-    else:
-        stop_idx_blank = start_idx_stim[1:] - 1
-        last_blank_stop_time = (
-            vs_df.loc[start_idx_blank[-1]].onset_harptime + blank_time
-        )
-        stop_idx_blank = np.append(
-            stop_idx_blank,
-            (np.abs(vs_df["onset_harptime"] - last_blank_stop_time)).idxmin(),
-        )
-    stop_idx_stim = start_idx_blank - 1
+            stop_idx_blank = start_idx_stim[1:] - 1
+            last_blank_stop_time = (
+                vs_df.loc[start_idx_blank[-1]].onset_harptime + blank_time
+            )
+            stop_idx_blank = np.append(
+                stop_idx_blank,
+                (np.abs(vs_df["onset_harptime"] - last_blank_stop_time)).idxmin(),
+            )
+        stop_idx_stim = start_idx_blank - 1
 
     # Assign trial no, depth, start/stop time, start/stop imaging frame to trials_df
     # Harptime for starts and stops are harptime for monitor frames, not corresponding to imaging trigger harptime
