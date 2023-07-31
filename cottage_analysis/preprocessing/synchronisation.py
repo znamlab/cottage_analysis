@@ -270,7 +270,7 @@ def generate_vs_df(
             frame_number = float(suite2p_dataset.extra_attributes["nframes"])
         else:
             frame_number = float(
-                np.load(suite2p_dataset.path_full / "dff_ast.npy").shape[1]
+                np.load(suite2p_dataset.path_full / "plane0" / "dff_ast.npy").shape[1]
             )
         nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
         fs = float(suite2p_dataset.extra_attributes["fs"])
@@ -304,6 +304,11 @@ def generate_vs_df(
             right_on="imaging_frame_harptime",
             direction="backward",
             allow_exact_matches=True,
+        )
+
+        # Find harptime of the first imaging frame in a volume
+        vs_df.imaging_volume_harptime = vs_df.imaging_frame.map(
+            vs_df.groupby("imaging_volume").imaging_frame_harptime.min()
         )
 
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
