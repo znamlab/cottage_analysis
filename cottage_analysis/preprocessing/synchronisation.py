@@ -245,7 +245,7 @@ def generate_vs_df(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
         on="closest_frame",
-        direction="nearest",
+        direction="backward",
         allow_exact_matches=True,
     )
 
@@ -294,8 +294,8 @@ def generate_vs_df(
             }
         )
         img_frame_logger["imaging_volume"] = (
-            img_frame_logger["imaging_frame"] / nplanes
-        ).apply(np.floor).astype(int)
+            (img_frame_logger["imaging_frame"] / nplanes).apply(np.floor).astype(int)
+        )
         # select the imaging frame that is being imaged during the monitor refresh
         vs_df = pd.merge_asof(
             left=vs_df,
