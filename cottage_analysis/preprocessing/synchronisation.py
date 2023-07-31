@@ -361,13 +361,14 @@ def generate_vs_df(
     return vs_df
 
 
-def fill_missing_imaging_volumes(df):
+def fill_missing_imaging_volumes(df, nan_col="RS"):
     """
     Create a dataframe with a single row for each imaging volume, by forward filling
     the values from the previous imaging volume.
 
     Args:
         df (DataFrame): DataFrame, e.g. output of generate_vs_df
+        nan_col (string): name of the colume for imaging_df where there are nan values due to frame drops
 
     Returns:
         DataFrame: DataFrame with a single row for each imaging volume
@@ -377,9 +378,9 @@ def fill_missing_imaging_volumes(df):
     # select rows of df where imaging_volume is not nan
     img_df = pd.merge_asof(
         left=img_df,
-        right=df[df["imaging_volume"].notna()],
+        right=df[df[nan_col].notna()],
         on="imaging_volume",
-        direction="forward",
+        direction="backward",
         allow_exact_matches=True,
     )
     return img_df
