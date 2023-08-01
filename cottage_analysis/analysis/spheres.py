@@ -674,3 +674,60 @@ def generate_trials_df(
     trials_df = trials_df.drop(columns=["imaging_volume_blank_start"])
 
     return trials_df
+
+
+def concatenate_sync(
+    session_name,
+    flz_session=None,
+    project=None,
+    recording_type="two_photon",
+    protocol_base="SpheresPermTubeReward",
+):
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flz_session
+    )
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value=recording_type,
+        flexilims_session=flz_session,
+    )
+
+    for i, recording_name in enumerate(recordings.name):
+        if protocol_base in recording_name:
+            recording = flz.get_entity(
+                datatype="recording", name=recording_name, flexilims_session=flz_session
+            )
+
+            print(f"Processing recording {i+1}/{len(recordings)}")
+            vs_df = synchronisation.generate_vs_df(
+                recording=recording,
+                photodiode_protocol=photodiode_protocol,
+                flexilims_session=None,
+                project=project,
+                sync_imaging=True,
+                filter_datasets=filter_datasets,
+            )
+            trials_df = spheres.generate_trials_df(
+                recording=recording,
+                vs_df=vs_df,
+                flexilims_session=None,
+                project=project,
+                filter_datasets=filter_datasets,
+            )
+
+            if i == 0:
+                vs_df_all = vs_df
+                trials_df_all = trials_df
+            else:
+                vs_df_all = pd.concat([vs_df_all, vs_df], ignore_index=True)
+                trials_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+            continue
+    print(f"Finished concatenating vs_df and trials_df")
+
+    return vs_df_all, trials_df_all
