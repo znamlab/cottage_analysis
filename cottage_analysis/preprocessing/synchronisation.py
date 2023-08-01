@@ -205,16 +205,15 @@ def generate_vs_df(
     monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
         "int"
     )
-
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
+    )
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        harp_ds = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=recording.name,
-            dataset_type="harp",
-            allow_multiple=False,
-            return_dataseries=False,
-        )
         frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
         frame_log = pd.read_csv(frame_log_path)
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
@@ -226,6 +225,7 @@ def generate_vs_df(
                 "EyeZ": "eye_z",
             }
         )
+        merge_on = "closest_frame"
     else:
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
         monitor_frames_df = monitor_frames_df.rename(
@@ -238,13 +238,14 @@ def generate_vs_df(
             columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
         )
         frame_log_z = frame_log_z.drop(columns={"Frame"})
+        merge_on = "onset_time"
 
     frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
     frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
-        on="closest_frame",
+        on=merge_on,
         direction="backward",
         allow_exact_matches=True,
     )
@@ -334,15 +335,25 @@ def generate_vs_df(
     param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
 
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=param_log,
-        left_on="closest_frame",
-        right_on="Frameindex",
-        direction="backward",
-        allow_exact_matches=True,
-    )  # Does not allow exact match of sphere rendering time and frame onset time?
-
+    if  photodiode_protocol == 5:
+        vs_df = pd.merge_asof(
+            left=vs_df,
+            right=param_log,
+            left_on="closest_frame",
+            right_on="Frameindex",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    else:
+        vs_df = pd.merge_asof(
+            left=vs_df,
+            right=param_log,
+            left_on="onset_time",
+            right_on="stimulus_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        
     # Rename
     vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
     for col in ["harptime_framelog", "harptime_sphere", "harptime_imaging_trigger"]:
