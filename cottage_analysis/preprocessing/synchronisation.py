@@ -171,11 +171,13 @@ def generate_vs_df(
     flexilims_session=None,
     project=None,
 ):
-    """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
+    """Generate a DataFrame that contains information for each monitor frame. This requires
+    monitor frames to be synced first.
 
     Args:
-        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project)
-        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
+        recording (Series): recording entry returned by flexiznam.get_entity
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring
+            frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
 
@@ -222,6 +224,7 @@ def generate_vs_df(
         )
         merge_on = "closest_frame"
     else:
+        # TODO account for display lag
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
@@ -245,32 +248,9 @@ def generate_vs_df(
         direction="backward",
         allow_exact_matches=True,
     )
-    # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
-    harp_npz_path = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="harp_npz",
-        allow_multiple=False,
-        return_dataseries=False,
-    ).path_full
-    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
-    harpmessage = np.load(harp_npz_path)
-    mouse_z_harp_df = pd.DataFrame(
-        {
-            "onset_time": harpmessage["analog_time"],
-            "mouse_z_harp": np.cumsum(harpmessage["rotary_meter"]),
-        }
-    )
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=mouse_z_harp_df,
-        on="onset_time",
-        direction="backward",
-        allow_exact_matches=True,
-    )
     # Align paramLog with vs_df
     paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
-    #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
+    # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
     param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if photodiode_protocol == 5:
@@ -396,14 +376,32 @@ def generate_imaging_df(
         direction="backward",
         allow_exact_matches=True,
     )
-
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
+    harpmessage = np.load(harp_npz_path)
+    mouse_z_harp_df = pd.DataFrame(
+        {
+            "mouse_z_harptime": harpmessage["analog_time"],
+            "mouse_z_harp": np.cumsum(harpmessage["rotary_meter"]),
+        }
+    )
+    # select the last mouse z before the end of each imaging volume / frame
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=mouse_z_harp_df,
+        left_on="imaging_harptime_end",
+        right_on="mouse_z_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )
     dffs = []
     for iplane in range(int(nplanes)):
         dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
-    imaging_df.dffs = np.vstack(dffs).T.tolist()
+    dffs = np.vstack(dffs).T
+    # convert dffs to list of arrays
+    imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
     return imaging_df
 
 
