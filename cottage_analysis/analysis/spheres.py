@@ -243,34 +243,35 @@ def _meshgrid(x, y):
     return xx, yy
 
 
-def format_vs_df_params(recording, vs_df):
-    """Format sphere params in vs_df.
+def format_imaging_df(recording, imaging_df):
+    """Format sphere params in imaging_df.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
-        vs_df(pd.DataFrame): dataframe that contains info for each monitor frame.
+        imaging_df (pd.DataFrame): dataframe that contains info for each monitor frame.
 
     Returns:
         DataFrame: contains information for each monitor frame and vis-stim.
 
     """
-
-    if "Radius" in vs_df.columns:
-        vs_df = vs_df.rename(columns={"Radius": "depth"})
-    elif "Depth" in vs_df.columns:
-        vs_df = vs_df.rename(columns={"Depth": "depth"})
-    if "depth" in vs_df.columns:
-        vs_df["depth"] = vs_df["depth"] / 100  # convert cm to m
-        if np.isnan(vs_df["depth"].iloc[-1]):
-            vs_df = vs_df[:-1]
-
+    if "Radius" in imaging_df.columns:
+        imaging_df = imaging_df.rename(columns={"Radius": "depth"})
+    elif "Depth" in imaging_df.columns:
+        imaging_df = imaging_df.rename(columns={"Depth": "depth"})
     # Indicate whether it's a closed loop or open loop session
     if "Playback" in recording.name:
-        vs_df["closed_loop"] = 0
+        imaging_df["closed_loop"] = 0
     else:
-        vs_df["closed_loop"] = 1
-
-    return vs_df
+        imaging_df["closed_loop"] = 1
+    imaging_df.RS = imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+    # average RS eye for each imaging volume
+    imaging_df.RS_eye = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
+    # depth for each imaging volume
+    imaging_df[imaging_df["depth"] == -9999].depth =  np.nan
+    imaging_df.depth = imaging_df.depth / 100  # convert cm to m
+    # OF for each imaging volume
+    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
+    return imaging_df
 
 
 def init_neurons_df(
@@ -341,138 +342,6 @@ def init_neurons_df(
     neurons_ds.update_flexilims(mode="overwrite")
 
     return neurons_df, neurons_ds
-
-
-def generate_imaging_df(
-    recording, vs_df, filter_datasets=None, flexilims_session=None, project=None
-):
-    """Generate a DataFrame that contains information for each imaging volume.
-
-    Args:
-        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
-        vs_df(pd.DataFrame): dataframe that contains info for each monitor frame.
-        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
-
-    Returns:
-        DataFrame: contains information for each imaging volume.
-
-    """
-    assert flexilims_session is not None or project is not None
-    if flexilims_session is None:
-        flexilims_session = flz.get_flexilims_session(project_id=project)
-
-    # Imaging_df: to find the RS/OF array for each imaging frame
-    imaging_df = pd.DataFrame(
-        columns=[
-            "imaging_volume",
-            "harptime_imaging_trigger",
-            "depth",
-            "is_stim",
-            "RS",  # actual running speed, m/s
-            "RS_eye",  # virtual running speed, m/s
-            "OF",  # optic flow speed = RS/depth, rad/s
-            "dffs",
-            "closed_loop",
-        ]
-    )
-
-    # Add vis-stim parameters to vs_df
-    vs_df = format_vs_df_params(recording=recording, vs_df=vs_df)
-
-    suite2p_traces = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="suite2p_traces",
-        filter_datasets=filter_datasets,
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    # find imaging frame number logged in bonsai
-    if "nframes" in suite2p_traces.extra_attributes:
-        frame_number = int(suite2p_traces.extra_attributes["nframes"])
-    else:
-        frame_number = int(
-            np.load(suite2p_traces.path_full / "plane0" / "dff_ast.npy").shape[1]
-        )
-    nplanes = suite2p_traces.extra_attributes["nplanes"]
-
-    # Find imaging frame trigger time
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="harp_npz",
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    img_frame_logger = format_loggers.format_img_frame_logger(
-        harpmessage_file=harp_ds.path_full, register_address=32
-    )
-    img_frame_logger = find_imaging_frames(
-        harp_message=img_frame_logger,
-        frame_number=frame_number * nplanes,
-        frame_period=0.0324 * 2,
-        register_address=32,
-        frame_period_tolerance=0.001,
-    )
-
-    # find imaging volume number
-    max_frame_in_vs_df = np.nanmax(vs_df.imaging_frame)
-    if frame_number != (max_frame_in_vs_df + 1):
-        print(
-            f"WARNING: Last {(frame_number-1-max_frame_in_vs_df)} imaging frames might be dropped. Check vs_df!"
-        )
-    imaging_df.imaging_volume = np.floor(
-        (np.arange(max_frame_in_vs_df + 1) / nplanes)
-    ).astype(int)
-
-    # Assign dff to each imaging volume
-    all_dff = []
-    for iplane in range(nplanes):
-        dff = np.load(suite2p_traces.path_full / f"plane{iplane}" / "dff_ast.npy")
-        dff = dff[:frame_number]
-        all_dff.append(dff)
-    all_dff = np.vstack(all_dff)  # nrois (for all planes) x nvolume
-    imaging_df.dffs = all_dff.T.tolist()
-
-    # average RS for each imaging volume
-    grouped_vs_df = vs_df.groupby("imaging_volume")
-    imaging_df.RS = grouped_vs_df.apply(
-        lambda x: (x["mouse_z_harp"].iloc[-1] - x["mouse_z_harp"].iloc[0])
-        / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
-    )
-    imaging_df.loc[0, "RS"] = 0
-
-    # average RS eye for each imaging volume
-    imaging_df.RS_eye = grouped_vs_df.apply(
-        lambda x: (x["eye_z"].iloc[-1] - x["eye_z"].iloc[0])
-        / (x["onset_harptime"].iloc[-1] - x["onset_harptime"].iloc[0])
-    )
-    imaging_df.loc[0, "RS_eye"] = 0
-
-    # depth for each imaging volume
-    imaging_df.depth = grouped_vs_df.depth.min()
-    imaging_df.is_stim = imaging_df.apply(lambda x: int(x.depth > 0), axis=1)
-    imaging_df.loc[imaging_df["depth"].isna(), "depth"] = 0
-    imaging_df.loc[imaging_df["depth"] < 0, "depth"] = np.nan
-    imaging_df["depth"] = imaging_df.depth.fillna(method="ffill")
-    imaging_df.loc[imaging_df["depth"] == 0, "depth"] = np.nan
-
-    # fill in missing imaging volume due to frame drop
-    imaging_df = synchronisation.fill_missing_imaging_volumes(imaging_df)
-
-    # OF for each imaging volume
-    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
-    imaging_df.loc[imaging_df.is_stim == 0, "OF"] = np.nan
-
-    # closed loop status for each imaging frame
-    if "Playback" in recording.name:
-        imaging_df.closed_loop = 0
-    else:
-        imaging_df.closed_loop = 1
-
-    return imaging_df
 
 
 def generate_trials_df(
