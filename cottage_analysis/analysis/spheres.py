@@ -267,7 +267,7 @@ def format_imaging_df(recording, imaging_df):
     # average RS eye for each imaging volume
     imaging_df.RS_eye = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
     # depth for each imaging volume
-    imaging_df[imaging_df["depth"] == -9999].depth =  np.nan
+    imaging_df[imaging_df["depth"] == -9999].depth = np.nan
     imaging_df.depth = imaging_df.depth / 100  # convert cm to m
     # OF for each imaging volume
     imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
@@ -344,121 +344,112 @@ def init_neurons_df(
     return neurons_df, neurons_ds
 
 
-def generate_trials_df(
-    recording, vs_df, filter_datasets=None, flexilims_session=None, project=None
-):
+def generate_trials_df(recording, imaging_df):
     """Generate a DataFrame that contains information for each trial.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
-        vs_df(pd.DataFrame): dataframe that contains info for each monitor frame.
-        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        imaging_df(pd.DataFrame): dataframe that contains info for each imaging volume.
 
     Returns:
         DataFrame: contains information for each trial.
 
     """
-    assert flexilims_session is not None or project is not None
-    if flexilims_session is None:
-        flexilims_session = flz.get_flexilims_session(project_id=project)
 
-    imaging_df = generate_imaging_df(
-        recording=recording,
-        vs_df=vs_df,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets=filter_datasets,
-    )
-
-    # Add vis-stim parameters to vs_df
-    vs_df = format_vs_df_params(recording=recording, vs_df=vs_df)
-
-    # trials_df
     trials_df = pd.DataFrame(
         columns=[
             "trial_no",
             "depth",
-            "harptime_stim_start",
-            "harptime_stim_stop",
-            "harptime_blank_start",
-            "harptime_blank_stop",
-            "imaging_volume_stim_start",
-            "imaging_volume_stim_stop",
-            "imaging_volume_blank_start",
-            "imaging_volume_blank_stop",
-            "param_log_start",  # which row of param log does this trial start
-            "param_log_stop",  # which row of param log does this trial stop
+            "closed_loop",
+            "imaging_harptime_stim_start",
+            "imaging_harptime_stim_stop",
+            "imaging_harptime_blank_start",
+            "imaging_harptime_blank_stop",
+            "imaging_stim_start",
+            "imaging_stim_stop",
+            "imaging_blank_start",
+            "imaging_blank_stop",
             "RS_stim",  # actual running speed, m/s
             "RS_blank",
             "RS_eye_stim",  # virtual running speed, m/s
             "OF_stim",  # optic flow speed = RS/depth, rad/s
             "dff_stim",
             "dff_blank",
-            # "spheres_no",
-            "closed_loop",
         ]
     )
 
-    # Find the start and stop of each trial
-    blank_time = 10  # s
+    # Find the change of depth
+    imaging_df["stim"] = np.nan
+    imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
+    imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
+    imaging_df_simple = imaging_df[
+        (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
+    ]
+    imaging_df_simple.depth = np.round(imaging_df_simple.depth, 2)
 
-    vs_df["stim"] = np.nan
-    vs_df.loc[vs_df.depth.notnull(), "stim"] = 1
-    vs_df.loc[vs_df.depth < 0, "stim"] = 0
-    vs_df_simple = vs_df[(vs_df["stim"].diff() != 0) & (vs_df["stim"].notnull())]
-    vs_df_simple.depth = np.round(vs_df_simple.depth, 2)
-
-    start_idx_stim = vs_df_simple[(vs_df_simple["stim"] == 1)].index
-    start_idx_blank = vs_df_simple[(vs_df_simple["stim"] == 0)].index
-    if len(start_idx_stim) != len(start_idx_blank):
-        if (len(start_idx_stim) - len(start_idx_blank)) == 1:
-            stop_idx_blank = start_idx_stim[1:] - 1
-            start_idx_stim = start_idx_stim[: len(start_idx_blank)]
-        else:
+    # Find frame or volume of imaging_df for trial start and stop
+    # (depending on whether return_volume=True in generate_imaging_df)
+    blank_time = 10
+    start_volume_stim = imaging_df_simple[
+        (imaging_df_simple["stim"] == 1)
+    ].imaging_frame.values
+    start_volume_blank = imaging_df_simple[
+        (imaging_df_simple["stim"] == 0)
+    ].imaging_frame.values
+    if len(start_volume_stim) != len(
+        start_volume_blank
+    ):  # if trial start and blank numbers are different
+        if (
+            len(start_volume_stim) - len(start_volume_blank)
+        ) == 1:  # last trial is not complete when stopping the recording
+            stop_volume_blank = start_volume_stim[1:] - 1
+            start_volume_stim = start_volume_stim[: len(start_volume_blank)]
+        else:  # something is wrong
             print("Warning: incorrect stimulus trial structure! Double check!")
-    else:
-        stop_idx_blank = start_idx_stim[1:] - 1
+    else:  # if trial start and blank numbers are the same
+        stop_volume_blank = start_volume_stim[1:] - 1
         last_blank_stop_time = (
-            vs_df.loc[start_idx_blank[-1]].onset_harptime + blank_time
+            imaging_df.loc[start_volume_blank[-1]].imaging_harptime + blank_time
         )
-        stop_idx_blank = np.append(
-            stop_idx_blank,
-            (np.abs(vs_df["onset_harptime"] - last_blank_stop_time)).idxmin(),
+        stop_volume_blank = np.append(
+            stop_volume_blank,
+            (np.abs(imaging_df.imaging_frame - last_blank_stop_time)).idxmin(),
         )
-    stop_idx_stim = start_idx_blank - 1
+    stop_volume_stim = start_volume_blank - 1
 
     # Assign trial no, depth, start/stop time, start/stop imaging volume to trials_df
-    # Harptime for starts and stops are harptime for monitor frames, not corresponding to imaging trigger harptime
-    trials_df.trial_no = np.arange(len(start_idx_stim))
-    trials_df.depth = vs_df.loc[start_idx_stim].depth
-    trials_df.harptime_stim_start = vs_df.loc[start_idx_stim].onset_harptime.values
-    trials_df.harptime_stim_stop = vs_df.loc[stop_idx_stim].onset_harptime.values
-    trials_df.harptime_blank_start = vs_df.loc[start_idx_blank].onset_harptime.values
-    trials_df.harptime_blank_stop = vs_df.loc[stop_idx_blank].onset_harptime.values
+    # harptime are imaging trigger harp time
+    trials_df.trial_no = np.arange(len(start_volume_stim))
+    trials_df.depth = pd.Series(imaging_df.loc[start_volume_stim].depth.values)
+    trials_df.imaging_harptime_stim_start = imaging_df.loc[
+        start_volume_stim
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_stim_stop = imaging_df.loc[
+        stop_volume_stim
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_blank_start = imaging_df.loc[
+        start_volume_blank
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_blank_stop = imaging_df.loc[
+        stop_volume_blank
+    ].imaging_harptime.values
 
-    trials_df.imaging_volume_stim_start = vs_df.loc[
-        start_idx_stim
-    ].imaging_volume.values
-    trials_df.imaging_volume_blank_start = vs_df.loc[
-        start_idx_blank
-    ].imaging_volume.values
-    trials_df.imaging_volume_blank_stop = vs_df.loc[
-        stop_idx_blank
-    ].imaging_volume.values
+    trials_df.imaging_stim_start = pd.Series(start_volume_stim)
+    trials_df.imaging_stim_stop = pd.Series(stop_volume_stim)
+    trials_df.imaging_blank_start = pd.Series(start_volume_blank)
+    trials_df.imaging_blank_stop = pd.Series(stop_volume_blank)
+
     if np.isnan(
-        trials_df.imaging_volume_blank_stop.iloc[-1]
+        trials_df.imaging_blank_stop.iloc[-1]
     ):  # If the blank stop of last trial is beyond the number of imaging frames
-        trials_df.imaging_volume_blank_stop.iloc[-1] = len(imaging_df) - 1
-    trials_df.imaging_volume_stim_stop = trials_df.imaging_volume_blank_start - 1
+        trials_df.imaging_blank_stop.iloc[-1] = len(imaging_df) - 1
 
-    mask = (
-        trials_df.imaging_volume_stim_start
-        == trials_df.imaging_volume_blank_stop.shift(1)
+    mask = trials_df.imaging_stim_start == trials_df.imaging_blank_stop.shift(
+        1
     )  # Get rid of the overlap of imaging frame no. between different trials
-    trials_df.loc[mask, "imaging_volume_stim_start"] += 1
+    trials_df.loc[mask, "imaging_stim_start"] += 1
 
+    # Assign protocol to trials_df
     if "Playback" in recording.name:
         trials_df.closed_loop = 0
     else:
@@ -467,28 +458,28 @@ def generate_trials_df(
     # Assign RS array from imaging_df back to trials_df
     trials_df.RS_stim = trials_df.apply(
         lambda x: imaging_df.RS.loc[
-            int(x.imaging_volume_stim_start) : int(x.imaging_volume_stim_stop)
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
 
     trials_df.RS_blank = trials_df.apply(
         lambda x: imaging_df.RS.loc[
-            int(x.imaging_volume_blank_start) : int(x.imaging_volume_blank_stop)
+            int(x.imaging_blank_start) : int(x.imaging_blank_stop)
         ].values,
         axis=1,
     )
 
     trials_df.RS_eye_stim = trials_df.apply(
         lambda x: imaging_df.RS_eye.loc[
-            int(x.imaging_volume_stim_start) : int(x.imaging_volume_stim_stop)
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
 
     trials_df.OF_stim = trials_df.apply(
         lambda x: imaging_df.OF.loc[
-            int(x.imaging_volume_stim_start) : int(x.imaging_volume_stim_stop)
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
@@ -496,9 +487,7 @@ def generate_trials_df(
     # Assign dffs array to trials_df
     trials_df.dff_stim = trials_df.apply(
         lambda x: np.stack(
-            imaging_df.dffs.loc[
-                int(x.imaging_volume_stim_start) : int(x.imaging_volume_stim_stop)
-            ]
+            imaging_df.dffs.loc[int(x.imaging_stim_start) : int(x.imaging_stim_stop)]
         ),
         axis=1,
     )
@@ -506,15 +495,29 @@ def generate_trials_df(
 
     trials_df.dff_blank = trials_df.apply(
         lambda x: np.stack(
-            imaging_df.dffs.loc[
-                int(x.imaging_volume_blank_start) : int(x.imaging_volume_blank_stop)
-            ]
+            imaging_df.dffs.loc[int(x.imaging_blank_start) : int(x.imaging_blank_stop)]
         ),
         axis=1,
     )
     # nvolumes x ncells
 
-    # Add the start param logger row and stop param logger row to each trial
+    # Rename
+    trials_df = trials_df.drop(columns=["imaging_blank_start"])
+
+    return trials_df
+
+
+def search_param_log_trials(recording, trials_df, flexilims_session):
+    """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        trials_df (pd.DataFrane): Dataframe that contails information for each trial.
+        flexilims_session (flexilims_session): flexilims session.
+
+    Returns:
+        Dataframe: Dataframe that contails information for each trial.
+    """
     harp_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording.name,
@@ -525,22 +528,21 @@ def generate_trials_df(
     paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
     param_log = pd.read_csv(paramlog_path)
     # trial index for each row of param log
-    start_idx = trials_df.harptime_stim_start.searchsorted(param_log.HarpTime) - 1
+    start_idx = (
+        trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
+    )
     start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
     start_idx = pd.Series(start_idx)
     start_idx = start_idx[start_idx.diff() != 0].index.values
     trials_df["param_log_start"] = start_idx
 
-    stop_idx = trials_df.harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
+    stop_idx = trials_df.imaging_harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
     stop_idx = pd.Series(stop_idx)
     stop_idx = stop_idx[stop_idx.diff() != 0].index.values
     if stop_idx[0] == 0:
         stop_idx = stop_idx[1:]
     stop_idx = stop_idx[: len(start_idx)]
     trials_df["param_log_stop"] = stop_idx
-
-    # Rename
-    trials_df = trials_df.drop(columns=["imaging_volume_blank_start"])
 
     return trials_df
 
