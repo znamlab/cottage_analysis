@@ -14,6 +14,12 @@ ONIX_SAMPLING = 250e6
 RAW = Path(flm.PARAMETERS["data_root"]["raw"])
 PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
 
+MAPPING = [
+    39,37,35,33,47,45,43,41,55,53,51,49,57,63,61,59,62,60,58,56,54,52,50,48,
+    46,44,42,40,38,36,34,32,24,26,28,30,16,18,20,22,8,10,12,14,0,2,4,6,3,5,
+    7,1,9,11,13,15,17,19,21,23,25,27,29,31
+]
+#The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16. 
 
 def load_onix_recording(
     project,
@@ -122,6 +128,19 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         output[what] = data
     return output
 
+def reorder_array(ephys_data):
+    """
+    Reorder the rows of the ephys data based on a predefined mapping. This is useful because data does not come
+    neatly ordered as [electrode 1 tetrode 1, electrode 2 tetrode 1, ..., electrode 4 tetrode 16] from the headstage. 
+    This function remaps inputs so that tetrodes are in order and remain together. 
+
+    Parameters:
+    - ephys_data (np.ndarray): The ephys data to reorder. Usually, processed_ephys['ephys'].
+
+    Returns:
+    - np.ndarray: The reordered ephys data.
+    """
+    return ephys_data[MAPPING]
 
 def load_ts4231(path_to_folder, timestamp=None):
     """Load data from the lighthouse system
