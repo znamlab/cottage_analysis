@@ -20,8 +20,8 @@ def find_valid_frames(frame_times, trials_df, verbose=True):
         frame_indices (np.array): Array of valid frame indices.
     """
     # for frames before and after the protocol, keep them 0s
-    before = frame_times < trials_df.harptime_stim_start.iloc[0]
-    after = frame_times > trials_df.harptime_stim_stop.iloc[-1]
+    before = frame_times < trials_df.imaging_harptime_stim_start.iloc[0]
+    after = frame_times > trials_df.imaging_harptime_stim_stop.iloc[-1]
     if verbose:
         print(
             "Ignoring %d frames before and %d after the stimulus presentation"
@@ -30,10 +30,11 @@ def find_valid_frames(frame_times, trials_df, verbose=True):
     valid_frames = ~before & ~after
 
     trial_index = (
-        trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
+        trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
+        - 1
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
-    trial_end = trials_df.loc[trial_index, "harptime_stim_stop"].values
+    trial_end = trials_df.loc[trial_index, "imaging_harptime_stim_stop"].values
     grey_time = frame_times - trial_end > 0
     if verbose:
         print(
@@ -87,7 +88,7 @@ def regenerate_frames(
         vs_df["eye_z"].values * 100
     )  # (np.array): position of the mouse in cm
     mouse_pos_time = vs_df[
-        "onset_harptime"
+        "monitor_harptime"
     ].values  # (np.array): time of each mouse_pos_cm sample
 
     out_shape = (
@@ -102,7 +103,8 @@ def regenerate_frames(
 
     # Find frame indices that are not grey and within the imaging time.
     trial_index = (
-        trials_df.harptime_stim_start.searchsorted(frame_times, side="right") - 1
+        trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
+        - 1
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
@@ -612,13 +614,9 @@ def sync_all_recordings(
             return_volumes=return_volumes,
         )
 
-        imaging_df = format_imaging_df(
-            recording=recording, imaging_df=imaging_df
-        )
+        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
 
-        trials_df = generate_trials_df(
-            recording=recording, imaging_df=imaging_df
-        )
+        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
 
         trials_df = search_param_log_trials(
             recording=recording,
