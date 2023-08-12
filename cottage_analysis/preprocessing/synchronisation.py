@@ -10,13 +10,20 @@ from functools import partial
 print = partial(print, flush=True)
 
 
-def load_harpmessage(recording, flexilims_session, conflicts="skip"):
+def load_harpmessage(
+    recording,
+    flexilims_session,
+    conflicts="skip",
+    di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
+):
     """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
 
     Args:
         recording (str or pandas.Series): recording name or recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
         conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
+        di_names (tuple): names of the digital inputs to rename harp meassage. Defaults
+            to ("frame_triggers", "lick_detection", "di2_encoder_initial_state").
 
     Returns:
         np.array: loaded harpmessages as numpy array
@@ -51,7 +58,7 @@ def load_harpmessage(recording, flexilims_session, conflicts="skip"):
     print("Saving harp messages into npz...")
     params = dict(
         harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
-        di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
+        di_names=di_names,
         verbose=False,
     )
     harp_messages = harp.load_harp(**params)
@@ -294,8 +301,8 @@ def generate_vs_df(
             }
         )
         img_frame_logger["imaging_volume"] = (
-            img_frame_logger["imaging_frame"] / nplanes
-        ).apply(np.floor).astype(int)
+            (img_frame_logger["imaging_frame"] / nplanes).apply(np.floor).astype(int)
+        )
         # select the imaging frame that is being imaged during the monitor refresh
         vs_df = pd.merge_asof(
             left=vs_df,
