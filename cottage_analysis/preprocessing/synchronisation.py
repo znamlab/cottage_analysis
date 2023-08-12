@@ -177,18 +177,16 @@ def generate_vs_df(
     photodiode_protocol=5,
     flexilims_session=None,
     project=None,
-    sync_imaging=True,
-    filter_datasets=None,
 ):
-    """Generate a DataFrame that contains information for each monitor frame. This requires monitor frames to be synced first.
+    """Generate a DataFrame that contains information for each monitor frame. This requires
+    monitor frames to be synced first.
 
     Args:
-        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project)
-        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh. Either 2 or 5 for now. Defaults to 5.
+        recording (Series): recording entry returned by flexiznam.get_entity
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring
+            frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
-        sync_imaging (bool): is the data imaging data? Defaults to True. If it is imaging data, imaging trigger log will be synced with vs_df.
-        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -209,31 +207,31 @@ def generate_vs_df(
         monitor_frames_df.closest_frame.notnull()
     ].copy()
     monitor_frames_df = find_frames.remove_frames_in_wrong_order(monitor_frames_df)
-    monitor_frames_df["closest_frame"] = monitor_frames_df["closest_frame"].astype(
-        "int"
+    monitor_frames_df.closest_frame = monitor_frames_df.closest_frame.astype("int")
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
     )
-
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        harp_ds = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=recording.name,
-            dataset_type="harp",
-            allow_multiple=False,
-            return_dataseries=False,
-        )
         frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
         frame_log = pd.read_csv(frame_log_path)
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
-        frame_log_z = frame_log_z.rename(
+        frame_log_z.rename(
             columns={
                 "FrameIndex": "closest_frame",
                 "HarpTime": "harptime_framelog",
                 "MouseZ": "mouse_z",
                 "EyeZ": "eye_z",
-            }
+            },
+            inplace=True,
         )
+        merge_on = "closest_frame"
     else:
+        # TODO account for display lag
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
@@ -241,22 +239,99 @@ def generate_vs_df(
         encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
-        frame_log_z = frame_log_z.rename(
-            columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"}
+        frame_log_z.rename(
+            columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"},
+            inplace=True,
         )
-        frame_log_z = frame_log_z.drop(columns={"Frame"})
+        frame_log_z.drop(columns={"Frame"}, inplace=True)
+        merge_on = "onset_time"
 
-    frame_log_z["mouse_z"] = frame_log_z["mouse_z"] / 100  # convert cm to m
-    frame_log_z["eye_z"] = frame_log_z["eye_z"] / 100  # convert cm to m
+    frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
+    frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
-        on="closest_frame",
-        direction="nearest",
+        on=merge_on,
+        direction="backward",
         allow_exact_matches=True,
     )
+    # Align paramLog with vs_df
+    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+    # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
+    param_log = pd.read_csv(paramlog_path)
+    param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
+    if photodiode_protocol == 5:
+        vs_df = pd.merge_asof(
+            left=vs_df,
+            right=param_log,
+            left_on="closest_frame",
+            right_on="Frameindex",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    else:
+        vs_df = pd.merge_asof(
+            left=vs_df,
+            right=param_log,
+            left_on="onset_time",
+            right_on="stimulus_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    # Rename
+    vs_df.rename(
+        columns={"closest_frame": "monitor_frame", "onset_time": "monitor_harptime"},
+        inplace=True,
+    )
+    vs_df.drop(
+        columns=[
+            "harptime_framelog",
+            "harptime_sphere",
+            "harptime_imaging_trigger",
+            "offset_time",
+            "peak_time",
+        ],
+        errors="ignore",
+        inplace=True,
+    )
+    return vs_df
 
-    # Align imaging frame time with monitor frame onset time (imaging frame time later than monitor frame onset time)
+
+def generate_imaging_df(
+    vs_df, recording, flexilims_session, filter_datasets=None, return_volumes=True
+):
+    """
+    Generate a DataFrame that contains information for each imaging volume / frame incorporating
+    the monitor frame information.
+
+    Args:
+        vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
+        recording (pandas.Series): recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
+        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+
+    Returns:
+        DataFrame: contains information for each imaging volume / frame.
+
+    """
+    # get the suite2p dataset to check the frame number, frame rate and number of planes
+    suite2p_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="suite2p_traces",
+        filter_datasets=filter_datasets,
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    if "nframes" in suite2p_ds.extra_attributes:
+        frame_number = float(suite2p_ds.extra_attributes["nframes"])
+    else:
+        frame_number = float(
+            np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
+        )
+    nplanes = float(suite2p_ds.extra_attributes["nplanes"])
+    fs = float(suite2p_ds.extra_attributes["fs"])
     harp_npz_path = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording.name,
@@ -264,112 +339,87 @@ def generate_vs_df(
         allow_multiple=False,
         return_dataseries=False,
     ).path_full
-    if sync_imaging:
-        suite2p_dataset = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=recording.name,
-            dataset_type="suite2p_traces",
-            filter_datasets=filter_datasets,
-            allow_multiple=False,
-            return_dataseries=False,
-        )
-        if "nframes" in suite2p_dataset.extra_attributes:
-            frame_number = float(suite2p_dataset.extra_attributes["nframes"])
-        else:
-            frame_number = float(
-                np.load(suite2p_dataset.path_full / "dff_ast.npy").shape[1]
-            )
-        nplanes = float(suite2p_dataset.extra_attributes["nplanes"])
-        fs = float(suite2p_dataset.extra_attributes["fs"])
-        # frame period calculated based of the frame rate in ops.npy
-        # subtracting 1 ms to account for the duration of the triggers
-        img_frame_logger = find_imaging_frames(
-            harp_message=format_loggers.format_img_frame_logger(
-                harpmessage_file=harp_npz_path, register_address=32
-            ),
-            frame_number=int(frame_number * nplanes),
-            frame_period=(1 / fs) / nplanes - 0.001,
-            register_address=32,
-            frame_period_tolerance=0.001,
-        )
+    # frame period calculated based of the frame rate in ops.npy
+    # subtracting 1 ms to account for the duration of the triggers
+    imaging_df = find_imaging_frames(
+        harp_message=format_loggers.format_img_frame_logger(
+            harpmessage_file=harp_npz_path, register_address=32
+        ),
+        frame_number=int(frame_number * nplanes),
+        frame_period=(1 / fs) / nplanes - 0.001,
+        register_address=32,
+        frame_period_tolerance=0.001,
+    )
 
-        img_frame_logger = img_frame_logger[["HarpTime", "ImagingFrame"]]
-        img_frame_logger = img_frame_logger.rename(
-            columns={
-                "HarpTime": "imaging_frame_harptime",
-                "ImagingFrame": "imaging_frame",
-            }
-        )
-        img_frame_logger["imaging_volume"] = (
-            (img_frame_logger["imaging_frame"] / nplanes).apply(np.floor).astype(int)
-        )
-        # select the imaging frame that is being imaged during the monitor refresh
-        vs_df = pd.merge_asof(
-            left=vs_df,
-            right=img_frame_logger,
-            left_on="onset_time",
-            right_on="imaging_frame_harptime",
-            direction="backward",
-            allow_exact_matches=True,
-        )
-
+    imaging_df = imaging_df[["HarpTime", "ImagingFrame"]]
+    imaging_df.rename(
+        columns={
+            "HarpTime": "imaging_harptime",
+            "ImagingFrame": "imaging_frame",
+        },
+        inplace=True,
+    )
+    imaging_df.imaging_volume = (
+        (imaging_df.imaging_frame / nplanes).apply(np.floor).astype(int)
+    )
+    # if return_volumes is True, select rows where imaging_volume changes
+    if return_volumes:
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
+    # add a column for the harptime at end the imaging volume
+    imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
+    # set the last value of imaging_harptime_end to the last value of imaging_harptime + median frame period
+    imaging_df["imaging_harptime_end"].iloc[-1] = (
+        imaging_df["imaging_harptime"].iloc[-1]
+        + imaging_df["imaging_harptime"].diff().median()
+    )
+    # select the last monitor frame before the end of each imaging volume / frame
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=vs_df,
+        left_on="imaging_harptime_end",
+        right_on="monitor_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
         {
-            "onset_time": harpmessage["analog_time"],
+            "mouse_z_harptime": harpmessage["analog_time"],
             "mouse_z_harp": np.cumsum(harpmessage["rotary_meter"]),
         }
     )
-    vs_df = pd.merge_asof(
-        left=vs_df,
+    # select the last mouse z before the end of each imaging volume / frame
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
         right=mouse_z_harp_df,
-        on="onset_time",
+        left_on="imaging_harptime_end",
+        right_on="mouse_z_harptime",
         direction="backward",
         allow_exact_matches=True,
     )
-
-    # Align paramLog with vs_df
-    paramlog_path = (
-        harp_ds.path_full / harp_ds.csv_files["NewParams"]
-    )  #!!!COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(paramlog_path)
-    param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
-
-    vs_df = pd.merge_asof(
-        left=vs_df,
-        right=param_log,
-        left_on="closest_frame",
-        right_on="Frameindex",
-        direction="backward",
-        allow_exact_matches=True,
-    )  # Does not allow exact match of sphere rendering time and frame onset time?
-
-    # Rename
-    vs_df = vs_df.rename(columns={"closest_frame": "monitor_frame"})
-    for col in ["harptime_framelog", "harptime_sphere", "harptime_imaging_trigger"]:
-        if col in vs_df.columns:
-            vs_df = vs_df.drop(columns=[col])
-    for col in ["onset_time", "offset_time", "peak_time"]:
-        if col in vs_df.columns:
-            vs_df = vs_df.rename(
-                columns={
-                    "onset_time": "onset_harptime",
-                    "offset_time": "offset_harptime",
-                    "peak_time": "peak_harptime",
-                }
-            )
-
-    return vs_df
+    dff_fname = (
+        "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
+    )
+    dffs = []
+    for iplane in range(int(nplanes)):
+        dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
+    dffs = np.vstack(dffs).T
+    # convert dffs to list of arrays
+    imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
+    return imaging_df
 
 
-def fill_missing_imaging_volumes(df):
+def fill_missing_imaging_volumes(df, nan_col="RS"):
     """
     Create a dataframe with a single row for each imaging volume, by forward filling
     the values from the previous imaging volume.
 
     Args:
         df (DataFrame): DataFrame, e.g. output of generate_vs_df
+        nan_col (string): name of the colume for imaging_df where there are nan values due to frame drops
 
     Returns:
         DataFrame: DataFrame with a single row for each imaging volume
@@ -379,9 +429,9 @@ def fill_missing_imaging_volumes(df):
     # select rows of df where imaging_volume is not nan
     img_df = pd.merge_asof(
         left=img_df,
-        right=df[df["imaging_volume"].notna()],
+        right=df[df[nan_col].notna()],
         on="imaging_volume",
-        direction="forward",
+        direction="backward",
         allow_exact_matches=True,
     )
     return img_df
