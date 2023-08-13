@@ -1,0 +1,635 @@
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from cottage_analysis.preprocessing import synchronisation
+from cottage_analysis.imaging.common.find_frames import find_imaging_frames
+from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
+import flexiznam as flz
+from pathlib import Path
+
+
+def find_valid_frames(frame_times, trials_df, verbose=True):
+    """Find frame numbers that are valid (not gray period, or not before or after the imaging frames) and used for regenerating sphere stimuli.
+
+    Args:
+        frame_times (np.array): Array of time at which the frame should be regenerated
+        trials_df (pd.DataFrame): Dataframe contains information for each trial.
+        verbose (bool, optional): Print information. Defaults to True.
+
+    Returns:
+        frame_indices (np.array): Array of valid frame indices.
+    """
+    # for frames before and after the protocol, keep them 0s
+    before = frame_times < trials_df.imaging_harptime_stim_start.iloc[0]
+    after = frame_times > trials_df.imaging_harptime_stim_stop.iloc[-1]
+    if verbose:
+        print(
+            "Ignoring %d frames before and %d after the stimulus presentation"
+            % (np.sum(before), np.sum(after))
+        )
+    valid_frames = ~before & ~after
+
+    trial_index = (
+        trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
+        - 1
+    )
+    trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
+    trial_end = trials_df.loc[trial_index, "imaging_harptime_stim_stop"].values
+    grey_time = frame_times - trial_end > 0
+    if verbose:
+        print(
+            "Ignoring %d frames in grey inter-trial intervals"
+            % np.sum(grey_time & valid_frames)
+        )
+    valid_frames = valid_frames & (~grey_time)
+    frame_indices = np.where(valid_frames)[0]
+
+    return frame_indices
+
+
+def regenerate_frames(
+    frame_times,
+    trials_df,
+    vs_df,
+    param_logger,
+    time_column="HarpTime",
+    resolution=1,
+    sphere_size=10,
+    azimuth_limits=(-120, 120),
+    elevation_limits=(-40, 40),
+    verbose=True,
+    output_datatype="int16",
+    output=None,
+):
+    """Regenerate frames of sphere stimulus
+
+    Args:
+        frame_times (np.array): Array of time at which the frame should be regenerated.
+        trials_df (pd.DataFrame): Dataframe contains information for each trial.
+        vs_df (pd.DataFrame): Dataframe contains information for each monitor frame.
+        param_logger (pd.DataFrame): Params saved by Bonsai logger
+        time_column (str): Name of the column containing timing information in
+                           dataframes (Default: 'HarpTime')
+        resolution (float): size of a pixel in degrees
+        sphere_size (float): size of a sphere in degrees
+        azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
+        elevation_limits ([float, float]): Minimum and maximum elevation of the display
+        verbose (bool): Print information
+        output_datatype (type): datatype of the output. Use bool to have binary
+                                sphere/no sphere output. int for seeing sphere overlap.
+                                Not used if output is provided
+        output (np.array): Array to add output. Will be done inplace
+
+    Returns:
+        virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
+    """
+    frame_times = np.array(frame_times, ndmin=1)
+    mouse_pos_cm = (
+        vs_df["eye_z"].values * 100
+    )  # (np.array): position of the mouse in cm
+    mouse_pos_time = vs_df[
+        "monitor_harptime"
+    ].values  # (np.array): time of each mouse_pos_cm sample
+
+    out_shape = (
+        len(frame_times),
+        int((elevation_limits[1] - elevation_limits[0]) / resolution),
+        int((azimuth_limits[1] - azimuth_limits[0]) / resolution),
+    )
+    if output is None:
+        output = np.zeros(out_shape, dtype=output_datatype)
+    else:
+        assert output.shape == out_shape
+
+    # Find frame indices that are not grey and within the imaging time.
+    trial_index = (
+        trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
+        - 1
+    )
+    trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
+    frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
+    mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
+
+    # now process the valid frames
+    log_ends = param_logger[time_column].searchsorted(frame_times)
+    for frame_index in tqdm(frame_indices):
+        corridor = trials_df.loc[int(trial_index[frame_index])]
+        logger = param_logger.iloc[
+            corridor.param_log_start : np.max(
+                [log_ends[frame_index], corridor.param_log_start + 1]
+            )
+        ]
+        sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
+        sphere_coordinates[:, 2] = (
+            sphere_coordinates[:, 2] - mouse_position[frame_index]
+        )
+
+        this_frame = draw_spheres(
+            sphere_x=sphere_coordinates[:, 0],
+            sphere_y=sphere_coordinates[:, 1],
+            sphere_z=sphere_coordinates[:, 2],
+            depth=float(corridor.depth) * 100,
+            resolution=float(resolution),
+            sphere_size=float(sphere_size),
+            azimuth_limits=np.array(azimuth_limits, dtype=float),
+            elevation_limits=np.array(elevation_limits, dtype=float),
+        )
+        if this_frame is None:
+            this_frame = np.zeros((out_shape[1], out_shape[2]))
+            print(f"Warning: failed to reconstruct frame {frame_index}")
+        output[frame_index] = this_frame
+
+    return output
+
+
+def draw_spheres(
+    sphere_x,
+    sphere_y,
+    sphere_z,
+    depth,
+    resolution=0.1,
+    sphere_size=10,
+    azimuth_limits=(-120, 120),
+    elevation_limits=(-40, 40),
+):
+    """Recreate stimulus for a single frame from corrected sphere position
+
+    Given the positions of the spheres relative to the mouse and the corridor depth,
+    recreate a single frame
+
+    Args:
+        sphere_x (np.array): X positions for all spheres on the frame
+        sphere_y (np.array): Y positions for all spheres on the frame
+        sphere_z (np.array): Z positions for all spheres on the frame
+        depth (float): Depth for that corridor. Used for size adjustement
+        resolution (float): size of a pixel in degrees
+        sphere_size (float): size of a sphere in degrees
+        azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
+        elevation_limits ([float, float]): Minimum and maximum elevation of the display
+
+
+    Returns:
+        virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
+    """
+
+    radius, azimuth, elevation = cartesian_to_spherical(sphere_x, sphere_y, sphere_z)
+    # we switch from trigo circle, counterclockwise with 0 on the right to azimuth,
+    # clockwise with 0 in front
+    az_compas = np.mod(-(azimuth - 90), 360)
+    az_compas[az_compas > 180] = az_compas[az_compas > 180] - 360
+
+    # now prepare output
+    azi_n = int((azimuth_limits[1] - azimuth_limits[0]) / resolution)
+    ele_n = int((elevation_limits[1] - elevation_limits[0]) / resolution)
+
+    # find if the sphere is on the screen, that means in the -120 +120 azimuth range
+    in_screen = (az_compas > azimuth_limits[0]) & (az_compas < azimuth_limits[1])
+    # and in the -40, 40 elevation range
+    in_screen = in_screen & (
+        (elevation > elevation_limits[0]) & (elevation < elevation_limits[1])
+    )
+    if not np.any(in_screen):
+        return
+
+    # convert `in_screen` spheres in pixel space
+    az_on_screen = (az_compas[in_screen] - azimuth_limits[0]) / resolution
+    el_on_screen = (elevation[in_screen] - elevation_limits[0]) / resolution
+    size = depth / radius[in_screen] * sphere_size / resolution
+
+    xx, yy = np.meshgrid(np.arange(azi_n), np.arange(ele_n))
+    xx = np.outer(xx.reshape(-1), np.ones(len(az_on_screen)))
+    yy = np.outer(yy.reshape(-1), np.ones(len(el_on_screen)))
+    ok = (xx - az_on_screen) ** 2 + (yy - el_on_screen) ** 2 - size**2
+    ok = ok <= 0
+    # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
+    return np.any(ok, axis=1).reshape((ele_n, azi_n))
+
+
+def cartesian_to_spherical(x, y, z):
+    """Transform cartesian X, Y, Z bonsai coordinate to spherical
+
+    Args:
+        x (np.array): x position from bonsai. Positive is to the right of the mouse
+        y (np.array): y position from bonsai. Positive is above the mouse
+        z (np.array): z position from bonsai. Positive is in front of the mouse
+
+    Returns:
+        radius (np.array): radius, same unit as x,y,z
+        azimuth (np.array): azimuth angle in trigonometric coordinates (0 is to the
+                            right of the mouse, positive is counterclockwise, towards
+                            the nose)
+        elevation (np.array): elevation angle. 0 is in front of the mouse, positive
+                              towards the top.
+    """
+    radius = np.sqrt(x**2 + y**2 + z**2)
+    azimuth = np.arctan2(z, x)
+    elevation = np.arctan2(y, np.sqrt(x**2 + z**2))
+
+    azimuth = np.degrees(azimuth)
+    elevation = np.degrees(elevation)
+    return radius, azimuth, elevation
+
+
+def calculate_optic_flow_angle(r, r_new, distance):
+    angle = np.arccos((r**2 + r_new**2 - distance**2) / (2 * r * r_new))
+    return angle
+
+
+def _meshgrid(x, y):
+    xx = np.empty(shape=(x.size, y.size), dtype=x.dtype)
+    yy = np.empty(shape=(x.size, y.size), dtype=y.dtype)
+    for j in range(y.size):
+        for k in range(x.size):
+            xx[j, k] = k  # change to x[k] if indexing xy
+            yy[j, k] = j  # change to y[j] if indexing xy
+    return xx, yy
+
+
+def format_imaging_df(recording, imaging_df):
+    """Format sphere params in imaging_df.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        imaging_df (pd.DataFrame): dataframe that contains info for each monitor frame.
+
+    Returns:
+        DataFrame: contains information for each monitor frame and vis-stim.
+
+    """
+    if "Radius" in imaging_df.columns:
+        imaging_df = imaging_df.rename(columns={"Radius": "depth"})
+    elif "Depth" in imaging_df.columns:
+        imaging_df = imaging_df.rename(columns={"Depth": "depth"})
+    # Indicate whether it's a closed loop or open loop session
+    if "Playback" in recording.name:
+        imaging_df["closed_loop"] = 0
+    else:
+        imaging_df["closed_loop"] = 1
+    imaging_df.RS = imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+    # average RS eye for each imaging volume
+    imaging_df.RS_eye = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
+    # depth for each imaging volume
+    imaging_df[imaging_df["depth"] == -9999].depth = np.nan
+    imaging_df.depth = imaging_df.depth / 100  # convert cm to m
+    # OF for each imaging volume
+    imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
+    return imaging_df
+
+
+def init_neurons_df(
+    recording,
+    filter_datasets=None,
+    flexilims_session=None,
+    project=None,
+    conflicts="skip",
+):
+    """Initialize a dataframe containing basic information about rois in each session. This dataframe will be saved.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
+
+    """
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    neurons_df = pd.DataFrame(
+        columns=[
+            "roi",  # ROI number
+            "plane_no",  # plane number, which plane this roi is located in
+        ]
+    )
+    neurons_ds = flz.Dataset.from_origin(
+        origin_id=recording["id"],
+        dataset_type="neurons_df",
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    neurons_ds.path = neurons_ds.path.parent / f"neurons_df.pickle"
+
+    if (neurons_ds.flexilims_status() != "not online") and (conflicts == "skip"):
+        print("Loading existing neurons_df file...")
+        return np.load(neurons_ds.path_full), neurons_ds
+
+    suite2p_traces = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_id=recording.origin_id,
+        dataset_type="suite2p_rois",
+        filter_datasets=None,
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    nplanes = suite2p_traces.extra_attributes["nplanes"]
+    for iplane in range(nplanes):
+        F = np.load(
+            suite2p_traces.path_full / f"plane{iplane}/F.npy", allow_pickle=True
+        )
+        append_neurons = pd.DataFrame(
+            {
+                "roi": np.arange(F.shape[0]),
+                "plane_no": np.repeat(iplane, F.shape[0]),
+            }
+        )
+        neurons_df = pd.concat([neurons_df, append_neurons], ignore_index=True)
+
+    # save neurons_df
+    neurons_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
+    neurons_df.to_pickle(neurons_ds.path_full)
+
+    # update flexilims
+    neurons_ds.update_flexilims(mode="overwrite")
+
+    return neurons_df, neurons_ds
+
+
+def generate_trials_df(recording, imaging_df):
+    """Generate a DataFrame that contains information for each trial.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        imaging_df(pd.DataFrame): dataframe that contains info for each imaging volume.
+
+    Returns:
+        DataFrame: contains information for each trial.
+
+    """
+
+    trials_df = pd.DataFrame(
+        columns=[
+            "trial_no",
+            "depth",
+            "closed_loop",
+            "imaging_harptime_stim_start",
+            "imaging_harptime_stim_stop",
+            "imaging_harptime_blank_start",
+            "imaging_harptime_blank_stop",
+            "imaging_stim_start",
+            "imaging_stim_stop",
+            "imaging_blank_start",
+            "imaging_blank_stop",
+            "RS_stim",  # actual running speed, m/s
+            "RS_blank",
+            "RS_eye_stim",  # virtual running speed, m/s
+            "OF_stim",  # optic flow speed = RS/depth, rad/s
+            "dff_stim",
+            "dff_blank",
+        ]
+    )
+
+    # Find the change of depth
+    imaging_df["stim"] = np.nan
+    imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
+    imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
+    imaging_df_simple = imaging_df[
+        (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
+    ]
+    imaging_df_simple.depth = np.round(imaging_df_simple.depth, 2)
+
+    # Find frame or volume of imaging_df for trial start and stop
+    # (depending on whether return_volume=True in generate_imaging_df)
+    blank_time = 10
+    start_volume_stim = imaging_df_simple[
+        (imaging_df_simple["stim"] == 1)
+    ].imaging_frame.values
+    start_volume_blank = imaging_df_simple[
+        (imaging_df_simple["stim"] == 0)
+    ].imaging_frame.values
+    if len(start_volume_stim) != len(
+        start_volume_blank
+    ):  # if trial start and blank numbers are different
+        if (
+            len(start_volume_stim) - len(start_volume_blank)
+        ) == 1:  # last trial is not complete when stopping the recording
+            stop_volume_blank = start_volume_stim[1:] - 1
+            start_volume_stim = start_volume_stim[: len(start_volume_blank)]
+        else:  # something is wrong
+            print("Warning: incorrect stimulus trial structure! Double check!")
+    else:  # if trial start and blank numbers are the same
+        stop_volume_blank = start_volume_stim[1:] - 1
+        last_blank_stop_time = (
+            imaging_df.loc[start_volume_blank[-1]].imaging_harptime + blank_time
+        )
+        stop_volume_blank = np.append(
+            stop_volume_blank,
+            (np.abs(imaging_df.imaging_frame - last_blank_stop_time)).idxmin(),
+        )
+    stop_volume_stim = start_volume_blank - 1
+
+    # Assign trial no, depth, start/stop time, start/stop imaging volume to trials_df
+    # harptime are imaging trigger harp time
+    trials_df.trial_no = np.arange(len(start_volume_stim))
+    trials_df.depth = pd.Series(imaging_df.loc[start_volume_stim].depth.values)
+    trials_df.imaging_harptime_stim_start = imaging_df.loc[
+        start_volume_stim
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_stim_stop = imaging_df.loc[
+        stop_volume_stim
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_blank_start = imaging_df.loc[
+        start_volume_blank
+    ].imaging_harptime.values
+    trials_df.imaging_harptime_blank_stop = imaging_df.loc[
+        stop_volume_blank
+    ].imaging_harptime.values
+
+    trials_df.imaging_stim_start = pd.Series(start_volume_stim)
+    trials_df.imaging_stim_stop = pd.Series(stop_volume_stim)
+    trials_df.imaging_blank_start = pd.Series(start_volume_blank)
+    trials_df.imaging_blank_stop = pd.Series(stop_volume_blank)
+
+    if np.isnan(
+        trials_df.imaging_blank_stop.iloc[-1]
+    ):  # If the blank stop of last trial is beyond the number of imaging frames
+        trials_df.imaging_blank_stop.iloc[-1] = len(imaging_df) - 1
+
+    mask = trials_df.imaging_stim_start == trials_df.imaging_blank_stop.shift(
+        1
+    )  # Get rid of the overlap of imaging frame no. between different trials
+    trials_df.loc[mask, "imaging_stim_start"] += 1
+
+    # Assign protocol to trials_df
+    if "Playback" in recording.name:
+        trials_df.closed_loop = 0
+    else:
+        trials_df.closed_loop = 1
+
+    # Assign RS array from imaging_df back to trials_df
+    trials_df.RS_stim = trials_df.apply(
+        lambda x: imaging_df.RS.loc[
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
+        ].values,
+        axis=1,
+    )
+
+    trials_df.RS_blank = trials_df.apply(
+        lambda x: imaging_df.RS.loc[
+            int(x.imaging_blank_start) : int(x.imaging_blank_stop)
+        ].values,
+        axis=1,
+    )
+
+    trials_df.RS_eye_stim = trials_df.apply(
+        lambda x: imaging_df.RS_eye.loc[
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
+        ].values,
+        axis=1,
+    )
+
+    trials_df.OF_stim = trials_df.apply(
+        lambda x: imaging_df.OF.loc[
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
+        ].values,
+        axis=1,
+    )
+
+    # Assign dffs array to trials_df
+    trials_df.dff_stim = trials_df.apply(
+        lambda x: np.stack(
+            imaging_df.dffs.loc[int(x.imaging_stim_start) : int(x.imaging_stim_stop)]
+        ),
+        axis=1,
+    )
+    # nvolumes x ncells
+
+    trials_df.dff_blank = trials_df.apply(
+        lambda x: np.stack(
+            imaging_df.dffs.loc[int(x.imaging_blank_start) : int(x.imaging_blank_stop)]
+        ),
+        axis=1,
+    )
+    # nvolumes x ncells
+
+    # Rename
+    trials_df = trials_df.drop(columns=["imaging_blank_start"])
+
+    return trials_df
+
+
+def search_param_log_trials(recording, trials_df, flexilims_session):
+    """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
+
+    Args:
+        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        trials_df (pd.DataFrane): Dataframe that contails information for each trial.
+        flexilims_session (flexilims_session): flexilims session.
+
+    Returns:
+        Dataframe: Dataframe that contails information for each trial.
+    """
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+    param_log = pd.read_csv(paramlog_path)
+    # trial index for each row of param log
+    start_idx = (
+        trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
+    )
+    start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
+    start_idx = pd.Series(start_idx)
+    start_idx = start_idx[start_idx.diff() != 0].index.values
+    trials_df["param_log_start"] = start_idx
+
+    stop_idx = trials_df.imaging_harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
+    stop_idx = pd.Series(stop_idx)
+    stop_idx = stop_idx[stop_idx.diff() != 0].index.values
+    if stop_idx[0] == 0:
+        stop_idx = stop_idx[1:]
+    stop_idx = stop_idx[: len(start_idx)]
+    trials_df["param_log_stop"] = stop_idx
+
+    return trials_df
+
+
+def sync_all_recordings(
+    session_name,
+    flexilims_session=None,
+    project=None,
+    filter_datasets=None,
+    recording_type="two_photon",
+    protocol_base="SpheresPermTubeReward",
+    photodiode_protocol=5,
+    return_volumes=True,
+):
+    """Concatenate synchronisation results for all recordings in a session.
+
+    Args:
+        session_name (str): {mouse}_{session}
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
+        recording_type (str, optional): Type of the recording. Defaults to "two_photon".
+        protocol_base (str, optional): Base of the protocol. Defaults to "SpheresPermTubeReward".
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
+            Either 2 or 5 for now. Defaults to 5.
+        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+
+    Returns:
+        (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df for all recordings, one concatenated trials_df for all recordings.
+    """
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flexilims_session
+    )
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value=recording_type,
+        flexilims_session=flexilims_session,
+    )
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
+
+    for i, recording_name in enumerate(recordings.name):
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recording_name,
+            flexilims_session=flexilims_session,
+        )
+
+        print(f"Processing recording {i+1}/{len(recordings)}")
+        vs_df = synchronisation.generate_vs_df(
+            recording=recording,
+            photodiode_protocol=photodiode_protocol,
+            flexilims_session=flexilims_session,
+            project=project,
+        )
+
+        imaging_df = synchronisation.generate_imaging_df(
+            vs_df=vs_df,
+            recording=recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            return_volumes=return_volumes,
+        )
+
+        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = search_param_log_trials(
+            recording=recording,
+            trials_df=trials_df,
+            flexilims_session=flexilims_session,
+        )
+
+        if i == 0:
+            vs_df_all = vs_df
+            trials_df_all = trials_df
+        else:
+            vs_df_all = pd.concat([vs_df_all, vs_df], ignore_index=True)
+            trials_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+    print(f"Finished concatenating vs_df and trials_df")
+
+    return vs_df_all, trials_df_all

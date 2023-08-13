@@ -1,8 +1,6 @@
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
-from matplotlib.animation import FuncAnimation
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
@@ -11,6 +9,7 @@ from cottage_analysis.depth_analysis.depth_preprocess.process_params import (
     create_trace_arr_per_roi,
     thr,
 )
+from cottage_analysis.analysis.common_utils import get_confidence_interval
 from sklearn.linear_model import LinearRegression
 
 
@@ -35,41 +34,6 @@ def segment_arr(arr_idx, segment_size):
     return segment_starts, segment_ends
 
 
-def calculate_R_squared(actual_data, predicted_data):
-    actual_data = np.array(actual_data)
-    predicted_data = np.array(predicted_data)
-    residual_var = np.sum((predicted_data - actual_data) ** 2)
-    total_var = np.sum((actual_data - np.mean(actual_data)) ** 2)
-    R_squared = 1 - residual_var / total_var
-    return R_squared
-
-
-def get_confidence_interval(arr, sem=[], sig_level=0.05, mean_arr=[]):
-    """
-    Get confidence interval of an input array.
-
-    :param arr: np.ndarray. For example, ntrials x time to calculate confidence interval across trials.
-    :param sem: np.ndarray. For example, 1 x time. Default nan. If you have calculated SEM outside, you can provide SEM.
-    :param sig_level: float. Significant level. Default 0.05.
-    :param mean_arr:
-    :return:
-    """
-    #     CI_low, CI_high = scipy.stats.t.interval(0.95, len(arr)-1, loc=np.mean(arr), scale=st.sem(arr))
-    #     CI_low, CI_high = scipy.stats.norm.interval(0.95, loc=np.mean(arr), scale=st.sem(arr))
-    z = scipy.stats.norm.ppf((1 - sig_level / 2))
-    if len(sem) > 0:
-        sem = sem
-    else:
-        sem = scipy.stats.sem(arr, nan_policy="omit")
-    if len(mean_arr) > 0:
-        CI_low = mean_arr - z * sem
-        CI_high = mean_arr + z * sem
-    else:
-        CI_low = np.average(arr, axis=0) - z * sem
-        CI_high = np.average(arr, axis=0) + z * sem
-    return CI_low, CI_high
-
-
 def plot_raster(
     arr,
     vmin,
@@ -84,7 +48,7 @@ def plot_raster(
     extent=[],
     set_nan_cmap=True,
     colorbar_on=True,
-    ax=None
+    ax=None,
 ):
     """
     Raster plot of input params. Row: trials. Column: time.
@@ -114,7 +78,6 @@ def plot_raster(
             arr.shape[0],
             1,
         ]
-    # if ax==None:
     plt.imshow(
         arr,
         aspect="auto",
@@ -125,30 +88,11 @@ def plot_raster(
         rasterized=False,
         interpolation="none",
     )
-    # else: 
-    #     ax.imshow(
-    #         arr,
-    #         aspect="auto",
-    #         vmin=vmin,
-    #         vmax=vmax,
-    #         cmap=current_cmap,
-    #         extent=extent,
-    #         rasterized=False,
-    #         interpolation="none",
-    #     )
     ax = plt.gca()
     if title_on:
-        plt.title(title + " " + suffix, fontsize=fontsize_dict['title'])
+        plt.title(title + " " + suffix, fontsize=fontsize_dict["title"])
     else:
-        plt.title(suffix, fontsize=fontsize_dict['title'])
-    # if colorbar_on:
-    #     # divider = make_axes_locatable(ax)
-    #     # cax = divider.append_axes("right", size="2%", pad=0.05)
-    #     fig = plt.gcf()
-    #     cax = fig.add_axes([ax.get_position().x1+1,ax.get_position().y0,1,ax.get_position().height])
-    #     cbar = plt.colorbar(cax=cax)
-    #     cbar.ax.tick_params(labelsize=fontsize_dict['legend'])
-    # #     plt.xticks(np.arange(0,arr.shape[1],500))
+        plt.title(suffix, fontsize=fontsize_dict["title"])
     plt.ylim([arr.shape[0], 1])
     return ax
 
@@ -185,31 +129,6 @@ def plot_trial_onset_offset(onset, offset, ymin, ymax):
     )
 
 
-def get_confidence_interval(arr, sem=[], sig_level=0.05, mean_arr=[]):
-    """
-    Calculate the confidence interval for an input array (shape: n_trials x n_samples)
-
-    :param arr: np.ndarray (n_trials x n_samples), array to compute confidence interval,
-    :param sem: np.ndarray (1D array), default []. Input SEM of input array if already calculated.
-    :param sig_level: float, default 0.05.
-    :param mean_arr: np.ndarray (1D array), default []. Input mean of input array if already calculated.
-    :return: CI_low: np.ndarray (1D array), lower boundary of confidence interval.
-             CI_high: np.ndarray (1D array), higher boundary of confidence interval.
-    """
-    z = scipy.stats.norm.ppf((1 - sig_level / 2))
-    if len(sem) > 0:
-        sem = sem
-    else:
-        sem = scipy.stats.sem(arr, nan_policy="omit")
-    if len(mean_arr) > 0:
-        CI_low = mean_arr - z * sem
-        CI_high = mean_arr + z * sem
-    else:
-        CI_low = np.average(arr, axis=0) - z * sem
-        CI_high = np.average(arr, axis=0) + z * sem
-    return CI_low, CI_high
-
-
 def plot_line_with_error(
     arr,
     CI_low,
@@ -227,9 +146,9 @@ def plot_line_with_error(
     fontsize=10,
     axis_fontsize=10,
     linewidth=0.5,
-    ax=None
-):  
-    if ax==None:
+    ax=None,
+):
+    if ax == None:
         if len(xarr) == 0:
             plt.plot(
                 arr,
@@ -325,7 +244,6 @@ def plot_line_with_error(
             ax.set_title(title + " " + suffix, fontsize=fontsize)
         else:
             ax.set_title(suffix, fontsize=fontsize)
-        
 
 
 def plot_scatter(
@@ -355,7 +273,6 @@ def get_binned_stats(xarr, yarr, bin_number):
         "bin_edge_max": [],
         "bins": [],
         "bin_means": np.zeros((xarr.shape[0], bin_number)),
-        #         'bin_values_all':[[[None for i in range(bin_number)] for j in range(trace_arr_noblank.shape[1])] for q in range(trace_arr_noblank.shape[0])],
         "bin_stds": np.zeros((xarr.shape[0], bin_number)),
         "bin_counts": np.zeros((xarr.shape[0], bin_number)),
         "bin_centers": np.zeros((xarr.shape[0], bin_number)),
@@ -398,11 +315,6 @@ def get_binned_stats(xarr, yarr, bin_number):
         binned_stats["bin_centers"][i, :] = bin_centers
         binned_stats["bin_edges"][i, :] = bin_edges
         binned_stats["binnumber"].append(binnumber.reshape(xarr.shape[1], -1))
-
-    #     for i in range(xarr.shape[0]):
-    #         for j in range(xarr.shape[1]):
-    #             for b in range(bin_number):
-    #                 binned_stats['bin_values_all'][i][j][b] = yarr[i][j][np.where(binned_stats['binnumber'][i][j]==b+1)[0]]
 
     return binned_stats
 
@@ -688,8 +600,6 @@ def stats_to_array(
 
 
 def find_roi_center(cells_mask, roi):
-    #     cells_mask[cells_mask!=0] = 1
-    #     cells_mask[cells_mask==0] = np.nan
     x_min = np.min(np.where(cells_mask[roi] > 0)[0])
     x_max = np.max(np.where(cells_mask[roi] > 0)[0])
     y_min = np.min(np.where(cells_mask[roi] > 0)[1])
@@ -782,7 +692,6 @@ def plot_sta(sta, extent=[-120, 120, -40, 40], clim=None):
 
     fig.supylabel("Elevation (degrees)")
     fig.supxlabel("Azimuth (degrees)")
-    # plt.tight_layout(pad=1)
     return fig, axes, ims
 
 
@@ -939,12 +848,11 @@ def scatter_plot_fit_line(
     fit_line=True,
     model=LinearRegression(),
 ):
-
     if log:
         score, coef, intercept, y_pred = linear_regression(
             X=np.log(X), y=np.log(y), x2=np.log(x2), model=model
         )
-        print(coef, intercept)
+        # print(coef, intercept)
         plt.scatter(X, y, s=s, alpha=alpha, c=c)
 
         y_pred_exp = []
@@ -962,11 +870,7 @@ def scatter_plot_fit_line(
             y_pred_exp = np.array(y_pred_exp)
             lower_CI = np.percentile(y_pred_exp, 2.5, axis=0)
             higher_CI = np.percentile(y_pred_exp, 97.5, axis=0)
-            #             middle_CI = np.percentile(y_pred_exp,50,axis=0)
             plt.plot(x2, np.exp(y_pred), "r", linewidth=1)
-            #             plt.plot(x2,middle_CI, 'b')
-            #             plt.plot(x2,lower_CI,'orange',linewidth=1)
-            #             plt.plot(x2, higher_CI,'green',linewidth=1)
             plt.fill_between(
                 x=x2.reshape(-1),
                 y1=lower_CI.reshape(-1),
@@ -1005,7 +909,6 @@ def get_PSTH(
             blank_period=0,
             frame_rate=frame_rate,
         )
-        unit_scale = 1
     else:
         values_arr, _ = create_speed_arr(
             values,
@@ -1016,7 +919,6 @@ def get_PSTH(
             blank_period=0,
             frame_rate=frame_rate,
         )
-        unit_scale = 100  # scale depth unit from m to cm
 
     binned_stats = get_binned_arr(
         xarr=distance_arr,
@@ -1031,4 +933,4 @@ def get_PSTH(
 def set_aspect_ratio(ax, ratio=1):
     x_left, x_right = ax.get_xlim()
     y_low, y_high = ax.get_ylim()
-    ax.set_aspect(abs((x_right-x_left)/(y_low-y_high))*ratio)
+    ax.set_aspect(abs((x_right - x_left) / (y_low - y_high)) * ratio)

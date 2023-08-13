@@ -27,7 +27,6 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 import cottage_analysis as cott
-from cottage_analysis.depth_analysis.filepath.generate_filepaths import *
 from cottage_analysis.imaging.common import find_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 from cottage_analysis.stimulus_structure import sphere_structure as vis_stim_structure

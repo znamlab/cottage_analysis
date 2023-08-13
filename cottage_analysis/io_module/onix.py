@@ -2,11 +2,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import flexiznam as flm
+from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.io_module.harp import load_harp
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
 )
+
 
 ONIX_SAMPLING = 250e6
 
@@ -24,6 +26,7 @@ def load_onix_recording(
     allow_reload=True,
     raw_folder=RAW,
     processed_folder=PROCESSED,
+    di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
 ):
     """Main function calling all the subfunctions
 
@@ -35,6 +38,7 @@ def load_onix_recording(
         onix_recording (str): recording containing onix data
         allow_reload (bool): If True (default) will reload processed data instead of
                              raw when available
+        di_names (list): list of DI names to load from HARP
 
     Returns:
         data (dict): a dictionary with one element per datasource
@@ -46,18 +50,14 @@ def load_onix_recording(
     out = dict()
 
     if vis_stim_recording is not None:
-        raw_harp = session_folder / vis_stim_recording / "harpmessage.bin"
-        processed_messages = (
-            processed_folder / vis_stim_recording / (raw_harp.stem + ".npz")
+        flm_sess = flm.get_flexilims_session(project)
+        harp_message, harp_ds = synchronisation.load_harpmessage(
+            recording="_".join([mouse, session, vis_stim_recording]),
+            flexilims_session=flm_sess,
+            conflicts="skip" if allow_reload else "overwrite",
+            di_names=di_names,
         )
-        processed_messages.parent.mkdir(exist_ok=True, parents=True)
-        if allow_reload and processed_messages.is_file():
-            harp_message = dict(np.load(processed_messages))
-        else:
-            # slow part: read harp messages so save output and reload
-            harp_message = load_harp(raw_harp)
-            np.savez(processed_messages, **harp_message)
-        out["harp_message"] = harp_message
+        out["harp_message"] = dict(harp_message)
         # add frame loggers and other CSVs
         out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
 
