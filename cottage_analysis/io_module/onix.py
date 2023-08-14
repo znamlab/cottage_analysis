@@ -148,7 +148,7 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chans (int): number of ephys channels saved (default 64)
+        num_ai_chans (int): number of AI channels saved (default 2)
 
     Returns:
         data dict: a dictionary of memmap
