@@ -276,76 +276,6 @@ def format_imaging_df(recording, imaging_df):
     return imaging_df
 
 
-def init_neurons_df(
-    recording,
-    filter_datasets=None,
-    flexilims_session=None,
-    project=None,
-    conflicts="skip",
-):
-    """Initialize a dataframe containing basic information about rois in each session. This dataframe will be saved.
-
-    Args:
-        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
-        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
-        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
-
-    """
-    assert flexilims_session is not None or project is not None
-    if flexilims_session is None:
-        flexilims_session = flz.get_flexilims_session(project_id=project)
-
-    neurons_df = pd.DataFrame(
-        columns=[
-            "roi",  # ROI number
-            "plane_no",  # plane number, which plane this roi is located in
-        ]
-    )
-    neurons_ds = flz.Dataset.from_origin(
-        origin_id=recording["id"],
-        dataset_type="neurons_df",
-        flexilims_session=flexilims_session,
-        conflicts="skip",
-    )
-    neurons_ds.path = neurons_ds.path.parent / f"neurons_df.pickle"
-
-    if (neurons_ds.flexilims_status() != "not online") and (conflicts == "skip"):
-        print("Loading existing neurons_df file...")
-        return np.load(neurons_ds.path_full), neurons_ds
-
-    suite2p_traces = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_id=recording.origin_id,
-        dataset_type="suite2p_rois",
-        filter_datasets=None,
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    nplanes = suite2p_traces.extra_attributes["nplanes"]
-    for iplane in range(nplanes):
-        F = np.load(
-            suite2p_traces.path_full / f"plane{iplane}/F.npy", allow_pickle=True
-        )
-        append_neurons = pd.DataFrame(
-            {
-                "roi": np.arange(F.shape[0]),
-                "plane_no": np.repeat(iplane, F.shape[0]),
-            }
-        )
-        neurons_df = pd.concat([neurons_df, append_neurons], ignore_index=True)
-
-    # save neurons_df
-    neurons_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
-    neurons_df.to_pickle(neurons_ds.path_full)
-
-    # update flexilims
-    neurons_ds.update_flexilims(mode="overwrite")
-
-    return neurons_df, neurons_ds
-
-
 def generate_trials_df(recording, imaging_df):
     """Generate a DataFrame that contains information for each trial.
 
@@ -490,7 +420,7 @@ def generate_trials_df(recording, imaging_df):
     trials_df.dff_stim = trials_df.apply(
         lambda x: np.stack(
             imaging_df.dffs.loc[int(x.imaging_stim_start) : int(x.imaging_stim_stop)]
-        ),
+        ).squeeze(),
         axis=1,
     )
     # nvolumes x ncells
@@ -498,7 +428,7 @@ def generate_trials_df(recording, imaging_df):
     trials_df.dff_blank = trials_df.apply(
         lambda x: np.stack(
             imaging_df.dffs.loc[int(x.imaging_blank_start) : int(x.imaging_blank_stop)]
-        ),
+        ).squeeze(),
         axis=1,
     )
     # nvolumes x ncells
