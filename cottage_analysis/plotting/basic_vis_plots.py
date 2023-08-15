@@ -229,7 +229,7 @@ def plot_depth_tuning_curve(
     )
     if plot_fit:
         plt.plot(np.log(x), gaussian_arr, color=fit_linecolor)
-    plt.xticks(np.log(depth_list), depth_list)
+    plt.xticks(np.log(depth_list), np.round(np.array(depth_list), 2))
     plt.xlabel("Preferred depth (m)")
     plt.ylabel("\u0394F/F")
 
@@ -293,7 +293,7 @@ def plot_raster_all_depths(
         all_rs = grouped_trials.get_group(depth).RS_stim.values
         for itrial in np.arange(len(all_dffs)):
             if itrial < trial_number:
-                dff = all_dffs[itrial][roi]
+                dff = all_dffs[itrial][:, roi]
                 rs_arr = all_rs[itrial]
                 distance = np.cumsum(rs_arr / frame_rate)
                 bins = np.linspace(
@@ -363,7 +363,7 @@ def plot_speed_tuning(
         all_speed = grouped_trials.get_group(depth)[f"{which_speed}_stim"].values
         speed_arr = np.array([j for i in all_speed for j in i])
         all_dff = grouped_trials.get_group(depth)["dff_stim"].values
-        dff_arr = np.array([j for i in all_dff for j in i[roi, :]])
+        dff_arr = np.array([j for i in all_dff for j in i[:, roi]])
 
         if which_speed == "OF":
             speed_arr = np.degrees(speed_arr)  # rad --> degrees
@@ -417,7 +417,7 @@ def plot_speed_tuning(
         all_speed = trials_df[f"{which_speed}_blank"].values
         speed_arr = np.array([j for i in all_speed for j in i])
         all_dff = trials_df["dff_blank"].values
-        dff_arr = np.array([j for i in all_dff for j in i[roi, :]])
+        dff_arr = np.array([j for i in all_dff for j in i[:, roi]])
 
         # threshold speed
         dff_arr = dff_arr[speed_arr > speed_thr]
@@ -496,6 +496,7 @@ def plot_PSTH(
     max_distance=6,
     nbins=20,
     frame_rate=15,
+    smoothing_sd=1,
 ):
     """PSTH of a neuron for each depth and blank period.
 
@@ -507,6 +508,7 @@ def plot_PSTH(
         max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
         nbins (int, optional): number of bins to bin the activity. Defaults to 20.
         frame_rate (int, optional): imaging frame rate. Defaults to 15.
+        smoothing_sd (float, optional): smoothing factor for tuning.
     """
 
     # choose the trials with closed or open loop to visualize
@@ -522,13 +524,12 @@ def plot_PSTH(
     for idepth, depth in enumerate(depth_list):
         all_dff = []
         all_distance = []
-        for itrial in np.arange(len(all_dffs)):
-            if itrial < trial_number:
-                dff = grouped_trials.get_group(depth).dff_stim.values[itrial][roi]
-                rs_arr = grouped_trials.get_group(depth).RS_stim.values[itrial]
-                distance = np.cumsum(rs_arr / frame_rate)
-                all_dff.append(dff)
-                all_distance.append(distance)
+        for itrial in np.arange(trial_number):
+            dff = grouped_trials.get_group(depth).dff_stim.values[itrial][:, roi]
+            rs_arr = grouped_trials.get_group(depth).RS_stim.values[itrial]
+            distance = np.cumsum(rs_arr / frame_rate)
+            all_dff.append(dff)
+            all_distance.append(distance)
 
         all_dff = np.array([j for i in all_dff for j in i])
         all_distance = np.array([j for i in all_distance for j in i])
@@ -540,24 +541,26 @@ def plot_PSTH(
             x=all_distance,
             values=all_dff,
             statistic="mean",
-            bins=bins,
+            bins=nbins,
         )
 
         bin_stds, _, _ = scipy.stats.binned_statistic(
             x=all_distance,
             values=all_dff,
             statistic="std",
-            bins=bins,
+            bins=nbins,
         )
 
         bin_counts, _, _ = scipy.stats.binned_statistic(
             x=all_distance,
             values=all_dff,
             statistic="count",
-            bins=bins,
+            bins=nbins,
         )
 
-        tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+        tuning = plotting_utils.get_tuning_function(
+            bin_means, bin_counts, smoothing_sd=smoothing_sd
+        )
         all_tuning[idepth] = tuning
 
         ci_range = 0.95
@@ -570,7 +573,7 @@ def plot_PSTH(
     dff = trials_df.dff_blank.values
     rs = trials_df.RS_blank.values
 
-    all_dff = np.array([j for i in dff for j in i[roi, :]])
+    all_dff = np.array([j for i in dff for j in i[:, roi]])
     rs_arr = np.array([j for i in rs for j in i])
     all_distance = np.cumsum(rs_arr / frame_rate)
 
@@ -579,24 +582,26 @@ def plot_PSTH(
         x=all_distance,
         values=all_dff,
         statistic="mean",
-        bins=bins,
+        bins=nbins,
     )
 
     bin_stds, _, _ = scipy.stats.binned_statistic(
         x=all_distance,
         values=all_dff,
         statistic="std",
-        bins=bins,
+        bins=nbins,
     )
 
     bin_counts, _, _ = scipy.stats.binned_statistic(
         x=all_distance,
         values=all_dff,
         statistic="count",
-        bins=bins,
+        bins=nbins,
     )
 
-    tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+    tuning = plotting_utils.get_tuning_function(
+        bin_means, bin_counts, smoothing_sd=smoothing_sd
+    )
     all_tuning[-1] = tuning
 
     ci_range = 0.95
@@ -636,6 +641,8 @@ def plot_PSTH(
         color="gray",
         ls="none",
     )
+
+    plotting_utils.despine()
 
 
 # -------OLD----------------
