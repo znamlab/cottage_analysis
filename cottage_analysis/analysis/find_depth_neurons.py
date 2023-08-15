@@ -169,6 +169,7 @@ def fit_preferred_depth(
     depth_max=20,
     niter=10,
     min_sigma=0.5,
+    cross_validation=False,
     conflicts="skip",
 ):
     """Fit depth tuning with 1d gaussian function to find the preferred depth of neurons in closed loop.
@@ -179,7 +180,10 @@ def fit_preferred_depth(
         neurons_ds (Dataset): A dataset that contains the analysed properties for each ROI.
         depth_min (float, optional): Lower boundary of fitted preferred depth (m). Defaults to 0.02.
         depth_max (int, optional): Upper boundary of fitted preferred depth (m). Defaults to 20.
-        batch_num (int, optional): Number of batches for fitting the gaussian function. Defaults to 10.
+        niter (int, optional): Number of iterations for fitting the gaussian function. Defaults to 10.
+        min_sigma (float, optional): Minimum sigma value for the gaussian function. Defaults to 0.5.
+        cross_validation (bool, optional): Whether to use cross validation to find the best fit. Defaults to False.
+        conflicts (str, optional): how to handle conflicts when running neurons_df. Defaults to "skip".
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
@@ -190,16 +194,30 @@ def fit_preferred_depth(
 
     if conflicts == "skip":
         return neurons_df, neurons_ds
-    
+
     # Initialize neurons_df
     depth_list = find_depth_list(trials_df)
-    neurons_df["preferred_depth_closed_loop"] = np.nan
-    neurons_df["gaussian_depth_tuning_popt"] = [[np.nan]] * len(neurons_df)
-    neurons_df["gaussian_depth_tuning_r_squared"] = np.nan
+
+    if cross_validation:
+        neurons_df["preferred_depth_closed_loop_crossval"] = np.nan
+        neurons_df["gaussian_depth_tuning_popt_crossval"] = [[np.nan]] * len(neurons_df)
+        neurons_df["gaussian_depth_tuning_r_squared_crossval"] = np.nan
+        neurons_df["gaussian_depth_tuning_crossval_trials"] = [[np.nan]] * len(
+            neurons_df
+        )
+    else:
+        neurons_df["preferred_depth_closed_loop"] = np.nan
+        neurons_df["gaussian_depth_tuning_popt"] = [[np.nan]] * len(neurons_df)
+        neurons_df["gaussian_depth_tuning_r_squared"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
     trials_df = trials_df[trials_df.closed_loop == 1]
     mean_dff_arr = average_dff_for_all_trials(trials_df)
+    if cross_validation:
+        choose_trials = np.random.choice(
+            mean_dff_arr.shape[1], size=mean_dff_arr.shape[1] // 2, replace=False
+        )
+        mean_dff_arr = mean_dff_arr[:, choose_trials, :]
 
     # Fit gaussian function to the average dffs for each trial (depth tuning)
     x = np.log(np.repeat(np.array(depth_list), mean_dff_arr.shape[1]))
@@ -226,17 +244,25 @@ def fit_preferred_depth(
             p0_func=p0_func,
         )
 
-        neurons_df.at[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
-        neurons_df.at[iroi, "gaussian_depth_tuning_popt"] = popt
-        neurons_df.at[iroi, "gaussian_depth_tuning_r_squared"] = rsq
+        if cross_validation:
+            neurons_df.at[iroi, "preferred_depth_closed_loop_crossval"] = np.exp(
+                popt[1]
+            )
+            neurons_df.at[iroi, "gaussian_depth_tuning_popt_crossval"] = popt
+            neurons_df.at[iroi, "gaussian_depth_tuning_r_squared_crossval"] = rsq
+            neurons_df.at[iroi, "gaussian_depth_tuning_crossval_trials"] = choose_trials
+        else:
+            neurons_df.at[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
+            neurons_df.at[iroi, "gaussian_depth_tuning_popt"] = popt
+            neurons_df.at[iroi, "gaussian_depth_tuning_r_squared"] = rsq
 
     # save neurons_df
     neurons_df.to_pickle(session_folder / "neurons_df.pickle")
-    
+
     # update flexilims
     neurons_ds.extra_attributes["fit_depth_min"] = depth_min
     neurons_ds.extra_attributes["fit_depth_max"] = depth_max
     neurons_ds.extra_attributes["fit_depth_min_sigma"] = min_sigma
     neurons_ds.update_flexilims(mode="overwrite")
-    
+
     return neurons_df, neurons_ds
