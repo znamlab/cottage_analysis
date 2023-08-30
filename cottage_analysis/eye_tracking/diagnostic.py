@@ -77,9 +77,11 @@ def plot_dlc_tracking(camera_ds, dlc_ds, likelihood_threshold=None):
     cap.release()
 
 
-def plot_ellipse_fit(camera_ds_id, project_id, likelihood_threshold):
-    flm_sess = flz.get_flexilims_session(project_id=project_id)
-    camera_ds = flz.Dataset.from_flexilims(id=camera_ds_id, flexilims_session=flm_sess)
+def plot_ellipse_fit(camera_ds_name, project, likelihood_threshold):
+    flm_sess = flz.get_flexilims_session(project_id=project)
+    camera_ds = flz.Dataset.from_flexilims(
+        name=camera_ds_name, flexilims_session=flm_sess
+    )
     ds_dict = cottage_tracking.get_tracking_datasets(
         camera_ds, flexilims_session=flm_sess
     )

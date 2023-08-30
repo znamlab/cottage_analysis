@@ -51,9 +51,7 @@ def get_data(
     else:
         dlc = dlc[[(c is None) for c in dlc.cropping]]
     assert len(dlc) == 1
-    dlc = flz.Dataset.from_flexilims(
-        data_series=dlc.iloc[0], flexilims_session=flexilims_session
-    )
+    dlc = flz.Dataset.from_dataseries(dlc.iloc[0], flexilims_session=flexilims_session)
     dlc_res = pd.read_hdf(dlc.path_full / dlc.extra_attributes["dlc_file"])
     # Get ellipse fits
     ellipse_csv = list(dlc.path_full.glob("*ellipse_fits.csv"))
@@ -261,9 +259,7 @@ def add_behaviour(
     )
     suite_2p = sess_ds[sess_ds.dataset_type == "suite2p_rois"]
     assert len(suite_2p) == 1
-    suite_2p = flz.Dataset.from_flexilims(
-        data_series=suite_2p.iloc[0], flexilims_session=flm_sess
-    )
+    suite_2p = flz.Dataset.from_dataseries(suite_2p.iloc[0], flexilims_session=flm_sess)
 
     ops = np.load(
         suite_2p.path_full / "suite2p" / "plane0" / "ops.npy", allow_pickle=True
