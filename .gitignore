@@ -7,3 +7,5 @@ tests/test_data/tests_outputs
 *checkpoint.ipynb
 *logs/*
 build
+scratch.py
+launch.json
