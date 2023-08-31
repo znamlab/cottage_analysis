@@ -41,6 +41,7 @@ def slurm_dlc_pupil(
     Returns:
         subprocess.Process: The process job
     """
+    raise NotImplementedError("This function is outdated")
     flm_sess = flz.get_flexilims_session(project)
     camera_ds = flz.Dataset.from_flexilims(id=camera_ds_id, flexilims_session=flm_sess)
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
@@ -129,6 +130,7 @@ def fit_ellipses(
     Returns:
         subprocess.process: Process running the job
     """
+    raise NotImplementedError("This function is outdated")
 
     python_script = Path(slurm_folder) / "fit_ellipses.py"
 
@@ -184,6 +186,7 @@ def reproject_pupils(camera_ds, target_folder, phi0, theta0, job_dependency=None
     Returns:
         subprocess.process: Process running the job
     """
+    raise NotImplementedError("This function is outdated")
     target_folder = Path(target_folder)
 
     python_script = target_folder / "find_gaze.py"
