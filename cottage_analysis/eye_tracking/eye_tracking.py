@@ -122,7 +122,7 @@ def run_all(
         base_name=f"{cam_ds_short_name}_eye_reprojection",
         conflicts=conflicts,
     )
-
+    ds.path_full.mkdir(parents=True, exist_ok=True)
     job_id = run_reproject_eye(
         project=project,
         camera_ds_name=camera_ds_name,

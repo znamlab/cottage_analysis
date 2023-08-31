@@ -127,8 +127,6 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
         error_threshold=3,
     )
     save_folder = target_ds.path_full.parent
-    save_folder.mkdir(exist_ok=True)
-
     # make bins of ellipse centre position
     print("Bin data", flush=True)
     elli = pd.DataFrame(data[data.valid], copy=True)
