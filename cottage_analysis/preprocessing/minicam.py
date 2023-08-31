@@ -2,19 +2,23 @@
 
 from functools import partial
 from pathlib import Path
+import shutil
+import pandas as pd
+import numpy as np
 import flexiznam as flz
 from flexiznam.schema import CameraData
 from znamutils import slurm_it
 from cottage_analysis.io_module import video
-from cottage_analysis.utilities import slurm_helper
+from znamutils import slurm_helper
 
 
-def run_deinterleave(camera_ds, redo=False, use_slurm=True, dependency=None):
+def run_deinterleave(camera_ds, conflicts="abort", use_slurm=True, dependency=None):
     """Run deinterleave on a camera dataset.
 
     Args:
         camera_ds (flexiznam.Dataset): camera dataset
-        redo (bool, optional): whether to redo the deinterleave. Defaults to False.
+        conflicts (str, optional): How to handle conflicts. Can be "abort", "skip" or
+            "overwrite". Defaults to "abort".
         use_slurm (bool, optional): whether to use slurm. Defaults to True.
         dependency (str, optional): dependency for slurm. Defaults to None.
 
@@ -29,27 +33,29 @@ def run_deinterleave(camera_ds, redo=False, use_slurm=True, dependency=None):
         origin_id=camera_ds.origin_id,
         dataset_type=CameraData.DATASET_TYPE,
         base_name=target_name,
-        conflicts="skip",
+        conflicts=conflicts,
         flexilims_session=flm_sess,
     )
 
-    if target_ds.flexilims_status() != "not online" and not redo:
-        return None, target_ds.path_full
+    if target_ds.flexilims_status() != "not online" and conflicts == "skip":
+        print(f"Skipping {target_ds.full_name} as it already exists")
+        return None, target_ds
 
     print("Deinterleaving %s" % camera_ds.full_name)
-    if use_slurm:
-        slurm_folder = target_ds.path_full
-        slurm_folder.mkdir(parents=True, exist_ok=True)
-        job_id = deinterleave(
-            camera_ds.id,
-            project_id=camera_ds.project_id,
-            use_slurm=use_slurm,
-            slurm_folder=target_ds.path_full,
-        )
-    else:
-        slurm_folder = deinterleave(camera_ds.id, project_id=camera_ds.project_id)
+
+    slurm_folder = target_ds.path_full
+    slurm_folder.mkdir(parents=True, exist_ok=True)
+    job_id = deinterleave(
+        camera_ds.id,
+        project_id=camera_ds.project_id,
+        use_slurm=use_slurm,
+        slurm_folder=slurm_folder,
+        job_dependency=dependency,
+    )
+    if not use_slurm:
         job_id = None
-    return job_id, slurm_folder
+
+    return job_id, target_ds
 
 
 @slurm_it(
@@ -79,6 +85,7 @@ def deinterleave(camera_ds_id, project_id):
     )
     target_ds.extra_attributes = dict(
         metadata_file=camera_ds.extra_attributes["metadata_file"],
+        timestamp_file=camera_ds.extra_attributes["timestamp_file"],
         video_file=target_name + ".mp4",
     )
     target_ds.path_full.mkdir(parents=True, exist_ok=True)
@@ -89,6 +96,39 @@ def deinterleave(camera_ds_id, project_id):
         verbose=True,
         intrinsic_calibration=None,
     )
-    camera_ds.path_full / camera_ds.extra_attributes["metadata_file"]
+    # copy timestamp and metadata files
+    for file in ["timestamp_file", "metadata_file"]:
+        raw = camera_ds.path_full / camera_ds.extra_attributes[file]
+        if not raw.exists():
+            print(f"Warning: {raw} does not exist")
+            continue
+        if file == "timestamp_file":
+            # read timestamp file and double the number of rows, adding half a frame
+            # in between each frame
+            raw_df = pd.read_csv(raw, parse_dates=["BonsaiTimestamp"])
+            deinterleave_df = pd.DataFrame(
+                index=np.arange(raw_df.shape[0] * 2), columns=raw_df.columns
+            )
+            deinterleave_df["frame_id"] = np.arange(raw_df.shape[0] * 2)
+            for timestamps in ["BonsaiTimestamp", "HarpTimestamp"]:
+                # get the inter-frame interval in numpy timedelta
+                half_dt = np.nanmedian(np.diff(raw_df[timestamps].values)) / 2
+                # frames are timestamped after production, so we need to remove half a frame
+                deinterleave_df.loc[1::2, timestamps] = raw_df[timestamps].values
+                deinterleave_df.loc[0::2, timestamps] = (
+                    raw_df[timestamps].values - half_dt
+                )
+
+                assert deinterleave_df[timestamps].is_monotonic_increasing
+            deinterleave_df.to_csv(
+                target_ds.path_full / target_ds.extra_attributes[file],
+                index=False,
+            )
+        else:
+            shutil.copy(
+                camera_ds.path_full / camera_ds.extra_attributes[file],
+                target_ds.path_full / target_ds.extra_attributes[file],
+            )
+
     target_ds.update_flexilims(mode="overwrite")
     return target_ds.path_full
