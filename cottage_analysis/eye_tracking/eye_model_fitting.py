@@ -301,8 +301,7 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
     # optimise for all binned positions
     print("Reproject binned data", flush=True)
     eye_rotation_initial = np.zeros((len(enough_frames), 3))
-    #grid_angles = np.deg2rad(np.arange(0, 360, 5))
-    #grid_radius = np.arange(0.8, 1.2, 0.1)
+
     for i_pos, (pos, s) in enumerate(enough_frames.iterrows()):
         ellipse_params = s[
             ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
@@ -464,8 +463,7 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
     print("Fitting all frames", flush=True)
     eye_rotation = np.zeros((len(data), 3))
     eye_rotation[~data.valid] += np.nan
-    grid_angles = np.deg2rad(np.arange(0, 360, 5))
-    grid_radius = np.arange(0.8, 1.2, 0.1)
+
     for i_pos, series in data.iterrows():
         if np.mod(i_pos, 1000) == 0:
             percent = i_pos / len(eye_rotation) * 100
@@ -489,8 +487,6 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
         eye_rotation[i_pos] = pa
     np.save(ds.path_full, eye_rotation)
     print("Done!")
-
-    ############### END
 
 
 def minimise_reprojection_error(
