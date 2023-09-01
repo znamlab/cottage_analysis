@@ -5,7 +5,8 @@ import pandas as pd
 from pathlib import Path
 import flexiznam as flz
 from cottage_analysis.eye_tracking import eye_model_fitting
-from cottage_analysis.utilities import slurm_helper
+from znamutils import slurm_helper
+from znamutils import slurm_it
 
 
 def slurm_dlc_pupil(
@@ -40,6 +41,7 @@ def slurm_dlc_pupil(
     Returns:
         subprocess.Process: The process job
     """
+    raise NotImplementedError("This function is outdated")
     flm_sess = flz.get_flexilims_session(project)
     camera_ds = flz.Dataset.from_flexilims(id=camera_ds_id, flexilims_session=flm_sess)
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
@@ -57,7 +59,7 @@ def slurm_dlc_pupil(
             conflicts=conflicts,
         )
         slurm_folder = ds.path_full
-        slurm_folder.mkdir(exist_ok=True)
+        slurm_folder.mkdir(exist_ok=True, parents=True)
         del ds
 
     # Format arguments
@@ -102,7 +104,7 @@ def slurm_dlc_pupil(
     job_id = slurm_helper.run_slurm_batch(
         f"{slurm_folder / basename}.sh", job_dependency
     )
-    return job_id
+    return job_id, slurm_folder
 
 
 def fit_ellipses(
@@ -128,6 +130,7 @@ def fit_ellipses(
     Returns:
         subprocess.process: Process running the job
     """
+    raise NotImplementedError("This function is outdated")
 
     python_script = Path(slurm_folder) / "fit_ellipses.py"
 
@@ -162,10 +165,10 @@ def fit_ellipses(
     job_id = slurm_helper.run_slurm_batch(
         slurm_folder / "fit_ellipses.sh", job_dependency
     )
-    return job_id
+    return job_id, slurm_folder
 
 
-def reproject_pupils(camera_dataset_name, project, target_folder, phi0, theta0):
+def reproject_pupils(camera_ds, target_folder, phi0, theta0, job_dependency=None):
     """Find best eye parameters and eye rotation to reproject pupils
 
     There are two solutions for each ellipse fit. Only one is selected by limiting the
@@ -175,8 +178,7 @@ def reproject_pupils(camera_dataset_name, project, target_folder, phi0, theta0):
     sbatch job.
 
     Args:
-        camera_dataset_name (str): Name of the camera dataset as on flexilims
-        project (str): Name of the project
+        camera_ds (flexiznam.CameraDataset): Camera dataset to process
         target_folder (str): Full path to save data
         phi0 (float): Centre phi value for initial search
         theta0 (float): Centre theta value for initial search
@@ -184,15 +186,16 @@ def reproject_pupils(camera_dataset_name, project, target_folder, phi0, theta0):
     Returns:
         subprocess.process: Process running the job
     """
+    raise NotImplementedError("This function is outdated")
     target_folder = Path(target_folder)
 
     python_script = target_folder / "find_gaze.py"
 
     # Make a python script
     arguments = dict(
-        camera_dataset_name=str(camera_dataset_name),
+        camera_ds_id=str(camera_ds.id),
         target_folder=str(target_folder),
-        project=project,
+        project=str(camera_ds.project),
         plot=True,
         phi0=phi0,
         theta0=theta0,
@@ -216,10 +219,7 @@ def reproject_pupils(camera_dataset_name, project, target_folder, phi0, theta0):
     )
 
     # Now run the job
-    command = f"sbatch {target_folder / 'find_gaze.sh'}"
-    proc = subprocess.Popen(
-        shlex.split(command),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
+    job_id = slurm_helper.run_slurm_batch(
+        target_folder / "find_gaze.sh", job_dependency
     )
-    return proc
+    return job_id, target_folder

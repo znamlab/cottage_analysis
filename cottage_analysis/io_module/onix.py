@@ -28,6 +28,7 @@ def load_onix_recording(
     mouse,
     session,
     vis_stim_recording=None,
+    harp_recording=None,
     onix_recording=None,
     allow_reload=True,
     raw_folder=RAW,
@@ -41,6 +42,7 @@ def load_onix_recording(
         mouse (str): name of the mouse
         session (str): name of the session
         vis_stim_recording (str): recording containing visual stimulation data
+        harp_recording (str): recording containing harp data
         onix_recording (str): recording containing onix data
         allow_reload (bool): If True (default) will reload processed data instead of
                              raw when available
@@ -55,15 +57,17 @@ def load_onix_recording(
     processed_folder = processed_folder / project / mouse / session
     out = dict()
 
-    if vis_stim_recording is not None:
-        flm_sess = flm.get_flexilims_session(project)
+    flm_sess = flm.get_flexilims_session(project)
+    if harp_recording is not None:
         harp_message, harp_ds = synchronisation.load_harpmessage(
-            recording="_".join([mouse, session, vis_stim_recording]),
+            recording="_".join([mouse, session, harp_recording]),
             flexilims_session=flm_sess,
             conflicts="skip" if allow_reload else "overwrite",
             di_names=di_names,
         )
         out["harp_message"] = dict(harp_message)
+
+    if vis_stim_recording is not None:
         # add frame loggers and other CSVs
         out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
 

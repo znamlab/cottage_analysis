@@ -16,6 +16,7 @@ def get_data(
     likelihood_threshold=0.88,
     rsquare_threshold=0.99,
     error_threshold=4,
+    ds_is_cropped=True,
 ):
     """Get eye tracking data from camera dataset
 
@@ -30,6 +31,8 @@ def get_data(
             Defaults to 0.99.
         error_threshold (float, optional): Threshold on error of ellipse fit, in px.
             Defaults to 4.
+        ds_is_cropped (bool, optional): Whether the dataset is cropped. Defaults to
+            True.
 
     Returns:
         panda.DataFrame: DLC results
@@ -43,14 +46,15 @@ def get_data(
     )
     cam_analysis = rec_ds[rec_ds.name.map(lambda x: camera.dataset_name in x)]
     dlc = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
+    if ds_is_cropped:
+        dlc = dlc[[(c is not None) for c in dlc.cropping]]
+    else:
+        dlc = dlc[[(c is None) for c in dlc.cropping]]
     assert len(dlc) == 1
-    dlc = flz.Dataset.from_flexilims(
-        data_series=dlc.iloc[0], flexilims_session=flexilims_session
-    )
-    dlc_res = pd.read_hdf(dlc.path_full)
+    dlc = flz.Dataset.from_dataseries(dlc.iloc[0], flexilims_session=flexilims_session)
+    dlc_res = pd.read_hdf(dlc.path_full / dlc.extra_attributes["dlc_file"])
     # Get ellipse fits
-    camera_save_folder = dlc.path_full.parent
-    ellipse_csv = list(camera_save_folder.glob("*ellipse_fits.csv"))
+    ellipse_csv = list(dlc.path_full.glob("*ellipse_fits.csv"))
     assert len(ellipse_csv) == 1
     ellipse = pd.read_csv(ellipse_csv[0])
     # add dlc likelihood
@@ -99,6 +103,9 @@ def plot_movie(
     vmax=None,
     vmin=None,
     playback_speed=4,
+    crop_border=None,
+    use_original_encoding=False,
+    recrop=False,
 ):
     """Plot a movie of raw video, video with dlc tracking and video with ellipse fit
 
@@ -115,23 +122,28 @@ def plot_movie(
         vmin (int, optional): vmin for video grayscale image. Defaults to None
         playback_speed (float, optional): playback speed, relative to original video
             speed (which might not be real time). Default to 4.
+        crop_border (list, optional): Border to crop video. Defaults to None.
+        use_original_encoding (bool, optional): Whether to use original video encoding
+            (might not be supported by opencv). Defaults to False.
+        recrop (bool, optional): Whether to recrop video. Defaults to False.
     """
 
     if dlc_res is None or ellipse is None:
         dlc_res, ellipse = get_data(camera, flexilims_session=camera.flexilims_session)
     # Find DLC crop area
-    borders = np.zeros((4, 2))
-    for iw, w in enumerate(
-        ("left_eye_corner", "right_eye_corner", "top_eye_lid", "bottom_eye_lid")
-    ):
-        vals = dlc_res.xs(w, level=1, axis=1)
-        vals.columns = vals.columns.droplevel("scorer")
-        v = np.nanmedian(vals[["x", "y"]].values, axis=0)
-        borders[iw, :] = v
+    if recrop:
+        borders = np.zeros((4, 2))
+        for iw, w in enumerate(
+            ("left_eye_corner", "right_eye_corner", "top_eye_lid", "bottom_eye_lid")
+        ):
+            vals = dlc_res.xs(w, level=1, axis=1)
+            vals.columns = vals.columns.droplevel("scorer")
+            v = np.nanmedian(vals[["x", "y"]].values, axis=0)
+            borders[iw, :] = v
 
-    borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
-    borders += ((np.diff(borders, axis=0) * 0.1).T @ np.array([[-1, 1]])).T
-    borders = borders.astype(int)
+        borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
+        borders += ((np.diff(borders, axis=0) * 0.1).T @ np.array([[-1, 1]])).T
+        borders = borders.astype(int)
     video_file = camera.path_full / camera.extra_attributes["video_file"]
     ellipse_model = EllipseModel()
 
@@ -141,14 +153,16 @@ def plot_movie(
     img = get_img_from_fig(fig)
     cam_data = cv2.VideoCapture(str(video_file))
     fps = cam_data.get(cv2.CAP_PROP_FPS)
-    fcc = int(cam_data.get(cv2.CAP_PROP_FOURCC))
-    fcc = (
-        chr(fcc & 0xFF)
-        + chr((fcc >> 8) & 0xFF)
-        + chr((fcc >> 16) & 0xFF)
-        + chr((fcc >> 24) & 0xFF)
-    )
-
+    if use_original_encoding:
+        fcc = int(cam_data.get(cv2.CAP_PROP_FOURCC))
+        fcc = (
+            chr(fcc & 0xFF)
+            + chr((fcc >> 8) & 0xFF)
+            + chr((fcc >> 16) & 0xFF)
+            + chr((fcc >> 24) & 0xFF)
+        )
+    else:
+        fcc = "mp4v"
     output = cv2.VideoWriter(
         str(target_file),
         cv2.VideoWriter_fourcc(*fcc),
@@ -156,7 +170,7 @@ def plot_movie(
         (img.shape[1], img.shape[0]),
     )
 
-    nframes = int(fps * duration * 4)
+    nframes = int(fps * duration)
     cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
     for frame_id in np.arange(nframes) + start_frame:
         track = dlc_res.loc[frame_id]
@@ -168,10 +182,16 @@ def plot_movie(
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
 
         ret, frame = cam_data.read()
+        if crop_border is not None:
+            frame = frame[
+                crop_border[2] : crop_border[3], crop_border[0] : crop_border[1]
+            ]
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         for ax in [ax_img, ax_fit, ax_track]:
+            img = gray[slice(*borders[:, 1]), slice(*borders[:, 0])] if recrop else gray
             ax.imshow(
-                gray[slice(*borders[:, 1]), slice(*borders[:, 0])],
+                img,
                 cmap="gray",
                 vmax=vmax,
                 vmin=vmin,
@@ -183,12 +203,14 @@ def plot_movie(
         xdata = track.loc[[(f"eye_{i}", "x") for i in np.arange(1, 13)]]
         ydata = track.loc[[(f"eye_{i}", "y") for i in np.arange(1, 13)]]
         likelihood = track.loc[[(f"eye_{i}", "likelihood") for i in np.arange(1, 13)]]
+        if recrop:
+            xs, ys = borders[0, 0], borders[0, 1]
+        else:
+            xs, ys = 0, 0
+        ax_track.scatter(xdata - xs, ydata - ys, s=likelihood * 10)
         ax_track.scatter(
-            xdata - borders[0, 0], ydata - borders[0, 1], s=likelihood * 10
-        )
-        ax_track.scatter(
-            track.loc[("reflection", "x")] - borders[0, 0],
-            track.loc[("reflection", "y")] - borders[0, 1],
+            track.loc[("reflection", "x")] - xs,
+            track.loc[("reflection", "y")] - ys,
         )
         # params are xc, yc, a, b, theta
         params = ellipse.loc[
@@ -196,10 +218,9 @@ def plot_movie(
         ]
         ellipse_model.params = params.values
         circ_coord = ellipse_model.predict_xy(np.arange(0, 2 * np.pi, 0.1))
-        ax_fit.plot(circ_coord[:, 0] - borders[0, 0], circ_coord[:, 1] - borders[0, 1])
+        ax_fit.plot(circ_coord[:, 0] - xs, circ_coord[:, 1] - ys)
         write_fig_to_video(fig, output)
-        if frame_id > nframes:
-            break
+        print(frame_id, flush=True)
 
     cam_data.release()
     output.release()
@@ -238,9 +259,7 @@ def add_behaviour(
     )
     suite_2p = sess_ds[sess_ds.dataset_type == "suite2p_rois"]
     assert len(suite_2p) == 1
-    suite_2p = flz.Dataset.from_flexilims(
-        data_series=suite_2p.iloc[0], flexilims_session=flm_sess
-    )
+    suite_2p = flz.Dataset.from_dataseries(suite_2p.iloc[0], flexilims_session=flm_sess)
 
     ops = np.load(
         suite_2p.path_full / "suite2p" / "plane0" / "ops.npy", allow_pickle=True
