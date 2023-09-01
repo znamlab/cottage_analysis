@@ -111,25 +111,23 @@ def grating_tuning(
     return gaussian * tuning
 
 
-def analyze_rs_of_tuning(
-    project,
-    mouse,
-    session,
-    protocol="SpheresPermTubeReward",
+def fit_rs_of_tuning(
+    trials_df,
+    neurons_df,
+    neurons_ds,
     rs_thr=0.01,
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
     niter=5,
     min_sigma=0.25,
+    conflicts="skip",
 ):
-    # Load files
-    root = Path(flz.PARAMETERS["data_root"]["processed"])
-    session_folder = root / project / mouse / session
-    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
-    neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
+    # session paths
+    session_folder = neurons_ds.path_full.parent
 
-    iscell = common_utils.load_is_cell_file(project, mouse, session, protocol)
-    neurons_df["is_cell"] = iscell
+    if conflicts == "skip":
+        return neurons_df, neurons_ds
 
+    # Initialize neurons_df with columns for RS/OF tuning
     neurons_df = neurons_df.assign(
         preferred_RS_closed_loop=np.nan,
         preferred_OF_closed_loop=np.nan,
@@ -145,15 +143,11 @@ def analyze_rs_of_tuning(
         gaussian_blob_rsq_open_loop_virtual=np.nan,
     )
 
-    # Determine whether this session has open loop or not
-    if len(trials_df.closed_loop.unique()) == 2:
-        protocols = [protocol, f"{protocol}Playback"]
-    elif len(trials_df.closed_loop.unique()) == 1:
-        protocols = [protocol]
+    # Set bounds for gaussian fit params
     lower_bounds = Gaussian2DParams(
         log_amplitude=-np.inf,
-        xo=np.log(param_range["rs_min"]),
-        yo=np.log(param_range["of_min"]),
+        x0=np.log(param_range["rs_min"]),
+        y0=np.log(param_range["of_min"]),
         log_sigma_x2=-np.inf,
         log_sigma_y2=-np.inf,
         theta=0,
@@ -161,29 +155,46 @@ def analyze_rs_of_tuning(
     )
     upper_bounds = Gaussian2DParams(
         log_amplitude=np.inf,
-        xo=np.log(param_range["rs_max"]),
-        yo=np.log(param_range["of_max"]),
+        x0=np.log(param_range["rs_max"]),
+        y0=np.log(param_range["of_max"]),
         log_sigma_x2=np.inf,
         log_sigma_y2=np.inf,
         theta=np.pi / 2,
         offset=np.inf,
     )
+
+    def p0_func():
+        # edit the code below to use a namedtupled instead of a list
+        return Gaussian2DParams(
+            log_amplitude=np.random.normal(),
+            x0=np.random.uniform(
+                np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
+            ),
+            y0=np.random.uniform(
+                np.log(param_range["of_min"]), np.log(param_range["of_max"])
+            ),
+            log_sigma_x2=np.random.normal(),
+            log_sigma_y2=np.random.normal(),
+            theta=np.random.uniform(0, 0.5 * np.pi),
+            offset=np.random.normal(),
+        )
+
     # Loop through all protocols
-    for iprotocol, protocol in enumerate(protocols):
-        print(f"---------Process protocol {iprotocol+1}/{len(protocols)}---------")
-        if "Playback" in protocol:
-            is_closedloop = 0
-            protocol_sfx = "open_loop"
-        else:
-            is_closedloop = 1
+    for iprotocol, is_closedloop in enumerate(trials_df.closed_loop.unique()):
+        print(
+            f"---------Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}---------"
+        )
+        if is_closedloop:
             protocol_sfx = "closed_loop"
+        else:
+            protocol_sfx = "open_loop"
         trials_df_protocol = trials_df[trials_df.closed_loop == is_closedloop]
 
         # Concatenate arrays of RS/OF/dff from all trials together
         rs = np.concatenate(trials_df_protocol["RS_stim"].values)
         rs_eye = np.concatenate(trials_df_protocol["RS_eye_stim"].values)
         of = np.concatenate(trials_df_protocol["OF_stim"].values)
-        dff = np.concatenate(trials_df_protocol["dff_stim"].values, axis=1)
+        dff = np.concatenate(trials_df_protocol["dff_stim"].values, axis=0)
 
         # Take out the values where running is below a certain threshold
         running = (
@@ -192,7 +203,7 @@ def analyze_rs_of_tuning(
         rs = rs[running]
         rs_eye = rs_eye[running]
         of = of[running]
-        dff = dff[:, running]
+        dff = dff[running, :]
 
         # Fit data to 2D gaussian function
         if is_closedloop:
@@ -208,15 +219,16 @@ def analyze_rs_of_tuning(
             else:
                 rs_type = "_virtual"
             print(f"Fitting {protocol_sfx}{rs_type} running...")
-            for iroi in tqdm(range(dff.shape[0])):
+            for iroi in tqdm(range(dff.shape[1])):
                 gaussian_2d_ = partial(gaussian_2d, min_sigma=min_sigma)
                 popt, rsq = common_utils.iterate_fit(
                     gaussian_2d_,
                     (rs_to_use, of),
-                    dff[iroi, :],
+                    dff[:, iroi],
                     lower_bounds,
                     upper_bounds,
                     niter=niter,
+                    p0_func=p0_func,
                 )
 
                 neurons_df.at[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
@@ -232,9 +244,19 @@ def analyze_rs_of_tuning(
                     iroi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"
                 ] = popt
                 neurons_df.loc[iroi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
-    neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 
-    return neurons_df
+    # save neurons_df
+    neurons_df.to_pickle(session_folder / "neurons_df.pickle")
+
+    # update flexilims
+    neurons_ds.extra_attributes["fit_RSOF_rs_min"] = param_range["rs_min"]
+    neurons_ds.extra_attributes["fit_RSOF_rs_max"] = param_range["rs_max"]
+    neurons_ds.extra_attributes["fit_RSOF_of_min"] = param_range["of_min"]
+    neurons_ds.extra_attributes["fit_RSOF_of_max"] = param_range["of_max"]
+    neurons_ds.extra_attributes["fit_RSOF_min_sigma"] = min_sigma
+    neurons_ds.update_flexilims(mode="overwrite")
+
+    return neurons_df, neurons_ds
 
 
 def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):

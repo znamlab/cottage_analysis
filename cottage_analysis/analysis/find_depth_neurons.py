@@ -46,11 +46,11 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
     depth_list = find_depth_list(trials_df)
     if rs_thr is None:
         trials_df["trial_mean_dff"] = trials_df.apply(
-            lambda x: np.nanmean(x.dff_stim, axis=1), axis=1
+            lambda x: np.nanmean(x.dff_stim, axis=0), axis=1
         )
     else:
         trials_df["trial_mean_dff"] = trials_df.apply(
-            lambda x: np.nanmean(x.dff_stim[:, x.RS_stim >= rs_thr], axis=1), axis=1
+            lambda x: np.nanmean(x.dff_stim[x.RS_stim >= rs_thr, :], axis=0), axis=1
         )
     grouped_trials = trials_df.groupby(by="depth")
 
@@ -74,41 +74,64 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
 
 
 def find_depth_neurons(
-    project, mouse, session, protocol="SpheresPermTubeReward", rs_thr=0.2, alpha=0.05
+    session_name,
+    trials_df,
+    flexilims_session=None,
+    project=None,
+    rs_thr=0.2,
+    alpha=0.05,
+    conflicts="skip",
 ):
     """Find depth neurons from all ROIs segmented.
 
     Args:
-        project (str): project name.
-        mouse (str): mouse name.
-        session (str): session name.
-        protocol (str): protocol name. Defaults to "SpheresPermTubeReward"
-        rs_thr (float, optional): threshold of running speed to be counted into
-            depth tuning analysis. Defaults to 0.2 m/s.
-        alpha (float, optional): significance level for depth tuning analysis. Defaults to 0.05.
+        session_name (str): session name. {Mouse}_{Session}.
+        trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
+        flexilims_session (Series, optional): flexilims session object. Defaults to None.
+        project (str, optional): project name. Defaults to None. Must be provided if flexilims_session is None.
+        rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
+        alpha (float, optional): significance level for anova test. Defaults to 0.05.
+        conflicts (str, optional): how to handle conflicts when running neurons_df. Defaults to "skip".
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
 
     """
+    # session paths
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flexilims_session
+    )
     root = Path(flz.PARAMETERS["data_root"]["processed"])
-    session_folder = root / project / mouse / session
+    session_folder = root / exp_session.path
 
-    # Load files
-    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
-    iscell = common_utils.load_is_cell_file(project, mouse, session, protocol)
-    # Make an empty dataframe for saving depth neuron properties
+    # Create a neurons_df dataset from flexilism
+    neurons_ds = flz.Dataset.from_origin(
+        origin_id=exp_session.id,
+        dataset_type="neurons_df",
+        flexilims_session=flexilims_session,
+        conflicts=conflicts,
+    )
+    neurons_ds.path = neurons_ds.path.parent / f"neurons_df.pickle"
+
+    # if neurons_ds exists on flexilims and conflicts is set to skip, load the existing neurons_df
+    if (neurons_ds.flexilims_status() != "not online") and (conflicts == "skip"):
+        print("Loading existing neurons_df file...")
+        return np.load(neurons_ds.path_full), neurons_df
+
+    # Create an empty datafrom for neurons_df
     neurons_df = pd.DataFrame(
         columns=[
             "roi",  # ROI number
-            "is_cell",  # bool, is it a cell or not
             "is_depth_neuron",  # bool, is it a depth-selective neuron or not
             "depth_neuron_anova_p",  # float, p value for depth neuron anova test
             "best_depth",  # #, depth with the maximum average response
         ]
     )
-    neurons_df["roi"] = np.arange(len(iscell))
-    neurons_df["is_cell"] = iscell
+    nrois = trials_df.dff_stim.iloc[0].shape[1]
+    neurons_df["roi"] = np.arange(nrois)
 
     # Find the averaged dFF for each trial in only closed loop recordings
     trials_df = trials_df[trials_df.closed_loop == 1]
@@ -117,7 +140,7 @@ def find_depth_neurons(
     depth_list = find_depth_list(trials_df)
     mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
 
-    for iroi in tqdm(np.arange(len(iscell))):
+    for iroi in tqdm(np.arange(nrois)):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, iroi])
 
         neurons_df.loc[iroi, "depth_neuron_anova_p"] = p
@@ -125,53 +148,76 @@ def find_depth_neurons(
         neurons_df.loc[iroi, "best_depth"] = depth_list[
             np.argmax(np.mean(mean_dff_arr[:, :, iroi], axis=1))
         ]
-    neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
 
-    return neurons_df
+    # save neurons_df
+    neurons_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
+    neurons_df.to_pickle(neurons_ds.path_full)
+
+    # update flexilims
+    neurons_ds.extra_attributes["depth_neuron_criteria"] = "anova"
+    neurons_ds.extra_attributes["depth_neuron_RS_threshold"] = rs_thr
+    neurons_ds.update_flexilims(mode="overwrite")
+
+    return neurons_df, neurons_ds
 
 
 def fit_preferred_depth(
-    project,
-    mouse,
-    session,
-    protocol,
+    trials_df,
+    neurons_df,
+    neurons_ds,
     depth_min=0.02,
     depth_max=20,
     niter=10,
     min_sigma=0.5,
+    cross_validation=False,
+    conflicts="skip",
 ):
     """Fit depth tuning with 1d gaussian function to find the preferred depth of neurons in closed loop.
 
     Args:
-        project (str): project name.
-        mouse (str): mouse name.
-        session (str): session name.
-        protocol (str, optional): protocol name. Defaults to "SpheresPermTubeReward".
+        trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
+        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
+        neurons_ds (Dataset): A dataset that contains the analysed properties for each ROI.
         depth_min (float, optional): Lower boundary of fitted preferred depth (m). Defaults to 0.02.
         depth_max (int, optional): Upper boundary of fitted preferred depth (m). Defaults to 20.
-        batch_num (int, optional): Number of batches for fitting the gaussian function. Defaults to 10.
+        niter (int, optional): Number of iterations for fitting the gaussian function. Defaults to 10.
+        min_sigma (float, optional): Minimum sigma value for the gaussian function. Defaults to 0.5.
+        cross_validation (bool, optional): Whether to use cross validation to find the best fit. Defaults to False.
+        conflicts (str, optional): how to handle conflicts when running neurons_df. Defaults to "skip".
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
 
     """
-    root = Path(flz.PARAMETERS["data_root"]["processed"])
-    session_folder = root / project / mouse / session
+    # session paths
+    session_folder = neurons_ds.path_full.parent
 
-    # Load files
-    trials_df = pd.read_pickle(session_folder / "plane0/trials_df.pickle")
-    neurons_df = pd.read_pickle(session_folder / "plane0/neurons_df.pickle")
-    iscell = common_utils.load_is_cell_file(project, mouse, session, protocol)
+    if conflicts == "skip":
+        return neurons_df, neurons_ds
+
+    # Initialize neurons_df
     depth_list = find_depth_list(trials_df)
 
-    neurons_df["is_cell"] = iscell
-    neurons_df["preferred_depth_closed_loop"] = np.nan
-    neurons_df["gaussian_depth_tuning_popt"] = [[np.nan]] * len(neurons_df)
-    neurons_df["gaussian_depth_tuning_r_squared"] = np.nan
+    if cross_validation:
+        neurons_df["preferred_depth_closed_loop_crossval"] = np.nan
+        neurons_df["gaussian_depth_tuning_popt_crossval"] = [[np.nan]] * len(neurons_df)
+        neurons_df["gaussian_depth_tuning_r_squared_crossval"] = np.nan
+        neurons_df["gaussian_depth_tuning_crossval_trials"] = [[np.nan]] * len(
+            neurons_df
+        )
+    else:
+        neurons_df["preferred_depth_closed_loop"] = np.nan
+        neurons_df["gaussian_depth_tuning_popt"] = [[np.nan]] * len(neurons_df)
+        neurons_df["gaussian_depth_tuning_r_squared"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
     trials_df = trials_df[trials_df.closed_loop == 1]
     mean_dff_arr = average_dff_for_all_trials(trials_df)
+    if cross_validation:
+        choose_trials = np.random.choice(
+            mean_dff_arr.shape[1], size=mean_dff_arr.shape[1] // 2, replace=False
+        )
+        mean_dff_arr = mean_dff_arr[:, choose_trials, :]
 
     # Fit gaussian function to the average dffs for each trial (depth tuning)
     x = np.log(np.repeat(np.array(depth_list), mean_dff_arr.shape[1]))
@@ -198,10 +244,25 @@ def fit_preferred_depth(
             p0_func=p0_func,
         )
 
-        neurons_df.at[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
-        # !! USE LOG(DEPTH LIST IN CM) WHEN CALCULATING, x = np.log(depth_list*100)
-        neurons_df.at[iroi, "gaussian_depth_tuning_popt"] = popt
-        neurons_df.at[iroi, "gaussian_depth_tuning_r_squared"] = rsq
+        if cross_validation:
+            neurons_df.at[iroi, "preferred_depth_closed_loop_crossval"] = np.exp(
+                popt[1]
+            )
+            neurons_df.at[iroi, "gaussian_depth_tuning_popt_crossval"] = popt
+            neurons_df.at[iroi, "gaussian_depth_tuning_r_squared_crossval"] = rsq
+            neurons_df.at[iroi, "gaussian_depth_tuning_crossval_trials"] = choose_trials
+        else:
+            neurons_df.at[iroi, "preferred_depth_closed_loop"] = np.exp(popt[1])
+            neurons_df.at[iroi, "gaussian_depth_tuning_popt"] = popt
+            neurons_df.at[iroi, "gaussian_depth_tuning_r_squared"] = rsq
 
-    neurons_df.to_pickle(session_folder / "plane0/neurons_df.pickle")
-    return neurons_df
+    # save neurons_df
+    neurons_df.to_pickle(session_folder / "neurons_df.pickle")
+
+    # update flexilims
+    neurons_ds.extra_attributes["fit_depth_min"] = depth_min
+    neurons_ds.extra_attributes["fit_depth_max"] = depth_max
+    neurons_ds.extra_attributes["fit_depth_min_sigma"] = min_sigma
+    neurons_ds.update_flexilims(mode="overwrite")
+
+    return neurons_df, neurons_ds
