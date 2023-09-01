@@ -16,6 +16,12 @@ ONIX_SAMPLING = 250e6
 RAW = Path(flm.PARAMETERS["data_root"]["raw"])
 PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
 
+MAPPING = [
+    39,37,35,33,47,45,43,41,55,53,51,49,57,63,61,59,62,60,58,56,54,52,50,48,
+    46,44,42,40,38,36,34,32,24,26,28,30,16,18,20,22,8,10,12,14,0,2,4,6,3,5,
+    7,1,9,11,13,15,17,19,21,23,25,27,29,31
+]
+#The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16. 
 
 def load_onix_recording(
     project,
@@ -117,6 +123,19 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         output[what] = data
     return output
 
+def reorder_array(ephys_data):
+    """
+    Reorder the rows of the ephys data based on a predefined mapping. This is useful because data does not come
+    neatly ordered as [electrode 1 tetrode 1, electrode 2 tetrode 1, ..., electrode 4 tetrode 16] from the headstage. 
+    This function remaps inputs so that tetrodes are in order and remain together. 
+
+    Parameters:
+    - ephys_data (np.ndarray): The ephys data to reorder. Usually, processed_ephys['ephys'].
+
+    Returns:
+    - np.ndarray: The reordered ephys data.
+    """
+    return ephys_data[MAPPING]
 
 def load_ts4231(path_to_folder, timestamp=None):
     """Load data from the lighthouse system
@@ -142,13 +161,15 @@ def load_ts4231(path_to_folder, timestamp=None):
     return ts_out
 
 
-def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
+def load_breakout(path_to_folder, timestamp=None, num_ai_chan = 2):
     """Load data from the breakout board, ie AI and DI
 
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chans (int): number of AI channels saved (default 2)
+        num_ai_chan(int): number of analog input-output channels being recorded. In previous versions, it defaulted to 2. Now, 
+        the workflow saves how many it records and this function reads it. Keeping the default argument so that we are still able to
+        read old sessions. 
 
     Returns:
         data dict: a dictionary of memmap
@@ -158,24 +179,27 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
     for breakout_file in breakout_files:
         what = breakout_file.stem.split("_")[0][len("breakout-") :]
         if breakout_file.suffix == ".csv":
-            assert what == "dio"
-            dio = pd.read_csv(breakout_file)
-            port = np.array(dio["Port"].values, dtype="uint8")
-            bits = np.unpackbits(port, bitorder="little")
-            bits = bits.reshape((len(port), 8))
-            for i in range(8):
-                dio["DI%d" % i] = bits[:, i]
-            output["dio"] = dio
-            continue
-        assert breakout_file.suffix == ".raw"
-        if what == "aio-clock":
-            nchan = 1
-            dtype = ONIX_DATA_FORMAT["clock"]
-        elif what == "aio":
-            nchan = num_ai_chan
-            dtype = ONIX_DATA_FORMAT["aio"]
-        data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
-        output[what] = data
+            if what == "dio":
+                dio = pd.read_csv(breakout_file)
+                port = np.array(dio.Port.values, dtype="uint8")
+                bits = np.unpackbits(port, bitorder="little")
+                bits = bits.reshape((len(port), 8))
+                for i in range(8):
+                    dio["DI%d" % i] = bits[:, i]
+                output["dio"] = dio
+            if what == 'analog':
+                nchan = pd.read_csv(breakout_file)
+                num_ai_chan = len(list(nchan))
+        else:
+            assert breakout_file.suffix == ".raw"
+            if what == "aio-clock":
+                nchan = 1
+                dtype = ONIX_DATA_FORMAT["clock"]
+            elif what == "aio":
+                nchan = num_ai_chan
+                dtype = ONIX_DATA_FORMAT["aio"]
+            data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
+            output[what] = data
     return output
 
 
@@ -224,32 +248,42 @@ def load_bno055(
         output[what] = data
     return output
 
-
-def load_camera_times(camera_dir, acquisition):
-    if acquisition == "freely_moving":
-        camlist = ["cam1_camera", "cam2_camera", "cam3_camera"]
-    if acquisition == "headfixed":
-        camlist = [
-            "letfeye_camera",
-            "righteye_camera",
-            "face_camera",
-            "behaviour_camera",
-        ]
-    folder = Path(camera_dir)
-    if not folder.is_dir():
-        raise IOError("%s is not a directory" % folder)
+def load_camera_times(camera_dir):
+    """
+    Loads the metadata of the setup cameras. 
+    Args:
+        camera_dir(str or Path): the complete path to the camera output directory
+    Returns:
+        output(dict): a dictionary containing one key per camera. Inside, a dictionary with the metadata of the camera. 
+    """
+    camera_dir = Path(camera_dir)
+    
+    # Check if provided path is a directory
+    if not camera_dir.is_dir():
+        raise IOError(f"{camera_dir} is not a directory")
+    
+    # Search for all files containing the word 'camera' and ending with 'timestamps'
+    camera_files = list(camera_dir.glob('*camera*timestamps*'))
+    
+    # If no valid files found, raise an error
+    if not camera_files:
+        raise IOError(f"Could not find any timestamp files in {camera_dir}")
+    
     output = dict()
-    for cam in camlist:
-        cam_folder = folder / cam
-        valid_files = list(cam_folder.glob("*timestamp*"))
-        if not len(valid_files):
-            raise IOError(f"Could not find any timestamp files in {folder}")
-        for possible_file in valid_files:
-            possible_file = str(possible_file)
-            if cam in possible_file:
-                output[cam] = pd.read_csv(possible_file)
+    seen_names = set()  # Set to track seen camera names
+    
+    for cam_file in camera_files:
+        # Use the part before '_timestamps' as the key for the dictionary
+        key = cam_file.stem.split('_timestamps')[0]
+        
+        # Check for duplicate names
+        if key in seen_names:
+            raise ValueError(f"Duplicate timestamp file detected for camera: {key}")
+        
+        seen_names.add(key)
+        output[key] = pd.read_csv(cam_file)
+    
     return output
-
 
 def convert_ephys(
     uint16_file, target, nchan=64, overwrite=False, batch_size=1e6, verbose=True
