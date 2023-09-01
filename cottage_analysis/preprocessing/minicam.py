@@ -89,13 +89,15 @@ def deinterleave(camera_ds_id, project_id):
         video_file=target_name + ".mp4",
     )
     target_ds.path_full.mkdir(parents=True, exist_ok=True)
-    video.io_func.deinterleave_camera(
+    kwargs = dict(
         camera_file=camera_ds.path_full / camera_ds.extra_attributes["video_file"],
         target_file=target_ds.path_full / target_ds.extra_attributes["video_file"],
         make_grey=False,
         verbose=True,
         intrinsic_calibration=None,
     )
+    target_ds.extra_attributes.update(kwargs)
+
     # copy timestamp and metadata files
     for file in ["timestamp_file", "metadata_file"]:
         raw = camera_ds.path_full / camera_ds.extra_attributes[file]
@@ -111,6 +113,21 @@ def deinterleave(camera_ds_id, project_id):
             )
             deinterleave_df["frame_id"] = np.arange(raw_df.shape[0] * 2)
             for timestamps in ["BonsaiTimestamp", "HarpTimestamp"]:
+                raw_times = raw_df[timestamps].values
+                if raw_times.dtype == "<M8[ns]":
+                    convert = True
+                    raw_times = raw_times.astype("long")
+                else:
+                    convert = False
+                raw_index = np.arange(len(raw_times)) * 2 + 1
+                deinterleaved_index = np.arange(len(raw_times) * 2)
+                deinterleaved_times = np.interp(
+                    deinterleaved_index,
+                    raw_index,
+                    raw_times,
+                )
+                if convert:
+                    deinterleaved_times = pd.to_datetime(deinterleaved_times)
                 # get the inter-frame interval in numpy timedelta
                 half_dt = np.nanmedian(np.diff(raw_df[timestamps].values)) / 2
                 # frames are timestamped after production, so we need to remove half a frame
@@ -129,6 +146,8 @@ def deinterleave(camera_ds_id, project_id):
                 camera_ds.path_full / camera_ds.extra_attributes[file],
                 target_ds.path_full / target_ds.extra_attributes[file],
             )
+
+    video.io_func.deinterleave_camera(**kwargs)
 
     target_ds.update_flexilims(mode="overwrite")
     return target_ds.path_full
