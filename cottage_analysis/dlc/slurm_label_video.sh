@@ -14,7 +14,7 @@ echo 'ml-ing'
 ml cuDNN/8.1.1.33-CUDA-11.2.1
 echo 'Sourcing conda'
 ml Anaconda3
-source /camp/apps/eb/software/Anaconda/conda.env.sh
+source activate base
 echo 'activate'
 conda activate dlc_nogui
 

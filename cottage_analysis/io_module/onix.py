@@ -2,12 +2,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import flexiznam as flm
+from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.io_module.harp import load_harp
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
 )
-BREAKOUT_DIGITAL_INPUTS = dict(DI0="fm_cam_trig", DI1="oni_clock_di", DI2="hf_cam_trig")
+
+
 ONIX_SAMPLING = 250e6
 
 
@@ -22,9 +24,9 @@ def load_onix_recording(
     vis_stim_recording=None,
     onix_recording=None,
     allow_reload=True,
-    breakout_di_names=BREAKOUT_DIGITAL_INPUTS,
     raw_folder=RAW,
     processed_folder=PROCESSED,
+    di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
 ):
     """Main function calling all the subfunctions
 
@@ -36,7 +38,7 @@ def load_onix_recording(
         onix_recording (str): recording containing onix data
         allow_reload (bool): If True (default) will reload processed data instead of
                              raw when available
-        breakout_di_names (dict): Names of DI on breakout board, e.g. {'DI0': 'lick'}
+        di_names (list): list of DI names to load from HARP
 
     Returns:
         data (dict): a dictionary with one element per datasource
@@ -48,27 +50,20 @@ def load_onix_recording(
     out = dict()
 
     if vis_stim_recording is not None:
-        harp_message = "%s_%s_%s_harpmessage.bin" % (mouse, session, vis_stim_recording)
-        raw_harp = session_folder / vis_stim_recording / harp_message
-        processed_messages = (
-            processed_folder / vis_stim_recording / (raw_harp.stem + ".npz")
+        flm_sess = flm.get_flexilims_session(project)
+        harp_message, harp_ds = synchronisation.load_harpmessage(
+            recording="_".join([mouse, session, vis_stim_recording]),
+            flexilims_session=flm_sess,
+            conflicts="skip" if allow_reload else "overwrite",
+            di_names=di_names,
         )
-        processed_messages.parent.mkdir(exist_ok=True, parents=True)
-        if allow_reload and processed_messages.is_file():
-            harp_message = dict(np.load(processed_messages))
-        else:
-            # slow part: read harp messages so save output and reload
-            harp_message = load_harp(raw_harp)
-            np.savez(processed_messages, **harp_message)
-        out["harp_message"] = harp_message
+        out["harp_message"] = dict(harp_message)
         # add frame loggers and other CSVs
         out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
 
     if onix_recording is not None:
         # Load onix AI/DI
         breakout_data = load_breakout(session_folder / onix_recording)
-        # use human readable names
-        breakout_data["dio"].rename(columns=breakout_di_names, inplace=True)
         out["breakout_data"] = breakout_data
         try:
             out["rhd2164_data"] = load_rhd2164(session_folder / onix_recording)
@@ -153,7 +148,7 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chans (int): number of ephys channels saved (default 64)
+        num_ai_chans (int): number of AI channels saved (default 2)
 
     Returns:
         data dict: a dictionary of memmap
@@ -165,7 +160,7 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
         if breakout_file.suffix == ".csv":
             assert what == "dio"
             dio = pd.read_csv(breakout_file)
-            port = np.array(dio.Port.values, dtype="uint8")
+            port = np.array(dio["Port"].values, dtype="uint8")
             bits = np.unpackbits(port, bitorder="little")
             bits = bits.reshape((len(port), 8))
             for i in range(8):
