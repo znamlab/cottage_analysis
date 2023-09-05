@@ -119,6 +119,7 @@ def deinterleave(camera_ds_id, project_id):
                     raw_times = raw_times.astype("long")
                 else:
                     convert = False
+                # frames are timestamped after production, so raw index starts at 1
                 raw_index = np.arange(len(raw_times)) * 2 + 1
                 deinterleaved_index = np.arange(len(raw_times) * 2)
                 deinterleaved_times = np.interp(
@@ -128,15 +129,11 @@ def deinterleave(camera_ds_id, project_id):
                 )
                 if convert:
                     deinterleaved_times = pd.to_datetime(deinterleaved_times)
-                # get the inter-frame interval in numpy timedelta
-                half_dt = np.nanmedian(np.diff(raw_df[timestamps].values)) / 2
-                # frames are timestamped after production, so we need to remove half a frame
-                deinterleave_df.loc[1::2, timestamps] = raw_df[timestamps].values
-                deinterleave_df.loc[0::2, timestamps] = (
-                    raw_df[timestamps].values - half_dt
-                )
 
+                assert all(raw_df[timestamps].values == deinterleaved_times[1::2])
+                deinterleave_df[timestamps] = deinterleaved_times
                 assert deinterleave_df[timestamps].is_monotonic_increasing
+
             deinterleave_df.to_csv(
                 target_ds.path_full / target_ds.extra_attributes[file],
                 index=False,
