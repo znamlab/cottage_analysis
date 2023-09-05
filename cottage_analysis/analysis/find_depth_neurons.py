@@ -12,6 +12,7 @@ from functools import partial
 
 print = partial(print, flush=True)
 
+
 def gaussian_func(x, a, x0, log_sigma, b, min_sigma):
     sigma = np.exp(log_sigma) + min_sigma
     return (a * np.exp(-((x - x0) ** 2)) / (2 * sigma**2)) + b
@@ -159,7 +160,7 @@ def fit_preferred_depth(
     k_folds=1,
     ops=None,
 ):
-    '''Function to fit depth tuning with gaussian function
+    """Function to fit depth tuning with gaussian function
 
     Args:
         trials_df (pd.DataFrame): trials_df for this session that describes the parameters for each trial.
@@ -177,7 +178,8 @@ def fit_preferred_depth(
 
     Returns:
         (pd.DataFrame, Series, dict): neurons_df, neurons_df, ops
-    '''
+    """
+
     # Function to initialize depth tuning parameters
     def p0_func():
         return np.concatenate(
@@ -191,45 +193,15 @@ def fit_preferred_depth(
 
     # Choose trials
     depth_list = find_depth_list(trials_df)
-    trial_number = len(trials_df) // len(depth_list)
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
-    if closed_loop:
+    trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
+        trials_df, choose_trials
+    )
+
+    if closed_loop == 1:
         protocol_sfx = "_closedloop"
     else:
         protocol_sfx = "_openloop"
-
-    if choose_trials == None:  # fit all trials
-        trials_df_fit = trials_df
-        sfx = ""
-        choose_trial_nums = np.arange(trial_number)
-    else:
-        if choose_trials == "odd":  # fit odd trials
-            trials_df_fit = pd.DataFrame(columns=trials_df.columns)
-            # choose odd trials from trials_df
-            for depth in depth_list:
-                trials_df_depth = trials_df[trials_df.depth == depth]
-                trials_df_depth = trials_df_depth.iloc[::2, :]
-                trials_df_fit = pd.concat([trials_df_fit, trials_df_depth])
-            choose_trial_nums = np.arange(trial_number)[::2]
-        if choose_trials == "even":  # fit even trials
-            trials_df_fit = pd.DataFrame(columns=trials_df.columns)
-            # choose even trials from trials_df
-            for depth in depth_list:
-                trials_df_depth = trials_df[trials_df.depth == depth]
-                trials_df_depth = trials_df_depth.iloc[1::2, :]
-                trials_df_fit = pd.concat([trials_df_fit, trials_df_depth])
-            choose_trial_nums = np.arange(trial_number)[1::2]
-        if choose_trials is not None and isinstance(
-            choose_trials, list
-        ):  # if choose_trials is a given list
-            trials_df_fit = pd.DataFrame(columns=trials_df.columns)
-            for depth in depth_list:
-                trials_df_depth = trials_df[trials_df.depth == depth]
-                trials_df_depth = trials_df.iloc[choose_trials, :]
-                trials_df_fit = pd.concat([trials_df_fit, trials_df_depth])
-            choose_trial_nums = choose_trials
-        sfx = "_crossval"
-
 
     # Stratified K-fold cross validation on trials_df_fit
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
@@ -265,9 +237,13 @@ def fit_preferred_depth(
     if k_folds == 1:
         # Create empty columns for fitting results
         neurons_df[f"preferred_depth{protocol_sfx}{sfx}"] = np.nan
-        neurons_df[f"depth_tuning_popt{protocol_sfx}{sfx}"] = [[np.nan]] * len(neurons_df)
-        neurons_df[f"depth_tuning_trials{protocol_sfx}{sfx}"] = [[np.nan]] * len(neurons_df)
-        
+        neurons_df[f"depth_tuning_popt{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+            neurons_df
+        )
+        neurons_df[f"depth_tuning_trials{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+            neurons_df
+        )
+
         for roi in tqdm(range(X.dff_stim.iloc[0].shape[1])):
             popt, rsq = common_utils.iterate_fit(
                 gaussian_func_,
@@ -302,7 +278,9 @@ def fit_preferred_depth(
             ):
                 X_train, X_test = X.iloc[train_index], X.iloc[test_index]
                 y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-                X_test_all.append((np.stack(X_test["trial_mean_dff"])[:, roi]).flatten())
+                X_test_all.append(
+                    (np.stack(X_test["trial_mean_dff"])[:, roi]).flatten()
+                )
 
                 # Fit depth tuning with gaussian function
                 # fit gaussian function to the average dffs for each trial (depth tuning)
