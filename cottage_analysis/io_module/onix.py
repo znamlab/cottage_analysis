@@ -17,11 +17,73 @@ RAW = Path(flm.PARAMETERS["data_root"]["raw"])
 PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
 
 MAPPING = [
-    39,37,35,33,47,45,43,41,55,53,51,49,57,63,61,59,62,60,58,56,54,52,50,48,
-    46,44,42,40,38,36,34,32,24,26,28,30,16,18,20,22,8,10,12,14,0,2,4,6,3,5,
-    7,1,9,11,13,15,17,19,21,23,25,27,29,31
+    39,
+    37,
+    35,
+    33,
+    47,
+    45,
+    43,
+    41,
+    55,
+    53,
+    51,
+    49,
+    57,
+    63,
+    61,
+    59,
+    62,
+    60,
+    58,
+    56,
+    54,
+    52,
+    50,
+    48,
+    46,
+    44,
+    42,
+    40,
+    38,
+    36,
+    34,
+    32,
+    24,
+    26,
+    28,
+    30,
+    16,
+    18,
+    20,
+    22,
+    8,
+    10,
+    12,
+    14,
+    0,
+    2,
+    4,
+    6,
+    3,
+    5,
+    7,
+    1,
+    9,
+    11,
+    13,
+    15,
+    17,
+    19,
+    21,
+    23,
+    25,
+    27,
+    29,
+    31,
 ]
-#The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16. 
+# The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16.
+
 
 def load_onix_recording(
     project,
@@ -34,6 +96,7 @@ def load_onix_recording(
     raw_folder=RAW,
     processed_folder=PROCESSED,
     di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
+    cut_if_not_multiple=False,
 ):
     """Main function calling all the subfunctions
 
@@ -47,6 +110,9 @@ def load_onix_recording(
         allow_reload (bool): If True (default) will reload processed data instead of
                              raw when available
         di_names (list): list of DI names to load from HARP
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels if False, will load only if the data is a multiple
+            of the number of channels. Default False.
 
     Returns:
         data (dict): a dictionary with one element per datasource
@@ -76,7 +142,9 @@ def load_onix_recording(
         breakout_data = load_breakout(session_folder / onix_recording)
         out["breakout_data"] = breakout_data
         try:
-            out["rhd2164_data"] = load_rhd2164(session_folder / onix_recording)
+            out["rhd2164_data"] = load_rhd2164(
+                session_folder / onix_recording, cut_if_not_multiple=cut_if_not_multiple
+            )
         except IOError:
             print("Could not load RHD2164 data")
         try:
@@ -96,7 +164,13 @@ def load_vis_stim_log(folder):
     return out
 
 
-def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
+def load_rhd2164(
+    path_to_folder,
+    timestamp=None,
+    num_chans=64,
+    num_aux_chan=6,
+    cut_if_not_multiple=False,
+):
     """Load all files related to rhd2164, ie ephys
 
     Args:
@@ -104,6 +178,9 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         timestamp (str or None): timestamp used in save name
         num_chans (int): number of ephys channels saved (default 64)
         num_aux_chan (int): number of auxiliary channels saved (default 6)
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels. if False, will load only if the data is a
+            multiple of the number of channels. Default False.
 
     Returns:
         data dict: a dictionary of memmap
@@ -122,16 +199,20 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         assert ephys_file.suffix == ".raw"
 
         data = _load_binary_file(
-            ephys_file, dtype=ONIX_DATA_FORMAT[what], nchan=num_chan_dict[what]
+            ephys_file,
+            dtype=ONIX_DATA_FORMAT[what],
+            nchan=num_chan_dict[what],
+            cut_if_not_multiple=cut_if_not_multiple,
         )
         output[what] = data
     return output
 
+
 def reorder_array(ephys_data):
     """
     Reorder the rows of the ephys data based on a predefined mapping. This is useful because data does not come
-    neatly ordered as [electrode 1 tetrode 1, electrode 2 tetrode 1, ..., electrode 4 tetrode 16] from the headstage. 
-    This function remaps inputs so that tetrodes are in order and remain together. 
+    neatly ordered as [electrode 1 tetrode 1, electrode 2 tetrode 1, ..., electrode 4 tetrode 16] from the headstage.
+    This function remaps inputs so that tetrodes are in order and remain together.
 
     Parameters:
     - ephys_data (np.ndarray): The ephys data to reorder. Usually, processed_ephys['ephys'].
@@ -140,6 +221,7 @@ def reorder_array(ephys_data):
     - np.ndarray: The reordered ephys data.
     """
     return ephys_data[MAPPING]
+
 
 def load_ts4231(path_to_folder, timestamp=None):
     """Load data from the lighthouse system
@@ -165,15 +247,21 @@ def load_ts4231(path_to_folder, timestamp=None):
     return ts_out
 
 
-def load_breakout(path_to_folder, timestamp=None, num_ai_chan = 2):
+def load_breakout(
+    path_to_folder, timestamp=None, num_ai_chan=2, cut_if_not_multiple=False
+):
     """Load data from the breakout board, ie AI and DI
 
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chan(int): number of analog input-output channels being recorded. In previous versions, it defaulted to 2. Now, 
-        the workflow saves how many it records and this function reads it. Keeping the default argument so that we are still able to
-        read old sessions. 
+        num_ai_chan(int): number of analog input-output channels being recorded.
+            In previous versions, it defaulted to 2. Now, the workflow saves how many it
+            records and this function reads it. Keeping the default argument so that we
+            are still able to read old sessions.
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels if False, will load only if the data is a multiple
+            of the number of channels. Default False.
 
     Returns:
         data dict: a dictionary of memmap
@@ -191,7 +279,7 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan = 2):
                 for i in range(8):
                     dio["DI%d" % i] = bits[:, i]
                 output["dio"] = dio
-            if what == 'analog':
+            if what == "analog":
                 nchan = pd.read_csv(breakout_file)
                 num_ai_chan = len(list(nchan))
         else:
@@ -202,7 +290,12 @@ def load_breakout(path_to_folder, timestamp=None, num_ai_chan = 2):
             elif what == "aio":
                 nchan = num_ai_chan
                 dtype = ONIX_DATA_FORMAT["aio"]
-            data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
+            data = _load_binary_file(
+                breakout_file,
+                dtype=dtype,
+                nchan=nchan,
+                cut_if_not_multiple=cut_if_not_multiple,
+            )
             output[what] = data
     return output
 
@@ -252,42 +345,44 @@ def load_bno055(
         output[what] = data
     return output
 
+
 def load_camera_times(camera_dir):
     """
-    Loads the metadata of the setup cameras. 
+    Loads the metadata of the setup cameras.
     Args:
         camera_dir(str or Path): the complete path to the camera output directory
     Returns:
-        output(dict): a dictionary containing one key per camera. Inside, a dictionary with the metadata of the camera. 
+        output(dict): a dictionary containing one key per camera. Inside, a dictionary with the metadata of the camera.
     """
     camera_dir = Path(camera_dir)
-    
+
     # Check if provided path is a directory
     if not camera_dir.is_dir():
         raise IOError(f"{camera_dir} is not a directory")
-    
+
     # Search for all files containing the word 'camera' and ending with 'timestamps'
-    camera_files = list(camera_dir.glob('*camera*timestamps*'))
-    
+    camera_files = list(camera_dir.glob("*camera*timestamps*"))
+
     # If no valid files found, raise an error
     if not camera_files:
         raise IOError(f"Could not find any timestamp files in {camera_dir}")
-    
+
     output = dict()
     seen_names = set()  # Set to track seen camera names
-    
+
     for cam_file in camera_files:
         # Use the part before '_timestamps' as the key for the dictionary
-        key = cam_file.stem.split('_timestamps')[0]
-        
+        key = cam_file.stem.split("_timestamps")[0]
+
         # Check for duplicate names
         if key in seen_names:
             raise ValueError(f"Duplicate timestamp file detected for camera: {key}")
-        
+
         seen_names.add(key)
         output[key] = pd.read_csv(cam_file)
-    
+
     return output
+
 
 def convert_ephys(
     uint16_file, target, nchan=64, overwrite=False, batch_size=1e6, verbose=True
@@ -375,11 +470,15 @@ def _find_files(folder, timestamp, prefix):
     return valid_files
 
 
-def _load_binary_file(file_path, dtype, nchan, order="F"):
+def _load_binary_file(file_path, dtype, nchan, order="F", cut_if_not_multiple=False):
     file_path = Path(file_path)
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
-        raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
+        if cut_if_not_multiple:
+            print(f"Warning: Data in {file_path} is not a multiple of {nchan}. Cutting")
+            n_pts = int(n_pts // nchan * nchan)
+        else:
+            raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
     n_time = int(n_pts / nchan)
     shape = (nchan, n_time) if nchan != 1 else None
     data = np.memmap(file_path, dtype=dtype, mode="r", order=order, shape=shape)
