@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.optimize import curve_fit
 import flexiznam as flz
 from cottage_analysis.preprocessing import synchronisation
+from cottage_analysis.analysis import find_depth_neurons
 from pathlib import Path
 
 
@@ -321,3 +322,42 @@ def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0
         CI_low = []
         CI_high = []
     return CI_low, CI_high
+
+
+def choose_trials_subset(trials_df, choose_trials):
+    depth_list = find_depth_neurons.find_depth_list(trials_df)
+    trial_number = len(trials_df) // len(depth_list)
+
+    if choose_trials == None:  # fit all trials
+        trials_df_chosen = trials_df
+        sfx = ""
+        choose_trial_nums = np.arange(trial_number)
+    else:
+        if choose_trials == "odd":  # fit odd trials
+            trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
+            # choose odd trials from trials_df
+            for depth in depth_list:
+                trials_df_depth = trials_df[trials_df.depth == depth]
+                trials_df_depth = trials_df_depth.iloc[::2, :]
+                trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
+            choose_trial_nums = np.arange(trial_number)[::2]
+        if choose_trials == "even":  # fit even trials
+            trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
+            # choose even trials from trials_df
+            for depth in depth_list:
+                trials_df_depth = trials_df[trials_df.depth == depth]
+                trials_df_depth = trials_df_depth.iloc[1::2, :]
+                trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
+            choose_trial_nums = np.arange(trial_number)[1::2]
+        if choose_trials is not None and isinstance(
+            choose_trials, list
+        ):  # if choose_trials is a given list
+            trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
+            for depth in depth_list:
+                trials_df_depth = trials_df[trials_df.depth == depth]
+                trials_df_depth = trials_df.iloc[choose_trials, :]
+                trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
+            choose_trial_nums = choose_trials
+        sfx = "_crossval"
+        
+    return trials_df_chosen, choose_trial_nums, sfx
