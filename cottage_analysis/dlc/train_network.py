@@ -19,11 +19,23 @@ if __name__ == "__main__":
         # should be on camp
         ROOT_DIR = "/camp/lab/znamenskiyp/home/"
 
-    model_folder = "shared/projects/DLC_models/all_eyes_2023"
+    model_folder = "shared/projects/DLC_models/wehrcam_detect_eye"
     config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
+
+    import tensorflow
+
+    print(f"Using tensorflow {tensorflow.__version__}", flush=True)
+    from tensorflow.python.client import device_lib
+
+    def get_available_devices():
+        local_device_protos = device_lib.list_local_devices()
+        return [x.name for x in local_device_protos]
+
+    print("Available devices:")
+    print(get_available_devices(), flush=True)
 
     import deeplabcut
 
     print("TRAIN")
-    deeplabcut.train_network(config_file, maxiters=100000)
+    deeplabcut.train_network(config_file, maxiters=50000, saveiters=1000)
     print("Done")

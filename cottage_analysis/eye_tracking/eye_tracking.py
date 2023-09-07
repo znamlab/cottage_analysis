@@ -3,17 +3,17 @@ from pathlib import Path
 import yaml
 import pandas as pd
 import numpy as np
-from functools import partial
 import flexiznam as flz
 from znamutils import slurm_it
-from cottage_analysis.eye_tracking import slurm_job, diagnostic, eye_model_fitting
+from cottage_analysis.eye_tracking import diagnostic, eye_model_fitting
 
 envs = flz.PARAMETERS["conda_envs"]
 
 
 def run_all(
     flexilims_session,
-    dlc_model,
+    dlc_model_detect,
+    dlc_model_tracking,
     camera_ds_name,
     origin_id=None,
     conflicts="abort",
@@ -24,8 +24,10 @@ def run_all(
 
     Args:
         flexilims_session (flexilims.Session): Flexilims session
-        dlc_model (str): Name of the dlc model to use, must be in the `DLC_MODELS`
-            project
+        dlc_model_detect (str): Name of the dlc model to use for eye detection and
+            initial cropping, must be in the `DLC_MODELS` project
+        dlc_model_tracking (str): Name of the dlc model to use for eye tracking, must
+            be in the `DLC_MODELS` project
         camera_ds_name (str): Name of the camera dataset on flexilims.
         origin_id (str, optional): ID of the origin dataset on flexilims. If None,
             origin is read from the camera dataset. Defaults to None.
@@ -65,7 +67,7 @@ def run_all(
     ds.path_full.mkdir(parents=True, exist_ok=True)
     job_id = dlc_pupil(
         camera_ds_name,
-        model_name=dlc_model,
+        model_name=dlc_model_detect,
         project=project,
         crop=False,
         conflicts=conflicts,
@@ -88,7 +90,7 @@ def run_all(
     ds.path_full.mkdir(parents=True, exist_ok=True)
     job_id = dlc_pupil(
         camera_ds_name,
-        model_name=dlc_model,
+        model_name=dlc_model_tracking,
         project=project,
         crop=True,
         conflicts=conflicts,
@@ -218,9 +220,13 @@ def delete_tracking_dataset(ds, flexilims_session):
 
 @slurm_it(
     conda_env=envs["dlc"],
-    module_list=["cuDNN/8.1.1.33-CUDA-11.2.1"],
+    module_list=["cuDNN"],
     slurm_options=dict(
-        ntasks=1, time="12:00:00", mem="32G", gres="gpu:1", partition="gpu"
+        ntasks=1,
+        time="12:00:00",
+        mem="32G",
+        gres="gpu:1",
+        partition="gpu",
     ),
 )
 def dlc_pupil(
@@ -321,6 +327,19 @@ def dlc_pupil(
     # import dlc only in functions that need it as it takes a long time to load
     import deeplabcut
 
+    # check that it will use the GPU
+    import tensorflow
+
+    print(f"Using tensorflow {tensorflow.__version__}", flush=True)
+    from tensorflow.python.client import device_lib
+
+    def get_available_devices():
+        local_device_protos = device_lib.list_local_devices()
+        return [x.name for x in local_device_protos]
+
+    print("Available devices:")
+    print(get_available_devices(), flush=True)
+
     out = deeplabcut.analyze_videos(**analyse_kwargs)
 
     dlc_output = target_folder / f"{video_path.stem}{out}.h5"
@@ -340,7 +359,8 @@ def dlc_pupil(
 
     # Save diagnostic plot
     print("Saving diagnostic plot", flush=True)
-    diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds)
+    if not crop:
+        diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds)
     return ds, ds.path_full
 
 
@@ -422,8 +442,8 @@ def create_crop_file(camera_ds, dlc_ds):
     borders = np.zeros((4, 2))
     for iw, w in enumerate(
         (
-            "left_eye_corner",
-            "right_eye_corner",
+            "temporal_eye_corner",
+            "nasal_eye_corner",
             "top_eye_lid",
             "bottom_eye_lid",
         )
@@ -434,7 +454,7 @@ def create_crop_file(camera_ds, dlc_ds):
         borders[iw, :] = v
 
     borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
-    borders += ((np.diff(borders, axis=0) * 0.2).T @ np.array([[-1, 1]])).T
+    borders += ((np.diff(borders, axis=0) * 0.3).T @ np.array([[-1, 1]])).T
     for i, w in enumerate(["width", "height"]):
         borders[:, i] = np.clip(borders[:, i], 0, metadata[w])
     borders = borders.astype(int)
