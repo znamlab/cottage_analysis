@@ -6,6 +6,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # make sure we use a backend that can run in headless mode
 
+MODEL = "headfixed_detect_eye"
 
 if __name__ == "__main__":
     import socket
@@ -19,7 +20,7 @@ if __name__ == "__main__":
         # should be on camp
         ROOT_DIR = "/camp/lab/znamenskiyp/home/"
 
-    model_folder = "shared/projects/DLC_models/wehrcam_detect_eye"
+    model_folder = f"shared/projects/DLC_models/{model}"
     config_file = os.path.join(ROOT_DIR, model_folder, "config.yaml")
 
     import tensorflow
@@ -36,6 +37,6 @@ if __name__ == "__main__":
 
     import deeplabcut
 
-    print("TRAIN")
+    print(f"TRAIN model {MODEL} using {config_file}")
     deeplabcut.train_network(config_file, maxiters=50000, saveiters=1000)
     print("Done")
