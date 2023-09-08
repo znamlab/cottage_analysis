@@ -361,12 +361,19 @@ def generate_imaging_df(
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )
+    spks_fname = (
+        "spks_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "spks.npy"
+    )
     dffs = []
+    spks = []
     for iplane in range(int(nplanes)):
         dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
+        spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
     dffs = np.vstack(dffs).T
+    spks = np.vstack(spks).T
     # convert dffs to list of arrays
     imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
+    imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
     return imaging_df
 
 
