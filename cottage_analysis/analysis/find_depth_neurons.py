@@ -75,41 +75,18 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
     return mean_dff_arr
 
 
-def find_depth_neurons(
-    session_name,
-    trials_df,
-    neurons_ds,
-    flexilims_session=None,
-    project=None,
-    rs_thr=0.2,
-    alpha=0.05,
-    ops=None,
-):
+def find_depth_neurons(trials_df, rs_thr=0.2, alpha=0.05):
     """Find depth neurons from all ROIs segmented.
 
     Args:
-        session_name (str): session name. {Mouse}_{Session}.
         trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
-        flexilims_session (Series, optional): flexilims session object. Defaults to None.
-        project (str, optional): project name. Defaults to None. Must be provided if flexilims_session is None.
         rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
-        ops (dict, optional): dictionary of parameters. Defaults to None.
 
     Returns:
         neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
 
     """
-    # session paths
-    assert flexilims_session is not None or project is not None
-    if flexilims_session is None:
-        flexilims_session = flz.get_flexilims_session(project_id=project)
-    exp_session = flz.get_entity(
-        datatype="session", name=session_name, flexilims_session=flexilims_session
-    )
-    root = Path(flz.PARAMETERS["data_root"]["processed"])
-    session_folder = root / exp_session.path
-
     # Create an empty datafrom for neurons_df
     neurons_df = pd.DataFrame(
         columns=[
@@ -138,12 +115,7 @@ def find_depth_neurons(
             np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
         ]
 
-    ops = {
-        "depth_neuron_criteria": "anova",
-        "depth_neuron_RS_threshold": rs_thr,
-    }
-
-    return neurons_df, neurons_ds, ops
+    return neurons_df
 
 
 def fit_preferred_depth(
