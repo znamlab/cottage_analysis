@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import flexiznam as flz
 from cottage_analysis.io_module.harp import load_harpmessage
+from cottage_analysis.io_module import onix as onix_io
+from cottage_analysis.preprocessing import onix as onix_prepro
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
@@ -15,7 +17,8 @@ def find_monitor_frames(
     flexilims_session,
     photodiode_protocol=5,
     conflicts="skip",
-    photodiode_recording=None,
+    harp_recording=None,
+    onix_recording=None,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -26,36 +29,42 @@ def find_monitor_frames(
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
             Either 2 or 5 for now. Defaults to 5.
         conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
-        photodiode_recording (str or pandas.Series): recording name or recording entry
-            from flexilims containing the photodiode signal. If None, use vis_stim_recording.
-            Defaults to None.
+        harp_recording (str or pandas.Series): recording name or recording entry
+            from flexilims containing the photodiode signal. If None use
+            vis_stim_recording. Defaults to None.
+        onix_recording (str or pandas.Series): recording name or recording entry
+            from flexilims containing the analog photodiode signal. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
 
     """
     assert conflicts in ["skip", "overwrite", "abort"]
-    # Find paths
-    if type(vis_stim_recording) == str:
-        vis_stim_recording = flz.get_entity(
-            datatype="recording",
-            name=vis_stim_recording,
-            flexilims_session=flexilims_session,
-        )
-        if vis_stim_recording is None:
-            raise ValueError(f"Recording {vis_stim_recording} does not exist.")
-    if photodiode_recording is None:
-        photodiode_recording = vis_stim_recording
-    elif type(photodiode_recording) == str:
-        photodiode_recording = flz.get_entity(
-            datatype="recording",
-            name=photodiode_recording,
-            flexilims_session=flexilims_session,
-        )
-        if photodiode_recording is None:
-            raise ValueError(f"Recording {photodiode_recording} does not exist.")
 
-    # Load files
+    # parsing input
+    def get_str_or_recording(recording):
+        if recording is None:
+            return None
+        elif type(recording) == str:
+            recording = flz.get_entity(
+                datatype="recording",
+                name=recording,
+                flexilims_session=flexilims_session,
+            )
+            if recording is None:
+                raise ValueError(f"Recording {recording} does not exist.")
+            return recording
+        else:
+            return recording
+
+    vis_stim_recording = get_str_or_recording(vis_stim_recording)
+    if harp_recording is None:
+        harp_recording = vis_stim_recording
+    else:
+        harp_recording = get_str_or_recording(harp_recording)
+        onix_recording = get_str_or_recording(onix_recording)
+
+    # Create output and reload
     monitor_frames_ds = flz.Dataset.from_origin(
         origin_id=vis_stim_recording["id"],
         dataset_type="monitor_frames",
@@ -66,22 +75,34 @@ def find_monitor_frames(
         print("Loading existing monitor frames...")
         return pd.read_pickle(monitor_frames_ds.path_full)
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
-    
-    # Get frame log
-    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
-    frame_log = pd.read_csv(raw / vis_stim_recording.path / "FrameLog.csv")
 
     # Get photodiode
-    try:
-        harp_messages, harp_ds = load_harpmessage(
-            recording=vis_stim_recording,
-            flexilims_session=flexilims_session,
-            conflicts="skip",
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    harp_message, harp_ds = load_harpmessage(
+        recording=harp_recording,
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    if onix_recording is None:
+        # get the photodiode from harp directly
+        photodiode = harp_message["photodiode"]
+        analog_time = harp_message["analog_time"]
+    else:
+        breakout = onix_io.load_breakout(raw / onix_recording.path)
+        onix_data = onix_prepro.preprocess_onix_recording(
+            dict(breakout_data=breakout, harp_message=harp_message)
         )
+        ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
+        photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
+        analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
 
+    # Get frame log
+    frame_log = pd.read_csv(raw / vis_stim_recording.path / "FrameLog.csv")
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
+    print(f"Frame rate is {frame_rate:.0f} Hz.")
+
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
     diagnostics_folder = (
         monitor_frames_ds.path_full.parent / "diagnostics" / "frame_sync"
@@ -96,8 +117,8 @@ def find_monitor_frames(
             plot_dir=diagnostics_folder,
         )
         frames_df = find_frames.sync_by_frame_alternating(
-            photodiode=harp_messages["photodiode"],
-            analog_time=harp_messages["analog_time"],
+            photodiode=photodiode,
+            analog_time=analog_time,
             frame_rate=frame_rate,
             **params,
         )
@@ -118,8 +139,8 @@ def find_monitor_frames(
         )
         frames_df, _ = find_frames.sync_by_correlation(
             frame_log,
-            harp_messages["analog_time"],
-            harp_messages["photodiode"],
+            photodiode_time=analog_time,
+            photodiode_signal=photodiode,
             **params,
         )
     params["photodiode_protocol"] = photodiode_protocol

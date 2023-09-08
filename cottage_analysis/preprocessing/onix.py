@@ -24,14 +24,6 @@ def preprocess_onix_recording(data, breakout_di_names=None, debounce_window=1000
         data["harp_message"], data["breakout_data"]["digital_inputs"]["oni_clock_di"]
     )
     data["harp2onix"], data["onix2harp"] = h2o, o2h
-
-    # add onix time to vis stim logs
-    for w in data["vis_stim_log"]:
-        if "HarpTime" in data["vis_stim_log"][w]:
-            harp_time = data["vis_stim_log"][w]["HarpTime"]
-            data["vis_stim_log"][w]["onix_clock"] = data["harp2onix"](harp_time)
-        else:
-            print("No HarpTime in %s" % w)
     return data
 
 
