@@ -9,15 +9,15 @@ import flexiznam as flz
 import numpy as np
 
 
-def check_cropping(dlc_ds, camera_ds, rotate180=False):
+def check_cropping(dlc_ds, camera_ds, rotate180=False, overwrite="skip"):
     dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
     dlc_results = pd.read_hdf(dlc_file)
 
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
     crop_file = dlc_ds.path_full / f"{video_path.stem}_crop_tracking.yml"
 
-    if not crop_file.exists():
-        print(f"File {crop_file} does not exist")
+    if not crop_file.exists() or overwrite != "skip":
+        print(f"Creating {crop_file}")
         cottage_tracking.create_crop_file(camera_ds, dlc_ds)
 
     with open(crop_file, "r") as f:
