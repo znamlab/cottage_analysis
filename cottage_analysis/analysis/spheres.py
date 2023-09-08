@@ -2,10 +2,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.imaging.common.find_frames import find_imaging_frames
-from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 import flexiznam as flz
-from pathlib import Path
+from scipy.stats import pearsonr
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -563,3 +561,125 @@ def sync_all_recordings(
     print(f"Finished concatenating vs_df and trials_df")
 
     return vs_df_all, trials_df_all
+
+
+def laplace_matrix(nx, ny):
+    Ls = []
+    for x in range(nx):
+        for y in range(ny):
+            m = np.zeros((nx, ny))
+            m[x, y] = 4
+            if x > 0:
+                m[x - 1, y] = -1
+            if x < m.shape[0] - 1:
+                m[x + 1, y] = -1
+            if y > 0:
+                m[x, y - 1] = -1
+            if y < m.shape[1] - 1:
+                m[x, y + 1] = -1
+            Ls.append(m.flatten())
+    L = np.stack(Ls, axis=0)
+    return L
+
+
+def fit_3d_rfs(
+    imaging_df, frames, reg_xy=100, reg_depth=20, shift_stim=2, use_col="dffs"
+):
+    """Fit 3D receptive fields using regularized least squares regression.
+    Runs on all ROIs in parallel.
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+        frames (np.array): array of frames
+        reg_xy (float): regularization constant for spatial regularization
+        reg_depth (float): regularization constant for depth regularization
+        shift_stim (int): number of frames to shift the stimulus by.
+            This is to account for the delay between the stimulus and the response.
+            Defaults to 2.
+        use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+
+    Returns:
+        coef (np.array): array of coefficients for each pixel
+        r2 (np.array): array of r2 for each pixel
+    """
+    resps = np.concatenate(imaging_df[use_col])
+    depths = imaging_df.depth.unique()
+    depths = depths[~np.isnan(depths)]
+    depths = depths[depths > 0]
+    depths = np.sort(depths)
+    L = laplace_matrix(frames.shape[1], frames.shape[2])
+    Ls = []
+    Ls_depth = []
+
+    trial_idx = np.zeros_like(imaging_df.depth)
+    trial_idx[1:] = np.cumsum(np.abs(np.diff(imaging_df.depth)) > 0)
+    trial_idx[imaging_df.depth.isna()] = np.nan
+    trial_idx[imaging_df.depth < 0] = np.nan
+    imaging_df["trial_idx"] = trial_idx
+
+    X = np.zeros((frames.shape[0], frames.shape[1] * frames.shape[2] * depths.shape[0]))
+    # randomly split trials into training and test
+    np.random.seed(0)
+    train_trials = np.random.choice(
+        np.unique(imaging_df.trial_idx),
+        int(np.unique(imaging_df.trial_idx).shape[0] * 0.8),
+        replace=False,
+    )
+    test_trials = np.setdiff1d(np.unique(imaging_df.trial_idx), train_trials)
+    train_idx = np.isin(imaging_df.trial_idx, train_trials)
+    test_idx = np.isin(imaging_df.trial_idx, test_trials)
+
+    for idepth, depth in enumerate(depths):
+        depth_idx = imaging_df.depth == depth
+        m = np.roll(np.reshape(frames, (frames.shape[0], -1)), shift_stim, axis=0)[
+            depth_idx, :
+        ]
+        # place m in the right columns of X
+        X[depth_idx, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = m
+        # add regularization penalty on the second derivative of the coefficients
+        # in X and Y
+        L_xy = np.zeros((L.shape[0], X.shape[1]))
+        L_xy[:, idepth * L.shape[1] : (idepth + 1) * L.shape[1]] = L
+        Ls.append(L_xy)
+        # add regularization penalty on the second derivative of the coefficients
+        # along the depth axis
+        L_depth = np.zeros((m.shape[1], X.shape[1]))
+        L_depth[:, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = (
+            np.identity(m.shape[1]) * 2
+        )
+        if idepth > 0:
+            L_depth[:, (idepth - 1) * m.shape[1] : idepth * m.shape[1]] = -np.identity(
+                m.shape[1]
+            )
+        if idepth < depths.shape[0] - 1:
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
+        Ls_depth.append(L_depth)
+
+    L = np.concatenate(Ls, axis=0)
+    L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
+    L_depth = np.concatenate(Ls_depth, axis=0)
+    L_depth = np.concatenate([L_depth, np.zeros((L_depth.shape[0], 1))], axis=1)
+    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
+    X_train = np.concatenate([X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0)
+    # add bias
+    Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+
+    Y_train = np.concatenate(
+        [
+            resps[train_idx, :],
+            np.zeros((L.shape[0], resps.shape[1])),
+            np.zeros((L_depth.shape[0], resps.shape[1])),
+        ],
+        axis=0,
+    )
+    coef = Q @ Y_train
+    Y_pred = X[test_idx, :] @ coef
+    residual_var = np.sum((Y_pred - resps[test_idx, :]) ** 2, axis=0)
+    total_var = np.sum(
+        (resps[test_idx, :] - np.mean(resps[test_idx, :], axis=0)) ** 2, axis=0
+    )
+    r2 = 1 - residual_var / total_var
+
+    return coef, r2
