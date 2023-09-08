@@ -3,7 +3,12 @@ import pandas as pd
 from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
 import flexiznam as flz
-from scipy.stats import pearsonr
+from scipy.optimize import curve_fit
+from cottage_analysis.analysis.fit_gaussian_blob import (
+    gaussian_3d_rf,
+    Gaussian3DRFParams,
+)
+from functools import partial
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -682,4 +687,73 @@ def fit_3d_rfs(
     )
     r2 = 1 - residual_var / total_var
 
-    return coef, r2
+    (zs, ys, xs) = np.meshgrid(
+        np.arange(depths.shape[0]),
+        np.arange(frames.shape[1]),
+        np.arange(frames.shape[2]),
+        indexing="ij",
+    )
+    gaussian_3d_rf_ = partial(gaussian_3d_rf, min_sigma=0.25)
+    coef_fit = coef.copy()
+    params = []
+    lower_bounds = Gaussian3DRFParams(
+        log_amplitude=-np.inf,
+        x0=0,
+        y0=0,
+        log_sigma_x2=-np.inf,
+        log_sigma_y2=-np.inf,
+        theta=0,
+        offset=-np.inf,
+        z0=0,
+        log_sigma_z=-np.inf,
+    )
+    upper_bounds = Gaussian3DRFParams(
+        log_amplitude=np.inf,
+        x0=frames.shape[2],
+        y0=frames.shape[1],
+        log_sigma_x2=np.inf,
+        log_sigma_y2=np.inf,
+        theta=np.pi / 2,
+        offset=np.inf,
+        z0=depths.shape[0],
+        log_sigma_z=np.inf,
+    )
+    for roi in tqdm(range(resps.shape[1])):
+        c = np.reshape(
+            coef[:-1, roi], (depths.shape[0], frames.shape[1], frames.shape[2])
+        )
+        # get the index of the maximum of c
+        idepth, iy, ix = np.unravel_index(np.argmax(c), c.shape)
+        p0 = Gaussian3DRFParams(
+            log_amplitude=np.log(c.max()),
+            x0=ix,
+            y0=iy,
+            log_sigma_x2=0,
+            log_sigma_y2=0,
+            theta=0,
+            offset=0,
+            z0=idepth,
+            log_sigma_z=0,
+        )
+        try:
+            popt = curve_fit(
+                gaussian_3d_rf_,
+                (xs.flatten(), ys.flatten(), zs.flatten()),
+                c.flatten(),
+                p0=p0,
+            )[0]
+        except RuntimeError:
+            print(f"Warning: failed to fit gaussian to ROI {roi}")
+            popt = p0
+        coef_fit[:-1, roi] = gaussian_3d_rf_(
+            (xs.flatten(), ys.flatten(), zs.flatten()), *popt
+        )
+        params.append(popt)
+    Y_pred = X[test_idx, :] @ coef_fit
+    residual_var = np.sum((Y_pred - resps[test_idx, :]) ** 2, axis=0)
+    total_var = np.sum(
+        (resps[test_idx, :] - np.mean(resps[test_idx, :], axis=0)) ** 2, axis=0
+    )
+    r2_fit = 1 - residual_var / total_var
+
+    return coef, r2, coef_fit, r2_fit, params

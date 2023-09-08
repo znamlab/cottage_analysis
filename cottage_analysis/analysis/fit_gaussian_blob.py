@@ -30,6 +30,21 @@ GratingParams = namedtuple(
     ],
 )
 
+Gaussian3DRFParams = namedtuple(
+    "Gaussian3DRFParams",
+    [
+        "log_amplitude",
+        "x0",
+        "y0",
+        "log_sigma_x2",
+        "log_sigma_y2",
+        "theta",
+        "offset",
+        "z0",
+        "log_sigma_z",
+    ],
+)
+
 
 def gaussian_2d(
     xy_tuple,
@@ -78,6 +93,35 @@ def direction_tuning(alpha, alpha0, log_kappa, dsi):
     )
     peak_resp = np.exp(kappa) + (1 - dsi) * np.exp(-kappa)
     return resp / peak_resp
+
+
+def gaussian_3d_rf(
+    stim_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    theta,
+    offset,
+    z0,
+    log_sigma_z,
+    min_sigma,
+):
+    (x, y, z) = stim_tuple
+    rf = gaussian_2d(
+        (x, y),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        theta,
+        offset,
+        min_sigma,
+    )
+    depth_tuning = np.exp(-((z - z0) ** 2) / (2 * np.exp(log_sigma_z) ** 2))
+    return rf * depth_tuning
 
 
 def grating_tuning(
