@@ -19,6 +19,9 @@ def run_all(
     conflicts="abort",
     use_slurm=True,
     dependency=None,
+    run_tracking=True,
+    run_ellipse=True,
+    run_reprojection=True,
 ):
     """Run all preprocessing steps for a session
 
@@ -35,6 +38,11 @@ def run_all(
             on flexilims. Defaults to "abort".
         use_slurm (bool, optional): Start slurm jobs. Defaults to True.
         dependency (str, optional): Dependency for slurm. Defaults to None.
+        run_tracking (bool, optional): Whether to run the tracking. Defaults to True.
+        run_ellipse (bool, optional): Whether to run the ellipse fitting. Defaults to
+            True.
+        run_reprojection (bool, optional): Whether to run the eye reprojection.
+            Defaults to True.
 
     Returns:
         pandas.DataFrame: Log of job id of each step
@@ -79,67 +87,69 @@ def run_all(
         job_id = None
     log["dlc_uncropped"] = job_id if job_id is not None else "Done"
 
-    # Run cropped DLC
-    ds = flz.Dataset.from_origin(
-        origin_id=origin_id,
-        dataset_type="dlc_tracking",
-        flexilims_session=flexilims_session,
-        base_name=f"{cam_ds_short_name}_dlc_tracking_cropped",
-        conflicts=conflicts,
-    )
-    ds.path_full.mkdir(parents=True, exist_ok=True)
-    job_id = dlc_pupil(
-        camera_ds_name,
-        model_name=dlc_model_tracking,
-        project=project,
-        crop=True,
-        conflicts=conflicts,
-        use_slurm=use_slurm,
-        job_dependency=job_id,
-        slurm_folder=ds.path_full,
-    )
-    if not use_slurm:
-        job_id = None
+    if run_tracking:
+        # Run cropped DLC
+        ds = flz.Dataset.from_origin(
+            origin_id=origin_id,
+            dataset_type="dlc_tracking",
+            flexilims_session=flexilims_session,
+            base_name=f"{cam_ds_short_name}_dlc_tracking_cropped",
+            conflicts=conflicts,
+        )
+        ds.path_full.mkdir(parents=True, exist_ok=True)
+        job_id = dlc_pupil(
+            camera_ds_name,
+            model_name=dlc_model_tracking,
+            project=project,
+            crop=True,
+            conflicts=conflicts,
+            use_slurm=use_slurm,
+            job_dependency=job_id,
+            slurm_folder=ds.path_full,
+        )
+        if not use_slurm:
+            job_id = None
 
-    log["dlc_cropped"] = job_id if job_id is not None else "Done"
+        log["dlc_cropped"] = job_id if job_id is not None else "Done"
 
-    # Run ellipse fit
-    job_id = fit_ellipse(
-        camera_ds_name,
-        project=project,
-        likelihood_threshold=None,
-        job_dependency=job_id,
-        use_slurm=use_slurm,
-        slurm_folder=ds.path_full,
-    )
-    log["ellipse"] = job_id if job_id is not None else "Done"
-    if not use_slurm:
-        job_id = None
+    if run_ellipse:
+        # Run ellipse fit
+        job_id = fit_ellipse(
+            camera_ds_name,
+            project=project,
+            likelihood_threshold=None,
+            job_dependency=job_id,
+            use_slurm=use_slurm,
+            slurm_folder=ds.path_full,
+        )
+        log["ellipse"] = job_id if job_id is not None else "Done"
+        if not use_slurm:
+            job_id = None
 
-    # Run reprojection
-    ds = flz.Dataset.from_origin(
-        origin_id=origin_id,
-        dataset_type="eye_reprojection",
-        flexilims_session=flexilims_session,
-        base_name=f"{cam_ds_short_name}_eye_reprojection",
-        conflicts=conflicts,
-    )
-    ds.path_full.mkdir(parents=True, exist_ok=True)
-    job_id = run_reproject_eye(
-        project=project,
-        camera_ds_name=camera_ds_name,
-        theta0=np.deg2rad(20),
-        phi0=0,
-        conflicts="skip",
-        use_slurm=use_slurm,
-        slurm_folder=ds.path_full,
-        job_dependency=job_id,
-    )
-    if not use_slurm:
-        job_id = None
+    if run_reprojection:
+        # Run reprojection
+        ds = flz.Dataset.from_origin(
+            origin_id=origin_id,
+            dataset_type="eye_reprojection",
+            flexilims_session=flexilims_session,
+            base_name=f"{cam_ds_short_name}_eye_reprojection",
+            conflicts=conflicts,
+        )
+        ds.path_full.mkdir(parents=True, exist_ok=True)
+        job_id = run_reproject_eye(
+            project=project,
+            camera_ds_name=camera_ds_name,
+            theta0=np.deg2rad(20),
+            phi0=0,
+            conflicts="skip",
+            use_slurm=use_slurm,
+            slurm_folder=ds.path_full,
+            job_dependency=job_id,
+        )
+        if not use_slurm:
+            job_id = None
 
-    log["reprojection"] = job_id if job_id is not None else "Done"
-
+        log["reprojection"] = job_id if job_id is not None else "Done"
     return pd.Series(log)
 
 
@@ -268,6 +278,7 @@ def dlc_pupil(
         base_name=basename,
         conflicts=conflicts,
     )
+
     if ds.flexilims_status() != "not online":
         if conflicts == "overwrite":
             delete_tracking_dataset(
@@ -275,6 +286,8 @@ def dlc_pupil(
             )
         elif conflicts == "skip":
             print(f"  DLC {suffix} already done. Skip")
+            ### temporary
+            diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds)
             return ds, ds.path_full
 
     processed_path = flz.get_data_root(which="processed", project="DLC_models")
