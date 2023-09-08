@@ -11,7 +11,11 @@ print = partial(print, flush=True)
 
 
 def find_monitor_frames(
-    recording, flexilims_session, photodiode_protocol=5, conflicts="skip"
+    vis_stim_recording,
+    flexilims_session,
+    photodiode_protocol=5,
+    conflicts="skip",
+    photodiode_recording=None,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -22,6 +26,9 @@ def find_monitor_frames(
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
             Either 2 or 5 for now. Defaults to 5.
         conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
+        photodiode_recording (str or pandas.Series): recording name or recording entry
+            from flexilims containing the photodiode signal. If None, use vis_stim_recording.
+            Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -29,15 +36,28 @@ def find_monitor_frames(
     """
     assert conflicts in ["skip", "overwrite", "abort"]
     # Find paths
-    if type(recording) == str:
-        recording = flz.get_entity(
-            datatype="recording", name=recording, flexilims_session=flexilims_session
+    if type(vis_stim_recording) == str:
+        vis_stim_recording = flz.get_entity(
+            datatype="recording",
+            name=vis_stim_recording,
+            flexilims_session=flexilims_session,
         )
-        if recording is None:
-            raise ValueError(f"Recording {recording} does not exist.")
+        if vis_stim_recording is None:
+            raise ValueError(f"Recording {vis_stim_recording} does not exist.")
+    if photodiode_recording is None:
+        photodiode_recording = vis_stim_recording
+    elif type(photodiode_recording) == str:
+        photodiode_recording = flz.get_entity(
+            datatype="recording",
+            name=photodiode_recording,
+            flexilims_session=flexilims_session,
+        )
+        if photodiode_recording is None:
+            raise ValueError(f"Recording {photodiode_recording} does not exist.")
+
     # Load files
     monitor_frames_ds = flz.Dataset.from_origin(
-        origin_id=recording["id"],
+        origin_id=vis_stim_recording["id"],
         dataset_type="monitor_frames",
         flexilims_session=flexilims_session,
         conflicts=conflicts,
@@ -45,17 +65,21 @@ def find_monitor_frames(
     if monitor_frames_ds.flexilims_status() != "not online" and conflicts == "skip":
         print("Loading existing monitor frames...")
         return pd.read_pickle(monitor_frames_ds.path_full)
-
-    harp_messages, harp_ds = load_harpmessage(
-        recording=recording, flexilims_session=flexilims_session, conflicts="skip"
-    )
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
+    
+    # Get frame log
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    frame_log = pd.read_csv(raw / vis_stim_recording.path / "FrameLog.csv")
 
-    frame_log = pd.read_csv(
-        harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
-    )
+    # Get photodiode
+    try:
+        harp_messages, harp_ds = load_harpmessage(
+            recording=vis_stim_recording,
+            flexilims_session=flexilims_session,
+            conflicts="skip",
+        )
+
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
-
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
@@ -131,7 +155,7 @@ def generate_vs_df(
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
     monitor_frames_df = find_monitor_frames(
-        recording=recording,
+        vis_stim_recording=recording,
         flexilims_session=flexilims_session,
         photodiode_protocol=photodiode_protocol,
         conflicts="skip",
