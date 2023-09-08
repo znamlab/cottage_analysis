@@ -1,20 +1,13 @@
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import flexiznam as flm
+import flexiznam as flz
 from cottage_analysis.io_module import harp
-from cottage_analysis.io_module.harp import read_harp_binary
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
 )
-
-
 ONIX_SAMPLING = 250e6
-
-
-RAW = Path(flm.PARAMETERS["data_root"]["raw"])
-PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
 
 
 def load_onix_recording(
@@ -24,8 +17,6 @@ def load_onix_recording(
     vis_stim_recording=None,
     onix_recording=None,
     allow_reload=True,
-    raw_folder=RAW,
-    processed_folder=PROCESSED,
     di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
 ):
     """Main function calling all the subfunctions
@@ -43,6 +34,8 @@ def load_onix_recording(
     Returns:
         data (dict): a dictionary with one element per datasource
     """
+    raw_folder = flz.get_data_root("raw", project=project)
+    processed_folder = flz.get_data_root("raw", project=project)
     session_folder = raw_folder / project / mouse / session
     assert session_folder.is_dir()
 
@@ -50,7 +43,7 @@ def load_onix_recording(
     out = dict()
 
     if vis_stim_recording is not None:
-        flm_sess = flm.get_flexilims_session(project)
+        flm_sess = flz.get_flexilims_session(project)
         harp_message, harp_ds = harp.load_harpmessage(
             recording="_".join([mouse, session, vis_stim_recording]),
             flexilims_session=flm_sess,
