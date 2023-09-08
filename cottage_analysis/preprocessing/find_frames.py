@@ -531,8 +531,8 @@ def plot_frame_detection_report(
     for f in example_frames:
         fig = plt.figure()
         ax = fig.add_subplot(2, 1, 1)
-        ax.plot(debug_dict["filtered_trace"][slice(*w + f)], label="filtered")
         ax.plot(photodiode[slice(*w + f)], label="raw")
+        ax.plot(debug_dict["filtered_trace"][slice(*w + f)], label="filtered")
         ax.legend(loc="upper right")
         for iw, which_pk in enumerate([debug_dict["all_pks"], border_index]):
             v = (which_pk > w[0] + f) & (which_pk < w[1] + f)
