@@ -1,79 +1,13 @@
 import numpy as np
 import pandas as pd
 import flexiznam as flz
-from cottage_analysis.io_module import harp
+from cottage_analysis.io_module.harp import load_harpmessage
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 from functools import partial
 
 print = partial(print, flush=True)
-
-
-def load_harpmessage(
-    recording,
-    flexilims_session,
-    conflicts="skip",
-    di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
-):
-    """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
-
-    Args:
-        recording (str or pandas.Series): recording name or recording entry from flexilims.
-        flexilims_session (flexilims.Flexilims): flexilims session.
-        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
-        di_names (tuple): names of the digital inputs to rename harp meassage. Defaults
-            to ("frame_triggers", "lick_detection", "di2_encoder_initial_state").
-
-    Returns:
-        np.array: loaded harpmessages as numpy array
-        flz.Dataset: raw harp dataset
-
-    """
-    assert conflicts in ["skip", "overwrite", "abort"]
-    if type(recording) == str:
-        recording = flz.get_entity(
-            datatype="recording", name=recording, flexilims_session=flexilims_session
-        )
-
-    npz_ds = flz.Dataset.from_origin(
-        origin_id=recording["id"],
-        dataset_type="harp_npz",
-        flexilims_session=flexilims_session,
-        conflicts=conflicts,
-    )
-    # find raw data
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording["name"],
-        dataset_type="harp",
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
-        print("Loading existing harp_npz file...")
-        return np.load(npz_ds.path_full), harp_ds
-
-    # parse harp message
-    print("Saving harp messages into npz...")
-    params = dict(
-        harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
-        di_names=di_names,
-        verbose=False,
-    )
-    harp_messages = harp.load_harp(**params)
-
-    # save npz
-    npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
-    npz_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(npz_ds.path_full, **harp_messages)
-
-    # update flexilims
-    npz_ds.extra_attributes.update(params)
-    npz_ds.update_flexilims(mode="overwrite")
-
-    print("Harp messages saved.")
-    return harp_messages, harp_ds
 
 
 def find_monitor_frames(

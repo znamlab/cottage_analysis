@@ -2,8 +2,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import flexiznam as flm
-from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.io_module.harp import load_harp
+from cottage_analysis.io_module import harp
+from cottage_analysis.io_module.harp import read_harp_binary
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
@@ -51,7 +51,7 @@ def load_onix_recording(
 
     if vis_stim_recording is not None:
         flm_sess = flm.get_flexilims_session(project)
-        harp_message, harp_ds = synchronisation.load_harpmessage(
+        harp_message, harp_ds = harp.load_harpmessage(
             recording="_".join([mouse, session, vis_stim_recording]),
             flexilims_session=flm_sess,
             conflicts="skip" if allow_reload else "overwrite",
