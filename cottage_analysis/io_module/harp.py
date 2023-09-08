@@ -18,7 +18,6 @@ import mmap
 import pandas as pd
 
 from cottage_analysis.io_module import harp
-from cottage_analysis.preprocessing.synchronisation import print
 
 ENCODER_CPR = 4096
 WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
