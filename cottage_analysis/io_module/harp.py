@@ -125,19 +125,19 @@ def load_harpmessage(
         di_names=di_names,
         verbose=False,
     )
-    harp_messages = harp.read_harp_binary(**params)
+    harp_message = harp.read_harp_binary(**params)
 
     # save npz
     npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
     npz_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(npz_ds.path_full, **harp_messages)
+    np.savez(npz_ds.path_full, **harp_message)
 
     # update flexilims
     npz_ds.extra_attributes.update(params)
     npz_ds.update_flexilims(mode="overwrite")
 
     print("Harp messages saved.")
-    return harp_messages, harp_ds
+    return harp_message, harp_ds
 
 
 def read_harp_binary(
