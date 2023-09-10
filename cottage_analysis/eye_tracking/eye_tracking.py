@@ -286,10 +286,6 @@ def dlc_pupil(
             )
         elif conflicts == "skip":
             print(f"  DLC {suffix} already done. Skip")
-            ### temporary
-            diagnostic.check_cropping(
-                dlc_ds=ds, camera_ds=camera_ds, overwrite=overwrite
-            )
             return ds, ds.path_full
 
     processed_path = flz.get_data_root(which="processed", project="DLC_models")
@@ -298,7 +294,7 @@ def dlc_pupil(
     if crop:
         uncropped_ds = ds_dict["uncropped"]
         assert uncropped_ds is not None, "No uncropped dataset found"
-        crop_info = create_crop_file(camera_ds, uncropped_ds, overwrite=overwrite)
+        crop_info = create_crop_file(camera_ds, uncropped_ds, conflicts=conflicts)
         crop_info = [
             crop_info["xmin"],
             crop_info["xmax"],
@@ -375,7 +371,7 @@ def dlc_pupil(
     # Save diagnostic plot
     print("Saving diagnostic plot", flush=True)
     if not crop:
-        diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds, overwrite=overwrite)
+        diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds, conflicts=conflicts)
     return ds, ds.path_full
 
 
@@ -420,7 +416,7 @@ def get_tracking_datasets(camera_ds, flexilims_session):
     return ds_dict
 
 
-def create_crop_file(camera_ds, dlc_ds, overwrite="skip"):
+def create_crop_file(camera_ds, dlc_ds, conflicts="skip"):
     """Create a crop file for DLC tracking
 
     Uses the results of the uncropped tracking to find the crop area and save it in a
@@ -430,8 +426,8 @@ def create_crop_file(camera_ds, dlc_ds, overwrite="skip"):
         camera_ds (flexilims.Dataset): Camera dataset, must contain project information
         dlc_ds (flexilims.Dataset): dlc_tracking dataset, containing uncropped tracking
             results
-        overwrite (str, optional): How to handle conflicts when creating the crop file.
-            Defaults to "skip".
+        conflicts (str, optional): How to handle conflicts when creating the crop file.
+            Defaults to "skip". Behaviour is "skip" or "overwrite", won't append.
 
     Returns:
         dict: Crop information
@@ -444,7 +440,7 @@ def create_crop_file(camera_ds, dlc_ds, overwrite="skip"):
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
     crop_file = dlc_ds.path_full / f"{video_path.stem}_crop_tracking.yml"
 
-    if crop_file.exists() and (overwrite == "skip" or (not overwrite)):
+    if crop_file.exists() and (conflicts == "skip" or (not conflicts)):
         print("Crop file already exists. Delete manually to redo")
         with open(crop_file, "r") as fhandle:
             crop_info = yaml.safe_load(fhandle)
