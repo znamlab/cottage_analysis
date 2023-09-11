@@ -117,11 +117,11 @@ def gaussian_3d_rf(
         log_sigma_x2,
         log_sigma_y2,
         theta,
-        offset,
+        0,
         min_sigma,
     )
     depth_tuning = np.exp(-((z - z0) ** 2) / (2 * np.exp(log_sigma_z) ** 2))
-    return rf * depth_tuning
+    return rf * depth_tuning + offset
 
 
 def grating_tuning(
@@ -148,11 +148,11 @@ def grating_tuning(
         log_sigma_x2,
         log_sigma_y2,
         theta,
-        offset,
+        0,
         min_sigma,
     )
     tuning = direction_tuning(alpha, alpha0, log_kappa, dsi)
-    return gaussian * tuning
+    return gaussian * tuning + offset
 
 
 def fit_rs_of_tuning(
