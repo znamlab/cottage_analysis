@@ -588,7 +588,13 @@ def laplace_matrix(nx, ny):
 
 
 def fit_3d_rfs(
-    imaging_df, frames, reg_xy=100, reg_depth=20, shift_stim=2, use_col="dffs"
+    imaging_df,
+    frames,
+    reg_xy=100,
+    reg_depth=20,
+    shift_stim=2,
+    use_col="dffs",
+    splits=(0.6, 0.2, 0.2),
 ):
     """Fit 3D receptive fields using regularized least squares regression.
     Runs on all ROIs in parallel.
@@ -605,8 +611,9 @@ def fit_3d_rfs(
 
     Returns:
         coef (np.array): array of coefficients for each pixel
-        r2 (np.array): array of r2 for each pixel
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
     """
+    assert np.sum(splits) == 1
     resps = np.concatenate(imaging_df[use_col])
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
@@ -623,16 +630,29 @@ def fit_3d_rfs(
     imaging_df["trial_idx"] = trial_idx
 
     X = np.zeros((frames.shape[0], frames.shape[1] * frames.shape[2] * depths.shape[0]))
-    # randomly split trials into training and test
+    # randomly split trials into training, validation and test
     np.random.seed(0)
     train_trials = np.random.choice(
         np.unique(imaging_df.trial_idx),
-        int(np.unique(imaging_df.trial_idx).shape[0] * 0.8),
+        int(np.unique(imaging_df.trial_idx).shape[0] * splits[0]),
         replace=False,
     )
-    test_trials = np.setdiff1d(np.unique(imaging_df.trial_idx), train_trials)
+    validation_trials = np.random.choice(
+        np.unique(imaging_df.trial_idx)[
+            ~np.isin(np.unique(imaging_df.trial_idx), train_trials)
+        ],
+        int(np.unique(imaging_df.trial_idx).shape[0] * splits[1]),
+        replace=False,
+    )
+    test_trials = np.unique(imaging_df.trial_idx)[
+        ~np.isin(
+            np.unique(imaging_df.trial_idx),
+            np.concatenate([train_trials, validation_trials]),
+        )
+    ]
     train_idx = np.isin(imaging_df.trial_idx, train_trials)
     test_idx = np.isin(imaging_df.trial_idx, test_trials)
+    validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
 
     for idepth, depth in enumerate(depths):
         depth_idx = imaging_df.depth == depth
@@ -680,17 +700,27 @@ def fit_3d_rfs(
         axis=0,
     )
     coef = Q @ Y_train
-    Y_pred = X[test_idx, :] @ coef
-    residual_var = np.sum((Y_pred - resps[test_idx, :]) ** 2, axis=0)
-    total_var = np.sum(
-        (resps[test_idx, :] - np.mean(resps[test_idx, :], axis=0)) ** 2, axis=0
-    )
-    r2 = 1 - residual_var / total_var
 
+    r2 = []
+    for idx in (train_idx, validation_idx, test_idx):
+        if np.sum(idx) == 0:
+            r2.append(np.nan)
+            continue
+        Y_pred = X[idx, :] @ coef
+        residual_var = np.sum((Y_pred - resps[idx, :]) ** 2, axis=0)
+        total_var = np.sum(
+            (resps[idx, :] - np.mean(resps[idx, :], axis=0)) ** 2, axis=0
+        )
+        r2.append(1 - residual_var / total_var)
+
+    return coef, r2
+
+
+def fit_3d_rfs_gaussian(coef, nx, ny, nz):
     (zs, ys, xs) = np.meshgrid(
-        np.arange(depths.shape[0]),
-        np.arange(frames.shape[1]),
-        np.arange(frames.shape[2]),
+        np.arange(nz),
+        np.arange(ny),
+        np.arange(nx),
         indexing="ij",
     )
     gaussian_3d_rf_ = partial(gaussian_3d_rf, min_sigma=0.25)
@@ -709,19 +739,18 @@ def fit_3d_rfs(
     )
     upper_bounds = Gaussian3DRFParams(
         log_amplitude=np.inf,
-        x0=frames.shape[2],
-        y0=frames.shape[1],
+        x0=nx,
+        y0=ny,
         log_sigma_x2=np.inf,
         log_sigma_y2=np.inf,
         theta=np.pi / 2,
         offset=np.inf,
-        z0=depths.shape[0],
+        z0=nz,
         log_sigma_z=np.inf,
     )
-    for roi in tqdm(range(resps.shape[1])):
-        c = np.reshape(
-            coef[:-1, roi], (depths.shape[0], frames.shape[1], frames.shape[2])
-        )
+    # TODO using bounds currently is not working well
+    for roi in tqdm(range(coef.shape[1])):
+        c = np.reshape(coef[:-1, roi], (nz, ny, nx))
         # get the index of the maximum of c
         idepth, iy, ix = np.unravel_index(np.argmax(c), c.shape)
         p0 = Gaussian3DRFParams(
@@ -749,11 +778,4 @@ def fit_3d_rfs(
             (xs.flatten(), ys.flatten(), zs.flatten()), *popt
         )
         params.append(popt)
-    Y_pred = X[test_idx, :] @ coef_fit
-    residual_var = np.sum((Y_pred - resps[test_idx, :]) ** 2, axis=0)
-    total_var = np.sum(
-        (resps[test_idx, :] - np.mean(resps[test_idx, :], axis=0)) ** 2, axis=0
-    )
-    r2_fit = 1 - residual_var / total_var
-
-    return coef, r2, coef_fit, r2_fit, params
+    return coef_fit, params
