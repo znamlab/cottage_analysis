@@ -9,6 +9,7 @@ from cottage_analysis.analysis.fit_gaussian_blob import (
     Gaussian3DRFParams,
 )
 from functools import partial
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -594,7 +595,7 @@ def fit_3d_rfs(
     reg_depth=20,
     shift_stim=2,
     use_col="dffs",
-    splits=(0.6, 0.2, 0.2),
+    k_folds=5,
 ):
     """Fit 3D receptive fields using regularized least squares regression.
     Runs on all ROIs in parallel.
@@ -613,7 +614,6 @@ def fit_3d_rfs(
         coef (np.array): array of coefficients for each pixel
         r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
     """
-    assert np.sum(splits) == 1
     resps = np.concatenate(imaging_df[use_col])
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
@@ -624,36 +624,20 @@ def fit_3d_rfs(
     Ls_depth = []
 
     trial_idx = np.zeros_like(imaging_df.depth)
-    trial_idx[1:] = np.cumsum(np.abs(np.diff(imaging_df.depth)) > 0)
+    trial_idx = np.cumsum(
+        np.logical_and(np.abs(imaging_df.depth.diff()) > 0, imaging_df.depth > 0)
+    )
     trial_idx[imaging_df.depth.isna()] = np.nan
     trial_idx[imaging_df.depth < 0] = np.nan
     imaging_df["trial_idx"] = trial_idx
+    # get the depth of the first row for each trial
+    depths_by_trial = imaging_df.groupby("trial_idx").first().depth
+    # convert to categorical codes
+    depths_by_trial.update(pd.Categorical(depths_by_trial).codes)
+    # convert index to int
+    depths_by_trial.index = depths_by_trial.index.astype(int)
 
     X = np.zeros((frames.shape[0], frames.shape[1] * frames.shape[2] * depths.shape[0]))
-    # randomly split trials into training, validation and test
-    np.random.seed(0)
-    train_trials = np.random.choice(
-        np.unique(imaging_df.trial_idx),
-        int(np.unique(imaging_df.trial_idx).shape[0] * splits[0]),
-        replace=False,
-    )
-    validation_trials = np.random.choice(
-        np.unique(imaging_df.trial_idx)[
-            ~np.isin(np.unique(imaging_df.trial_idx), train_trials)
-        ],
-        int(np.unique(imaging_df.trial_idx).shape[0] * splits[1]),
-        replace=False,
-    )
-    test_trials = np.unique(imaging_df.trial_idx)[
-        ~np.isin(
-            np.unique(imaging_df.trial_idx),
-            np.concatenate([train_trials, validation_trials]),
-        )
-    ]
-    train_idx = np.isin(imaging_df.trial_idx, train_trials)
-    test_idx = np.isin(imaging_df.trial_idx, test_trials)
-    validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
-
     for idepth, depth in enumerate(depths):
         depth_idx = imaging_df.depth == depth
         m = np.roll(np.reshape(frames, (frames.shape[0], -1)), shift_stim, axis=0)[
@@ -686,34 +670,52 @@ def fit_3d_rfs(
     L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
     L_depth = np.concatenate(Ls_depth, axis=0)
     L_depth = np.concatenate([L_depth, np.zeros((L_depth.shape[0], 1))], axis=1)
-    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
-    X_train = np.concatenate([X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0)
     # add bias
-    Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
+    coefs = []
+    Y_pred = np.zeros((resps.shape[0], resps.shape[1], 2)) * np.nan
+    # randomly split trials into training, validation and test
+    stratified_kfold = StratifiedKFold(n_splits=k_folds, random_state=42, shuffle=True)
+    for train_trials, test_trials in stratified_kfold.split(
+        depths_by_trial.index, depths_by_trial.values
+    ):
+        # train_trials, validation_trials = train_test_split(
+        #     train_trials,
+        #     stratify=depths_by_trial.iloc[train_trials].values,
+        #     test_size=(1 / (k_folds - 1)),
+        # )
+        test_idx = np.isin(imaging_df.trial_idx, test_trials)
+        train_idx = np.isin(imaging_df.trial_idx, train_trials)
+        # validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
+        X_train = np.concatenate(
+            [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
+        )
+        Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
 
-    Y_train = np.concatenate(
-        [
-            resps[train_idx, :],
-            np.zeros((L.shape[0], resps.shape[1])),
-            np.zeros((L_depth.shape[0], resps.shape[1])),
-        ],
+        Y_train = np.concatenate(
+            [
+                resps[train_idx, :],
+                np.zeros((L.shape[0], resps.shape[1])),
+                np.zeros((L_depth.shape[0], resps.shape[1])),
+            ],
+            axis=0,
+        )
+        coef = Q @ Y_train
+        coefs.append(coef)
+        # compute predictions for this fold
+        for isplit, idx in enumerate([train_idx, test_idx]):
+            Y_pred[idx, :, isplit] = X[idx, :] @ coef
+    use_idx = np.isfinite(Y_pred[:, 0, 0])
+    residual_var = np.sum(
+        (Y_pred[use_idx, :, :] - resps[use_idx, :, np.newaxis]) ** 2,
         axis=0,
     )
-    coef = Q @ Y_train
+    total_var = np.sum(
+        (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
+    )
+    r2 = 1 - residual_var / total_var[:, np.newaxis]
 
-    r2 = []
-    for idx in (train_idx, validation_idx, test_idx):
-        if np.sum(idx) == 0:
-            r2.append(np.nan)
-            continue
-        Y_pred = X[idx, :] @ coef
-        residual_var = np.sum((Y_pred - resps[idx, :]) ** 2, axis=0)
-        total_var = np.sum(
-            (resps[idx, :] - np.mean(resps[idx, :], axis=0)) ** 2, axis=0
-        )
-        r2.append(1 - residual_var / total_var)
-
-    return coef, r2
+    return coefs, r2
 
 
 def fit_3d_rfs_gaussian(coef, nx, ny, nz):
