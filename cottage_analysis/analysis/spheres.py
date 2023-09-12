@@ -4,9 +4,12 @@ from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
 import flexiznam as flz
 from scipy.optimize import curve_fit
+from scipy.stats import zscore
 from cottage_analysis.analysis.fit_gaussian_blob import (
     gaussian_3d_rf,
+    gabor_3d_rf,
     Gaussian3DRFParams,
+    Gabor3DRFParams,
 )
 from functools import partial
 from sklearn.model_selection import StratifiedKFold, train_test_split
@@ -171,9 +174,9 @@ def draw_spheres(
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
 
-
     Returns:
         virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
+
     """
 
     radius, azimuth, elevation = cartesian_to_spherical(sphere_x, sphere_y, sphere_z)
@@ -614,7 +617,7 @@ def fit_3d_rfs(
         coef (np.array): array of coefficients for each pixel
         r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
     """
-    resps = np.concatenate(imaging_df[use_col])
+    resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
     depths = depths[depths > 0]
@@ -673,6 +676,7 @@ def fit_3d_rfs(
     # add bias
     X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
     coefs = []
+
     Y_pred = np.zeros((resps.shape[0], resps.shape[1], 2)) * np.nan
     # randomly split trials into training, validation and test
     stratified_kfold = StratifiedKFold(n_splits=k_folds, random_state=42, shuffle=True)
@@ -718,57 +722,77 @@ def fit_3d_rfs(
     return coefs, r2
 
 
-def fit_3d_rfs_gaussian(coef, nx, ny, nz):
+def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):
     (zs, ys, xs) = np.meshgrid(
         np.arange(nz),
         np.arange(ny),
         np.arange(nx),
         indexing="ij",
     )
-    gaussian_3d_rf_ = partial(gaussian_3d_rf, min_sigma=0.25)
+    if model == "gaussian":
+        func = partial(gaussian_3d_rf, min_sigma=0.25)
+    else:
+        func = partial(gabor_3d_rf, min_sigma=0.25)
+
     coef_fit = coef.copy()
     params = []
-    lower_bounds = Gaussian3DRFParams(
-        log_amplitude=-np.inf,
-        x0=0,
-        y0=0,
-        log_sigma_x2=-np.inf,
-        log_sigma_y2=-np.inf,
-        theta=0,
-        offset=-np.inf,
-        z0=0,
-        log_sigma_z=-np.inf,
-    )
-    upper_bounds = Gaussian3DRFParams(
-        log_amplitude=np.inf,
-        x0=nx,
-        y0=ny,
-        log_sigma_x2=np.inf,
-        log_sigma_y2=np.inf,
-        theta=np.pi / 2,
-        offset=np.inf,
-        z0=nz,
-        log_sigma_z=np.inf,
-    )
+    # lower_bounds = Gaussian3DRFParams(
+    #     log_amplitude=-np.inf,
+    #     x0=0,
+    #     y0=0,
+    #     log_sigma_x2=-np.inf,
+    #     log_sigma_y2=-np.inf,
+    #     theta=0,
+    #     offset=-np.inf,
+    #     z0=0,
+    #     log_sigma_z=-np.inf,
+    # )
+    # upper_bounds = Gaussian3DRFParams(
+    #     log_amplitude=np.inf,
+    #     x0=nx,
+    #     y0=ny,
+    #     log_sigma_x2=np.inf,
+    #     log_sigma_y2=np.inf,
+    #     theta=np.pi / 2,
+    #     offset=np.inf,
+    #     z0=nz,
+    #     log_sigma_z=np.inf,
+    # )
     # TODO using bounds currently is not working well
     for roi in tqdm(range(coef.shape[1])):
         c = np.reshape(coef[:-1, roi], (nz, ny, nx))
         # get the index of the maximum of c
         idepth, iy, ix = np.unravel_index(np.argmax(c), c.shape)
-        p0 = Gaussian3DRFParams(
-            log_amplitude=np.log(c.max()),
-            x0=ix,
-            y0=iy,
-            log_sigma_x2=0,
-            log_sigma_y2=0,
-            theta=0,
-            offset=0,
-            z0=idepth,
-            log_sigma_z=0,
-        )
+        if model == "gaussian":
+            p0 = Gaussian3DRFParams(
+                log_amplitude=np.log(c.max()),
+                x0=ix,
+                y0=iy,
+                log_sigma_x2=0,
+                log_sigma_y2=0,
+                theta=0,
+                offset=0,
+                z0=idepth,
+                log_sigma_z=0,
+            )
+        else:
+            p0 = Gabor3DRFParams(
+                log_amplitude=np.log(c.max()),
+                x0=ix,
+                y0=iy,
+                log_sigma_x2=0,
+                log_sigma_y2=0,
+                theta=0,
+                offset=0,
+                log_sf=0,
+                alpha=0,
+                phase=0,
+                z0=idepth,
+                log_sigma_z=0,
+            )
         try:
             popt = curve_fit(
-                gaussian_3d_rf_,
+                func,
                 (xs.flatten(), ys.flatten(), zs.flatten()),
                 c.flatten(),
                 p0=p0,
@@ -776,8 +800,6 @@ def fit_3d_rfs_gaussian(coef, nx, ny, nz):
         except RuntimeError:
             print(f"Warning: failed to fit gaussian to ROI {roi}")
             popt = p0
-        coef_fit[:-1, roi] = gaussian_3d_rf_(
-            (xs.flatten(), ys.flatten(), zs.flatten()), *popt
-        )
+        coef_fit[:-1, roi] = func((xs.flatten(), ys.flatten(), zs.flatten()), *popt)
         params.append(popt)
     return coef_fit, params

@@ -45,6 +45,24 @@ Gaussian3DRFParams = namedtuple(
     ],
 )
 
+Gabor3DRFParams = namedtuple(
+    "Gabor3DRFParams",
+    [
+        "log_amplitude",
+        "x0",
+        "y0",
+        "log_sigma_x2",
+        "log_sigma_y2",
+        "theta",
+        "offset",
+        "log_sf",
+        "alpha",
+        "phase",
+        "z0",
+        "log_sigma_z",
+    ],
+)
+
 
 def gaussian_2d(
     xy_tuple,
@@ -72,6 +90,119 @@ def gaussian_2d(
         -(a * ((x - x0) ** 2) + 2 * b * (x - x0) * (y - y0) + c * ((y - y0) ** 2))
     )
     return g
+
+
+def gabor_2d(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    theta,
+    offset,
+    min_sigma,
+    log_sf,
+    alpha,
+    phase,
+):
+    """2D Gabor function.
+
+    Args:
+        xy_tuple (tuple): (x, y) tuple
+        log_amplitude (float): log amplitude
+        x0 (float): x center
+        y0 (float): y center
+        log_sigma_x2 (float): log sigma x squared
+        log_sigma_y2 (float): log sigma y squared
+        theta (float): orientation
+        offset (float): offset
+        min_sigma (float): minimum sigma
+        log_sf (float): spatial frequency
+        alpha (float): grating direction in radians
+        phase (float): preferred grating direction
+
+    Returns:
+        gabor: gabor value
+
+    """
+    (x, y) = xy_tuple
+    sine_grating = np.sin(
+        2 * np.pi * np.exp(log_sf) * (x * np.cos(alpha) + y * np.sin(alpha) - phase)
+    )
+
+    gabor = (
+        gaussian_2d(
+            xy_tuple,
+            log_amplitude,
+            x0,
+            y0,
+            log_sigma_x2,
+            log_sigma_y2,
+            theta,
+            0,
+            min_sigma,
+        )
+        * sine_grating
+    )
+    return gabor + offset
+
+
+def gabor_3d_rf(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    theta,
+    offset,
+    log_sf,
+    alpha,
+    phase,
+    z0,
+    log_sigma_z,
+    min_sigma,
+):
+    """3D Gabor function.
+
+    Args:
+        xy_tuple (tuple): (x, y) tuple
+        log_amplitude (float): log amplitude
+        x0 (float): x center
+        y0 (float): y center
+        log_sigma_x2 (float): log sigma x squared
+        log_sigma_y2 (float): log sigma y squared
+        theta (float): orientation
+        offset (float): offset
+        min_sigma (float): minimum sigma
+        log_sf (float): spatial frequency
+        alpha (float): grating direction in radians
+        phase (float): grating phase
+        z0 (float): z center
+        log_sigma_z (float): log sigma z
+
+    Returns:
+        gabor: gabor value
+
+    """
+    (x, y, z) = xy_tuple
+    gabor = gabor_2d(
+        (x, y),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        theta,
+        0,
+        min_sigma,
+        log_sf,
+        alpha,
+        phase,
+    )
+    depth_tuning = np.exp(-((z - z0) ** 2) / (2 * np.exp(log_sigma_z) ** 2))
+    return gabor * depth_tuning + offset
 
 
 def direction_tuning(alpha, alpha0, log_kappa, dsi):
