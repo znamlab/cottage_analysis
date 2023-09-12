@@ -112,3 +112,75 @@ def add_colorbar():
     ]
     plt.axes(cbar_pos)
     plt.colorbar(cax=plt.gca(), label="dF/F")
+
+
+def plot_tuning_stats(neurons_df, trials_df, rsq_thresh=0.1):
+    neurons_df["speed0"] = neurons_df["tf0"] - neurons_df["sf0"]
+    included_neurons = neurons_df[neurons_df["rsq"] > rsq_thresh]
+    # plot distribution of preferred SF, TF, and DSI
+    # also plot a scatter plot of preferred SF vs TF colorcoded by DSI
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    axes[0].hist(included_neurons["sf0"], bins=20)
+    axes[0].set_xlabel("Preferred SF (cyc/deg)")
+    axes[0].set_xticks(
+        np.log(trials_df["SpatialFrequency"].unique()),
+        labels=trials_df["SpatialFrequency"].unique(),
+    )
+    axes[0].set_ylabel("Number of neurons")
+
+    axes[1].hist(included_neurons["tf0"], bins=20)
+    axes[1].set_xlabel("Preferred TF (Hz)")
+    axes[1].set_xticks(
+        np.log(trials_df["TemporalFrequency"].unique()),
+        labels=trials_df["TemporalFrequency"].unique(),
+    )
+    axes[1].set_ylabel("Number of neurons")
+
+    axes[2].hist(included_neurons["dsi"], bins=20)
+    axes[2].set_xlabel("DSI")
+    axes[2].set_ylabel("Number of neurons")
+
+    plt.figure(figsize=(5, 5))
+    plt.scatter(
+        included_neurons["sf0"],
+        included_neurons["tf0"],
+        c=included_neurons["dsi"],
+        s=10,
+        alpha=0.8,
+    )
+    plt.gca().set_xlabel("Preferred SF (cyc/deg)")
+    plt.gca().set_xticks(
+        np.log(trials_df["SpatialFrequency"].unique()),
+        labels=trials_df["SpatialFrequency"].unique(),
+        rotation=90,
+    )
+    plt.gca().set_ylabel("Preferred TF (Hz)")
+    plt.gca().set_yticks(
+        np.log(trials_df["TemporalFrequency"].unique()),
+        labels=trials_df["TemporalFrequency"].unique(),
+    )
+    plt.gca().set_aspect("equal")
+    # add a colorbar for the scatter plot
+    cbar = plt.colorbar(plt.gca().collections[0], ax=plt.gca())
+    cbar.set_label("DSI")
+    plt.tight_layout()
+
+    # select neurons tuned to SF and TF within a certain range
+    sf_range = [np.log(0.005), np.log(0.64)]
+    tf_range = [np.log(0.25), np.log(32)]
+    included_neurons = included_neurons[
+        (included_neurons["sf0"] > sf_range[0])
+        & (included_neurons["sf0"] < sf_range[1])
+        & (included_neurons["tf0"] > tf_range[0])
+        & (included_neurons["tf0"] < tf_range[1])
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+    axes[0].scatter(
+        included_neurons["dsi"],
+        included_neurons["speed0"],
+        alpha=0.8,
+    )
+    axes[0].set_xlabel("DSI")
+    axes[0].set_ylabel("Speed (deg/s)")
+    axes[0].set_yticks(np.log([1, 10, 100, 1000]), labels=[1, 10, 100, 1000])
