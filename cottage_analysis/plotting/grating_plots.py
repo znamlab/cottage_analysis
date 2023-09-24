@@ -50,7 +50,7 @@ def plot_sftf_fit(
             responses,
             extent=[sf_range[0], sf_range[1], tf_range[0], tf_range[1]],
             origin="lower",
-            vmax=np.exp(popt.log_amplitude) + popt.offset,
+            vmax=(np.exp(popt.log_amplitude) + popt.offset),
             vmin=popt.offset,
             cmap="magma",
         )
@@ -79,13 +79,32 @@ def plot_sftf_tuning(dff_mean, roi):
         dir_tuning[roi],
     )
 
+    sf_range = np.sort(dff_mean.SpatialFrequency.unique())
+    tf_range = np.sort(dff_mean.TemporalFrequency.unique())
+    angle_range = np.sort(dff_mean.Angle.unique())
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
-    for i, angle in enumerate(dff_mean.Angle.unique()):
-        this_angle = dff_mean[dff_mean.Angle == angle]
+    for i, angle in enumerate(angle_range):
+        # this_angle = dff_mean[dff_mean.Angle == angle]
+        # # create a matrix of responses as a function of SpatialFrequency and TemporalFrequency
+        # this_angle = this_angle.pivot(
+        #     index="SpatialFrequency", columns="TemporalFrequency", values=roi
+        # )
+        this_angle_df = dff_mean[dff_mean.Angle == angle]
         # create a matrix of responses as a function of SpatialFrequency and TemporalFrequency
-        this_angle = this_angle.pivot(
-            index="SpatialFrequency", columns="TemporalFrequency", values=roi
+        this_angle = np.zeros(
+            (
+                len(sf_range),
+                len(tf_range),
+            )
         )
+        for isf, sf in enumerate(sf_range):
+            for itf, tf in enumerate(tf_range):
+                this_angle[isf, itf] = np.mean(
+                    this_angle_df[
+                        (this_angle_df.SpatialFrequency == sf)
+                        & (this_angle_df.TemporalFrequency == tf)
+                    ][roi]
+                )
         # create a subplot for each angle
         plt.subplot(3, 3, angle_pos[i])
         # plot a colormap of this_angle with tick labels
@@ -95,8 +114,15 @@ def plot_sftf_tuning(dff_mean, roi):
             vmin=0,
             vmax=dff_mean[roi].max(),
         )
-        plt.yticks(range(len(this_angle.columns)), this_angle.columns)
-        plt.xticks(range(len(this_angle.index)), this_angle.index, rotation=90)
+        plt.yticks(
+            range(len(tf_range)),
+            tf_range,
+        )
+        plt.xticks(
+            range(len(sf_range)),
+            sf_range,
+            rotation=90,
+        )
         plt.gca().invert_yaxis()
     # add a colorbar aligned to the bottom subplots without changing axis locations
     plt.tight_layout(pad=0.4)

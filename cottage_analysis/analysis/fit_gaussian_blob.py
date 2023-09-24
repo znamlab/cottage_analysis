@@ -9,6 +9,9 @@ from functools import partial
 
 print = partial(print, flush=True)
 
+# TODO:
+# 1. check iteration round number for RS OF fit (try on a few cells and see how many rounds are needed)
+
 Gaussian2DParams = namedtuple(
     "Gaussian2DParams",
     ["log_amplitude", "x0", "y0", "log_sigma_x2", "log_sigma_y2", "theta", "offset"],
@@ -115,34 +118,12 @@ def fit_rs_of_tuning(
     trials_df,
     neurons_df,
     neurons_ds,
+    choose_trials=None,
     rs_thr=0.01,
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
     niter=5,
     min_sigma=0.25,
-    conflicts="skip",
 ):
-    # session paths
-    session_folder = neurons_ds.path_full.parent
-
-    if conflicts == "skip":
-        return neurons_df, neurons_ds
-
-    # Initialize neurons_df with columns for RS/OF tuning
-    neurons_df = neurons_df.assign(
-        preferred_RS_closed_loop=np.nan,
-        preferred_OF_closed_loop=np.nan,
-        gaussian_blob_popt_closed_loop=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_closed_loop=np.nan,
-        preferred_RS_open_loop_actual=np.nan,
-        preferred_OF_open_loop_actual=np.nan,
-        gaussian_blob_popt_open_loop_actual=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_open_loop_actual=np.nan,
-        preferred_RS_open_loop_virtual=np.nan,
-        preferred_OF_open_loop_virtual=np.nan,
-        gaussian_blob_popt_open_loop_virtual=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_open_loop_virtual=np.nan,
-    )
-
     # Set bounds for gaussian fit params
     lower_bounds = Gaussian2DParams(
         log_amplitude=-np.inf,
@@ -179,22 +160,41 @@ def fit_rs_of_tuning(
             offset=np.random.normal(),
         )
 
-    # Loop through all protocols
+    # Initialize neurons_df with columns for RS/OF tuning
+    neurons_df = neurons_df.assign(
+        preferred_RS_closed_loop=np.nan,
+        preferred_OF_closed_loop=np.nan,
+        gaussian_blob_popt_closed_loop=[[np.nan]] * len(neurons_df),
+        gaussian_blob_rsq_closed_loop=np.nan,
+        preferred_RS_open_loop_actual=np.nan,
+        preferred_OF_open_loop_actual=np.nan,
+        gaussian_blob_popt_open_loop_actual=[[np.nan]] * len(neurons_df),
+        gaussian_blob_rsq_open_loop_actual=np.nan,
+        preferred_RS_open_loop_virtual=np.nan,
+        preferred_OF_open_loop_virtual=np.nan,
+        gaussian_blob_popt_open_loop_virtual=[[np.nan]] * len(neurons_df),
+        gaussian_blob_rsq_open_loop_virtual=np.nan,
+    )
+
+    # Loop through all protocols (closed loop and open loop)
     for iprotocol, is_closedloop in enumerate(trials_df.closed_loop.unique()):
         print(
-            f"---------Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}---------"
+            f"Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}..."
         )
         if is_closedloop:
-            protocol_sfx = "closed_loop"
+            protocol_sfx = "closedloop"
         else:
-            protocol_sfx = "open_loop"
+            protocol_sfx = "openloop"
         trials_df_protocol = trials_df[trials_df.closed_loop == is_closedloop]
+        trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
+            trials_df, choose_trials
+        )
 
         # Concatenate arrays of RS/OF/dff from all trials together
-        rs = np.concatenate(trials_df_protocol["RS_stim"].values)
-        rs_eye = np.concatenate(trials_df_protocol["RS_eye_stim"].values)
-        of = np.concatenate(trials_df_protocol["OF_stim"].values)
-        dff = np.concatenate(trials_df_protocol["dff_stim"].values, axis=0)
+        rs = np.concatenate(trials_df_fit["RS_stim"].values)
+        rs_eye = np.concatenate(trials_df_fit["RS_eye_stim"].values)
+        of = np.concatenate(trials_df_fit["OF_stim"].values)
+        dff = np.concatenate(trials_df_fit["dff_stim"].values, axis=0)
 
         # Take out the values where running is below a certain threshold
         running = (
@@ -219,42 +219,31 @@ def fit_rs_of_tuning(
             else:
                 rs_type = "_virtual"
             print(f"Fitting {protocol_sfx}{rs_type} running...")
-            for iroi in tqdm(range(dff.shape[1])):
+            for roi in tqdm(range(dff.shape[1])):
                 gaussian_2d_ = partial(gaussian_2d, min_sigma=min_sigma)
                 popt, rsq = common_utils.iterate_fit(
                     gaussian_2d_,
                     (rs_to_use, of),
-                    dff[:, iroi],
+                    dff[:, roi],
                     lower_bounds,
                     upper_bounds,
                     niter=niter,
                     p0_func=p0_func,
                 )
 
-                neurons_df.at[iroi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
+                neurons_df.at[roi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
                     popt[1]
                 )
                 neurons_df.at[
-                    iroi, f"preferred_OF_{protocol_sfx}{rs_type}"
+                    roi, f"preferred_OF_{protocol_sfx}{rs_type}"
                 ] = np.radians(
                     np.exp(popt[2])
                 )  # rad/s
                 # !! Calculated with RS in m and OF in degrees/s
-                neurons_df.at[
-                    iroi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"
-                ] = popt
-                neurons_df.loc[iroi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
-
-    # save neurons_df
-    neurons_df.to_pickle(session_folder / "neurons_df.pickle")
-
-    # update flexilims
-    neurons_ds.extra_attributes["fit_RSOF_rs_min"] = param_range["rs_min"]
-    neurons_ds.extra_attributes["fit_RSOF_rs_max"] = param_range["rs_max"]
-    neurons_ds.extra_attributes["fit_RSOF_of_min"] = param_range["of_min"]
-    neurons_ds.extra_attributes["fit_RSOF_of_max"] = param_range["of_max"]
-    neurons_ds.extra_attributes["fit_RSOF_min_sigma"] = min_sigma
-    neurons_ds.update_flexilims(mode="overwrite")
+                # neurons_df.at[
+                #     roi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"
+                # ] = popt
+                neurons_df.loc[roi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
 
     return neurons_df, neurons_ds
 
