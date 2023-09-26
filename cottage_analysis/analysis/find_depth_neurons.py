@@ -75,16 +75,23 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
     return mean_dff_arr
 
 
-def find_depth_neurons(trials_df, rs_thr=0.2, alpha=0.05):
+def find_depth_neurons(
+    trials_df,
+    neurons_ds,
+    rs_thr=0.2,
+    alpha=0.05,
+):
     """Find depth neurons from all ROIs segmented.
 
     Args:
         trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
+        neurons_ds (Series): flexilims dataset for neurons_df.
         rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
 
     Returns:
-        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI
+        (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the analysed properties for each ROI; flexilims dataset for neurons_df.
+
 
     """
     # Create an empty datafrom for neurons_df
@@ -115,7 +122,7 @@ def find_depth_neurons(trials_df, rs_thr=0.2, alpha=0.05):
             np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
         ]
 
-    return neurons_df
+    return neurons_df, neurons_ds
 
 
 def fit_preferred_depth(
@@ -130,7 +137,6 @@ def fit_preferred_depth(
     niter=10,
     min_sigma=0.5,
     k_folds=1,
-    ops=None,
 ):
     """Function to fit depth tuning with gaussian function
 
@@ -146,10 +152,9 @@ def fit_preferred_depth(
         niter (int, optional): Number of rounds of fitting iterations. Defaults to 10.
         min_sigma (float, optional): min sigma for gaussian fitting. Defaults to 0.5.
         k_folds (int, optional): Number of folds for k-fold cross-validation. Defaults to 1.
-        ops (dict, optional): Options for analysis. Defaults to None.
 
     Returns:
-        (pd.DataFrame, Series, dict): neurons_df, neurons_df, ops
+        (pd.DataFrame, Series): neurons_df, neurons_df
     """
 
     # Function to initialize depth tuning parameters
@@ -272,12 +277,4 @@ def fit_preferred_depth(
             )
             neurons_df.at[roi, f"depth_tuning_test_rsq{protocol_sfx}{sfx}"] = rsq
 
-    ops = {
-        "depth_fit_min_sigma": min_sigma,
-        "depth_fit_min": depth_min,
-        "depth_fit_max": depth_max,
-    }
-    if k_folds > 1:
-        ops["depth_fit_k_folds"] = k_folds
-
-    return neurons_df, neurons_ds, ops
+    return neurons_df, neurons_ds
