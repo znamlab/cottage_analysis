@@ -10,7 +10,27 @@ DEPTH_DICT = {8: np.uint8, 16: np.uint16}
 
 
 def load_video(data_folder, camera, order="F", metadata_file=None, binary_file=None):
-    """Load the video from a camera saved as raw binary file + metadata"""
+    """Load the video from a camera saved as raw binary file + metadata
+
+    The metadata file is a txt file with the following format:
+
+    ```
+    width: 640
+    height: 480
+    depth: 8
+    ```
+
+    Args:
+        data_folder (str): path to the folder containing the data
+        camera (str): name of the camera
+        order (str, optional): order of the frames in the binary file. Defaults to "F".
+        metadata_file (str, optional): path to the metadata file. Defaults to None.
+        binary_file (str, optional): path to the binary file. Defaults to None.
+
+    Returns:
+        np.ndarray: array of shape (height, width, frames)
+
+    """
     if metadata_file is None:
         metadata_file = os.path.join(data_folder, "%s_metadata.txt" % camera)
     assert os.path.isfile(metadata_file)
@@ -46,6 +66,22 @@ def write_array_to_video(
     """Write an array to a mp4 file
 
     The array must shape must be (lines/height x columns/width x frames)
+
+    Args:
+        target_file (str): path to the target file
+        video_array (np.ndarray): array to write
+        frame_rate (float): frame rate of the video
+        is_color (bool, optional): is the video color? Defaults to False.
+        verbose (bool, optional): print progress? Defaults to True.
+        codec (str, optional): codec to use. Defaults to "mp4v".
+        extension (str, optional): extension of the file. Defaults to ".mp4".
+        min_brightness (int, optional): minimum brightness. Defaults to None.
+        max_brightness (int, optional): maximum brightness. Defaults to None.
+        perc_saturation (int, optional): percentage of saturation to remove. Defaults to 0.
+        overwrite (bool, optional): overwrite the file if it exists. Defaults to False.
+
+    Returns:
+        None
     """
     if not target_file.endswith(extension):
         target_file += extension
@@ -114,7 +150,24 @@ def write_array_to_video(
 def deinterleave_camera(
     camera_file, target_file, make_grey=False, verbose=True, intrinsic_calibration=None
 ):
-    """Load a mini camera with interleaved frames"""
+    """Deinterleave a video file
+
+    This function is intended for Wehrcam, which save NTSC video as interlaced. The even
+    pixels correspond to the first acquired field, the odd pixels to the second field.
+    This function deinterleave the video and save it as a new file with the same
+    resolution by interpolating the missing pixels.
+
+    Args:
+        camera_file (str): path to the video file
+        target_file (str): path to the target file
+        make_grey (bool, optional): convert to grey? Defaults to False.
+        verbose (bool, optional): print progress? Defaults to True.
+        intrinsic_calibration (dict, optional): intrinsic calibration parameters.
+            Defaults to None.
+
+    Returns:
+        None
+    """
     camera_file = Path(camera_file)
     if not camera_file.exists():
         raise IOError("%s is not a file" % camera_file)
