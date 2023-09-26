@@ -202,6 +202,7 @@ def sync_by_correlation(
         fig_dict = dict()
 
     # Second step: cross correlation
+    print(len(frames_df), len(frame_log), len(photodiode_time))
     frames_df, db_di = run_cross_correlation(
         frames_df,
         frame_log,

@@ -3,7 +3,16 @@ import pandas as pd
 from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
 import flexiznam as flz
-from scipy.stats import pearsonr
+from scipy.optimize import curve_fit
+from scipy.stats import zscore
+from cottage_analysis.analysis.fit_gaussian_blob import (
+    gaussian_3d_rf,
+    gabor_3d_rf,
+    Gaussian3DRFParams,
+    Gabor3DRFParams,
+)
+from functools import partial
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -165,9 +174,9 @@ def draw_spheres(
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
 
-
     Returns:
         virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
+
     """
 
     radius, azimuth, elevation = cartesian_to_spherical(sphere_x, sphere_y, sphere_z)
@@ -583,7 +592,13 @@ def laplace_matrix(nx, ny):
 
 
 def fit_3d_rfs(
-    imaging_df, frames, reg_xy=100, reg_depth=20, shift_stim=2, use_col="dffs"
+    imaging_df,
+    frames,
+    reg_xy=100,
+    reg_depth=20,
+    shift_stim=2,
+    use_col="dffs",
+    k_folds=5,
 ):
     """Fit 3D receptive fields using regularized least squares regression.
     Runs on all ROIs in parallel.
@@ -600,9 +615,9 @@ def fit_3d_rfs(
 
     Returns:
         coef (np.array): array of coefficients for each pixel
-        r2 (np.array): array of r2 for each pixel
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
     """
-    resps = np.concatenate(imaging_df[use_col])
+    resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
     depths = depths[depths > 0]
@@ -612,23 +627,20 @@ def fit_3d_rfs(
     Ls_depth = []
 
     trial_idx = np.zeros_like(imaging_df.depth)
-    trial_idx[1:] = np.cumsum(np.abs(np.diff(imaging_df.depth)) > 0)
+    trial_idx = np.cumsum(
+        np.logical_and(np.abs(imaging_df.depth.diff()) > 0, imaging_df.depth > 0)
+    )
     trial_idx[imaging_df.depth.isna()] = np.nan
     trial_idx[imaging_df.depth < 0] = np.nan
     imaging_df["trial_idx"] = trial_idx
+    # get the depth of the first row for each trial
+    depths_by_trial = imaging_df.groupby("trial_idx").first().depth
+    # convert to categorical codes
+    depths_by_trial.update(pd.Categorical(depths_by_trial).codes)
+    # convert index to int
+    depths_by_trial.index = depths_by_trial.index.astype(int)
 
     X = np.zeros((frames.shape[0], frames.shape[1] * frames.shape[2] * depths.shape[0]))
-    # randomly split trials into training and test
-    np.random.seed(0)
-    train_trials = np.random.choice(
-        np.unique(imaging_df.trial_idx),
-        int(np.unique(imaging_df.trial_idx).shape[0] * 0.8),
-        replace=False,
-    )
-    test_trials = np.setdiff1d(np.unique(imaging_df.trial_idx), train_trials)
-    train_idx = np.isin(imaging_df.trial_idx, train_trials)
-    test_idx = np.isin(imaging_df.trial_idx, test_trials)
-
     for idepth, depth in enumerate(depths):
         depth_idx = imaging_df.depth == depth
         m = np.roll(np.reshape(frames, (frames.shape[0], -1)), shift_stim, axis=0)[
@@ -661,25 +673,133 @@ def fit_3d_rfs(
     L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
     L_depth = np.concatenate(Ls_depth, axis=0)
     L_depth = np.concatenate([L_depth, np.zeros((L_depth.shape[0], 1))], axis=1)
-    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
-    X_train = np.concatenate([X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0)
     # add bias
-    Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
+    coefs = []
 
-    Y_train = np.concatenate(
-        [
-            resps[train_idx, :],
-            np.zeros((L.shape[0], resps.shape[1])),
-            np.zeros((L_depth.shape[0], resps.shape[1])),
-        ],
+    Y_pred = np.zeros((resps.shape[0], resps.shape[1], 2)) * np.nan
+    # randomly split trials into training, validation and test
+    stratified_kfold = StratifiedKFold(n_splits=k_folds, random_state=42, shuffle=True)
+    for train_trials, test_trials in stratified_kfold.split(
+        depths_by_trial.index, depths_by_trial.values
+    ):
+        # train_trials, validation_trials = train_test_split(
+        #     train_trials,
+        #     stratify=depths_by_trial.iloc[train_trials].values,
+        #     test_size=(1 / (k_folds - 1)),
+        # )
+        test_idx = np.isin(imaging_df.trial_idx, test_trials)
+        train_idx = np.isin(imaging_df.trial_idx, train_trials)
+        # validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
+        X_train = np.concatenate(
+            [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
+        )
+        Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+
+        Y_train = np.concatenate(
+            [
+                resps[train_idx, :],
+                np.zeros((L.shape[0], resps.shape[1])),
+                np.zeros((L_depth.shape[0], resps.shape[1])),
+            ],
+            axis=0,
+        )
+        coef = Q @ Y_train
+        coefs.append(coef)
+        # compute predictions for this fold
+        for isplit, idx in enumerate([train_idx, test_idx]):
+            Y_pred[idx, :, isplit] = X[idx, :] @ coef
+    use_idx = np.isfinite(Y_pred[:, 0, 0])
+    residual_var = np.sum(
+        (Y_pred[use_idx, :, :] - resps[use_idx, :, np.newaxis]) ** 2,
         axis=0,
     )
-    coef = Q @ Y_train
-    Y_pred = X[test_idx, :] @ coef
-    residual_var = np.sum((Y_pred - resps[test_idx, :]) ** 2, axis=0)
     total_var = np.sum(
-        (resps[test_idx, :] - np.mean(resps[test_idx, :], axis=0)) ** 2, axis=0
+        (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
     )
-    r2 = 1 - residual_var / total_var
+    r2 = 1 - residual_var / total_var[:, np.newaxis]
 
-    return coef, r2
+    return coefs, r2
+
+
+def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):
+    (zs, ys, xs) = np.meshgrid(
+        np.arange(nz),
+        np.arange(ny),
+        np.arange(nx),
+        indexing="ij",
+    )
+    if model == "gaussian":
+        func = partial(gaussian_3d_rf, min_sigma=0.25)
+    else:
+        func = partial(gabor_3d_rf, min_sigma=0.25)
+
+    coef_fit = coef.copy()
+    params = []
+    # lower_bounds = Gaussian3DRFParams(
+    #     log_amplitude=-np.inf,
+    #     x0=0,
+    #     y0=0,
+    #     log_sigma_x2=-np.inf,
+    #     log_sigma_y2=-np.inf,
+    #     theta=0,
+    #     offset=-np.inf,
+    #     z0=0,
+    #     log_sigma_z=-np.inf,
+    # )
+    # upper_bounds = Gaussian3DRFParams(
+    #     log_amplitude=np.inf,
+    #     x0=nx,
+    #     y0=ny,
+    #     log_sigma_x2=np.inf,
+    #     log_sigma_y2=np.inf,
+    #     theta=np.pi / 2,
+    #     offset=np.inf,
+    #     z0=nz,
+    #     log_sigma_z=np.inf,
+    # )
+    # TODO using bounds currently is not working well
+    for roi in tqdm(range(coef.shape[1])):
+        c = np.reshape(coef[:-1, roi], (nz, ny, nx))
+        # get the index of the maximum of c
+        idepth, iy, ix = np.unravel_index(np.argmax(c), c.shape)
+        if model == "gaussian":
+            p0 = Gaussian3DRFParams(
+                log_amplitude=np.log(c.max()),
+                x0=ix,
+                y0=iy,
+                log_sigma_x2=0,
+                log_sigma_y2=0,
+                theta=0,
+                offset=0,
+                z0=idepth,
+                log_sigma_z=0,
+            )
+        else:
+            p0 = Gabor3DRFParams(
+                log_amplitude=np.log(c.max()),
+                x0=ix,
+                y0=iy,
+                log_sigma_x2=0,
+                log_sigma_y2=0,
+                theta=0,
+                offset=0,
+                log_sf=0,
+                alpha=0,
+                phase=0,
+                z0=idepth,
+                log_sigma_z=0,
+            )
+        try:
+            popt = curve_fit(
+                func,
+                (xs.flatten(), ys.flatten(), zs.flatten()),
+                c.flatten(),
+                p0=p0,
+            )[0]
+        except RuntimeError:
+            print(f"Warning: failed to fit gaussian to ROI {roi}")
+            popt = p0
+        coef_fit[:-1, roi] = func((xs.flatten(), ys.flatten(), zs.flatten()), *popt)
+        params.append(popt)
+    return coef_fit, params

@@ -1,3 +1,5 @@
+import os
+from tqdm import tqdm
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -10,6 +12,12 @@ from cottage_analysis.analysis import (
     common_utils,
 )
 from cottage_analysis.depth_analysis.depth_preprocess.process_params import *
+
+
+# TODO:
+# 1. plot depth tuning curve with the smoothing tuning method
+# 2. plot PSTH with the normal shading error bar
+# 3. plot 8 depth example cells
 
 
 def plot_depth_neuron_distribution(
@@ -184,6 +192,7 @@ def plot_depth_tuning_curve(
     linecolor="k",
     fit_linecolor="r",
     closed_loop=1,
+    fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -217,7 +226,7 @@ def plot_depth_tuning_curve(
         )
 
     # Plotting
-    plt.plot(np.log(depth_list), mean_arr, color=linecolor)
+    plt.plot(np.log(depth_list), mean_arr, color=linecolor, linewidth=linewidth)
     plt.fill_between(
         np.log(depth_list),
         CI_low,
@@ -228,12 +237,53 @@ def plot_depth_tuning_curve(
         rasterized=False,
     )
     if plot_fit:
-        plt.plot(np.log(x), gaussian_arr, color=fit_linecolor)
-    plt.xticks(np.log(depth_list), np.round(np.array(depth_list), 2))
-    plt.xlabel("Preferred depth (m)")
-    plt.ylabel("\u0394F/F")
+        plt.plot(np.log(x), gaussian_arr, color=fit_linecolor, linewidth=linewidth)
+    plt.xticks(
+        np.log(depth_list),
+        np.round(np.array(depth_list), 2),
+        fontsize=fontsize_dict["tick"],
+    )
+    plt.yticks(fontsize=fontsize_dict["tick"])
+    plt.xlabel("Virtual depth (m)", fontsize=fontsize_dict["label"])
+    plt.ylabel("\u0394F/F", fontsize=fontsize_dict["label"])
 
     plotting_utils.despine()
+
+
+def plot_depth_tuning_curve_smooth(
+    neurons_df,
+    trials_df,
+    roi,
+    rs_thr=0.2,
+    plot_fit=True,
+    linewidth=3,
+    linecolor="k",
+    fit_linecolor="r",
+    closed_loop=1,
+    smoothing_sd=1,
+):
+    # Load average activity and confidence interval for this roi
+    depth_list = np.array(find_depth_neurons.find_depth_list(trials_df))
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(
+        trials_df, rs_thr=rs_thr
+    )[:, :, roi]
+    mean_arr = np.mean(mean_dff_arr, axis=1)
+    x = np.repeat(depth_list, mean_dff_arr.shape[1])
+
+    tuning = plotting_utils.get_tuning_function(
+        means=mean_arr,
+        counts=np.repeat(mean_dff_arr.shape[1], len(depth_list)),
+        smoothing_sd=smoothing_sd,
+    )
+
+    # ci_range = 0.95
+    # z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
+    # ci = z * bin_stds / bin_counts
+    # ci[np.isnan(ci)] = 0
+    plt.plot(np.log(depth_list), mean_arr)
+    plt.plot(
+        np.linspace(np.log(depth_list[0]), np.log(depth_list[-1]), len(tuning)), tuning
+    )
 
 
 def generate_cmap(cmap_name="WhRd"):
@@ -266,6 +316,7 @@ def plot_raster_all_depths(
     frame_rate=15,
     vmax=1,
     plot=True,
+    fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """Raster plot for neuronal activity for each depth
 
@@ -278,6 +329,7 @@ def plot_raster_all_depths(
         nbins (int, optional): number of bins to bin the activity. Defaults to 60.
         frame_rate (int, optional): imaging frame rate. Defaults to 15.
         vmax (int, optional): vmax to plot the heatmap. Defaults to 1.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
     """
     # choose the trials with closed or open loop to visualize
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
@@ -314,8 +366,31 @@ def plot_raster_all_depths(
     if plot:
         for idepth, depth in enumerate(depth_list):
             plt.subplot(1, len(depth_list), idepth + 1)
-            plt.imshow(dffs_binned[idepth], cmap=WhRdcmap, vmin=0, vmax=vmax)
+            plt.imshow(
+                dffs_binned[idepth], aspect="auto", cmap=WhRdcmap, vmin=0, vmax=vmax
+            )
+            plt.xticks(
+                np.linspace(0, nbins, 4),
+                np.linspace(0, max_distance, 4),
+                fontsize=fontsize_dict["tick"],
+            )
+            if idepth == 0:
+                plt.ylabel("\u0394F/F", fontsize=fontsize_dict["label"])
+            plt.xlabel("Virtual distance (m)", fontsize=fontsize_dict["label"])
+        plt.tight_layout()
+        add_colorbar()
     return dffs_binned
+
+
+def add_colorbar():
+    cbar_pos = [
+        1.02,
+        plt.gca().get_position().y0,
+        0.02,
+        plt.gca().get_position().height,
+    ]
+    plt.axes(cbar_pos)
+    plt.colorbar(cax=plt.gca(), label="\u0394F/F")
 
 
 def plot_speed_tuning(
@@ -328,6 +403,7 @@ def plot_speed_tuning(
     speed_min=0.01,
     speed_max=1.5,
     speed_thr=0.01,
+    smoothing_sd=1,
 ):
     """Plot a neuron's speed tuning to either running speed or optic flow speed.
 
@@ -402,11 +478,13 @@ def plot_speed_tuning(
             bins=bins,
         )
 
-        tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
+        tuning = plotting_utils.get_tuning_function(
+            bin_means, bin_counts, smoothing_sd=smoothing_sd
+        )
 
         ci_range = 0.95
         z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
-        ci = z * bin_stds / bin_counts
+        ci = z * bin_stds / np.sqrt(bin_counts)
         ci[np.isnan(ci)] = 0
 
         speed_tuning[idepth] = tuning
@@ -447,7 +525,7 @@ def plot_speed_tuning(
 
         tuning = plotting_utils.get_tuning_function(bin_means, bin_counts)
 
-        ci = z * bin_stds / bin_counts
+        ci = z * bin_stds / np.sqrt(bin_counts)
         ci[np.isnan(ci)] = 0
 
         speed_tuning[-1] = tuning
@@ -486,6 +564,7 @@ def plot_speed_tuning(
                 ls="none",
             )
         plt.xscale("log")
+    plotting_utils.despine()
 
 
 def plot_PSTH(
@@ -496,7 +575,8 @@ def plot_PSTH(
     max_distance=6,
     nbins=20,
     frame_rate=15,
-    smoothing_sd=1,
+    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    linewidth=3,
 ):
     """PSTH of a neuron for each depth and blank period.
 
@@ -508,8 +588,11 @@ def plot_PSTH(
         max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
         nbins (int, optional): number of bins to bin the activity. Defaults to 20.
         frame_rate (int, optional): imaging frame rate. Defaults to 15.
-        smoothing_sd (float, optional): smoothing factor for tuning.
     """
+
+    # confidence interval z calculation
+    ci_range = 0.95
+    z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
 
     # choose the trials with closed or open loop to visualize
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
@@ -519,7 +602,7 @@ def plot_PSTH(
     trial_number = len(trials_df) // len(depth_list)
 
     # bin dff according to distance travelled for each trial
-    all_tuning = np.zeros(((len(depth_list) + 1), nbins))
+    all_means = np.zeros(((len(depth_list) + 1), nbins))
     all_ci = np.zeros(((len(depth_list) + 1), nbins))
     for idepth, depth in enumerate(depth_list):
         all_dff = []
@@ -558,16 +641,11 @@ def plot_PSTH(
             bins=nbins,
         )
 
-        tuning = plotting_utils.get_tuning_function(
-            bin_means, bin_counts, smoothing_sd=smoothing_sd
-        )
-        all_tuning[idepth] = tuning
+        all_means[idepth, :] = bin_means
 
-        ci_range = 0.95
-        z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
-        ci = z * bin_stds / bin_counts
+        ci = z * bin_stds / np.sqrt(bin_counts)
         ci[np.isnan(ci)] = 0
-        all_ci[idepth] = ci
+        all_ci[idepth, :] = ci
 
     # Blank dff
     dff = trials_df.dff_blank.values
@@ -599,50 +677,249 @@ def plot_PSTH(
         bins=nbins,
     )
 
-    tuning = plotting_utils.get_tuning_function(
-        bin_means, bin_counts, smoothing_sd=smoothing_sd
-    )
-    all_tuning[-1] = tuning
-
-    ci_range = 0.95
-    z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
-    ci = z * bin_stds / bin_counts
+    all_means[-1, :] = bin_means
+    ci = z * bin_stds / np.sqrt(bin_counts)
     ci[np.isnan(ci)] = 0
-    all_ci[-1] = ci
+    all_ci[-1, :] = ci
 
     for idepth, depth in enumerate(depth_list):
         linecolor = get_depth_color(depth, depth_list, cmap=cm.cool.reversed())
         plt.plot(
             bin_centers,
-            all_tuning[idepth, :],
+            all_means[idepth, :],
             color=linecolor,
             label=f"{int(depth_list[idepth] * 100)} cm",
         )
-        plt.errorbar(
-            x=bin_centers,
-            y=all_tuning[idepth, :],
-            yerr=all_ci[idepth, :],
-            fmt="o",
+
+        plt.fill_between(
+            bin_centers,
+            y1=all_means[idepth, :] - all_ci[idepth, :],
+            y2=all_means[idepth, :] + all_ci[idepth, :],
             color=linecolor,
-            ls="none",
+            alpha=0.3,
+            edgecolor=None,
+            rasterized=False,
         )
 
     plt.plot(
         bin_centers,
-        all_tuning[-1, :],
+        all_means[-1, :],
         color="gray",
         label=f"{int(depth_list[idepth] * 100)} cm",
+        linewidth=linewidth,
     )
-    plt.errorbar(
-        x=bin_centers,
-        y=all_tuning[-1, :],
-        yerr=all_ci[-1, :],
-        fmt="o",
+    plt.fill_between(
+        bin_centers,
+        y1=all_means[-1, :] - all_ci[-1, :],
+        y2=all_means[-1, :] + all_ci[-1, :],
         color="gray",
-        ls="none",
+        alpha=0.3,
+        edgecolor=None,
+        rasterized=False,
     )
 
+    plt.xlabel("Virtual distance (m)", fontsize=fontsize_dict["label"])
+    plt.ylabel("\u0394F/F", fontsize=fontsize_dict["label"])
+    plt.xticks(fontsize=fontsize_dict["tick"])
+    plt.yticks(fontsize=fontsize_dict["tick"])
     plotting_utils.despine()
+
+
+def generate_RS_OF_heatmap_matrix(
+    trials_df,
+    neurons_df,
+    roi,
+    is_closed_loop,
+    max_distance=6,
+    log_range={
+        "rs_bin_log_min": 0,
+        "rs_bin_log_max": 2.5,
+        "rs_bin_num": 6,
+        "of_bin_log_min": -1.5,
+        "of_bin_log_max": 3.5,
+        "of_bin_num": 11,
+        "log_base": 10,
+    },
+):
+    extended_matrix = np.zeros((log_range["rs_bin_num"], log_range["of_bin_num"]))
+
+
+def basic_vis_session(neurons_df, trials_df, neurons_ds):
+    rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
+    os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
+    for i in tqdm(range(int(len(rois) // 10 + 1))):
+        plt.figure(figsize=(3 * 4, 3 * 10))
+        iroi = 0
+        for roi in rois[i * 10 : np.min([(i + 1) * 10, len(rois)])]:
+            plt.subplot2grid((10, 4), (iroi, 0))
+            plot_depth_tuning_curve(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                rs_thr=0.2,
+                plot_fit=False,
+                linewidth=3,
+                linecolor="k",
+                fit_linecolor="r",
+                closed_loop=1,
+            )
+            plt.title(f"roi{roi}")
+
+            plt.subplot2grid((10, 4), (iroi, 1))
+            plot_speed_tuning(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                nbins=10,
+                which_speed="RS",
+                speed_min=0.01,
+                speed_max=1.5,
+                speed_thr=0.01,
+                smoothing_sd=1,
+            )
+
+            plt.subplot2grid((10, 4), (iroi, 2))
+            plot_speed_tuning(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                nbins=10,
+                which_speed="OF",
+                speed_min=0.01,
+                speed_max=1.5,
+                speed_thr=0.01,
+                smoothing_sd=1,
+            )
+
+            plt.subplot2grid((10, 4), (iroi, 3))
+            plot_PSTH(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                max_distance=6,
+                nbins=20,
+                frame_rate=15,
+            )
+            plt.tight_layout()
+
+            iroi += 1
+        plt.savefig(
+            neurons_ds.path_full.parent
+            / "plots"
+            / "basic_vis"
+            / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+            dpi=100,
+        )
+
+
+def plot_RS_OF_matrix(
+    trials_df,
+    roi,
+    log_range={
+        "rs_bin_log_min": 0,
+        "rs_bin_log_max": 2.5,
+        "rs_bin_num": 6,
+        "of_bin_log_min": -1.5,
+        "of_bin_log_max": 3.5,
+        "of_bin_num": 11,
+        "log_base": 10,
+    },
+    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+):
+    extended_matrix = np.zeros((log_range["rs_bin_num"], log_range["of_bin_num"]))
+    rs_bins = (
+        np.logspace(
+            log_range["rs_bin_log_min"],
+            log_range["rs_bin_log_max"],
+            num=log_range["rs_bin_num"],
+            base=log_range["log_base"],
+        )
+        / 100
+    )
+    of_bins = np.logspace(
+        log_range["of_bin_log_min"],
+        log_range["of_bin_log_max"],
+        num=log_range["of_bin_num"],
+        base=log_range["log_base"],
+    )
+
+    rs_arr = [j for i in trials_df.RS_stim.values for j in i]
+    of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
+    dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
+
+    bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
+        x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]
+    )
+
+    plt.imshow(
+        bin_means.T,
+        origin="lower",
+        aspect="equal",
+        cmap=generate_cmap(cmap_name="WhRd"),
+    )
+    plt.colorbar()
+    plt.xlabel("Running spped (m/s)", fontsize=fontsize_dict["label"])
+    plt.ylabel("Optical flow speed (degrees/s)", fontsize=fontsize_dict["label"])
+    set_RS_OF_heatmap_axis_ticks(log_range=log_range, fontsize_dict=fontsize_dict)
+    
+    extended_matrix=bin_means
+
+    return extended_matrix
+
+
+def set_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=True):
+    bin_numbers = [log_range["rs_bin_num"] - 1, log_range["of_bin_num"] - 1]
+    bin_edges1 = np.logspace(
+        log_range["rs_bin_log_min"],
+        log_range["rs_bin_log_max"],
+        num=log_range["rs_bin_num"],
+        base=log_range["log_base"],
+    )
+    bin_edges2 = np.logspace(
+        log_range["of_bin_log_min"],
+        log_range["of_bin_log_max"],
+        num=log_range["of_bin_num"],
+        base=log_range["log_base"],
+    )
+    if playback:
+        bin_numbers = [log_range["rs_bin_num"], log_range["of_bin_num"]]
+        bin_edges1 = np.insert(bin_edges1, 0, 0)
+        bin_edges2 = np.insert(bin_edges2, 0, 0)
+    bin_edges1 = bin_edges1 / 100
+    bin_edges1 = bin_edges1.tolist()
+    bin_edges2 = bin_edges2.tolist()
+    ctr = 0
+    for it in bin_edges1:
+        if (it >= 1) or (it == 0):
+            bin_edges1[ctr] = int(np.round(it))
+        else:
+            bin_edges1[ctr] = np.round(it, 2)
+        ctr += 1
+    ctr = 0
+    for it in bin_edges2:
+        if it >= 1:
+            bin_edges2[ctr] = int(np.round(it))
+        else:
+            bin_edges2[ctr] = np.round(it, 2)
+        ctr += 1
+    # if log == False:
+    #     _, _ = plt.xticks(np.arange(bin_numbers[0]), bin_centers1, rotation=60, ha='center',
+    #                       fontsize=fontsize_dict['xticks'])
+    #     _, _ = plt.yticks(np.arange(bin_numbers[1]), bin_centers2, fontsize=fontsize_dict['yticks'])
+    else:
+        ticks_select1 = (np.arange(-1, bin_numbers[0] * 2, 1) / 2)[0::2]
+        ticks_select2 = (np.arange(-1, bin_numbers[1] * 2, 1) / 2)[0::2]
+        _, _ = plt.xticks(
+            ticks_select1,
+            bin_edges1,
+            rotation=60,
+            ha="center",
+            fontsize=fontsize_dict["tick"],
+        )
+        _, _ = plt.yticks(ticks_select2, bin_edges2, fontsize=fontsize_dict["tick"])
 
 
 # -------OLD----------------
@@ -852,57 +1129,6 @@ def get_RS_OF_heatmap_matrix(
         extended_matrix[1:, 0] = binned_stats_zeros_of["bin_means"].flatten()
 
     return extended_matrix
-
-
-def set_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=True):
-    bin_numbers = [log_range["rs_bin_num"] - 1, log_range["of_bin_num"] - 1]
-    bin_edges1 = np.logspace(
-        log_range["rs_bin_log_min"],
-        log_range["rs_bin_log_max"],
-        num=log_range["rs_bin_num"],
-        base=log_range["log_base"],
-    )
-    bin_edges2 = np.logspace(
-        log_range["of_bin_log_min"],
-        log_range["of_bin_log_max"],
-        num=log_range["of_bin_num"],
-        base=log_range["log_base"],
-    )
-    if playback:
-        bin_numbers = [log_range["rs_bin_num"], log_range["of_bin_num"]]
-        bin_edges1 = np.insert(bin_edges1, 0, 0)
-        bin_edges2 = np.insert(bin_edges2, 0, 0)
-    bin_edges1 = bin_edges1.tolist()
-    bin_edges2 = bin_edges2.tolist()
-    ctr = 0
-    for it in bin_edges1:
-        if (it >= 1) or (it == 0):
-            bin_edges1[ctr] = int(np.round(it))
-        else:
-            bin_edges1[ctr] = np.round(it, 2)
-        ctr += 1
-    ctr = 0
-    for it in bin_edges2:
-        if it >= 1:
-            bin_edges2[ctr] = int(np.round(it))
-        else:
-            bin_edges2[ctr] = np.round(it, 2)
-        ctr += 1
-    # if log == False:
-    #     _, _ = plt.xticks(np.arange(bin_numbers[0]), bin_centers1, rotation=60, ha='center',
-    #                       fontsize=fontsize_dict['xticks'])
-    #     _, _ = plt.yticks(np.arange(bin_numbers[1]), bin_centers2, fontsize=fontsize_dict['yticks'])
-    else:
-        ticks_select1 = (np.arange(-1, bin_numbers[0] * 2, 1) / 2)[0::2]
-        ticks_select2 = (np.arange(-1, bin_numbers[1] * 2, 1) / 2)[0::2]
-        _, _ = plt.xticks(
-            ticks_select1,
-            bin_edges1,
-            rotation=60,
-            ha="center",
-            fontsize=fontsize_dict["xticks"],
-        )
-        _, _ = plt.yticks(ticks_select2, bin_edges2, fontsize=fontsize_dict["yticks"])
 
 
 def plot_RS_OF_heatmap_extended(
