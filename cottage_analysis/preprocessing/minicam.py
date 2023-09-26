@@ -9,7 +9,7 @@ import flexiznam as flz
 from flexiznam.schema import CameraData
 from znamutils import slurm_it
 from cottage_analysis.io_module import video
-from znamutils import slurm_helper
+import yaml
 
 
 def run_deinterleave(camera_ds, conflicts="abort", use_slurm=True, dependency=None):
@@ -140,10 +140,17 @@ def deinterleave(camera_ds_id, project_id):
             frame_rate = 1 / np.median(np.diff(deinterleave_df["HarpTimestamp"].values))
             kwargs["frame_rate"] = frame_rate
         else:
-            shutil.copy(
-                camera_ds.path_full / camera_ds.extra_attributes[file],
-                target_ds.path_full / target_ds.extra_attributes[file],
-            )
+            # deinterleaving will reduce the frame height by 1
+            with open(raw, "r") as f:
+                d = yaml.safe_load(f)
+            if "height" in d:
+                d["height"] -= 1
+            elif "Height" in d:
+                d["Height"] -= 1
+            else:
+                raise ValueError("Could not find height in metadata file")
+            with open(target_ds.path_full / target_ds.extra_attributes[file], "w") as f:
+                yaml.dump(d, f)
 
     video.io_func.deinterleave_camera(**kwargs)
 

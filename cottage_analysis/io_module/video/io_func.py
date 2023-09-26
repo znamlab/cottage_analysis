@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import mmap
 import pandas as pd
+from tqdm import tqdm
 
 DEPTH_DICT = {8: np.uint8, 16: np.uint16}
 
@@ -160,7 +161,8 @@ def deinterleave_camera(
     This function is intended for Wehrcam, which save NTSC video as interlaced. The even
     pixels correspond to the first acquired field, the odd pixels to the second field.
     This function deinterleave the video and save it as a new file with the same
-    resolution by interpolating the missing pixels.
+    resolution by interpolating the missing pixels. The two fields are often in y. To
+    account for that the output frame is 1 pixel shorter than the input frame in height.
 
     Args:
         camera_file (str): path to the video file
@@ -202,22 +204,16 @@ def deinterleave_camera(
         str(target_file),
         cv2.VideoWriter_fourcc(*fcc),
         frame_rate,
-        (frame_width, frame_height),
+        (frame_width, frame_height - 1),
     )
-    ret, frame = cap.read()
+    nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    for iframe in tqdm(range(nframes)) if verbose else range(nframes):
+        ret, frame = cap.read()
+        if make_grey:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if make_grey:
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    deint_frame = np.zeros_like(frame)
-    iframe = 0
-    while ret:
-        if verbose:
-            iframe += 1
-            if iframe % 1000 == 0:
-                print("... frame %d" % iframe)
         if intrinsic_calibration is not None:
-
-            dst = cv2.undistort(
+            frame = cv2.undistort(
                 frame,
                 intrinsic_calibration["mtx"],
                 intrinsic_calibration["dist"],
@@ -225,11 +221,8 @@ def deinterleave_camera(
                 newcameramtx,
             )
         for ilines in range(2):
-            deint_frame[::2, ...] = frame[ilines::2, ...]
-            deint_frame[1::2, ...] = deint_frame[::2, ...]
-            output.write(deint_frame)
-        ret, frame = cap.read()
-    if verbose:
-        print("Done (total %d frames)" % iframe)
+            deint = cv2.resize(frame[ilines::2, ...], (frame_width, frame_height))
+            output.write(deint[1 - ilines : frame_height - ilines, ...])
+
     cap.release()
     output.release()
