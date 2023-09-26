@@ -1,8 +1,9 @@
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import flexiznam as flz
-from cottage_analysis.io_module import harp
+from cottage_analysis.preprocessing import synchronisation
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
@@ -10,76 +11,64 @@ ONIX_DATA_FORMAT = dict(
 ONIX_SAMPLING = 250e6
 
 
-def load_onix_recording(
-    project,
-    mouse,
-    session,
-    vis_stim_recording=None,
-    onix_recording=None,
-    allow_reload=True,
-    di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
+def load_onix(
+    onix_ds,
+    project=None,
+    flexilims_session=None,
+    cut_if_not_multiple=False,
 ):
     """Main function calling all the subfunctions
 
     Args:
-        project (str): name of the project
-        mouse (str): name of the mouse
-        session (str): name of the session
-        vis_stim_recording (str): recording containing visual stimulation data
-        onix_recording (str): recording containing onix data
-        allow_reload (bool): If True (default) will reload processed data instead of
-                             raw when available
-        di_names (list): list of DI names to load from HARP
+        onix_ds (flexiznam.schema.onix_data.OnixData or str): Onix dataset or its name
+        project (str, optional): Name of the project. Defaults to None.
+        flexilims_session (flexilims.session, optional): Flexilims session. Defaults to
+            None. Must be provided if project is None and onix_ds has no.
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels if False, will load only if the data is a multiple
+            of the number of channels. Default False.
 
     Returns:
         data (dict): a dictionary with one element per datasource
     """
-    raw_folder = flz.get_data_root("raw", project=project)
-    processed_folder = flz.get_data_root("raw", project=project)
-    session_folder = raw_folder / project / mouse / session
-    assert session_folder.is_dir()
-
-    processed_folder = processed_folder / project / mouse / session
-    out = dict()
-
-    if vis_stim_recording is not None:
-        flm_sess = flz.get_flexilims_session(project)
-        harp_message, harp_ds = harp.load_harpmessage(
-            recording="_".join([mouse, session, vis_stim_recording]),
-            flexilims_session=flm_sess,
-            conflicts="skip" if allow_reload else "overwrite",
-            di_names=di_names,
+    if isinstance(onix_ds, str):
+        if flexilims_session is None:
+            flexilims_session = flz.get_flexilims_session(project)
+        onix_ds = flz.Dataset.from_flexilims(
+            name=onix_ds, flexilims_session=flexilims_session
         )
-        out["harp_message"] = dict(harp_message)
-        # add frame loggers and other CSVs
-        out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
 
-    if onix_recording is not None:
-        # Load onix AI/DI
-        breakout_data = load_breakout(session_folder / onix_recording)
-        out["breakout_data"] = breakout_data
-        try:
-            out["rhd2164_data"] = load_rhd2164(session_folder / onix_recording)
-        except IOError:
-            print("Could not load RHD2164 data")
-        try:
-            out["ts4131_data"] = load_ts4231(session_folder / onix_recording)
-        except IOError:
-            print("Could not load TS4131 data")
-    return out
-
-
-def load_vis_stim_log(folder):
     out = dict()
-    folder = Path(folder)
-    for csv_file in folder.glob("*.csv"):
-        what = csv_file.stem.split("_")[-1]
-        out[what] = pd.read_csv(csv_file)
+    # Load onix AI/DI
+    breakout_data = load_breakout(
+        onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+    )
+    out["breakout_data"] = breakout_data
+    try:
+        out["rhd2164_data"] = load_rhd2164(
+            onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+        )
+    except IOError:
+        print("Could not load RHD2164 data")
+    try:
+        out["ts4131_data"] = load_ts4231(onix_ds.path_full)
+    except IOError:
+        print("Could not load TS4131 data")
+    try:
+        out["bno055_data"] = load_bno055(onix_ds.path_full)
+    except IOError:
+        print("Could not load BNO055 data")
 
     return out
 
 
-def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
+def load_rhd2164(
+    path_to_folder,
+    timestamp=None,
+    num_chans=64,
+    num_aux_chan=6,
+    cut_if_not_multiple=False,
+):
     """Load all files related to rhd2164, ie ephys
 
     Args:
@@ -87,6 +76,9 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         timestamp (str or None): timestamp used in save name
         num_chans (int): number of ephys channels saved (default 64)
         num_aux_chan (int): number of auxiliary channels saved (default 6)
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels. if False, will load only if the data is a
+            multiple of the number of channels. Default False.
 
     Returns:
         data dict: a dictionary of memmap
@@ -105,7 +97,10 @@ def load_rhd2164(path_to_folder, timestamp=None, num_chans=64, num_aux_chan=6):
         assert ephys_file.suffix == ".raw"
 
         data = _load_binary_file(
-            ephys_file, dtype=ONIX_DATA_FORMAT[what], nchan=num_chan_dict[what]
+            ephys_file,
+            dtype=ONIX_DATA_FORMAT[what],
+            nchan=num_chan_dict[what],
+            cut_if_not_multiple=cut_if_not_multiple,
         )
         output[what] = data
     return output
@@ -135,39 +130,118 @@ def load_ts4231(path_to_folder, timestamp=None):
     return ts_out
 
 
-def load_breakout(path_to_folder, timestamp=None, num_ai_chan=2):
+def load_breakout(
+    path_to_folder, timestamp=None, num_ai_chan=None, cut_if_not_multiple=False
+):
     """Load data from the breakout board, ie AI and DI
 
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chans (int): number of AI channels saved (default 2)
+        num_ai_chan(int, optional): number of analog input-output channels recorded.
+            It is read from the breakout-aio-channels.csv file. If the file does not
+            exist, use num_ai_chan and revert to `2` if None. Defaults to None.
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels if False, will load only if the data is a multiple
+            of the number of channels. Default False.
 
     Returns:
         data dict: a dictionary of memmap
     """
     breakout_files = _find_files(path_to_folder, timestamp, "breakout")
     output = dict()
+
+    # first I need to find aio-channels to count the number of channels
+    what_are_they = [e.stem.split("_")[0][len("breakout-") :] for e in breakout_files]
+    if "aio-channels" in what_are_they:
+        if num_ai_chan is not None:
+            warnings.warn(
+                "num_ai_chan is provided but aio-channels file exists. Using aio-channels"
+            )
+        breakout_file = breakout_files.pop(what_are_they.index("aio-channels"))
+        channels = np.loadtxt(breakout_file, delimiter=",", dtype=np.uint8)
+        output["aio-channels"] = channels
+        num_ai_chan = len(channels)
+    else:
+        warnings.warn(f"Could not find aio-channels file. ")
+        if num_ai_chan is None:
+            warnings.warn("num_ai_chan is not provided. Assuming 2 channels.")
+            num_ai_chan = 2
+
     for breakout_file in breakout_files:
         what = breakout_file.stem.split("_")[0][len("breakout-") :]
         if breakout_file.suffix == ".csv":
-            assert what == "dio"
-            dio = pd.read_csv(breakout_file)
-            port = np.array(dio["Port"].values, dtype="uint8")
-            bits = np.unpackbits(port, bitorder="little")
-            bits = bits.reshape((len(port), 8))
-            for i in range(8):
-                dio["DI%d" % i] = bits[:, i]
-            output["dio"] = dio
+            if what == "dio":
+                dio = pd.read_csv(breakout_file)
+                port = np.array(dio.Port.values, dtype="uint8")
+                bits = np.unpackbits(port, bitorder="little")
+                bits = bits.reshape((len(port), 8))
+                for i in range(8):
+                    dio["DI%d" % i] = bits[:, i]
+                output["dio"] = dio
+            if what == "analog":
+                nchan = pd.read_csv(breakout_file)
+                num_ai_chan = len(list(nchan))
+        else:
+            assert breakout_file.suffix == ".raw"
+            if what == "aio-clock":
+                nchan = 1
+                dtype = ONIX_DATA_FORMAT["clock"]
+            elif what == "aio":
+                nchan = num_ai_chan
+                dtype = ONIX_DATA_FORMAT["aio"]
+            data = _load_binary_file(
+                breakout_file,
+                dtype=dtype,
+                nchan=nchan,
+                cut_if_not_multiple=cut_if_not_multiple,
+            )
+            output[what] = data
+    return output
+
+
+def load_bno055(
+    path_to_folder,
+    timestamp=None,
+    num_chans_euler=3,
+    num_chans_gravity=3,
+    num_chans_linear_accel=3,
+    num_chans_quaternion=4,
+):
+    """Loads the IMU data in a memmap dictionary
+    Args:
+        path_to_folder (str or Path): the full path to the folder which contains the IMU output.
+        timestamp (str or None): timestamp used in save name
+
+    Returns:
+        bno_out: a dictionary of memmap
+    """
+
+    num_chan_dict = dict(
+        euler=num_chans_euler,
+        gravity=num_chans_gravity,
+        linear=num_chans_linear_accel,
+        quaternion=num_chans_quaternion,
+    )
+
+    bno_files = _find_files(path_to_folder, timestamp, "bno055")
+    output = dict()
+    for bno_file in bno_files:
+        what = bno_file.stem.split("_")[0][len("bno055-") :]
+        if "-" in what:
+            what = Path(what)
+            what = what.stem.split("-")[0]
+        if bno_file.suffix == ".csv":
+            other = pd.read_csv(bno_file)
+            output["computer_timestamp"] = other.iloc[:, 0]
+            output["onix_time"] = other.iloc[:, 1]
+            output["temperature"] = other.iloc[:, 2]
+            output["no_idea"] = other.iloc[:, 3]
             continue
-        assert breakout_file.suffix == ".raw"
-        if what == "aio-clock":
-            nchan = 1
-            dtype = ONIX_DATA_FORMAT["clock"]
-        elif what == "aio":
-            nchan = num_ai_chan
-            dtype = ONIX_DATA_FORMAT["aio"]
-        data = _load_binary_file(breakout_file, dtype=dtype, nchan=nchan)
+        assert bno_file.suffix == ".raw"
+
+        data = np.fromfile(bno_file, dtype=np.double).reshape(-1, num_chan_dict[what])
+
         output[what] = data
     return output
 
@@ -258,12 +332,16 @@ def _find_files(folder, timestamp, prefix):
     return valid_files
 
 
-def _load_binary_file(file_path, dtype, nchan):
+def _load_binary_file(file_path, dtype, nchan, order="F", cut_if_not_multiple=False):
     file_path = Path(file_path)
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
-        raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
+        if cut_if_not_multiple:
+            print(f"Warning: Data in {file_path} is not a multiple of {nchan}. Cutting")
+            n_pts = int(n_pts // nchan * nchan)
+        else:
+            raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
     n_time = int(n_pts / nchan)
     shape = (nchan, n_time) if nchan != 1 else None
-    data = np.memmap(file_path, dtype=dtype, mode="r", order="F", shape=shape)
+    data = np.memmap(file_path, dtype=dtype, mode="r", order=order, shape=shape)
     return data
