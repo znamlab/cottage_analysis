@@ -1,10 +1,4 @@
 {
-    "python.formatting.provider": "none",
-    "python.formatting.blackArgs": [
-        "--line-length",
-        "88"
-    ],
-    "python.linting.enabled": true,
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter"
     },
