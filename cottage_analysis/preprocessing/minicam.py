@@ -96,7 +96,6 @@ def deinterleave(camera_ds_id, project_id):
         verbose=True,
         intrinsic_calibration=None,
     )
-    target_ds.extra_attributes.update(kwargs)
 
     # copy timestamp and metadata files
     for file in ["timestamp_file", "metadata_file"]:
@@ -138,6 +137,8 @@ def deinterleave(camera_ds_id, project_id):
                 target_ds.path_full / target_ds.extra_attributes[file],
                 index=False,
             )
+            frame_rate = 1 / np.median(np.diff(deinterleave_df["HarpTimestamp"].values))
+            kwargs["frame_rate"] = frame_rate
         else:
             shutil.copy(
                 camera_ds.path_full / camera_ds.extra_attributes[file],
@@ -146,5 +147,6 @@ def deinterleave(camera_ds_id, project_id):
 
     video.io_func.deinterleave_camera(**kwargs)
 
+    target_ds.extra_attributes.update(kwargs)
     target_ds.update_flexilims(mode="overwrite")
     return target_ds.path_full

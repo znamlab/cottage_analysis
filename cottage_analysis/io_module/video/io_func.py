@@ -148,7 +148,12 @@ def write_array_to_video(
 
 
 def deinterleave_camera(
-    camera_file, target_file, make_grey=False, verbose=True, intrinsic_calibration=None
+    camera_file,
+    target_file,
+    make_grey=False,
+    verbose=True,
+    intrinsic_calibration=None,
+    frame_rate=60.0,
 ):
     """Deinterleave a video file
 
@@ -164,6 +169,7 @@ def deinterleave_camera(
         verbose (bool, optional): print progress? Defaults to True.
         intrinsic_calibration (dict, optional): intrinsic calibration parameters.
             Defaults to None.
+        frame_rate (float, optional): frame rate of the video. Defaults to 60.
 
     Returns:
         None
@@ -193,7 +199,10 @@ def deinterleave_camera(
         + chr((fcc >> 24) & 0xFF)
     )
     output = cv2.VideoWriter(
-        str(target_file), cv2.VideoWriter_fourcc(*fcc), 60, (frame_width, frame_height)
+        str(target_file),
+        cv2.VideoWriter_fourcc(*fcc),
+        frame_rate,
+        (frame_width, frame_height),
     )
     ret, frame = cap.read()
 
