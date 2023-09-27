@@ -646,6 +646,22 @@ def run_cross_correlation(
     real_switch_times = frame_log[time_column].values
     closest_switch = real_switch_times.searchsorted(photodiode_time[frame_onsets])
     frames_df["closest_frame_log_index"] = closest_switch
+    after_last = closest_switch >= len(real_switch_times)
+    if after_last.any():
+        delay = photodiode_time[frame_onsets[-1]] - real_switch_times[-1]
+        print(f"{after_last.sum()} frames detected after the last render time.")
+        print(f"Delay between last render and last frame is {delay:.2f} s.")
+        if delay > 1:
+            msg = (
+                "Delay between last render and last frame is too large. "
+                f"{delay:.2f}  Something is wrong"
+            )
+            if not ignore_errors:
+                raise ValueError(msg)
+            else:
+                warnings.warn(msg)
+
+    closest_switch[after_last] = len(real_switch_times) - 1
     # and the corresponding ideal photodiode sample
     ideal_onset = frame_log["ideal_switch_samples"].iloc[closest_switch].values
 
