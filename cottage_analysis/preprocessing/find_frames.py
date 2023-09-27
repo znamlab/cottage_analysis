@@ -129,6 +129,7 @@ def sync_by_correlation(
     verbose=True,
     debug=False,
     save_folder=None,
+    ignore_errors=False,
 ):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -165,6 +166,7 @@ def sync_by_correlation(
         debug (bool): False by default. If True, returns a dict with intermediary results
         save_folder (str): If not None, and plot is True save figures results in this
             folder
+        ignore_errors (bool): If True, will skip quality checks and try to force through
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -192,6 +194,25 @@ def sync_by_correlation(
         debug=debug,
         save_folder=save_folder,
     )
+    ndetected = len(frames_df)
+    npresented = len(frame_log)
+    if npresented < ndetected:
+        msg = (
+            f"Detected more frames ({ndetected}) than presented ({npresented})"
+            "\n Check create_frame_df parameters"
+        )
+    elif npresented > ndetected / 2:
+        msg = (
+            f"Dropped more than half of the frames ({ndetected - npresented} dropped)"
+            "\n Check create_frame_df parameters"
+        )
+    else:
+        msg = None
+    if msg is not None:
+        if ignore_errors:
+            warnings.warn(msg)
+        else:
+            raise ValueError(msg)
 
     if db_dict is not None:
         db_dict["normed_pd"] = normed_pd
@@ -217,6 +238,7 @@ def sync_by_correlation(
         verbose,
         debug or do_plot,
         pd_sampling,
+        ignore_errors=ignore_errors,
     )
     if db_di is not None:
         db_dict.update(db_di)
@@ -568,6 +590,7 @@ def run_cross_correlation(
     verbose,
     debug,
     pd_sampling=None,
+    ignore_errors=False,
 ):
     """Run cross correlation between photodiode signal and frame log
 
@@ -591,6 +614,7 @@ def run_cross_correlation(
         debug (bool): False by default. If True, returns a dict with intermediary results
         pd_sampling (float): Sampling rate of the photodiode signal. If None, will be
             computed from photodiode_time
+        ignore_errors (bool): If True, will skip quality checks and try to force through
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
