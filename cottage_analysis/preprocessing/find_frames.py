@@ -750,6 +750,15 @@ def run_cross_correlation(
         time_of_match += [0.2, -0.3, -0.7][iw] / frame_rate
         frames_df[f"ideal_time_of_match_{which}"] = time_of_match
         index_of_match = ideal_time.searchsorted(time_of_match)
+        too_late = index_of_match == len(ideal_time)
+        if any(too_late):
+            naft = too_late.sum()
+            last = time_of_match.max() - ideal_time.max()
+            warnings.warn(
+                f"{naft} frames detected after the end of the ideal photodiode trace "
+                f"(worse match {last:.2f} s after)"
+            )
+            index_of_match[too_late] = len(ideal_time) - 1
         cl = ideal_seqi_trace[index_of_match]
         frames_df[f"closest_frame_{which}"] = cl
         frames_df["quadcolor_%s" % which] = frame_log.iloc[cl][sequence_column].values
