@@ -2,7 +2,7 @@ import numpy as np
 from cottage_analysis.io_module import onix
 
 DIGITAL_INPUTS = dict(DI0="fm_cam_trig", DI1="oni_clock_di", DI2="hf_cam_trig")
-ANALOG_INPUTS = ["none", "photodiode"]
+ANALOG_INPUTS = ["none", "wehrcam", "photodiode", "none"]
 MAPPING = [
     39,
     37,
@@ -72,11 +72,14 @@ MAPPING = [
 # The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16.
 
 
-def preprocess_onix_recording(data, breakout_di_names=None, debounce_window=1000):
+def preprocess_onix_recording(
+    data, harp_message, breakout_di_names=None, debounce_window=1000
+):
     """Preprocess the ONIX recording data.
 
     Args:
         data (dict): The ONIX recording data, as return by io_module.onix.load_recording
+        harp_message (dict): The harp message, as returned by io_module.harp.load_harp
         breakout_di_names (dict, optional): A dictionary mapping the breakout digital
         debounce_window (int, optional): Window to debounce signal in samples. Defaults
             to 1000.
@@ -88,7 +91,7 @@ def preprocess_onix_recording(data, breakout_di_names=None, debounce_window=1000
         data["breakout_data"], breakout_di_names, debounce_window=debounce_window
     )
     h2o, o2h = sync_harp2onix(
-        data["harp_message"], data["breakout_data"]["digital_inputs"]["oni_clock_di"]
+        harp_message, data["breakout_data"]["digital_inputs"]["oni_clock_di"]
     )
     data["harp2onix"], data["onix2harp"] = h2o, o2h
     return data

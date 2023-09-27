@@ -76,6 +76,7 @@ def find_monitor_frames(
     if monitor_frames_ds.flexilims_status() != "not online" and conflicts == "skip":
         print("Loading existing monitor frames...")
         return pd.read_pickle(monitor_frames_ds.path_full)
+
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
 
     # Get photodiode
@@ -92,7 +93,7 @@ def find_monitor_frames(
     else:
         breakout = onix_io.load_breakout(raw / onix_recording.path)
         onix_data = onix_prepro.preprocess_onix_recording(
-            dict(breakout_data=breakout, harp_message=harp_message)
+            dict(breakout_data=breakout), harp_message=harp_message
         )
         ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
         photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
