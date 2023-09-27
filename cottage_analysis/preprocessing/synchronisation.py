@@ -1,25 +1,28 @@
 import numpy as np
 import pandas as pd
 import flexiznam as flz
+from functools import partial
+from znamutils import slurm_it
 from cottage_analysis.io_module.harp import load_harpmessage
 from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.preprocessing import onix as onix_prepro
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
-from functools import partial
 
 print = partial(print, flush=True)
 
 
+@slurm_it(conda_env="cottage_analysis")
 def find_monitor_frames(
     vis_stim_recording,
-    flexilims_session,
+    flexilims_session=None,
     photodiode_protocol=5,
     conflicts="skip",
     harp_recording=None,
     onix_recording=None,
     sync_kwargs=None,
+    project=None,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -36,12 +39,19 @@ def find_monitor_frames(
         onix_recording (str or pandas.Series): recording name or recording entry
             from flexilims containing the analog photodiode signal. Defaults to None.
         sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if
+            flexilims_session is None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
 
     """
     assert conflicts in ["skip", "overwrite", "abort"]
+    if flexilims_session is None:
+        assert (
+            project is not None
+        ), "project must be provided if flexilims_session is None"
+        flexilims_session = flz.get_flexilims_session(project_id=project)
 
     # parsing input
     def get_str_or_recording(recording):
