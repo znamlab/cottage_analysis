@@ -164,6 +164,8 @@ def generate_vs_df(
     photodiode_protocol=5,
     flexilims_session=None,
     project=None,
+    harp_recording=None,
+    onix_recording=None,
 ):
     """Generate a DataFrame that contains information for each monitor frame. This requires
     monitor frames to be synced first.
@@ -174,6 +176,10 @@ def generate_vs_df(
             frame refresh. Either 2 or 5 for now. Defaults to 5.
         flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        harp_recording (str or pandas.Series): recording name or recording entry if
+            different from (vis stim) recording. Defaults to None.
+        onix_recording (str or pandas.Series): recording name or recording entry if
+            photodiode is recorded on onix. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -187,6 +193,8 @@ def generate_vs_df(
         vis_stim_recording=recording,
         flexilims_session=flexilims_session,
         photodiode_protocol=photodiode_protocol,
+        harp_recording=harp_recording,
+        onix_recording=onix_recording,
         conflicts="skip",
     )
 
