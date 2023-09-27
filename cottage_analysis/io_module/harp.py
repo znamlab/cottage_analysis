@@ -78,16 +78,19 @@ def load_harpmessage(
     recording,
     flexilims_session,
     conflicts="skip",
-    di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
+    di_names=None,
 ):
     """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
 
     Args:
         recording (str or pandas.Series): recording name or recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
-        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
-        di_names (tuple): names of the digital inputs to rename harp meassage. Defaults
-            to ("frame_triggers", "lick_detection", "di2_encoder_initial_state").
+        conflicts (str, optional): how to deal with conflicts when updating flexilims.
+            Defaults to "skip".
+        di_names (tuple, optional): names of the digital inputs to rename harp meassage.
+            If None, will try to read from the dataset attributes. Will revert to
+            ("frame_triggers", "lick_detection", "di2_encoder_initial_state") if not
+            availlable. Defaults to None.
 
     Returns:
         np.array: loaded harpmessages as numpy array
@@ -117,6 +120,15 @@ def load_harpmessage(
     if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
+
+    if di_names is None:
+        if "di_names" in harp_ds.extra_attributes:
+            di_names = harp_ds.extra_attributes["di_names"]
+        else:
+            warnings.warn(
+                "No di_names provided or found in extra_attributes. Using default."
+            )
+            di_names = ("frame_triggers", "lick_detection", "di2_encoder_initial_state")
 
     # parse harp message
     print("Saving harp messages into npz...")
