@@ -19,6 +19,7 @@ def find_monitor_frames(
     conflicts="skip",
     harp_recording=None,
     onix_recording=None,
+    sync_kwargs=None,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -34,6 +35,7 @@ def find_monitor_frames(
             vis_stim_recording. Defaults to None.
         onix_recording (str or pandas.Series): recording name or recording entry
             from flexilims containing the analog photodiode signal. Defaults to None.
+        sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -116,6 +118,8 @@ def find_monitor_frames(
             plot_range=1000,
             plot_dir=diagnostics_folder,
         )
+        if sync_kwargs is not None:
+            params.update(sync_kwargs)
         frames_df = find_frames.sync_by_frame_alternating(
             photodiode=photodiode,
             analog_time=analog_time,
@@ -132,11 +136,14 @@ def find_monitor_frames(
             frame_rate=frame_rate,
             correlation_threshold=0.8,
             relative_corr_thres=0.02,
+            frame_detection_height=0.1,
             minimum_lag=1.0 / frame_rate,
             do_plot=True,
             save_folder=diagnostics_folder,
             verbose=True,
         )
+        if sync_kwargs is not None:
+            params.update(sync_kwargs)
         frames_df, _ = find_frames.sync_by_correlation(
             frame_log,
             photodiode_time=analog_time,
