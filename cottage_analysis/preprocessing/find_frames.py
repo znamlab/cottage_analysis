@@ -130,6 +130,7 @@ def sync_by_correlation(
     debug=False,
     save_folder=None,
     ignore_errors=False,
+    last_frame_delay=100,
 ):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -167,6 +168,8 @@ def sync_by_correlation(
         save_folder (str): If not None, and plot is True save figures results in this
             folder
         ignore_errors (bool): If True, will skip quality checks and try to force through
+        last_frame_delay (float): If ignore_errors is True, frame detected more than
+            this many seconds after the last rendered frame will be ignored
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -193,6 +196,8 @@ def sync_by_correlation(
         verbose=verbose,
         debug=debug,
         save_folder=save_folder,
+        ignore_errors=ignore_errors,
+        last_frame_delay=last_frame_delay,
     )
     ndetected = len(frames_df)
     npresented = len(frame_log)
@@ -201,9 +206,9 @@ def sync_by_correlation(
             f"Detected more frames ({ndetected}) than presented ({npresented})"
             "\n Check create_frame_df parameters"
         )
-    elif npresented > ndetected / 2:
+    elif npresented > ndetected * 2:
         msg = (
-            f"Dropped more than half of the frames ({ndetected - npresented} dropped)"
+            f"Dropped more than half of the frames ({npresented - ndetected} dropped)"
             "\n Check create_frame_df parameters"
         )
     else:
@@ -223,7 +228,6 @@ def sync_by_correlation(
         fig_dict = dict()
 
     # Second step: cross correlation
-    print(len(frames_df), len(frame_log), len(photodiode_time))
     frames_df, db_di = run_cross_correlation(
         frames_df,
         frame_log,
@@ -238,7 +242,6 @@ def sync_by_correlation(
         verbose,
         debug or do_plot,
         pd_sampling,
-        ignore_errors=ignore_errors,
     )
     if db_di is not None:
         db_dict.update(db_di)
@@ -321,6 +324,8 @@ def create_frame_df(
     verbose=True,
     debug=False,
     save_folder=None,
+    ignore_errors=False,
+    last_frame_delay=100,
 ):
     """Create a dataframe with the frame information
 
@@ -340,6 +345,9 @@ def create_frame_df(
         debug (bool): False by default. If True, returns a dict with intermediary results
         save_folder (str): If not None, and plot is True save figures results in this
             folder
+        ignore_errors (bool): If True, will skip quality checks and try to force through
+        last_frame_delay (float): Frame detected more than this many seconds after the
+            last rendered frame will be ignored (Default to 100)
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -379,6 +387,34 @@ def create_frame_df(
     frames_df["onset_time"] = photodiode_time[frames_df.onset_sample]
     frames_df["offset_time"] = photodiode_time[frames_df.offset_sample]
     frames_df["peak_time"] = photodiode_time[frames_df.peak_sample]
+
+    # check if frames are detected after the presentation is over
+    after_last = frames_df["onset_time"] >= frame_log[time_column].iloc[-1]
+    if after_last.any():
+        delay = frames_df["onset_time"].iloc[-1] - frame_log[time_column].iloc[-1]
+        print(f"{after_last.sum()} frames detected after the last render time.")
+        if last_frame_delay is not None:
+            too_late = (
+                frames_df.onset_time
+                >= frame_log[time_column].iloc[-1] + last_frame_delay
+            )
+            print(
+                f"Removing {too_late.sum()} frames detected more than "
+                f"{last_frame_delay} s after the last render"
+            )
+            frames_df = frames_df[~too_late].copy()
+            # recomputing delay
+            delay = frames_df["onset_time"].iloc[-1] - frame_log[time_column].iloc[-1]
+        if delay > 1:
+            msg = (
+                "Delay between last render and last frame is too large. "
+                f"{delay:.2f}.  Something is wrong"
+            )
+            if not ignore_errors:
+                raise ValueError(msg)
+            else:
+                warnings.warn(msg)
+
     out_dict["detected_frames"] = len(frames_df)
     out_dict["logged_frames"] = len(frame_log)
     out_dict["percentage_drop"] = 100 * (1 - len(frames_df) / len(frame_log))
@@ -590,7 +626,6 @@ def run_cross_correlation(
     verbose,
     debug,
     pd_sampling=None,
-    ignore_errors=False,
 ):
     """Run cross correlation between photodiode signal and frame log
 
@@ -614,7 +649,6 @@ def run_cross_correlation(
         debug (bool): False by default. If True, returns a dict with intermediary results
         pd_sampling (float): Sampling rate of the photodiode signal. If None, will be
             computed from photodiode_time
-        ignore_errors (bool): If True, will skip quality checks and try to force through
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -644,24 +678,12 @@ def run_cross_correlation(
 
     # find the closest switch time for each frame according to computer time
     real_switch_times = frame_log[time_column].values
-    closest_switch = real_switch_times.searchsorted(photodiode_time[frame_onsets])
+    closest_switch = np.clip(
+        real_switch_times.searchsorted(photodiode_time[frame_onsets]),
+        0,
+        len(real_switch_times) - 1,
+    )
     frames_df["closest_frame_log_index"] = closest_switch
-    after_last = closest_switch >= len(real_switch_times)
-    if after_last.any():
-        delay = photodiode_time[frame_onsets[-1]] - real_switch_times[-1]
-        print(f"{after_last.sum()} frames detected after the last render time.")
-        print(f"Delay between last render and last frame is {delay:.2f} s.")
-        if delay > 1:
-            msg = (
-                "Delay between last render and last frame is too large. "
-                f"{delay:.2f}  Something is wrong"
-            )
-            if not ignore_errors:
-                raise ValueError(msg)
-            else:
-                warnings.warn(msg)
-
-    closest_switch[after_last] = len(real_switch_times) - 1
     # and the corresponding ideal photodiode sample
     ideal_onset = frame_log["ideal_switch_samples"].iloc[closest_switch].values
 
