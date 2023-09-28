@@ -205,16 +205,16 @@ def generate_vs_df(
     monitor_frames_df.closest_frame = monitor_frames_df.closest_frame.astype("int")
     harp_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
-        origin_name=recording.name,
+        origin_name=harp_recording.name,
         dataset_type="harp",
         allow_multiple=False,
         return_dataseries=False,
     )
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
-        frame_log = pd.read_csv(frame_log_path)
-        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
+        frame_log = pd.read_csv(raw / recording.path / "FrameLog.csv")
+        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
         frame_log_z.rename(
             columns={
                 "FrameIndex": "closest_frame",
@@ -251,9 +251,8 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
     # Align paramLog with vs_df
-    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
     # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(paramlog_path)
+    param_log = pd.read_csv(raw / recording.path / "NewParams.csv")
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
