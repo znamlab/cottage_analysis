@@ -53,28 +53,12 @@ def find_monitor_frames(
         ), "project must be provided if flexilims_session is None"
         flexilims_session = flz.get_flexilims_session(project_id=project)
 
-    # parsing input
-    def get_str_or_recording(recording):
-        if recording is None:
-            return None
-        elif type(recording) == str:
-            recording = flz.get_entity(
-                datatype="recording",
-                name=recording,
-                flexilims_session=flexilims_session,
-            )
-            if recording is None:
-                raise ValueError(f"Recording {recording} does not exist.")
-            return recording
-        else:
-            return recording
-
-    vis_stim_recording = get_str_or_recording(vis_stim_recording)
+    vis_stim_recording = _get_str_or_recording(vis_stim_recording, flexilims_session)
     if harp_recording is None:
         harp_recording = vis_stim_recording
     else:
-        harp_recording = get_str_or_recording(harp_recording)
-        onix_recording = get_str_or_recording(onix_recording)
+        harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
+        onix_recording = _get_str_or_recording(onix_recording, flexilims_session)
 
     # Create output and reload
     monitor_frames_ds = flz.Dataset.from_origin(
@@ -199,6 +183,12 @@ def generate_vs_df(
     assert photodiode_protocol in [2, 5]
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    recording = _get_str_or_recording(recording, flexilims_session)
+    harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
+    if harp_recording is None:
+        harp_recording = recording
+
     monitor_frames_df = find_monitor_frames(
         vis_stim_recording=recording,
         flexilims_session=flexilims_session,
@@ -462,3 +452,29 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
         dffs.append(np.load(plane_path / "dff_ast.npy"))
     return np.concatenate(dffs, axis=0).T
+
+
+def _get_str_or_recording(recording, flexilims_session):
+    """Get recording entry from flexilims_session if recording is a string.
+
+    Args:
+        recording (str or pandas.Series): recording name or recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+
+    Returns:
+        pandas.Series: recording entry from flexilims_session.
+    """
+
+    if recording is None:
+        return None
+    elif type(recording) == str:
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recording,
+            flexilims_session=flexilims_session,
+        )
+        if recording is None:
+            raise ValueError(f"Recording {recording} does not exist.")
+        return recording
+    else:
+        return recording
