@@ -233,7 +233,7 @@ def generate_vs_df(
         )
         encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
-        frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
+        frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0].copy()
         frame_log_z.rename(
             columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"},
             inplace=True,
