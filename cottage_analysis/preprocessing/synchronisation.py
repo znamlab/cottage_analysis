@@ -413,6 +413,23 @@ def generate_imaging_df(
     return imaging_df
 
 
+def generate_spike_rate_df(
+    vs_df, onix_recording, flexilims_session, rate_bin, filter_datasets=None
+):
+    """This is the equivalent of generate_imaging_df for spike rate data.
+
+    Spike rate will be calculated for each bin of `rate_bin` secondes.
+
+    Args:
+        vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
+        onix_recording (pandas.Series): recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+        rate_bin (int): bin size in s.
+        filter_datasets (dict, optional): filters to apply on choosing onix datasets.
+            Defaults to None."""
+    return
+
+
 def fill_missing_imaging_volumes(df, nan_col="RS"):
     """
     Create a dataframe with a single row for each imaging volume, by forward filling
