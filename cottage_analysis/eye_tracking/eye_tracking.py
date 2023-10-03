@@ -19,6 +19,7 @@ def run_all(
     conflicts="abort",
     use_slurm=True,
     dependency=None,
+    run_detect=True,
     run_tracking=True,
     run_ellipse=True,
     run_reprojection=True,
@@ -38,6 +39,7 @@ def run_all(
             on flexilims. Defaults to "abort".
         use_slurm (bool, optional): Start slurm jobs. Defaults to True.
         dependency (str, optional): Dependency for slurm. Defaults to None.
+        run_detect (bool, optional): Whether to run the eye detection. Defaults to True.
         run_tracking (bool, optional): Whether to run the tracking. Defaults to True.
         run_ellipse (bool, optional): Whether to run the ellipse fitting. Defaults to
             True.
@@ -73,29 +75,31 @@ def run_all(
         conflicts=conflicts,
     )
     ds.path_full.mkdir(parents=True, exist_ok=True)
-    job_id = dlc_pupil(
-        camera_ds_name,
-        model_name=dlc_model_detect,
-        project=project,
-        crop=False,
-        conflicts=conflicts,
-        use_slurm=use_slurm,
-        job_dependency=dependency,
-        slurm_folder=ds.path_full,
-    )
-    if not use_slurm:
+    if run_detect:
+        job_id = dlc_pupil(
+            camera_ds_name,
+            model_name=dlc_model_detect,
+            project=project,
+            crop=False,
+            conflicts=conflicts,
+            use_slurm=use_slurm,
+            job_dependency=dependency,
+            slurm_folder=ds.path_full,
+        )
+    if not use_slurm or not run_detect:
         job_id = None
     log["dlc_uncropped"] = job_id if job_id is not None else "Done"
 
+    # look for cropped dataset
+    ds = flz.Dataset.from_origin(
+        origin_id=origin_id,
+        dataset_type="dlc_tracking",
+        flexilims_session=flexilims_session,
+        base_name=f"{cam_ds_short_name}_dlc_tracking_cropped",
+        conflicts=conflicts,
+    )
     if run_tracking:
         # Run cropped DLC
-        ds = flz.Dataset.from_origin(
-            origin_id=origin_id,
-            dataset_type="dlc_tracking",
-            flexilims_session=flexilims_session,
-            base_name=f"{cam_ds_short_name}_dlc_tracking_cropped",
-            conflicts=conflicts,
-        )
         ds.path_full.mkdir(parents=True, exist_ok=True)
         job_id = dlc_pupil(
             camera_ds_name,
@@ -121,6 +125,7 @@ def run_all(
             job_dependency=job_id,
             use_slurm=use_slurm,
             slurm_folder=ds.path_full,
+            conflicts=conflicts,
         )
         log["ellipse"] = job_id if job_id is not None else "Done"
         if not use_slurm:
@@ -372,6 +377,17 @@ def dlc_pupil(
     print("Saving diagnostic plot", flush=True)
     if not crop:
         diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds, conflicts=conflicts)
+    else:
+        print("Labelling video")
+        deeplabcut.create_labeled_video(
+            config=dlc_model_config,
+            videos=[str(video_path)],
+            color_by="individual",
+            keypoints_only=False,
+            trailpoints=0,
+            draw_skeleton=True,
+            confidence_to_alpha=True,
+        )
     return ds, ds.path_full
 
 
@@ -491,7 +507,7 @@ def fit_ellipse(
     camera_ds_name,
     project,
     likelihood_threshold=None,
-    redo=False,
+    conflicts="skip",
     plot=True,
 ):
     flexilims_session = flz.get_flexilims_session(project)
@@ -507,7 +523,7 @@ def fit_ellipse(
 
     target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
     if target.exists():
-        if redo:
+        if conflicts == "overwrite":
             os.remove(target)
         else:
             print("  Ellipse fit already done. Skip")
