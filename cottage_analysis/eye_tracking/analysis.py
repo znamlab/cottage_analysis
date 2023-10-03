@@ -5,6 +5,7 @@ from warnings import warn
 import matplotlib.pyplot as plt
 from skimage.measure import EllipseModel
 from pathlib import Path
+from tqdm import tqdm
 import cv2
 import pickle
 from cottage_analysis.utilities.plot_utils import get_img_from_fig, write_fig_to_video
@@ -62,16 +63,8 @@ def get_data(
     dlc_like = dlc_res.xs("likelihood", axis="columns", level=2)
     dlc_like.columns = dlc_like.columns.droplevel("scorer")
     reflection_like = dlc_like["reflection"]
-    dlc_like = dlc_like.drop(
-        axis="columns",
-        labels=[
-            "reflection",
-            "left_eye_corner",
-            "right_eye_corner",
-            "top_eye_lid",
-            "bottom_eye_lid",
-        ],
-    ).mean(axis="columns")
+    to_drop = [c for c in dlc_like.columns if c[-1].isalpha()]
+    dlc_like = dlc_like.drop(axis="columns", labels=to_drop).mean(axis="columns")
     ellipse["dlc_avg_likelihood"] = dlc_like
     valid = (
         (ellipse.dlc_avg_likelihood > likelihood_threshold)
@@ -106,6 +99,7 @@ def plot_movie(
     crop_border=None,
     use_original_encoding=False,
     recrop=False,
+    likelihood_threshold=0.88,
 ):
     """Plot a movie of raw video, video with dlc tracking and video with ellipse fit
 
@@ -126,6 +120,8 @@ def plot_movie(
         use_original_encoding (bool, optional): Whether to use original video encoding
             (might not be supported by opencv). Defaults to False.
         recrop (bool, optional): Whether to recrop video. Defaults to False.
+        likelihood_threshold (float, optional): Threshold on DLC likelihood use for
+            scatter color.
     """
 
     if dlc_res is None or ellipse is None:
@@ -172,7 +168,7 @@ def plot_movie(
 
     nframes = int(fps * duration)
     cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
-    for frame_id in np.arange(nframes) + start_frame:
+    for frame_id in tqdm(np.arange(nframes) + start_frame):
         track = dlc_res.loc[frame_id]
         # plot
         fig.clear()
@@ -207,7 +203,13 @@ def plot_movie(
             xs, ys = borders[0, 0], borders[0, 1]
         else:
             xs, ys = 0, 0
-        ax_track.scatter(xdata - xs, ydata - ys, s=likelihood * 10)
+        ax_track.scatter(
+            xdata - xs,
+            ydata - ys,
+            s=likelihood * 10,
+            alpha=likelihood,
+            color=["g" if l > likelihood_threshold else "r" for l in likelihood],
+        )
         ax_track.scatter(
             track.loc[("reflection", "x")] - xs,
             track.loc[("reflection", "y")] - ys,
@@ -220,7 +222,6 @@ def plot_movie(
         circ_coord = ellipse_model.predict_xy(np.arange(0, 2 * np.pi, 0.1))
         ax_fit.plot(circ_coord[:, 0] - xs, circ_coord[:, 1] - ys)
         write_fig_to_video(fig, output)
-        print(frame_id, flush=True)
 
     cam_data.release()
     output.release()
