@@ -41,7 +41,10 @@ def check_cropping(dlc_ds, camera_ds, rotate180=False, conflicts="skip"):
     ax.set_title(f"{camera_ds.dataset_name}, frame {fid}")
     frame_tracking = dlc_results.median(axis=0)
     frame_tracking.index = frame_tracking.index.droplevel("scorer")
-    eye_tracking = frame_tracking["eye_0"]
+    if "eye_0" not in frame_tracking:
+        eye_tracking = frame_tracking["eye_12"]
+    else:
+        eye_tracking = frame_tracking["eye_0"]
     sc = ax.scatter(eye_tracking.x, eye_tracking.y, s=20, label="Pupil")
 
     corners = [
