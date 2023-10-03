@@ -193,9 +193,17 @@ def run_reproject_eye(
     )
     target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
 
-    if target_ds.path_full.exists() and not redo:
-        print("  Reprojection already done. Skip")
-        return None, target.parent
+    if target_ds.path_full.exists():
+        if conflicts == "skip":
+            print("  Reprojection already done. Skip")
+            return target_ds
+        elif conflicts == "abort":
+            raise IOError("Reprojection already done")
+        elif conflicts == "overwrite":
+            print("  Reprojection already done. Overwrite")
+            os.remove(target_ds.path_full)
+        else:
+            raise ValueError(f"Unknown conflict mode {conflicts}")
 
     kwargs = dict(theta0=theta0, phi0=phi0)
     eye_model_fitting.reproject_ellipses(
@@ -204,7 +212,7 @@ def run_reproject_eye(
         **kwargs,
     )
     target_ds.extra_attributes.update(**kwargs)
-    return job_id, path
+    return target_ds
 
 
 def delete_tracking_dataset(ds, flexilims_session):

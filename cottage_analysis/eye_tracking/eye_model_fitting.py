@@ -483,7 +483,7 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
             verbose=False,
         )
         eye_rotation[i_pos] = pa
-    np.save(ds.path_full, eye_rotation)
+    np.save(camera_ds.path_full, eye_rotation)
     print("Done!")
 
 
@@ -868,3 +868,7 @@ def grid_search_best_eye(
     y = grid_eye_y[ind[1]]
     f_z0 = grid_f_z0[ind[2]]
     return (x, y, f_z0), ind, out
+
+if __name__ == "__main__":
+    camera_ds = flz.get_datasets(name)
+    reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True)
