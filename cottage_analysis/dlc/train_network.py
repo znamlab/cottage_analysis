@@ -6,7 +6,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # make sure we use a backend that can run in headless mode
 
-MODEL = "headfixed_track_eye"
+MODEL = "wehrcam_detect_eye"
 
 if __name__ == "__main__":
     import socket
@@ -38,5 +38,5 @@ if __name__ == "__main__":
     import deeplabcut
 
     print(f"TRAIN model {MODEL} using {config_file}")
-    deeplabcut.train_network(config_file, maxiters=50000, saveiters=1000)
+    deeplabcut.train_network(config_file, maxiters=100000, saveiters=5000)
     print("Done")
