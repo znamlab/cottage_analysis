@@ -80,7 +80,32 @@ def plot_dlc_tracking(camera_ds, dlc_ds, likelihood_threshold=None):
     cap.release()
 
 
-def plot_ellipse_fit(camera_ds_name, project, likelihood_threshold):
+def plot_ellipse_fit(
+    camera_ds_name,
+    project,
+    likelihood_threshold=None,
+    start_frame=None,
+    duration=None,
+    playback_speed=4,
+    vmin=None,
+    vmax=None,
+):
+    """Plot ellipse fit for a given camera dataset
+
+    The generated movie
+    Args:
+        camera_ds_name (str): Name of the camera dataset
+        project (str): Name of the project
+        likelihood_threshold (float, optional): Likelihood threshold. Defaults to None.
+        start_frame (int, optional): Frame to start plotting from. Defaults to None.
+        duration (int, optional): Duration of output movie in seconds. Defaults to None.
+        playback_speed (int, optional): Playback speed, relative to original speed.
+            Defaults to 4 times faster.
+        vmin (float, optional): Minimum value for the colormap. Defaults to None.
+        vmax (float, optional): Maximum value for the colormap. Defaults to None.
+
+    Returns:
+        None"""
     flm_sess = flz.get_flexilims_session(project_id=project)
     camera_ds = flz.Dataset.from_flexilims(
         name=camera_ds_name, flexilims_session=flm_sess
@@ -96,16 +121,25 @@ def plot_ellipse_fit(camera_ds_name, project, likelihood_threshold):
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
+    if likelihood_threshold is None:
+        if "likelihood_threshold" in dlc_ds.extra_attributes:
+            likelihood_threshold = dlc_ds.extra_attributes["likelihood_threshold"]
+        else:
+            likelihood_threshold = 1
+    if start_frame is None:
+        start_frame = frame_count // 2 - 30
     analysis.plot_movie(
         camera=camera_ds,
         target_file=dlc_ds.path_full / "ellipse_fit.mp4",
-        start_frame=frame_count // 2 - 30,
-        duration=60,
+        start_frame=start_frame,
+        duration=60 if duration is None else duration,
         dlc_res=None,
         ellipse=None,
         vmax=None,
         vmin=None,
-        playback_speed=4,
+        playback_speed=playback_speed,
         crop_border=dlc_ds.extra_attributes["cropping"],
         recrop=False,
+        likelihood_threshold=likelihood_threshold,
     )
+
