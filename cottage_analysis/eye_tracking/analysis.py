@@ -100,6 +100,7 @@ def plot_movie(
     use_original_encoding=False,
     recrop=False,
     likelihood_threshold=0.88,
+    adapt_alpha=True,
 ):
     """Plot a movie of raw video, video with dlc tracking and video with ellipse fit
 
@@ -122,6 +123,8 @@ def plot_movie(
         recrop (bool, optional): Whether to recrop video. Defaults to False.
         likelihood_threshold (float, optional): Threshold on DLC likelihood use for
             scatter color.
+        adapt_alpha (bool, optional): Whether to adapt alpha of scatter points with
+            likelihood. Defaults to True.
     """
 
     if dlc_res is None or ellipse is None:
@@ -207,7 +210,7 @@ def plot_movie(
             xdata - xs,
             ydata - ys,
             s=likelihood * 10,
-            alpha=likelihood,
+            alpha=likelihood if adapt_alpha else 1,
             color=["g" if l > likelihood_threshold else "r" for l in likelihood],
         )
         ax_track.scatter(
