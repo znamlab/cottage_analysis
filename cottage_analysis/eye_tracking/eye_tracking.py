@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import flexiznam as flz
 from znamutils import slurm_it
-from cottage_analysis.eye_tracking import diagnostic, eye_model_fitting
+from cottage_analysis.eye_tracking import diagnostics, eye_model_fitting
 
 envs = flz.PARAMETERS["conda_envs"]
 
@@ -158,7 +158,10 @@ def run_all(
     return pd.Series(log)
 
 
-@slurm_it(conda_env=envs["cottage_analysis"])
+@slurm_it(
+    conda_env=envs["cottage_analysis"],
+    slurm_options=dict(time="48:00:00", mem="64G", partition="cpu"),
+)
 def run_reproject_eye(
     camera_ds_name,
     project,
@@ -212,6 +215,7 @@ def run_reproject_eye(
         **kwargs,
     )
     target_ds.extra_attributes.update(**kwargs)
+    target_ds.update_flexilims(mode=conflicts)
     return target_ds
 
 
@@ -384,7 +388,7 @@ def dlc_pupil(
     # Save diagnostic plot
     print("Saving diagnostic plot", flush=True)
     if not crop:
-        diagnostic.check_cropping(dlc_ds=ds, camera_ds=camera_ds, conflicts=conflicts)
+        diagnostics.check_cropping(dlc_ds=ds, camera_ds=camera_ds, conflicts=conflicts)
     else:
         print("Labelling video")
         deeplabcut.create_labeled_video(
@@ -547,7 +551,7 @@ def fit_ellipse(
 
     if plot:
         print("Diagnostic plot")
-        diagnostic.plot_ellipse_fit(
+        diagnostics.plot_ellipse_fit(
             camera_ds_name=camera_ds_name,
             project=project,
             likelihood_threshold=likelihood_threshold,
