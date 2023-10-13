@@ -183,22 +183,25 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
 
     # PLOT
     if plot:
+        dlc_tracks = eye_tracking.eye_tracking.get_tracking_datasets(
+            camera_ds, flexilims_session=flm_sess
+        )
+        dlc_ds = dlc_tracks["cropped"]
+        cropping = dlc_ds.extra_attributes["cropping"]
+
         diagnostics.plot_binned_ellipse_params(
             binned_ellipses,
             ns,
             save_folder,
             min_frame_cutoff=10,
             fig_title=camera_ds.full_name,
+            camera_ds=camera_ds,
+            cropping=cropping,
         )
     eye_centre_binned, f_z0_binned = estimate_eye_centre(enough_frames)
 
     # plot it
     if plot:
-        dlc_tracks = eye_tracking.eye_tracking.get_tracking_datasets(
-            camera_ds, flexilims_session=flm_sess
-        )
-        dlc_ds = dlc_tracks["cropped"]
-        cropping = dlc_ds.extra_attributes["cropping"]
         diagnostics.plot_eye_centre_estimate(
             eye_centre_binned,
             f_z0_binned,

@@ -154,7 +154,13 @@ def plot_ellipse_fit(
 
 
 def plot_binned_ellipse_params(
-    binned_ellipses, ns, save_folder, min_frame_cutoff=10, fig_title=None
+    binned_ellipses,
+    ns,
+    save_folder,
+    min_frame_cutoff=10,
+    fig_title=None,
+    camera_ds=None,
+    cropping=None,
 ):
     """Plot binned ellipse parameters
 
@@ -165,15 +171,37 @@ def plot_binned_ellipse_params(
         min_frame_cutoff (int, optional): Minimum number of frames to include a bin.
             Defaults to 10.
         fig_title (str, optional): Title of the figure. Defaults to None.
+        camera_ds (flexiznam.Dataset, optional): Camera dataset. Defaults to None.
+        cropping (list, optional): Cropping info for image. Defaults to None.
 
     Returns:
         None
     """
+    if camera_ds is not None:
+        # get one frame in the middle of the recording to use as background
+        video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
+        cam_data = cv2.VideoCapture(str(video_file))
+        cam_data.set(
+            cv2.CAP_PROP_POS_FRAMES, int(cam_data.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
+        )
+        ret, frame = cam_data.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if cropping is not None:
+            gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
+        cam_data.release()
+
     enough_frames = binned_ellipses[ns > min_frame_cutoff].copy()
     enough_frames["eccentricity"] = np.sqrt(
         1 - (enough_frames["minor_radius"] ** 2 / enough_frames["major_radius"] ** 2)
     )
     mat = np.zeros((len(ns.index.levels[0]), len(ns.index.levels[1]))) + np.nan
+    extent = (
+        binned_ellipses.centre_x.min(),
+        binned_ellipses.centre_x.max(),
+        binned_ellipses.centre_y.max(),
+        binned_ellipses.centre_y.min(),
+    )
+
     fig = plt.figure(figsize=(7, 6))
     for ip, p in enumerate(["angle", "eccentricity", "minor_radius", "major_radius"]):
         mat[
@@ -186,14 +214,19 @@ def plot_binned_ellipse_params(
             lim = (0, np.pi)
         ax = fig.add_subplot(2, 2, ip + 1)
         divider = make_axes_locatable(ax)
+        if camera_ds is not None:
+            ax.imshow(gray, cmap="gray")
         cmap = "viridis" if ip else "twilight"
-        img = ax.imshow(mat, vmin=lim[0], vmax=lim[1], cmap=cmap)
+        img = ax.imshow(mat.T, vmin=lim[0], vmax=lim[1], cmap=cmap, extent=extent)
         cax = divider.append_axes("right", size="5%", pad=0.05)
         fig.colorbar(img, cax=cax, orientation="vertical")
         ax.set_title(p)
+        if camera_ds is not None:
+            ax.set_xlim(0, gray.shape[1])
+            ax.set_ylim(gray.shape[0], 0)
     fig.suptitle(fig_title)
     fig.subplots_adjust(left=0.05, right=0.95, wspace=0.1, top=0.8)
-    fig.savefig(save_folder / f"binned_pupil_params.png", dpi=600)
+    fig.savefig(save_folder / f"binned_pupilparams.png", dpi=600)
     plt.close(fig)
 
 
