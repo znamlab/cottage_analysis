@@ -189,7 +189,7 @@ def run_reproject_eye(
 
     target_ds = flz.Dataset.from_origin(
         origin_id=camera_ds.origin_id,
-        dataset_type="dlc_tracking",
+        dataset_type="eye_tracking",
         flexilims_session=flexilims_session,
         base_name=f"{camera_ds.dataset_name}_eye_reprojection",
         conflicts=conflicts,
