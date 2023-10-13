@@ -146,7 +146,7 @@ def run_all(
             camera_ds_name=camera_ds_name,
             theta0=np.deg2rad(20),
             phi0=0,
-            conflicts="skip",
+            conflicts=conflicts,
             use_slurm=use_slurm,
             slurm_folder=ds.path_full,
             job_dependency=job_id,
