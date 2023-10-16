@@ -158,67 +158,6 @@ def run_all(
     return pd.Series(log)
 
 
-@slurm_it(
-    conda_env=envs["cottage_analysis"],
-    slurm_options=dict(time="48:00:00", mem="64G", partition="cpu"),
-)
-def run_reproject_eye(
-    camera_ds_name,
-    project,
-    theta0=np.deg2rad(20),
-    phi0=0,
-    conflicts="skip",
-):
-    """Run the reproject_eye function on a camera dataset
-
-    DLC and ellipse fitting must have been done first
-
-    Args:
-        camera_ds_name (str): Name of the camera dataset on flexilims
-        project (str): Name of the project on flexilims
-        theta0 (float, optional): Initial guess for the theta angle. Defaults to
-            np.deg2rad(20).
-        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
-        conflicts (str, optional): How to handle conflicts when creating the datasets
-            on flexilims. Defaults to "skip".
-    """
-    flexilims_session = flz.get_flexilims_session(project)
-    camera_ds = flz.Dataset.from_flexilims(
-        flexilims_session=flexilims_session, name=camera_ds_name
-    )
-
-    target_ds = flz.Dataset.from_origin(
-        origin_id=camera_ds.origin_id,
-        dataset_type="eye_tracking",
-        flexilims_session=flexilims_session,
-        base_name=f"{camera_ds.dataset_name}_eye_reprojection",
-        conflicts=conflicts,
-    )
-    target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
-
-    if target_ds.path_full.exists():
-        if conflicts == "skip":
-            print("  Reprojection already done. Skip")
-            return target_ds
-        elif conflicts == "abort":
-            raise IOError("Reprojection already done")
-        elif conflicts == "overwrite":
-            print("  Reprojection already done. Overwrite")
-            os.remove(target_ds.path_full)
-        else:
-            raise ValueError(f"Unknown conflict mode {conflicts}")
-
-    kwargs = dict(theta0=theta0, phi0=phi0)
-    eye_model_fitting.reproject_ellipses(
-        camera_ds=camera_ds,
-        target_ds=target_ds,
-        **kwargs,
-    )
-    target_ds.extra_attributes.update(**kwargs)
-    target_ds.update_flexilims(mode=conflicts)
-    return target_ds
-
-
 def delete_tracking_dataset(ds, flexilims_session):
     """Delete a dlc_tracking dataset
 
@@ -557,3 +496,64 @@ def fit_ellipse(
             likelihood_threshold=likelihood_threshold,
         )
     print("Done")
+
+
+@slurm_it(
+    conda_env=envs["cottage_analysis"],
+    slurm_options=dict(time="48:00:00", mem="64G", partition="cpu"),
+)
+def run_reproject_eye(
+    camera_ds_name,
+    project,
+    theta0=np.deg2rad(20),
+    phi0=0,
+    conflicts="skip",
+):
+    """Run the reproject_eye function on a camera dataset
+
+    DLC and ellipse fitting must have been done first
+
+    Args:
+        camera_ds_name (str): Name of the camera dataset on flexilims
+        project (str): Name of the project on flexilims
+        theta0 (float, optional): Initial guess for the theta angle. Defaults to
+            np.deg2rad(20).
+        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
+        conflicts (str, optional): How to handle conflicts when creating the datasets
+            on flexilims. Defaults to "skip".
+    """
+    flexilims_session = flz.get_flexilims_session(project)
+    camera_ds = flz.Dataset.from_flexilims(
+        flexilims_session=flexilims_session, name=camera_ds_name
+    )
+
+    target_ds = flz.Dataset.from_origin(
+        origin_id=camera_ds.origin_id,
+        dataset_type="eye_reprojection",
+        flexilims_session=flexilims_session,
+        base_name=f"{camera_ds.dataset_name}_eye_reprojection",
+        conflicts=conflicts,
+    )
+    target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
+
+    if target_ds.path_full.exists():
+        if conflicts == "skip":
+            print("  Reprojection already done. Skip")
+            return target_ds
+        elif conflicts == "abort":
+            raise IOError("Reprojection already done")
+        elif conflicts == "overwrite":
+            print("  Reprojection already done. Overwrite")
+            os.remove(target_ds.path_full)
+        else:
+            raise ValueError(f"Unknown conflict mode {conflicts}")
+
+    kwargs = dict(theta0=theta0, phi0=phi0)
+    eye_model_fitting.reproject_ellipses(
+        camera_ds=camera_ds,
+        target_ds=target_ds,
+        **kwargs,
+    )
+    target_ds.extra_attributes.update(**kwargs)
+    target_ds.update_flexilims(mode=conflicts)
+    return target_ds
