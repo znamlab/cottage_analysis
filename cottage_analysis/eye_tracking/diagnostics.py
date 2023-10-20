@@ -9,6 +9,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from skimage.measure import EllipseModel
 
 import flexiznam as flz
+from znamutils import slurm_it
 
 from cottage_analysis.eye_tracking import analysis
 import cottage_analysis.eye_tracking.eye_tracking as cottage_tracking
@@ -88,6 +89,15 @@ def plot_dlc_tracking(camera_ds, dlc_ds, likelihood_threshold=None):
     cap.release()
 
 
+@slurm_it(
+    conda_env="cottage_analysis",
+    slurm_options=dict(
+        ntasks=1,
+        time="72:00:00",
+        mem="16G",
+        partition="cpu",
+    ),
+)
 def plot_ellipse_fit(
     camera_ds_name,
     project,
