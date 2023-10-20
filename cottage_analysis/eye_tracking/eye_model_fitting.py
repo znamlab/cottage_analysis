@@ -822,8 +822,3 @@ def predict_xy(t, xc, yc, a, b, theta):
     y = yc + a * stheta * ct + b * ctheta * st
 
     return np.concatenate((x[..., None], y[..., None]), axis=t.ndim)
-
-
-if __name__ == "__main__":
-    camera_ds = flz.get_datasets(name)
-    reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True)

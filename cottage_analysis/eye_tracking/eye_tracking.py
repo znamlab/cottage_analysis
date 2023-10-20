@@ -23,6 +23,7 @@ def run_all(
     run_tracking=True,
     run_ellipse=True,
     run_reprojection=True,
+    repro_kwargs=None,
 ):
     """Run all preprocessing steps for a session
 
