@@ -80,8 +80,8 @@ def get_data(
     ellipse["reflection_y"] = reflection.y.values
     ellipse["pupil_x"] = ellipse.centre_x - ellipse.reflection_x
     ellipse["pupil_y"] = ellipse.centre_y - ellipse.reflection_y
-    ellipse.loc[~ellipse.valid, "x"] = np.nan
-    ellipse.loc[~ellipse.valid, "y"] = np.nan
+    ellipse.loc[~ellipse.valid, "pupil_x"] = np.nan
+    ellipse.loc[~ellipse.valid, "pupil_y"] = np.nan
 
     return dlc_res, ellipse
 
