@@ -145,7 +145,16 @@ def estimate_eye_centre(binned_frames, verbose=True):
     return eye_centre_binned, f_z0_binned
 
 
-def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
+def reproject_ellipses(
+    camera_ds,
+    target_ds,
+    phi0=0,
+    theta0=0,
+    likelihood_threshold=0.88,
+    rsquare_threshold=0.99,
+    error_threshold=3,
+    plot=True,
+):
     """Run the reproject_eye function on a camera dataset
 
     DLC and ellipse fitting must have been done first
@@ -153,8 +162,15 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
     Args:
         camera_ds (flexiznam.schema.camera_data.CameraData): Camera dataset
         target_ds (flexiznam.schema.datasets.Dataset): Target dataset
-        theta0 (float, optional): Initial guess for the theta angle. Defaults to 0.
         phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
+        theta0 (float, optional): Initial guess for the theta angle. Defaults to 0.
+        likelihood_threshold (float, optional): Threshold on likelihood to include
+            points in fit. Defaults to 0.88.
+        rsquare_threshold (float, optional): Threshold on rsquare to include
+            points in fit. Defaults to 0.99.
+        error_threshold (float, optional): Threshold on error to include points in fit.
+            Defaults to 3.
+        plot (bool, optional): Plot results. Defaults to True.
     """
 
     # get the data
@@ -162,9 +178,9 @@ def reproject_ellipses(camera_ds, target_ds, phi0=0, theta0=0, plot=True):
     dlc_res, data = analeyesis.get_data(
         camera_ds,
         flexilims_session=flm_sess,
-        likelihood_threshold=0.88,
-        rsquare_threshold=0.99,
-        error_threshold=3,
+        likelihood_threshold=likelihood_threshold,
+        rsquare_threshold=rsquare_threshold,
+        error_threshold=error_threshold,
     )
     save_folder = target_ds.path_full.parent
     # make bins of ellipse centre position

@@ -140,16 +140,23 @@ def run_all(
             base_name=f"{cam_ds_short_name}_eye_reprojection",
             conflicts=conflicts,
         )
-        ds.path_full.mkdir(parents=True, exist_ok=True)
+        repro_kwargs = dict(
+            theta0=np.deg2rad(20),
+            phi0=0,
+            likelihood_threshold=0.88,
+            rsquare_threshold=0.99,
+            error_threshold=3,
+        )
+        if repro_kwargs is not None:
+            repro_kwargs.update(repro_kwargs)
         job_id = run_reproject_eye(
             project=project,
             camera_ds_name=camera_ds_name,
-            theta0=np.deg2rad(20),
-            phi0=0,
             conflicts=conflicts,
             use_slurm=use_slurm,
             slurm_folder=ds.path_full,
             job_dependency=job_id,
+            **repro_kwargs,
         )
         if not use_slurm:
             job_id = None
@@ -505,8 +512,11 @@ def fit_ellipse(
 def run_reproject_eye(
     camera_ds_name,
     project,
-    theta0=np.deg2rad(20),
     phi0=0,
+    theta0=np.deg2rad(20),
+    likelihood_threshold=0.88,
+    rsquare_threshold=0.99,
+    error_threshold=3,
     conflicts="skip",
 ):
     """Run the reproject_eye function on a camera dataset
@@ -516,9 +526,15 @@ def run_reproject_eye(
     Args:
         camera_ds_name (str): Name of the camera dataset on flexilims
         project (str): Name of the project on flexilims
+        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
         theta0 (float, optional): Initial guess for the theta angle. Defaults to
             np.deg2rad(20).
-        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
+        likelihood_threshold (float, optional): Likelihood threshold for ellipse
+            fitting. Defaults to 0.88.
+        rsquare_threshold (float, optional): R^2 threshold for ellipse fitting.
+            Defaults to 0.99.
+        error_threshold (int, optional): Error threshold for ellipse fitting.
+            Defaults to 3.
         conflicts (str, optional): How to handle conflicts when creating the datasets
             on flexilims. Defaults to "skip".
     """
@@ -548,7 +564,13 @@ def run_reproject_eye(
         else:
             raise ValueError(f"Unknown conflict mode {conflicts}")
 
-    kwargs = dict(theta0=theta0, phi0=phi0)
+    kwargs = dict(
+        theta0=theta0,
+        phi0=phi0,
+        likelihood_threshold=likelihood_threshold,
+        rsquare_threshold=rsquare_threshold,
+        error_threshold=error_threshold,
+    )
     eye_model_fitting.reproject_ellipses(
         camera_ds=camera_ds,
         target_ds=target_ds,
