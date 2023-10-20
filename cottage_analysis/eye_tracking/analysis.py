@@ -90,7 +90,7 @@ def plot_movie(
     camera,
     target_file,
     start_frame=0,
-    duration=60,
+    duration=None,
     dlc_res=None,
     ellipse=None,
     vmax=None,
@@ -108,7 +108,8 @@ def plot_movie(
         camera (flexiznam.schema.camera_data.CameraData): Camera dataset
         target_file (str): Full path to video output
         start_frame (int, optional): First frame to plot. Defaults to 0.
-        duration (float, optional): Duration of video, in seconds. Defaults to 60.
+        duration (float, optional): Duration of video, in seconds. If None, plot until
+            the end. Defaults to None.
         dlc_res (pandas.DataFrame, optional): DLC results. Will be loaded if None.
             Defaults to None.
         ellipse (pandas.DataFrame, optional): Ellipse fit. Will be loaded if None.
@@ -169,7 +170,10 @@ def plot_movie(
         (img.shape[1], img.shape[0]),
     )
 
-    nframes = int(fps * duration)
+    if duration is None:
+        nframes = cam_data.get(cv2.CAP_PROP_FRAME_COUNT) - start_frame
+    else:
+        nframes = int(fps * duration)
     cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame - 1)
     for frame_id in tqdm(np.arange(nframes) + start_frame):
         track = dlc_res.loc[frame_id]

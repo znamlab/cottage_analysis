@@ -115,7 +115,8 @@ def plot_ellipse_fit(
         camera_ds_name (str): Name of the camera dataset
         project (str): Name of the project
         likelihood_threshold (float, optional): Likelihood threshold. Defaults to None.
-        start_frame (int, optional): Frame to start plotting from. Defaults to None.
+        start_frame (int, optional): Frame to start plotting from.  If None,
+            use the middle of the movie. Defaults to None.
         duration (int, optional): Duration of output movie in seconds. Defaults to None.
         playback_speed (int, optional): Playback speed, relative to original speed.
             Defaults to 4 times faster.
@@ -150,7 +151,7 @@ def plot_ellipse_fit(
         camera=camera_ds,
         target_file=dlc_ds.path_full / "ellipse_fit.mp4",
         start_frame=start_frame,
-        duration=60 if duration is None else duration,
+        duration=duration,
         dlc_res=None,
         ellipse=None,
         vmax=vmax,
