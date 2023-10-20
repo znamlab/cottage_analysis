@@ -141,6 +141,12 @@ def run_all(
             base_name=f"{cam_ds_short_name}_eye_reprojection",
             conflicts=conflicts,
         )
+        if ds.path.suffix != ".npy":
+            # When we create the dataset, the path is set to the folder, not the file
+            ds.path_full.mkdir(parents=True, exist_ok=True)
+        else:
+            # if we already ran the analysis once, the path has been set to the results
+            ds.path = ds.path.parent
         repro_kwargs = dict(
             theta0=np.deg2rad(20),
             phi0=0,
@@ -551,7 +557,11 @@ def run_reproject_eye(
         base_name=f"{camera_ds.dataset_name}_eye_reprojection",
         conflicts=conflicts,
     )
-    target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
+    if target_ds.path.suffix != ".npy":
+        assert (
+            target_ds.path_full.is_dir()
+        ), f"target_ds.path_full {target_ds.path_full} is not a directory"
+        target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
 
     if target_ds.path_full.exists():
         if conflicts == "skip":
