@@ -200,7 +200,7 @@ def delete_tracking_dataset(ds, flexilims_session):
 
 @slurm_it(
     conda_env=envs["dlc"],
-    module_list=["cuDNN"],
+    module_list=["cuDNN/8.4.1.50-CUDA-11.7.0"],
     slurm_options=dict(
         ntasks=1,
         time="12:00:00",
