@@ -703,7 +703,7 @@ def pts_intersection(pts, normals):
 
 @njit
 def grid_search_best_gaze(
-    source_ellipse, eye_centre, f_z0, grid_phi, grid_theta, grid_radius
+    source_ellipse, eye_centre, f_z0, grid_phi, grid_theta, grid_radius, debug=False
 ):
     """Grid search of best gaze vector to minimize reprojection error
 
@@ -715,6 +715,7 @@ def grid_search_best_gaze(
         grid_phi (numpy.array): Values of phi for grid search
         grid_theta (numpy.array): Values of theta for grid search
         grid_radius (numpy.array): Values of radius for grid search
+        debug (bool, optional): Return debug info. Defaults to False.
 
     Returns:
         parameters (tuple): Best gaze parameters (phi, theta, radius)
@@ -724,15 +725,19 @@ def grid_search_best_gaze(
     """
     params = (0, 0, 0)
     error = np.inf
-    for phi in grid_phi:
-        for theta in grid_theta:
-            for r in grid_radius:
+    errors = np.zeros((len(grid_phi), len(grid_theta), len(grid_radius)))
+    for ip, phi in enumerate(grid_phi):
+        for it, theta in enumerate(grid_theta):
+            for ir, r in enumerate(grid_radius):
                 el = reproj_ellipse(phi, theta, r, eye_centre=eye_centre, f_z0=f_z0)
                 dst = ellipse_distance(source_ellipse, el)
+                if debug:
+                    errors[ip, it, ir] = dst
+
                 if dst < error:
                     error = dst
                     params = (phi, theta, r)
-    return params, error
+    return params, error, errors
 
 
 def grid_search_best_eye(
