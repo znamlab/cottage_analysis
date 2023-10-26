@@ -236,7 +236,7 @@ def reproject_ellipses(
         ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"],
     ]
     p0 = (float(phi0), float(theta0), 1.0)
-    params_med, e = minimise_reprojection_error(
+    params_med, e, all_errors = minimise_reprojection_error(
         tuple(params_most_frequent_bin.values),
         p0,
         eye_centre_binned,
@@ -278,7 +278,7 @@ def reproject_ellipses(
         ellipse_params = s[
             ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
         ].values
-        p, e = minimise_reprojection_error(
+        p, e, all_errors = minimise_reprojection_error(
             ellipse_params,
             p0=params_med,
             eye_centre=eye_centre_binned,
@@ -325,7 +325,7 @@ def reproject_ellipses(
 
     # Refit median eye position with new eye
     # needed because we want to limit the search 60 degrees around that
-    params_med, e = minimise_reprojection_error(
+    params_med, e, all_errors = minimise_reprojection_error(
         params_most_frequent_bin.values,
         params_med,
         eye_centre,
@@ -448,6 +448,7 @@ def minimise_reprojection_error(
     grid_size=10,
     niter=3,
     reduction_factor=3,
+    debug=False,
 ):
     """Iterative grid search of best gaze vector to minimize reprojection error
 
@@ -465,6 +466,7 @@ def minimise_reprojection_error(
         reduction_factor (int, optional): reduction of p_range at each iteration.
             Defaults to 5
         verbose (bool, optional): Print progress. Default to True.
+        debug (bool, optional): Return debug info. Defaults to False.
 
     Returns:
         parameters (tuple): Best gaze parameters (phi, theta, radius)
@@ -472,26 +474,30 @@ def minimise_reprojection_error(
         error (numpy array): len(grid_phi) x len(grid_theta) x len(grid_radius) array
             of reprojection errors
     """
-
+    params = tuple(p0)
+    errors = []
     for i_iter in range(niter):
         grids = []
-        for p, r in zip(p0, p_range):
+        for p, r in zip(params, p_range):
             grids.append(np.linspace(-r, r, grid_size) + p)
-        params, error = grid_search_best_gaze(
+        params, error, errors_iter = grid_search_best_gaze(
             ellipse,
             eye_centre=eye_centre,
             f_z0=f_z0,
             grid_phi=grids[0],
             grid_theta=grids[1],
             grid_radius=grids[2],
+            debug=debug,
         )
+        if debug:
+            errors.append(errors_iter)
 
         p_range = (
             p_range[0] / reduction_factor,
             p_range[1] / reduction_factor,
             p_range[2] / reduction_factor,
         )
-    return params, error
+    return params, error, errors
 
 
 def optimise_eye_parameters(
