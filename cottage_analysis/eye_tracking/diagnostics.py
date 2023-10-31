@@ -87,6 +87,7 @@ def plot_dlc_tracking(camera_ds, dlc_ds, likelihood_threshold=None):
     cap = cv2.VideoCapture(str(video_path))
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
+    raise NotImplementedError("This function is not implemented yet")
 
 
 @slurm_it(
