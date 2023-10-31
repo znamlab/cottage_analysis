@@ -6,3 +6,5 @@ tests/test_data/tests_outputs
 *.egg-info/
 *checkpoint.ipynb
 *logs/*
+cottage_analysis/analysis/tests/*
+cottage_analysis/depth_analysis/*
