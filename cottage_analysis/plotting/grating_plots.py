@@ -6,7 +6,19 @@ from functools import partial
 
 
 def plot_sftf_fit(
-    neuron_series, sf_range, tf_range, sf_ticks=None, tf_ticks=None, min_sigma=0.25
+    neuron_series,
+    sf_range,
+    tf_range,
+    sf_ticks=None,
+    tf_ticks=None,
+    min_sigma=0.25,
+    plot_grid=True,
+    grid_rows=3,
+    grid_cols=3,
+    grid_x=0,
+    grid_y=0,
+    colorbar=True,
+    fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
     popt = GratingParams(
@@ -22,7 +34,12 @@ def plot_sftf_fit(
         dsi=neuron_series["dsi"],
     )
     # plot polar plot of direction tuning at the preferred SF and TF
-    plt.subplot(3, 3, 5, projection="polar")
+    if plot_grid:
+        plt.subplot2grid(
+            (grid_cols, grid_rows), (grid_x + 1, grid_y + 1), projection="polar"
+        )
+    else:
+        plt.subplot(3, 3, 5, projection="polar")
     angles = np.linspace(0, 2 * np.pi, 100)
     dir_tuning = grating_tuning_(
         (
@@ -38,6 +55,9 @@ def plot_sftf_fit(
         np.linspace(sf_range[0], sf_range[1], 100),
         np.linspace(tf_range[0], tf_range[1], 100),
     )
+    plt.xticks(fontsize=fontsize_dict["tick"])
+    plt.yticks(fontsize=fontsize_dict["tick"])
+
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
     for i, angle in enumerate(angles):
@@ -45,7 +65,13 @@ def plot_sftf_fit(
             (sfs, tfs, np.ones_like(sfs) * angle),
             *popt,
         )
-        plt.subplot(3, 3, angle_pos[i])
+        if plot_grid:
+            plt.subplot2grid(
+                (grid_cols, grid_rows),
+                (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
+            )
+        else:
+            plt.subplot(3, 3, angle_pos[i])
         plt.imshow(
             responses,
             extent=[sf_range[0], sf_range[1], tf_range[0], tf_range[1]],
@@ -55,20 +81,41 @@ def plot_sftf_fit(
             cmap="magma",
         )
         if sf_ticks is not None:
-            plt.xticks(np.log(sf_ticks), sf_ticks, rotation=90)
+            plt.xticks(
+                np.log(sf_ticks), sf_ticks, rotation=90, fontsize=fontsize_dict["tick"]
+            )
         if tf_ticks is not None:
-            plt.yticks(np.log(tf_ticks), tf_ticks)
+            plt.yticks(np.log(tf_ticks), tf_ticks, fontsize=fontsize_dict["tick"])
     # add a colorbar aligned to the bottom subplots without changing axis locations
-    plt.tight_layout(pad=0.4)
-    add_colorbar()
+    if plot_grid:
+        plt.tight_layout(pad=0.005)
+    if not plot_grid:
+        plt.tight_layout(pad=0.4)
+    if colorbar:
+        add_colorbar()
 
 
-def plot_sftf_tuning(dff_mean, roi):
+def plot_sftf_tuning(
+    dff_mean,
+    roi,
+    plot_grid=True,
+    grid_rows=3,
+    grid_cols=3,
+    grid_x=0,
+    grid_y=0,
+    colorbar=True,
+    fontsize_dict={"title": 10, "label": 10, "tick": 10},
+):
     # plot a polar plot of dff as a function of angle
-    plt.subplot(3, 3, 5, projection="polar")
     dir_tuning = dff_mean.groupby("Angle").max()
     # concatenate the first row to the end to close the circle
     dir_tuning = pd.concat([dir_tuning, dir_tuning.iloc[0:1]])
+    if plot_grid:
+        plt.subplot2grid(
+            (grid_cols, grid_rows), (grid_x + 1, grid_y + 1), projection="polar"
+        )
+    else:
+        plt.subplot(3, 3, 5, projection="polar")
     plt.plot(
         np.deg2rad(dir_tuning.index.values),
         dir_tuning[roi].values,
@@ -78,6 +125,8 @@ def plot_sftf_tuning(dff_mean, roi):
         np.deg2rad(dir_tuning.index),
         dir_tuning[roi],
     )
+    plt.xticks(fontsize=fontsize_dict["tick"])
+    plt.yticks(fontsize=fontsize_dict["tick"])
 
     sf_range = np.sort(dff_mean.SpatialFrequency.unique())
     tf_range = np.sort(dff_mean.TemporalFrequency.unique())
@@ -106,7 +155,13 @@ def plot_sftf_tuning(dff_mean, roi):
                     ][roi]
                 )
         # create a subplot for each angle
-        plt.subplot(3, 3, angle_pos[i])
+        if plot_grid:
+            plt.subplot2grid(
+                (grid_cols, grid_rows),
+                (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
+            )
+        else:
+            plt.subplot(3, 3, angle_pos[i])
         # plot a colormap of this_angle with tick labels
         plt.imshow(
             this_angle.T,
@@ -117,16 +172,22 @@ def plot_sftf_tuning(dff_mean, roi):
         plt.yticks(
             range(len(tf_range)),
             tf_range,
+            fontsize=fontsize_dict["tick"],
         )
         plt.xticks(
             range(len(sf_range)),
             sf_range,
             rotation=90,
+            fontsize=fontsize_dict["tick"],
         )
         plt.gca().invert_yaxis()
     # add a colorbar aligned to the bottom subplots without changing axis locations
-    plt.tight_layout(pad=0.4)
-    add_colorbar()
+    if plot_grid:
+        plt.tight_layout(pad=0.005)
+    if not plot_grid:
+        plt.tight_layout(pad=0.4)
+    if colorbar:
+        add_colorbar()
 
 
 def add_colorbar():
@@ -210,3 +271,78 @@ def plot_tuning_stats(neurons_df, trials_df, rsq_thresh=0.1):
     axes[0].set_xlabel("DSI")
     axes[0].set_ylabel("Speed (deg/s)")
     axes[0].set_yticks(np.log([1, 10, 100, 1000]), labels=[1, 10, 100, 1000])
+
+
+def basic_vis_SFTF_session(neurons_df, trials_df, neurons_ds):
+    rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
+    os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
+
+    plot_rows = 10
+    plot_cols = 3
+
+    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
+        plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
+        iroi = 0
+        for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
+            plot_depth_tuning_curve(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                rs_thr=0.2,
+                plot_fit=False,
+                linewidth=3,
+                linecolor="k",
+                fit_linecolor="r",
+                closed_loop=1,
+            )
+            plt.title(f"roi{roi}")
+
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
+            plot_speed_tuning(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                nbins=10,
+                which_speed="RS",
+                speed_min=0.01,
+                speed_max=1.5,
+                speed_thr=0.01,
+                smoothing_sd=1,
+            )
+
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
+            plot_speed_tuning(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                nbins=10,
+                which_speed="OF",
+                speed_min=0.01,
+                speed_max=1.5,
+                speed_thr=0.01,
+                smoothing_sd=1,
+            )
+
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
+            plot_PSTH(
+                neurons_df=neurons_df,
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=1,
+                max_distance=6,
+                nbins=20,
+                frame_rate=15,
+            )
+            plt.tight_layout()
+
+            iroi += 1
+        plt.savefig(
+            neurons_ds.path_full.parent
+            / "plots"
+            / "basic_vis"
+            / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+            dpi=100,
+        )
