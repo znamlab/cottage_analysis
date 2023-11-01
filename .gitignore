@@ -6,3 +6,4 @@ tests/test_data/tests_outputs
 *.egg-info/
 *checkpoint.ipynb
 *logs/*
+scripts/ccyp*
