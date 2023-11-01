@@ -24,29 +24,26 @@ def analyze_grating_responses(
     dfs = []
     dff_mean_all = []
     for i, recording in recordings.iterrows():
-        if i != recordings.name[3]:
-            vs_df = synchronisation.generate_vs_df(
-                recording=recording,
-                photodiode_protocol=photodiode_protocol,
-                flexilims_session=flexilims_session,
-                project=project,
-            )
-            img_df = synchronisation.generate_imaging_df(
-                vs_df=vs_df,
-                recording=recording,
-                flexilims_session=flexilims_session,
-                filter_datasets=filter_datasets,
-                return_volumes=return_volumes,
-            )
+        vs_df = synchronisation.generate_vs_df(
+            recording=recording,
+            photodiode_protocol=photodiode_protocol,
+            flexilims_session=flexilims_session,
+            project=project,
+        )
+        img_df = synchronisation.generate_imaging_df(
+            vs_df=vs_df,
+            recording=recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            return_volumes=return_volumes,
+        )
 
-            dff = synchronisation.load_imaging_data(
-                recording["name"], flexilims_session
-            )
-            trials_df, dff_mean = generate_trials_df(img_df, dff)
-            trials_df["irecording"] = i
-            dfs.append(trials_df)
-            dff_mean_all.append(dff_mean)
-            continue
+        dff = synchronisation.load_imaging_data(recording["name"], flexilims_session)
+        trials_df, dff_mean = generate_trials_df(img_df, dff)
+        trials_df["irecording"] = i
+        dfs.append(trials_df)
+        dff_mean_all.append(dff_mean)
+        continue
     return pd.concat(dfs, axis=0, ignore_index=True), dff_mean_all
 
 
