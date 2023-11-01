@@ -414,8 +414,15 @@ def generate_imaging_df(
     dffs = np.vstack(dffs).T
     spks = np.vstack(spks).T
     # convert dffs to list of arrays
-    imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
-    imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+    if dffs.shape[0] > imaging_df['imaging_frame'].idxmax():
+        print("Warning: The number of imaging frames from ScanImage is greater than the number of imaging frames synchronised with visual stimulus. Truncating the suite2p traces to match.")
+        last_valid_frame = imaging_df['imaging_frame'].idxmax()+1
+        imaging_df["dffs"] = np.split(dffs[0:last_valid_frame,:], last_valid_frame, axis=0)
+        imaging_df["spks"] = np.split(spks[0:last_valid_frame,:], last_valid_frame, axis=0)
+    else:
+        imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
+        imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+         
     return imaging_df
 
 

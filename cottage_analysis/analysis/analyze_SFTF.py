@@ -18,7 +18,7 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     size_control,
 )
-from cottage_analysis.plotting import basic_vis_plots, grating_plots, plotting_utils
+from cottage_analysis.plotting import grating_plots, plotting_utils
 
 
 def main(
