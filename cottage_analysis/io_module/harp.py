@@ -111,10 +111,28 @@ def load_harp(
     # READ events are the initial config loading at startup. We don't care
     harp_message = harp_message[harp_message.msg_type != "READ"]
 
+    all_addresses = list(harp_message.address.unique())
+    used_addresses = [reward_port, 32, 44]
+    rest = [a for a in all_addresses if a not in used_addresses]
     # WRITE messages are mostly the rewards.
     # The reward port is toggled by writing to register 36, let's focus on those events
     reward_message = harp_message[harp_message.address == reward_port]
-    output["reward_times"] = reward_message.timestamp_s.values
+    bits = np.array(np.hstack(reward_message.data.values), dtype="uint16")
+    bits = np.unpackbits(bits.astype(">u2").view("u1"))
+    bits = bits.reshape((len(reward_message), 16))
+    has_data = np.where(bits.sum(axis=0) > 0)[0]
+    harp_outputs = {}
+    for trigged_output in has_data:
+        oktime = bits[:, trigged_output] != 0
+        harp_outputs[trigged_output] = reward_message.timestamp_s.values[oktime]
+
+    # the data corresponds to which port is triggered
+    if 5 in harp_outputs:
+        output["reward_times"] = harp_outputs.pop(5)
+    else:
+        warnings.warn("Could not find any reward!")
+        output["reward_times"] = np.array([])
+    output["outputs"] = harp_outputs
 
     # EVENT messages are analog and digital input.
     # Analog are the photodiode and the rotary encoder, both on address 44
