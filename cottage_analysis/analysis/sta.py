@@ -5,6 +5,23 @@ from cottage_analysis.analysis import spheres
 from cottage_analysis.analysis import common_utils
 
 
+def sta(frames, imaging_df, mode='dff'):
+    # Select only the frames with stimuli
+    stimulus_frames = np.sum(frames, axis=(1,2)) > 0
+    # Select dffs or spikes
+    if mode == 'dff':
+        dffs = np.concatenate(imaging_df.dffs)
+    elif mode == 'spike':
+        dffs = np.concatenate(imaging_df.spks)
+    # calculate STA for all ROIs
+    dffs = dffs - np.mean(dffs[stimulus_frames, :], axis=0)
+    stas = dffs.T @ np.roll(np.reshape(frames, (frames.shape[0], -1)), 1, axis=0)
+    stas = np.reshape(stas, (stas.shape[0], *frames.shape[1:]))
+    sum_frames = np.sum(frames, axis=0)
+    stas = stas / sum_frames
+    return stas
+
+
 def sta_by_depth(
     trials_df,
     reconstructed_frames,
