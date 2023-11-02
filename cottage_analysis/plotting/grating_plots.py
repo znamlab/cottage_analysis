@@ -1,12 +1,16 @@
 import numpy as np
 import pandas as pd
+import os
+from tqdm import tqdm
 from matplotlib import pyplot as plt
 from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
+from cottage_analysis.plotting import basic_vis_plots
 from functools import partial
 
 
 def plot_sftf_fit(
-    neuron_series,
+    neurons_df,
+    roi,
     sf_range,
     tf_range,
     sf_ticks=None,
@@ -20,6 +24,26 @@ def plot_sftf_fit(
     colorbar=True,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
+    '''Plot SFTF fit for a given ROI
+
+    Args:
+        neurons_df (pd.Dataframe): neurons_df
+        roi (int): roi
+        sf_range (list): list of log sf range
+        tf_range (list): list of log tf range
+        sf_ticks (list, optional): list of sf range. Defaults to None.
+        tf_ticks (list, optional): list of tf range. Defaults to None.
+        min_sigma (float, optional): min sigma for fitting 2D gaussian. Defaults to 0.25.
+        plot_grid (bool, optional): whether to plot with subplots or grids. Defaults to True.
+        grid_rows (int, optional): grid plot row number. Defaults to 3.
+        grid_cols (int, optional): grid plot col number. Defaults to 3.
+        grid_x (int, optional): grid plot start row index. Defaults to 0.
+        grid_y (int, optional): grid plot start col index. Defaults to 0.
+        colorbar (bool, optional): whether to add colorbar. Defaults to True.
+        fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {"title": 10, "label": 10, "tick": 10}.
+    '''
+    
+    neuron_series = neurons_df.iloc[roi]
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
     popt = GratingParams(
         log_amplitude=neuron_series["log_amplitude"],
@@ -106,6 +130,20 @@ def plot_sftf_tuning(
     colorbar=True,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
+    '''Plot SFTF tuning for a given ROI with raw data
+
+    Args:
+        trials_df (pd.DataFrame): trials_df
+        roi (int): roi index
+        plot_grid (bool, optional): whether to plot with subplots or grids. Defaults to True.
+        grid_rows (int, optional): grid plot row number. Defaults to 3.
+        grid_cols (int, optional): grid plot col number. Defaults to 3.
+        grid_x (int, optional): grid plot start row index. Defaults to 0.
+        grid_y (int, optional): grid plot start col index. Defaults to 0.
+        colorbar (bool, optional): whether to add colorbar. Defaults to True.
+        fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {"title": 10, "label": 10, "tick": 10}.
+    '''
+    
     # Select the mean dff values for all ROIs from trials_df
     numerical_columns = trials_df.loc[:, trials_df.columns.str.isnumeric().isna()]
     named_columns = trials_df[['Angle','SpatialFrequency','TemporalFrequency']]
@@ -201,6 +239,8 @@ def plot_sftf_tuning(
 
 
 def add_colorbar():
+    '''Add colorbar to the current axis
+    '''
     cbar_pos = [
         1.02,
         plt.gca().get_position().y0,
@@ -283,76 +323,115 @@ def plot_tuning_stats(neurons_df, trials_df, rsq_thresh=0.1):
     axes[0].set_yticks(np.log([1, 10, 100, 1000]), labels=[1, 10, 100, 1000])
 
 
-def basic_vis_SFTF_session(neurons_df, trials_df, neurons_ds):
-    rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
-    os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
+def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, fontsize_dict={'title': 10, 'label': 10, 'tick': 10}):
+    '''Basic visualisation plots of ROI's depth and SFTF features
 
-    plot_rows = 10
-    plot_cols = 3
+    Args:
+        neurons_df (pd.DataFrame): neurons_df
+        trials_df_depth (pd.DataFrame): trials_df for depth recordings
+        trials_df_sftf (pd.DataFrame): trials_df for SFTF recordings
+        roi (int): roi index
+        fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {'title': 10, 'label': 10, 'tick': 10}.
+    '''
+    plot_rows=3
+    plot_cols=8
+    
+    plt.figure(figsize=(plot_cols*3, plot_rows*3))
+    # Plot depth tuning
+    plt.subplot2grid((plot_rows, plot_cols), (0, 0), colspan=2)
+    basic_vis_plots.plot_depth_tuning_curve(
+        neurons_df=neurons_df,
+        trials_df=trials_df_depth,
+        roi=roi,
+        rs_thr=0.2,
+        plot_fit=False,
+        linewidth=3,
+        linecolor="k",
+        fit_linecolor="r",
+        closed_loop=1,
+        fontsize_dict=fontsize_dict,
+    )
+    plt.title(f"roi{roi}, depth rsq{neurons_df.depth_tuning_test_rsq_closedloop[roi]:.2f}, SFTF rsq{neurons_df.rsq[roi]:.2f}", fontsize=fontsize_dict['title'])
 
-    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
-        plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
-        iroi = 0
-        for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
-            plot_depth_tuning_curve(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                rs_thr=0.2,
-                plot_fit=False,
-                linewidth=3,
-                linecolor="k",
-                fit_linecolor="r",
-                closed_loop=1,
-            )
-            plt.title(f"roi{roi}")
+    # Plot speed tuning
+    plt.subplot2grid((plot_rows, plot_cols), (1, 0), colspan=2)
+    basic_vis_plots.plot_speed_tuning(
+        neurons_df=neurons_df,
+        trials_df=trials_df_depth,
+        roi=roi,
+        is_closed_loop=1,
+        nbins=10,
+        which_speed="RS",
+        speed_min=0.01,
+        speed_max=1.5,
+        speed_thr=0.01,
+        smoothing_sd=1,
+        fontsize_dict=fontsize_dict,
+    )
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
-            plot_speed_tuning(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                nbins=10,
-                which_speed="RS",
-                speed_min=0.01,
-                speed_max=1.5,
-                speed_thr=0.01,
-                smoothing_sd=1,
-            )
+    plt.subplot2grid((plot_rows, plot_cols), (2, 0), colspan=2)
+    basic_vis_plots.plot_speed_tuning(
+        neurons_df=neurons_df,
+        trials_df=trials_df_depth,
+        roi=roi,
+        is_closed_loop=1,
+        nbins=10,
+        which_speed="OF",
+        speed_min=0.01,
+        speed_max=1.5,
+        speed_thr=0.01,
+        smoothing_sd=1,
+        fontsize_dict=fontsize_dict,
+    )
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
-            plot_speed_tuning(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                nbins=10,
-                which_speed="OF",
-                speed_min=0.01,
-                speed_max=1.5,
-                speed_thr=0.01,
-                smoothing_sd=1,
-            )
+    # Plot grating tuning with the raw data
+    plot_sftf_tuning(trials_df=trials_df_sftf, roi=roi,    
+                                plot_grid=True,
+                                    grid_rows=plot_rows,
+                                    grid_cols=plot_cols,
+                                    grid_x=0,
+                                    grid_y=2,
+                                    fontsize_dict=fontsize_dict)
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
-            plot_PSTH(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                max_distance=6,
-                nbins=20,
-                frame_rate=15,
-            )
-            plt.tight_layout()
+    # Plot grating fit   
+    plot_sftf_fit(
+        neurons_df=neurons_df,
+        roi=roi, 
+        sf_range=[np.log(np.sort(np.unique(trials_df_sftf.SpatialFrequency))[0]),
+                np.log(np.sort(np.unique(trials_df_sftf.SpatialFrequency))[-1])], 
+        tf_range=[np.log(np.sort(np.unique(trials_df_sftf.TemporalFrequency))[0]),
+                np.log(np.sort(np.unique(trials_df_sftf.TemporalFrequency))[-1])], 
+        sf_ticks=np.sort(trials_df_sftf.SpatialFrequency.unique()), 
+        tf_ticks=np.sort(trials_df_sftf.TemporalFrequency.unique()), 
+        min_sigma=0.25,
+        plot_grid=True,
+        grid_rows=plot_rows,
+        grid_cols=plot_cols,
+        grid_x=0,
+        grid_y=5,
+        fontsize_dict=fontsize_dict,
+        colorbar=False,
+    )
+    
+    
+def basic_vis_SFTF_session(neurons_df, trials_df_depth, trials_df_sftf, rois=[], save_dir=None, fontsize_dict={'title': 10, 'label': 10, 'tick': 10}):
+    '''Plot basic visuation of a whole session, or a list of ROIs
+    Args:
+        neurons_df (pd.DataFrame): neurons_df
+        trials_df_depth (pd.DataFrame): trials_df for depth recordings
+        trials_df_sftf (pd.DataFrame): trials_df for SFTF recordings
+        roi (int): roi index
+        save_dir (str, optional): save directory for plots. Defaults to None.
+        fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {'title': 10, 'label': 10, 'tick': 10}.
+    '''
+    if len(rois) == 0:
+        rois = neurons_df.roi.values
+    
+    if save_dir is not None:
+        os.makedirs(save_dir/ "plots" / "basic_vis_sftf", exist_ok=True)
 
-            iroi += 1
-        plt.savefig(
-            neurons_ds.path_full.parent
-            / "plots"
-            / "basic_vis"
-            / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
-            dpi=100,
-        )
+    for i in tqdm(rois):
+        basic_vis_SFTF_roi(neurons_df=neurons_df, trials_df_depth=trials_df_depth, trials_df_sftf=trials_df_sftf, roi=rois[i], fontsize_dict={'title': 15, 'label': 10, 'tick': 10});
+        if save_dir is not None:
+            plt.savefig(save_dir/ "plots" / "basic_vis_sftf" / f"roi{rois[i]}.png", dpi=100, bbox_inches='tight')
+            
