@@ -58,7 +58,7 @@ def generate_trials_df(img_df, dff, skip_first_n_volumes=2):
         .copy()
         .reset_index(drop=True)
     )
-    trials_df["stim_start"] = trials_df["imaging_frame"] + skip_first_n_volumes
+    trials_df["stim_start"] = trials_df["imaging_volume"] + skip_first_n_volumes
     trials_df["stim_end"] = trials_df["stim_start"].shift(-1)
     # drop the last row
     trials_df = trials_df.iloc[:-1]
