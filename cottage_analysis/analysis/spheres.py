@@ -572,6 +572,124 @@ def sync_all_recordings(
     return vs_df_all, trials_df_all
 
 
+def regenerate_frames_all_recordings(
+    session_name,
+    flexilims_session=None,
+    project=None,
+    filter_datasets=None,
+    recording_type="two_photon",
+    protocol_base="SpheresPermTubeReward",
+    photodiode_protocol=5,
+    return_volumes=True,
+    resolution=5,
+):
+    """Concatenate regenerated frames for all recordings in a session.
+
+    Args:
+        session_name (str): {mouse}_{session}
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
+        recording_type (str, optional): Type of the recording. Defaults to "two_photon".
+        protocol_base (str, optional): Base of the protocol. Defaults to "SpheresPermTubeReward".
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
+            Either 2 or 5 for now. Defaults to 5.
+        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+        resolution (float): size of a pixel in degrees
+
+    Returns:
+        (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all recordings (nframes * y * x), one concatenated imaging_df for all recordings.
+    """
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flexilims_session
+    )
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value=recording_type,
+        flexilims_session=flexilims_session,
+    )
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
+
+    for i, recording_name in enumerate(recordings.name):
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recording_name,
+            flexilims_session=flexilims_session,
+        )
+        
+        # Generate vs_df, imaging_df, trials_df for this recording
+        print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
+        vs_df = synchronisation.generate_vs_df(
+            recording=recording,
+            photodiode_protocol=photodiode_protocol,
+            flexilims_session=flexilims_session,
+            project=project,
+        )
+
+        imaging_df = synchronisation.generate_imaging_df(
+            vs_df=vs_df,
+            recording=recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            return_volumes=return_volumes,
+        )
+
+        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = search_param_log_trials(
+            recording=recording,
+            trials_df=trials_df,
+            flexilims_session=flexilims_session,
+        )
+        
+        # Load paramlog
+        harp_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp",
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+        param_log = pd.read_csv(paramlog_path)
+                
+        # Regenerate frames for this trial
+        sphere_size=10 * vs_df.OriginalSize.unique()[1]/0.087
+        frames = regenerate_frames(
+            frame_times=imaging_df.imaging_harptime,
+            trials_df=trials_df,
+            vs_df=vs_df,
+            param_logger=param_log,
+            time_column="HarpTime",
+            resolution=resolution,
+            sphere_size=sphere_size,
+            azimuth_limits=(-120, 120),
+            elevation_limits=(-40, 40),
+            verbose=True,
+            output_datatype="int16",
+            output=None,
+            # flip_x=True,
+        )
+        
+        if i == 0:
+            frames_all  = frames
+            imaging_df_all = imaging_df
+        else:
+            frames_all = np.concatenate((frames_all,frames), axis=0)
+            imaging_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+    print(f"Finished concatenating regenerated frames and imaging_df")
+
+    return frames_all, imaging_df_all
+
+
 def laplace_matrix(nx, ny):
     Ls = []
     for x in range(nx):
