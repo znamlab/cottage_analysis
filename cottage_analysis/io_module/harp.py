@@ -73,7 +73,7 @@ _PAYLOAD_STRUCT = {k: "<" + v for k, v in _PAYLOAD_STRUCT.items()}
 
 def load_harp(
     harp_bin,
-    reward_port=36,
+    reward_port=10,
     wheel_diameter=WHEEL_DIAMETER,
     ecoder_cpr=ENCODER_CPR,
     inverse_rotary=True,
@@ -86,7 +86,8 @@ def load_harp(
 
     Args:
         harp_bin (str or Path): Path to the raw .bin harp file
-        reward_port (int): Port where the valve for reward is connected
+        reward_port (int): Port where the valve for reward is connected. This is the
+            the bit that is toggled when a reward is given and is saved on address 36
         wheel_diameter (float): Diameter of the wheel (in m or cm, output will have
                                 same unit)
         ecoder_cpr (int): Number of tick per turn. Used to go from tick to distance
@@ -112,11 +113,11 @@ def load_harp(
     harp_message = harp_message[harp_message.msg_type != "READ"]
 
     all_addresses = list(harp_message.address.unique())
-    used_addresses = [reward_port, 32, 44]
+    used_addresses = [36, 32, 44]
     rest = [a for a in all_addresses if a not in used_addresses]
     # WRITE messages are mostly the rewards.
     # The reward port is toggled by writing to register 36, let's focus on those events
-    reward_message = harp_message[harp_message.address == reward_port]
+    reward_message = harp_message[harp_message.address == 36]
     bits = np.array(np.hstack(reward_message.data.values), dtype="uint16")
     bits = np.unpackbits(bits.astype(">u2").view("u1"))
     bits = bits.reshape((len(reward_message), 16))
@@ -127,8 +128,8 @@ def load_harp(
         harp_outputs[trigged_output] = reward_message.timestamp_s.values[oktime]
 
     # the data corresponds to which port is triggered
-    if 5 in harp_outputs:
-        output["reward_times"] = harp_outputs.pop(5)
+    if reward_port in harp_outputs:
+        output["reward_times"] = harp_outputs.pop(reward_port)
     else:
         warnings.warn("Could not find any reward!")
         output["reward_times"] = np.array([])
