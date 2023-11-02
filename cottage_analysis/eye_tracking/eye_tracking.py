@@ -514,7 +514,12 @@ def fit_ellipse(
 
 @slurm_it(
     conda_env=envs["cottage_analysis"],
-    slurm_options=dict(time="48:00:00", mem="64G", partition="cpu"),
+    slurm_options={
+        "time": "48:00:00",
+        "mem": "64G",
+        "partition": "cpu",
+        "cpus-per-task": 32,
+    },
 )
 def run_reproject_eye(
     camera_ds_name,
