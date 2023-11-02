@@ -36,7 +36,7 @@ def plot_sftf_fit(
     # plot polar plot of direction tuning at the preferred SF and TF
     if plot_grid:
         plt.subplot2grid(
-            (grid_cols, grid_rows), (grid_x + 1, grid_y + 1), projection="polar"
+            (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
         )
     else:
         plt.subplot(3, 3, 5, projection="polar")
@@ -67,7 +67,7 @@ def plot_sftf_fit(
         )
         if plot_grid:
             plt.subplot2grid(
-                (grid_cols, grid_rows),
+                (grid_rows, grid_cols),
                 (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
             )
         else:
@@ -96,7 +96,7 @@ def plot_sftf_fit(
 
 
 def plot_sftf_tuning(
-    dff_mean,
+    trials_df,
     roi,
     plot_grid=True,
     grid_rows=3,
@@ -106,13 +106,23 @@ def plot_sftf_tuning(
     colorbar=True,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
+    # Select the mean dff values for all ROIs from trials_df
+    numerical_columns = trials_df.loc[:, trials_df.columns.str.isnumeric().isna()]
+    named_columns = trials_df[['Angle','SpatialFrequency','TemporalFrequency']]
+    dff_mean = pd.concat([numerical_columns, named_columns], axis=1)
+
+    # Find the stimuli SF/Tf/angle ranges
+    sf_range = np.sort(np.unique(trials_df.SpatialFrequency))
+    tf_range = np.sort(np.unique(trials_df.TemporalFrequency))
+    angle_range = np.sort(np.unique(trials_df.Angle))
+
     # plot a polar plot of dff as a function of angle
     dir_tuning = dff_mean.groupby("Angle").max()
     # concatenate the first row to the end to close the circle
     dir_tuning = pd.concat([dir_tuning, dir_tuning.iloc[0:1]])
     if plot_grid:
         plt.subplot2grid(
-            (grid_cols, grid_rows), (grid_x + 1, grid_y + 1), projection="polar"
+            (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
         )
     else:
         plt.subplot(3, 3, 5, projection="polar")
@@ -157,7 +167,7 @@ def plot_sftf_tuning(
         # create a subplot for each angle
         if plot_grid:
             plt.subplot2grid(
-                (grid_cols, grid_rows),
+                (grid_rows, grid_cols),
                 (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
             )
         else:
