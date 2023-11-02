@@ -18,7 +18,7 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     size_control,
 )
-from cottage_analysis.plotting import basic_vis_plots, grating_plots, plotting_utils
+from cottage_analysis.plotting import grating_plots
 
 
 def main(
@@ -54,7 +54,9 @@ def main(
         photodiode_protocol=photodiode_protocol,
         protocol_base=protocol_base,
     )
-    return trials_df_all
+    neurons_df_sftf = fit_gaussian_blob.fit_sftf_tuning(trials_df=trials_df_all, niter=5, min_sigma=0.25)
+
+    return trials_df_all, neurons_df_sftf
 
 
 def plot_sftf_roi(project, session_name, trials_df_all, roi, mode="fitted"):
@@ -82,7 +84,7 @@ def plot_sftf_roi(project, session_name, trials_df_all, roi, mode="fitted"):
 
     if mode == "raw":
         numerical_columns = trials_df_all.loc[
-            :, trials_df_all.columns.str.isnumeric().isna()
+            :, trials_df_all.columns.str.isnumeric()
         ]
         named_columns = trials_df_all[
             ["Angle", "SpatialFrequency", "TemporalFrequency"]
