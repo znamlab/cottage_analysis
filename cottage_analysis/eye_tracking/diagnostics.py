@@ -165,6 +165,87 @@ def plot_ellipse_fit(
     )
 
 
+def get_example_frame(
+    binned_ellipses,
+    camera_ds,
+    dlc_ds,
+    cropping,
+    example_frame=None,
+    bin_edges_x=None,
+    bin_edges_y=None,
+):
+    """Get an example frame to use as background for plotting
+
+    Args:
+        binned_elipses (pd.DataFrame): Binned ellipse parameters, used if any of
+            `dlc_ds`, `bin_edges_x` or `bin_edges_y` is None.
+        camera_ds (flexiznam.Dataset): Camera dataset
+        dlc_ds (flexiznam.Dataset | pd.DataFrame): DLC dataset or DLC results
+        cropping (list): Cropping info for image
+        example_frame (int, optional): Frame to use as background. Defaults to None.
+        bin_edges_x (np.array, optional): Binning edges for x. Defaults to None.
+        bin_edges_y (np.array, optional): Binning edges for y. Defaults to None.
+
+    Returns:
+        tuple: (gray, reflection, extent)
+    """
+    if camera_ds is not None:
+        # get one frame in the middle of the recording to use as background
+        video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
+        cam_data = cv2.VideoCapture(str(video_file))
+        if example_frame is None:
+            example_frame = int(cam_data.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
+        cam_data.set(cv2.CAP_PROP_POS_FRAMES, example_frame - 1)
+        ret, frame = cam_data.read()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if cropping is not None:
+            gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
+        cam_data.release()
+    else:
+        gray = None
+
+    if (dlc_ds is not None) and (example_frame is not None):
+        if isinstance(dlc_ds, flz.Dataset):
+            dlc_data = pd.read_hdf(
+                dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
+            )
+            dlc_data.columns = dlc_data.columns.droplevel("scorer")
+            dlc_data = dlc_data.loc[example_frame]
+        elif isinstance(dlc_ds, pd.DataFrame):
+            dlc_data = dlc_ds.loc[example_frame]
+        else:
+            raise ValueError("dlc_ds must be a Dataset or a DataFrame")
+        reflection = np.array([dlc_data.reflection.x, dlc_data.reflection.y])
+    else:
+        reflection = np.array(
+            [
+                binned_ellipses.reflection_x.median(),
+                binned_ellipses.reflection_y.median(),
+            ]
+        )
+    if (binned_ellipses is None) and (bin_edges_x is None) or (bin_edges_y is None):
+        extent = None
+    else:
+        if bin_edges_x is None:
+            bin_edges_x = np.arange(
+                binned_ellipses.index.levels[0].min(),
+                binned_ellipses.index.levels[0].max() + 1,
+            )
+        if bin_edges_y is None:
+            bin_edges_y = np.arange(
+                binned_ellipses.index.levels[1].min(),
+                binned_ellipses.index.levels[1].max() + 1,
+            )
+
+        extent = (
+            bin_edges_x.min() + reflection[0],
+            bin_edges_x.max() + reflection[0],
+            bin_edges_y.max() + reflection[1],
+            bin_edges_y.min() + reflection[1],
+        )
+    return gray, reflection, extent
+
+
 def plot_binned_ellipse_params(
     binned_ellipses,
     ns,
@@ -172,7 +253,12 @@ def plot_binned_ellipse_params(
     min_frame_cutoff=10,
     fig_title=None,
     camera_ds=None,
+    example_frame=None,
+    dlc_ds=None,
     cropping=None,
+    col2plot=("angle", "eccentricity", "minor_radius", "major_radius"),
+    bin_edges_x=None,
+    bin_edges_y=None,
 ):
     """Plot binned ellipse parameters
 
@@ -184,52 +270,52 @@ def plot_binned_ellipse_params(
             Defaults to 10.
         fig_title (str, optional): Title of the figure. Defaults to None.
         camera_ds (flexiznam.Dataset, optional): Camera dataset. Defaults to None.
+        example_frame (int, optional): Frame to use as background. Defaults to None.
+        dlc_ds (flexiznam.Dataset, optional): DLC dataset to find reflection position
+            for example frame. If None will take median reflection position. Defaults
+            to None.
         cropping (list, optional): Cropping info for image. Defaults to None.
+        col2plot (tuple, optional): Columns to plot. Defaults to
+            ("angle", "eccentricity", "minor_radius", "major_radius").
+        extent (tuple, optional): Extent of the binned_ellipses. Defaults to None.
 
     Returns:
         None
     """
-    if camera_ds is not None:
-        # get one frame in the middle of the recording to use as background
-        video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
-        cam_data = cv2.VideoCapture(str(video_file))
-        cam_data.set(
-            cv2.CAP_PROP_POS_FRAMES, int(cam_data.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
-        )
-        ret, frame = cam_data.read()
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if cropping is not None:
-            gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
-        cam_data.release()
+
+    gray, reflection, extent = get_example_frame(
+        binned_ellipses,
+        camera_ds,
+        dlc_ds,
+        cropping,
+        example_frame,
+        bin_edges_x,
+        bin_edges_y,
+    )
 
     enough_frames = binned_ellipses[ns > min_frame_cutoff].copy()
     enough_frames["eccentricity"] = np.sqrt(
         1 - (enough_frames["minor_radius"] ** 2 / enough_frames["major_radius"] ** 2)
     )
-    mat = np.zeros((len(ns.index.levels[0]), len(ns.index.levels[1]))) + np.nan
-    extent = (
-        binned_ellipses.centre_x.min(),
-        binned_ellipses.centre_x.max(),
-        binned_ellipses.centre_y.max(),
-        binned_ellipses.centre_y.min(),
-    )
 
-    fig = plt.figure(figsize=(7, 6))
-    for ip, p in enumerate(["angle", "eccentricity", "minor_radius", "major_radius"]):
-        mat[
-            enough_frames.index.get_level_values(0),
-            enough_frames.index.get_level_values(1),
-        ] = enough_frames[p]
+    nplots = len(col2plot)
+    nrows = int(np.ceil(np.sqrt(nplots)))
+    ncols = int(np.ceil(nplots / nrows))
+    fig = plt.figure(figsize=(ncols * 3, nrows * 2.5))
+
+    for ip, p in enumerate(col2plot):
+        mat = mat_from_binned(enough_frames, value_col=p)
         if ip:
             lim = np.nanquantile(mat, [0.01, 0.99])
         else:
-            lim = (0, np.pi)
-        ax = fig.add_subplot(2, 2, ip + 1)
+            lim = (-np.pi / 2, np.pi / 2)
+        ax = fig.add_subplot(nrows, ncols, ip + 1)
         divider = make_axes_locatable(ax)
         if camera_ds is not None:
             ax.imshow(gray, cmap="gray")
         cmap = "viridis" if ip else "twilight"
-        img = ax.imshow(mat.T, vmin=lim[0], vmax=lim[1], cmap=cmap, extent=extent)
+        img = ax.imshow(mat, vmin=lim[0], vmax=lim[1], cmap=cmap, extent=extent)
+
         cax = divider.append_axes("right", size="5%", pad=0.05)
         fig.colorbar(img, cax=cax, orientation="vertical")
         ax.set_title(p)
@@ -239,7 +325,30 @@ def plot_binned_ellipse_params(
     fig.suptitle(fig_title)
     fig.subplots_adjust(left=0.05, right=0.95, wspace=0.1, top=0.8)
     fig.savefig(save_folder / f"binned_pupilparams.png", dpi=600)
-    plt.close(fig)
+    return fig
+
+
+def mat_from_binned(binned_df, value_col):
+    """Convert a binned dataframe to a matrix
+
+    Args:
+        binned_df (pd.DataFrame): Binned dataframe
+        value_col (str): Column to use as values
+
+    Returns:
+        np.array: Matrix of values
+    """
+    ind_col = binned_df.index.levels[0]
+    ind_row = binned_df.index.levels[1]
+    bin_col = np.arange(ind_col.min(), ind_col.max() + 1)
+    bin_row = np.arange(ind_row.min(), ind_row.max() + 1)
+    mat = np.zeros((len(bin_row), len(bin_col))) + np.nan
+    mat[
+        binned_df.index.get_level_values(1) - ind_row.min(),
+        binned_df.index.get_level_values(0) - ind_col.max(),
+    ] = binned_df[value_col]
+
+    return mat
 
 
 def plot_eye_centre_estimate(
@@ -250,14 +359,20 @@ def plot_eye_centre_estimate(
     cropping,
     save_folder,
     example_frame=1000,
+    bin_edges_x=None,
+    bin_edges_y=None,
+    dlc_ds=None,
 ):
-    video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
-    cam_data = cv2.VideoCapture(str(video_file))
-    cam_data.set(cv2.CAP_PROP_POS_FRAMES, example_frame - 1)
-    ret, frame = cam_data.read()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
-    cam_data.release()
+    gray, reflection, extent = get_example_frame(
+        binned_frames,
+        camera_ds,
+        dlc_ds,
+        cropping,
+        example_frame,
+        bin_edges_x,
+        bin_edges_y,
+    )
+
     fig, ax = plt.subplots(1, 1)
     fig.set_size_inches(10, 10 * gray.shape[0] / gray.shape[1])
     divider = make_axes_locatable(ax)
@@ -268,19 +383,8 @@ def plot_eye_centre_estimate(
     binned_frames["eccentricity"] = np.sqrt(
         1 - (binned_frames["minor_radius"] ** 2 / binned_frames["major_radius"] ** 2)
     )
-    mat = (
-        np.zeros(
-            (len(binned_frames.index.levels[0]), len(binned_frames.index.levels[1]))
-        )
-        + np.nan
-    )
-    mat[
-        binned_frames.index.get_level_values(0),
-        binned_frames.index.get_level_values(1),
-    ] = binned_frames["eccentricity"]
-    minx, maxx = binned_frames.centre_x.min(), binned_frames.centre_x.max()
-    miny, maxy = binned_frames.centre_y.min(), binned_frames.centre_y.max()
-    img = ax.imshow(mat, cmap="RdBu_r", alpha=0.9, extent=[minx, maxx, maxy, miny])
+    mat = mat_from_binned(binned_frames, "eccentricity")
+    img = ax.imshow(mat, cmap="viridis_r", alpha=0.9, extent=extent)
     cax = divider.append_axes("right", size="5%", pad=0.05)
     fig.colorbar(img, cax=cax, orientation="vertical")
 
@@ -295,21 +399,21 @@ def plot_eye_centre_estimate(
             *[(origin[a] + ref[a] + n_v[a] * rng) for a in range(2)],
             color="purple",
             alpha=0.2,
-            lw=1,
+            lw=2,
         )
-    ax.plot(*(eye_centre_binned + ref), color="g", marker="o")
+    ax.plot(*(eye_centre_binned + ref), color="k", marker="o")
     eye_binned = mpl.patches.Circle(
         xy=(eye_centre_binned + ref),
         radius=f_z0_binned,
         facecolor="none",
-        edgecolor="g",
+        edgecolor="k",
     )
     ax.add_artist(eye_binned)
     ax.set_xlim(0, gray.shape[1])
     _ = ax.set_ylim(gray.shape[0], 0)
 
     fig.savefig(save_folder / f"eye_centre_estimate.png")
-    plt.close(fig)
+    return fig
 
 
 def plot_reprojection(
@@ -320,8 +424,10 @@ def plot_reprojection(
     fitted_model,
     camera_ds,
     cropping,
-    target_file,
+    target_file=None,
     initial_model=None,
+    initial_eye_centre=None,
+    initial_f_z0=None,
 ):
     """Plot reprojection of fitted ellipse on example frame
 
@@ -335,11 +441,18 @@ def plot_reprojection(
         fitted_model (EllipseModel): Output of the fit.
         camera_ds (flexiznam.Dataset): Camera dataset
         cropping (list): Cropping info for image
-        save_folder (Path): Folder to save the figure to
+        target_file (Path, optional): File name to save figure. Defaults to None.
+        initial_model (EllipseModel, optional): Initial model. Defaults to None.
+        initial_eye_centre (np.array, optional): Initial eye centre. Defaults to None.
+        initial_f_z0 (float, optional): Initial f/z0. Defaults to None.
 
     Returns:
-        None"""
+        matplotlib.figure.Figure: Figure object
+    """
     # find example frame with eye close to median position
+    fitted_params = fitted_params[
+        ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
+    ]
     dlc_res = dlc_res.copy()
     if "scorer" in dlc_res.columns.names:
         dlc_res.columns = dlc_res.columns.droplevel("scorer")
@@ -353,24 +466,22 @@ def plot_reprojection(
     dst = (eyex - fitted_params.pupil_x).abs() + (eyey - fitted_params.pupil_y).abs()
     example_frame = dst.idxmin()
 
-    series = dlc_res.loc[example_frame]
-    reflection = np.array([series.reflection.x, series.reflection.y])
-    video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
-    cam_data = cv2.VideoCapture(str(video_file))
-    cam_data.set(cv2.CAP_PROP_POS_FRAMES, example_frame - 1)
-    ret, frame = cam_data.read()
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
-    cam_data.release()
+    gray, reflection, extent = get_example_frame(
+        None, camera_ds, dlc_res, cropping, example_frame
+    )
 
     fig = plt.figure()
     ax = plt.subplot(1, 1, 1)
     ax.axis("off")
+    # background
     ax.imshow(gray, cmap="gray")
+    # dlc track
     circ_coord = EllipseModel.predict_xy(
         None, np.arange(0, 2 * np.pi, 0.1), fitted_params
     ) + reflection.reshape(1, 2)
     ax.plot(circ_coord[:, 0], circ_coord[:, 1], label="DLC fit", color="lightblue")
+
+    # plot eye centre
     ax.plot(*(eye_centre + reflection), color="g", marker="o", label="Eye centre")
     eye_binned = mpl.patches.Circle(
         xy=(eye_centre + reflection),
@@ -381,6 +492,7 @@ def plot_reprojection(
     )
     ax.add_artist(eye_binned)
 
+    # ellipse fit
     circ_coord = EllipseModel.predict_xy(
         None, np.arange(0, 2 * np.pi, 0.1), fitted_model
     ) + reflection.reshape(1, 2)
@@ -402,41 +514,107 @@ def plot_reprojection(
             color="purple",
             ls=":",
         )
+    if initial_eye_centre is not None:
+        ax.plot(
+            *(initial_eye_centre + reflection),
+            color="pink",
+            marker="o",
+            ls=":",
+            label="Initial eye centre",
+        )
+        if initial_f_z0 is not None:
+            eye_binned = mpl.patches.Circle(
+                xy=(initial_eye_centre + reflection),
+                radius=initial_f_z0,
+                facecolor="none",
+                edgecolor="pink",
+                label=r"$\frac{f}{z_0}$",
+            )
+        ax.add_artist(eye_binned)
     ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
     plt.tight_layout()
-    fig.savefig(target_file)
-    plt.close(fig)
+    if target_file is not None:
+        fig.savefig(target_file)
+    return fig
 
 
-def plot_gaze_fit(binned_ellipses, eye_rotation, save_folder, nbins):
+def plot_gaze_fit(
+    binned_ellipses,
+    eye_rotation,
+    error=None,
+    camera_ds=None,
+    dlc_ds=None,
+    cropping=None,
+    example_frame=None,
+    bin_edges_x=None,
+    bin_edges_y=None,
+    target_file=None,
+):
     """Plot gaze fit on a grid
 
     Args:
         binned_ellipses (pd.DataFrame): Binned ellipse parameters
-        eye_rotation (np.array): Estimated eye rotation ()
-        save_folder (Path): Folder to save the figure to
-        nbins (tuple): Number of bins in the grid
+        eye_rotation (np.array): Estimated eye rotation (same length as binned_ellipses)
+        error (np.array, optional): Error in the fit (same length as binned_ellipses)
+            Defaults to None.
+        camera_ds (flexiznam.Dataset, optional): Camera dataset. Defaults to None.
+        dlc_ds (flexiznam.Dataset, optional): DLC dataset to find reflection position
+            for example frame. If None will take median reflection position. Defaults
+            to None.
+        cropping (list, optional): Cropping info for image. Defaults to None.
+        example_frame (int, optional): Frame to use as background. Defaults to None.
+        bin_edges_x (np.array, optional): Binning edges for x. Defaults to None.
+        bin_edges_y (np.array, optional): Binning edges for y. Defaults to None.
+        target_file (Path, optional): File name to save figure. Defaults to None.
 
     Returns:
-        None
+        matplotlib.figure.Figure: Figure object
     """
-    mat = np.zeros((nbins[0] + 1, nbins[1] + 1, 3)) + np.nan
-    for i_pos, (pos, _) in enumerate(binned_ellipses.iterrows()):
-        mat[pos[0], pos[1]] = eye_rotation[i_pos]
-    fig = plt.figure(figsize=(15, 4))
+
+    gray, reflection, extent = get_example_frame(
+        binned_ellipses,
+        camera_ds,
+        dlc_ds,
+        cropping,
+        example_frame,
+        bin_edges_x,
+        bin_edges_y,
+    )
+
+    combined = binned_ellipses.copy()
+    combined["phi"] = np.rad2deg(eye_rotation[:, 0])
+    combined["theta"] = np.rad2deg(eye_rotation[:, 1])
+    combined["radius"] = eye_rotation[:, 2]
     labels = ["phi", "theta", "radius"]
-    for i in range(3):
-        plt.subplot(1, 3, 1 + i)
+
+    if error is not None:
+        combined["error"] = error
+        labels.append("error")
+
+    fig = plt.figure(figsize=(15, 4))
+    nplots = len(labels)
+    for i in range(nplots):
+        mat = mat_from_binned(combined, value_col=labels[i])
+        ax = plt.subplot(1, nplots, 1 + i)
         if i < 2:
-            d = np.rad2deg(mat[..., i])
             cmap = "twilight"
         else:
-            d = mat[..., i]
             cmap = "viridis"
-        plt.imshow(
-            d, cmap=cmap, vmin=np.nanquantile(d, 0.01), vmax=np.nanquantile(d, 0.99)
-        )
-        plt.title(labels[i])
-        plt.colorbar()
-    fig.savefig(save_folder / f"initial_gaze_fit.png")
-    plt.close(fig)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        if gray is not None:
+            ax.imshow(gray, cmap="gray")
+        img = ax.imshow(mat, cmap=cmap, extent=extent, interpolation="nearest")
+        ax.set_title(labels[i])
+        if gray is not None:
+            ax.set_xlim(0, gray.shape[1])
+            ax.set_ylim(gray.shape[0], 0)
+        fig.colorbar(img, cax=cax, orientation="vertical")
+        if i:
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    fig.subplots_adjust(left=0.05, right=0.95, wspace=0.2, top=0.95)
+    if target_file is not None:
+        fig.savefig(target_file)
+    return fig
