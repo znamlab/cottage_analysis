@@ -101,15 +101,15 @@ def plot_sftf_roi(project, session_name, trials_df_all, roi, mode="fitted"):
         grating_plots.plot_sftf_fit(
             neuron_series=neurons_df_sftf.iloc[roi],
             sf_range=[
-                np.log(np.sort(np.unique(trials_df_all_sftf.SpatialFrequency))[0]),
-                np.log(np.sort(np.unique(trials_df_all_sftf.SpatialFrequency))[-1]),
+                np.log(np.sort(np.unique(trials_df_sftf.SpatialFrequency))[0]),
+                np.log(np.sort(np.unique(trials_df_sftf.SpatialFrequency))[-1]),
             ],
             tf_range=[
-                np.log(np.sort(np.unique(trials_df_all_sftf.TemporalFrequency))[0]),
-                np.log(np.sort(np.unique(trials_df_all_sftf.TemporalFrequency))[-1]),
+                np.log(np.sort(np.unique(trials_df_sftf.TemporalFrequency))[0]),
+                np.log(np.sort(np.unique(trials_df_sftf.TemporalFrequency))[-1]),
             ],
-            sf_ticks=np.sort(trials_df_all_sftf.SpatialFrequency.unique()),
-            tf_ticks=np.sort(trials_df_all_sftf.TemporalFrequency.unique()),
+            sf_ticks=np.sort(trials_df_sftf.SpatialFrequency.unique()),
+            tf_ticks=np.sort(trials_df_sftf.TemporalFrequency.unique()),
             min_sigma=0.25,
         )
         plt.savefig(

@@ -38,7 +38,9 @@ def analyze_grating_responses(
             return_volumes=return_volumes,
         )
 
-        dff = synchronisation.load_imaging_data(recording["name"], flexilims_session)
+        dff = synchronisation.load_imaging_data(
+            recording["name"], flexilims_session
+        )
         trials_df, dff_mean = generate_trials_df(img_df, dff)
         trials_df["irecording"] = i
         dfs.append(trials_df)

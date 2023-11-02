@@ -154,7 +154,7 @@ def find_monitor_frames(
             correlation_threshold=0.8,
             relative_corr_thres=0.02,
             minimum_lag=1.0 / frame_rate,
-            do_plot=True,
+            do_plot=False, #CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
             save_folder=diagnostics_folder,
             verbose=True,
         )
