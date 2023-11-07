@@ -160,20 +160,25 @@ def generate_vs_df(
     project=None,
     harp_recording=None,
     onix_recording=None,
+    conflicts="skip",
 ):
-    """Generate a DataFrame that contains information for each monitor frame. This requires
-    monitor frames to be synced first.
+    """Generate a DataFrame that contains information for each monitor frame. This 
+    requires monitor frames to be synced first.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity
         photodiode_protocol (int): number of photodiode quad colors used for monitoring
             frame refresh. Either 2 or 5 for now. Defaults to 5.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
-        harp_recording (str or pandas.Series): recording name or recording entry if
-            different from (vis stim) recording. Defaults to None.
-        onix_recording (str or pandas.Series): recording name or recording entry if
-            photodiode is recorded on onix. Defaults to None.
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to 
+            None.
+        project (str, optional): project name. Defaults to None. Must be provided if 
+            flexilims_session is None.
+        harp_recording (str or pandas.Series, optional): recording name or recording 
+            entry if different from (vis stim) recording. Defaults to None.
+        onix_recording (str or pandas.Series, optional): recording name or recording 
+            entry if photodiode is recorded on onix. Defaults to None.
+        conflicts (str, optional): how to deal with conflicts when updating flexilims. 
+            Defaults to "skip".
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -195,7 +200,7 @@ def generate_vs_df(
         photodiode_protocol=photodiode_protocol,
         harp_recording=harp_recording,
         onix_recording=onix_recording,
-        conflicts="skip",
+        conflicts=conflicts,
     )
 
     monitor_frames_df = monitor_frames_df[
