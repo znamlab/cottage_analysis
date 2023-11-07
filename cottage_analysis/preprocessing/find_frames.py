@@ -629,6 +629,8 @@ def run_cross_correlation(
 ):
     """Run cross correlation between photodiode signal and frame log
 
+    Will test correlations with lags in [expected_lag-maxlag, expected_lag+maxlag]
+
     Args:
         frames_df (pd.Dataframe): Dataframe containing frame information as created by
             `create_frame_df`
