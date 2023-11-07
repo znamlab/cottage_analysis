@@ -1,18 +1,20 @@
+from functools import partial
+
+import flexiznam as flz
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-from cottage_analysis.preprocessing import synchronisation
-import flexiznam as flz
 from scipy.optimize import curve_fit
-from scipy.stats import zscore
-from cottage_analysis.analysis.fit_gaussian_blob import (
-    gaussian_3d_rf,
-    gabor_3d_rf,
-    Gaussian3DRFParams,
-    Gabor3DRFParams,
-)
-from functools import partial
+from scipy.stats import mode, zscore
 from sklearn.model_selection import StratifiedKFold, train_test_split
+from tqdm import tqdm
+
+from cottage_analysis.analysis.fit_gaussian_blob import (
+    Gabor3DRFParams,
+    Gaussian3DRFParams,
+    gabor_3d_rf,
+    gaussian_3d_rf,
+)
+from cottage_analysis.preprocessing import synchronisation
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
@@ -572,6 +574,124 @@ def sync_all_recordings(
     return vs_df_all, trials_df_all
 
 
+def regenerate_frames_all_recordings(
+    session_name,
+    flexilims_session=None,
+    project=None,
+    filter_datasets=None,
+    recording_type="two_photon",
+    protocol_base="SpheresPermTubeReward",
+    photodiode_protocol=5,
+    return_volumes=True,
+    resolution=5,
+):
+    """Concatenate regenerated frames for all recordings in a session.
+
+    Args:
+        session_name (str): {mouse}_{session}
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
+        recording_type (str, optional): Type of the recording. Defaults to "two_photon".
+        protocol_base (str, optional): Base of the protocol. Defaults to "SpheresPermTubeReward".
+        photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
+            Either 2 or 5 for now. Defaults to 5.
+        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+        resolution (float): size of a pixel in degrees
+
+    Returns:
+        (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all recordings (nframes * y * x), one concatenated imaging_df for all recordings.
+    """
+    assert flexilims_session is not None or project is not None
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flexilims_session
+    )
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value=recording_type,
+        flexilims_session=flexilims_session,
+    )
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
+
+    for i, recording_name in enumerate(recordings.name):
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recording_name,
+            flexilims_session=flexilims_session,
+        )
+
+        # Generate vs_df, imaging_df, trials_df for this recording
+        print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
+        vs_df = synchronisation.generate_vs_df(
+            recording=recording,
+            photodiode_protocol=photodiode_protocol,
+            flexilims_session=flexilims_session,
+            project=project,
+        )
+
+        imaging_df = synchronisation.generate_imaging_df(
+            vs_df=vs_df,
+            recording=recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            return_volumes=return_volumes,
+        )
+
+        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
+
+        trials_df = search_param_log_trials(
+            recording=recording,
+            trials_df=trials_df,
+            flexilims_session=flexilims_session,
+        )
+
+        # Load paramlog
+        harp_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="harp",
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+        param_log = pd.read_csv(paramlog_path)
+
+        # Regenerate frames for this trial
+        sphere_size = 10 * vs_df.OriginalSize.unique()[1] / 0.087
+        frames = regenerate_frames(
+            frame_times=imaging_df.imaging_harptime,
+            trials_df=trials_df,
+            vs_df=vs_df,
+            param_logger=param_log,
+            time_column="HarpTime",
+            resolution=resolution,
+            sphere_size=sphere_size,
+            azimuth_limits=(-120, 120),
+            elevation_limits=(-40, 40),
+            verbose=True,
+            output_datatype="int16",
+            output=None,
+            # flip_x=True,
+        )
+
+        if i == 0:
+            frames_all = frames
+            imaging_df_all = imaging_df
+        else:
+            frames_all = np.concatenate((frames_all, frames), axis=0)
+            imaging_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+    print(f"Finished concatenating regenerated frames and imaging_df")
+
+    return frames_all, imaging_df_all
+
+
 def laplace_matrix(nx, ny):
     Ls = []
     for x in range(nx):
@@ -599,6 +719,8 @@ def fit_3d_rfs(
     shift_stim=2,
     use_col="dffs",
     k_folds=5,
+    choose_rois=(),
+    validation=False,
 ):
     """Fit 3D receptive fields using regularized least squares regression.
     Runs on all ROIs in parallel.
@@ -612,12 +734,18 @@ def fit_3d_rfs(
             This is to account for the delay between the stimulus and the response.
             Defaults to 2.
         use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+        k_folds (int): number of folds for cross validation. Defaults to 5.
+        choose_rois (list): a list of ROI indices to fit. Defaults to [], which means fit all ROIs.
+        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
 
     Returns:
         coef (np.array): array of coefficients for each pixel
         r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
+
     """
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
+    if choose_rois:
+        resps = resps[:, choose_rois]
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
     depths = depths[depths > 0]
@@ -676,21 +804,26 @@ def fit_3d_rfs(
     # add bias
     X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
     coefs = []
-
-    Y_pred = np.zeros((resps.shape[0], resps.shape[1], 2)) * np.nan
-    # randomly split trials into training, validation and test
+    # 0 for train and -1 for test, 1 for validation prediction
+    n_splits = 3 if validation else 2
+    Y_pred = np.zeros((resps.shape[0], resps.shape[1], n_splits)) * np.nan
+    # randomly split trials into training and test sets
     stratified_kfold = StratifiedKFold(n_splits=k_folds, random_state=42, shuffle=True)
+    # Use validation set to select the best regularization parameters (train, val, test),
+    # or use test set to evaluate performance (train, test)
     for train_trials, test_trials in stratified_kfold.split(
         depths_by_trial.index, depths_by_trial.values
     ):
-        # train_trials, validation_trials = train_test_split(
-        #     train_trials,
-        #     stratify=depths_by_trial.iloc[train_trials].values,
-        #     test_size=(1 / (k_folds - 1)),
-        # )
-        test_idx = np.isin(imaging_df.trial_idx, test_trials)
+        if validation:
+            train_trials, validation_trials = train_test_split(
+                train_trials,
+                stratify=depths_by_trial.iloc[train_trials].values,
+                test_size=(1 / (k_folds - 1)),
+            )
+            validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
         train_idx = np.isin(imaging_df.trial_idx, train_trials)
-        # validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
+        test_idx = np.isin(imaging_df.trial_idx, test_trials)
+
         X_train = np.concatenate(
             [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
         )
@@ -706,20 +839,103 @@ def fit_3d_rfs(
         )
         coef = Q @ Y_train
         coefs.append(coef)
-        # compute predictions for this fold
-        for isplit, idx in enumerate([train_idx, test_idx]):
-            Y_pred[idx, :, isplit] = X[idx, :] @ coef
-    use_idx = np.isfinite(Y_pred[:, 0, 0])
-    residual_var = np.sum(
-        (Y_pred[use_idx, :, :] - resps[use_idx, :, np.newaxis]) ** 2,
-        axis=0,
-    )
-    total_var = np.sum(
-        (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
-    )
-    r2 = 1 - residual_var / total_var[:, np.newaxis]
 
+        if validation:
+            idxs = [train_idx, validation_idx, test_idx]
+        else:
+            idxs = [train_idx, test_idx]
+        for isplit, idx in enumerate(idxs):
+            Y_pred[idx, :, isplit] = X[idx, :] @ coef
+    # calculate R2
+    r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
+    for isplit in range(n_splits):
+        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        residual_var = np.sum(
+            (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
+            axis=0,
+        )
+        total_var = np.sum(
+            (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
+        )
+        r2[:, isplit] = 1 - residual_var / total_var
     return coefs, r2
+
+
+def fit_3d_rfs_hyperparam_tuning(
+    imaging_df,
+    frames,
+    reg_xys=[20, 40, 80, 160, 320],
+    reg_depths=[20, 40, 80, 160, 320],
+    shift_stims=2,
+    use_col="dffs",
+    k_folds=5,
+    tune_separately=False,
+):
+    all_coef = []
+    all_rs = []
+    hyperparams = []
+    for reg_xy in reg_xys:
+        for reg_depth in reg_depths:
+            print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
+            coef, r2 = fit_3d_rfs(
+                imaging_df,
+                frames,
+                reg_xy=40,
+                reg_depth=80,
+                shift_stim=2,
+                use_col="dffs",
+                k_folds=5,
+                mode="hyperparam_tuning",
+            )
+            all_coef.append(coef)
+            all_rs.append(r2)
+            hyperparams.append([reg_xy, reg_depth])
+    all_coef = np.stack(all_coef, axis=0)
+    all_rs = np.stack(all_rs, axis=0)
+
+    best_hyperparam_idxs = np.argmax(all_rs[:, :, 1], axis=0)
+
+    if not tune_separately:
+        [best_reg_xy, best_reg_depth] = hyperparams[mode(best_hyperparam_idxs[0][0])]
+        print(
+            f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
+        )
+        coef, r2 = fit_3d_rfs(
+            imaging_df,
+            frames,
+            reg_xy=best_reg_xy,
+            reg_depth=best_reg_depth,
+            shift_stim=2,
+            use_col="dffs",
+            k_folds=5,
+            mode="test",
+        )
+        coef = np.stack(coef)
+    else:
+        for iparam in np.sort(np.unique(best_hyperparam_idxs)):
+            [best_reg_xy, best_reg_depth] = hyperparams[iparam]
+            fit_neurons = np.arange(imaging_df[use_col][0].shape[1])[
+                best_hyperparam_idxs == iparam
+            ]
+            print(
+                f"Best param found for {len(fit_neurons)} neurons: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
+            )
+            coef_temp, r2_temp = spheres.fit_3d_rfs(
+                imaging_df,
+                frames,
+                reg_xy=best_reg_xy,
+                reg_depth=best_reg_depth,
+                shift_stim=2,
+                use_col="dffs",
+                k_folds=5,
+                choose_rois=fit_neurons,
+                mode="test",
+            )
+            coef = np.stack(coef)
+            coef[:, :, fit_neurons] = np.stack(coef_temp)
+            r2[fit_neurons, :] = r2_temp
+
+    return coef, r2
 
 
 def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):
