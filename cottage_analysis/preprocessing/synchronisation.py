@@ -1,3 +1,5 @@
+import warnings
+import shutil
 import numpy as np
 import pandas as pd
 import flexiznam as flz
@@ -133,7 +135,7 @@ def find_monitor_frames(
             relative_corr_thres=0.02,
             frame_detection_height=0.1,
             minimum_lag=1.0 / frame_rate,
-            do_plot=False,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
+            do_plot=True,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
             save_folder=diagnostics_folder,
             verbose=True,
         )
@@ -216,6 +218,7 @@ def generate_vs_df(
         return_dataseries=False,
     )
     raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         frame_log = pd.read_csv(raw / recording.path / "FrameLog.csv")
@@ -256,8 +259,24 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
     # Align paramLog with vs_df
-    # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(raw / recording.path / "NewParams.csv")
+    if "param_log" in recording:
+        param_log = recording.param_log
+    else:
+        warnings.warn(
+            "No param_log found in recording. Using NewParams.csv instead."
+        )
+        param_log = "NewParams.csv"
+    if not (processed / recording.path / param_log).exists():
+        # Copy param_log from raw to processed
+        assert (raw / recording.path / param_log).exists(), (
+            f"param_log {param_log} does not exist in raw or processed."
+        )
+        (processed / recording.path).mkdir(parents=True, exist_ok=True)
+        shutil.copy(raw / recording.path / param_log, 
+            processed / recording.path / param_log
+        )
+    param_log = pd.read_csv(processed / recording.path / param_log)
+
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
