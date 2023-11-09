@@ -22,6 +22,7 @@ def plot_sftf_fit(
     grid_x=0,
     grid_y=0,
     colorbar=True,
+    vmax=None,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
     '''Plot SFTF fit for a given ROI
@@ -80,10 +81,13 @@ def plot_sftf_fit(
         np.linspace(tf_range[0], tf_range[1], 100),
     )
     plt.xticks(fontsize=fontsize_dict["tick"])
-    plt.yticks(fontsize=fontsize_dict["tick"])
+    yticks=plt.gca().get_yticks()
+    plt.yticks([yticks[0], yticks[-2]], fontsize=fontsize_dict["tick"])
 
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
+    if vmax is None:
+        vmax = np.exp(popt.log_amplitude) + popt.offset
     for i, angle in enumerate(angles):
         responses = grating_tuning_(
             (sfs, tfs, np.ones_like(sfs) * angle),
@@ -100,7 +104,7 @@ def plot_sftf_fit(
             responses,
             extent=[sf_range[0], sf_range[1], tf_range[0], tf_range[1]],
             origin="lower",
-            vmax=(np.exp(popt.log_amplitude) + popt.offset),
+            vmax=vmax,
             vmin=popt.offset,
             cmap="magma",
         )
@@ -117,7 +121,7 @@ def plot_sftf_fit(
         plt.tight_layout(pad=0.4)
     if colorbar:
         add_colorbar()
-
+    return vmax
 
 def plot_sftf_tuning(
     trials_df,
@@ -128,6 +132,7 @@ def plot_sftf_tuning(
     grid_x=0,
     grid_y=0,
     colorbar=True,
+    vmax=None,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
 ):
     '''Plot SFTF tuning for a given ROI with raw data
@@ -154,38 +159,12 @@ def plot_sftf_tuning(
     tf_range = np.sort(np.unique(trials_df.TemporalFrequency))
     angle_range = np.sort(np.unique(trials_df.Angle))
 
-    # plot a polar plot of dff as a function of angle
-    dir_tuning = dff_mean.groupby("Angle").max()
-    # concatenate the first row to the end to close the circle
-    dir_tuning = pd.concat([dir_tuning, dir_tuning.iloc[0:1]])
-    if plot_grid:
-        plt.subplot2grid(
-            (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
-        )
-    else:
-        plt.subplot(3, 3, 5, projection="polar")
-    plt.plot(
-        np.deg2rad(dir_tuning.index.values),
-        dir_tuning[roi].values,
-        color="k",
-    )
-    plt.fill_between(
-        np.deg2rad(dir_tuning.index),
-        dir_tuning[roi],
-    )
-    plt.xticks(fontsize=fontsize_dict["tick"])
-    plt.yticks(fontsize=fontsize_dict["tick"])
-
     sf_range = np.sort(dff_mean.SpatialFrequency.unique())
     tf_range = np.sort(dff_mean.TemporalFrequency.unique())
     angle_range = np.sort(dff_mean.Angle.unique())
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
+    all_angles = np.zeros((len(angle_range), len(sf_range), len(tf_range)))
     for i, angle in enumerate(angle_range):
-        # this_angle = dff_mean[dff_mean.Angle == angle]
-        # # create a matrix of responses as a function of SpatialFrequency and TemporalFrequency
-        # this_angle = this_angle.pivot(
-        #     index="SpatialFrequency", columns="TemporalFrequency", values=roi
-        # )
         this_angle_df = dff_mean[dff_mean.Angle == angle]
         # create a matrix of responses as a function of SpatialFrequency and TemporalFrequency
         this_angle = np.zeros(
@@ -202,6 +181,37 @@ def plot_sftf_tuning(
                         & (this_angle_df.TemporalFrequency == tf)
                     ][roi]
                 )
+                all_angles[i, isf, itf] = this_angle[isf, itf]
+    if vmax is None:
+        # vmax=dff_mean[roi].max()
+        vmax=np.nanmax(all_angles)
+        
+    # plot a polar plot of dff as a function of angle
+    dir_tuning = np.max(all_angles, axis=(1, 2))
+    dir_tuning = np.append(dir_tuning, dir_tuning[0])
+    dirs = np.deg2rad([0,45,90,135,180,225,270,315,0])
+
+    if plot_grid:
+        plt.subplot2grid(
+            (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
+        )
+    else:
+        plt.subplot(3, 3, 5, projection="polar")
+    plt.plot(
+        np.deg2rad([0,45,90,135,180,225,270,315,0]),
+        dir_tuning,
+        color="k",
+    )
+    plt.fill_between(
+        np.deg2rad([0,45,90,135,180,225,270,315,0]),
+        dir_tuning,
+    )
+    plt.xticks(fontsize=fontsize_dict["tick"])
+    yticks=plt.gca().get_yticks()
+    plt.yticks([yticks[0], yticks[-3]], fontsize=fontsize_dict["tick"])
+    
+        
+    for i, angle in enumerate(angle_range):
         # create a subplot for each angle
         if plot_grid:
             plt.subplot2grid(
@@ -212,10 +222,10 @@ def plot_sftf_tuning(
             plt.subplot(3, 3, angle_pos[i])
         # plot a colormap of this_angle with tick labels
         plt.imshow(
-            this_angle.T,
+            all_angles[i].T,
             cmap="magma",
             vmin=0,
-            vmax=dff_mean[roi].max(),
+            vmax=vmax,
         )
         plt.yticks(
             range(len(tf_range)),
@@ -235,15 +245,16 @@ def plot_sftf_tuning(
     if not plot_grid:
         plt.tight_layout(pad=0.4)
     if colorbar:
-        add_colorbar()
+        add_colorbar(y=0.5)
+    return vmax
 
 
-def add_colorbar():
+def add_colorbar(y=0):
     '''Add colorbar to the current axis
     '''
     cbar_pos = [
         1.02,
-        plt.gca().get_position().y0,
+        plt.gca().get_position().y0+y,
         0.02,
         plt.gca().get_position().height,
     ]
@@ -336,9 +347,9 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
     '''
     plot_rows=3
     if add_depth:
-        plot_cols=8
-        grating_tuning_grid_y=2
-        grating_fit_grid_y=5
+        plot_cols=7
+        grating_tuning_grid_y=1
+        grating_fit_grid_y=4
     else:
         plot_cols=6
         grating_tuning_grid_y=0
@@ -347,7 +358,7 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
     plt.figure(figsize=(plot_cols*3, plot_rows*3))
     if add_depth:
         # Plot depth tuning
-        plt.subplot2grid((plot_rows, plot_cols), (0, 0), colspan=2)
+        plt.subplot2grid((plot_rows, plot_cols), (0, 0), colspan=1)
         basic_vis_plots.plot_depth_tuning_curve(
             neurons_df=neurons_df,
             trials_df=trials_df_depth,
@@ -363,7 +374,7 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
         plt.title(f"roi{roi}, depth rsq{neurons_df.depth_tuning_test_rsq_closedloop[roi]:.2f}, SFTF rsq{neurons_df.rsq[roi]:.2f}", fontsize=fontsize_dict['title'])
 
         # Plot speed tuning
-        plt.subplot2grid((plot_rows, plot_cols), (1, 0), colspan=2)
+        plt.subplot2grid((plot_rows, plot_cols), (1, 0), colspan=1)
         basic_vis_plots.plot_speed_tuning(
             neurons_df=neurons_df,
             trials_df=trials_df_depth,
@@ -378,7 +389,7 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
             fontsize_dict=fontsize_dict,
         )
 
-        plt.subplot2grid((plot_rows, plot_cols), (2, 0), colspan=2)
+        plt.subplot2grid((plot_rows, plot_cols), (2, 0), colspan=1)
         basic_vis_plots.plot_speed_tuning(
             neurons_df=neurons_df,
             trials_df=trials_df_depth,
@@ -393,17 +404,8 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
             fontsize_dict=fontsize_dict,
         )
 
-    # Plot grating tuning with the raw data
-    plot_sftf_tuning(trials_df=trials_df_sftf, roi=roi,    
-                                plot_grid=True,
-                                    grid_rows=plot_rows,
-                                    grid_cols=plot_cols,
-                                    grid_x=0,
-                                    grid_y=grating_tuning_grid_y,
-                                    fontsize_dict=fontsize_dict)
-
     # Plot grating fit   
-    plot_sftf_fit(
+    vmax_fit = plot_sftf_fit(
         neurons_df=neurons_df,
         roi=roi, 
         sf_range=[np.log(np.sort(np.unique(trials_df_sftf.SpatialFrequency))[0]),
@@ -419,8 +421,19 @@ def basic_vis_SFTF_roi(neurons_df, trials_df_depth, trials_df_sftf, roi, add_dep
         grid_x=0,
         grid_y=grating_fit_grid_y,
         fontsize_dict=fontsize_dict,
-        colorbar=False,
+        colorbar=True,
     )
+    
+    # Plot grating tuning with the raw data
+    vmax_tuning = plot_sftf_tuning(trials_df=trials_df_sftf, roi=roi,    
+                                plot_grid=True,
+                                    grid_rows=plot_rows,
+                                    grid_cols=plot_cols,
+                                    grid_x=0,
+                                    grid_y=grating_tuning_grid_y,
+                                    fontsize_dict=fontsize_dict,
+                                    colorbar=True,
+                                    vmax=None)
     
     
 def basic_vis_SFTF_session(neurons_df, trials_df_depth, trials_df_sftf, rois=[], add_depth=False, save_dir=None, fontsize_dict={'title': 10, 'label': 10, 'tick': 10}):
@@ -440,7 +453,7 @@ def basic_vis_SFTF_session(neurons_df, trials_df_depth, trials_df_sftf, rois=[],
         os.makedirs(save_dir/ "plots" / "basic_vis_sftf", exist_ok=True)
 
     for i in tqdm(rois):
-        basic_vis_SFTF_roi(neurons_df=neurons_df, trials_df_depth=trials_df_depth, trials_df_sftf=trials_df_sftf, roi=rois[i], add_depth=add_depth, fontsize_dict={'title': 15, 'label': 10, 'tick': 10});
+        basic_vis_SFTF_roi(neurons_df=neurons_df, trials_df_depth=trials_df_depth, trials_df_sftf=trials_df_sftf, roi=rois[i], add_depth=add_depth, fontsize_dict={'title': 15, 'label': 10, 'tick': 10})
         if save_dir is not None:
             plt.savefig(save_dir/ "plots" / "basic_vis_sftf" / f"roi{rois[i]}.png", dpi=100, bbox_inches='tight')
             
