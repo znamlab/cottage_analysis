@@ -508,6 +508,7 @@ def fit_ellipse(
             camera_ds_name=camera_ds_name,
             project=project,
             likelihood_threshold=likelihood_threshold,
+            duration=60,
         )
     print("Done")
 

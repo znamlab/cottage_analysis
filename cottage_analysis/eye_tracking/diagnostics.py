@@ -228,13 +228,13 @@ def get_example_frame(
     else:
         if bin_edges_x is None:
             bin_edges_x = np.arange(
-                binned_ellipses.index.levels[0].min(),
-                binned_ellipses.index.levels[0].max() + 1,
+                binned_ellipses.bin_centre_x.min(),
+                binned_ellipses.bin_centre_x.max() + 1,
             )
         if bin_edges_y is None:
             bin_edges_y = np.arange(
-                binned_ellipses.index.levels[1].min(),
-                binned_ellipses.index.levels[1].max() + 1,
+                binned_ellipses.bin_centre_y.min(),
+                binned_ellipses.bin_centre_y.max() + 1,
             )
 
         extent = (
@@ -259,6 +259,7 @@ def plot_binned_ellipse_params(
     col2plot=("angle", "eccentricity", "minor_radius", "major_radius"),
     bin_edges_x=None,
     bin_edges_y=None,
+    angl_clim=None,
 ):
     """Plot binned ellipse parameters
 
@@ -277,7 +278,9 @@ def plot_binned_ellipse_params(
         cropping (list, optional): Cropping info for image. Defaults to None.
         col2plot (tuple, optional): Columns to plot. Defaults to
             ("angle", "eccentricity", "minor_radius", "major_radius").
-        extent (tuple, optional): Extent of the binned_ellipses. Defaults to None.
+        bin_edges_x (np.array, optional): Binning edges for x. Defaults to None.
+        bin_edges_y (np.array, optional): Binning edges for y. Defaults to None.
+        angl_clim (tuple, optional): CLimits for the angle plot. Defaults to None.
 
     Returns:
         None
@@ -304,11 +307,22 @@ def plot_binned_ellipse_params(
     fig = plt.figure(figsize=(ncols * 3, nrows * 2.5))
 
     for ip, p in enumerate(col2plot):
-        mat = mat_from_binned(enough_frames, value_col=p)
-        if ip:
-            lim = np.nanquantile(mat, [0.01, 0.99])
+        print(p)
+        if p == "angle":
+            enough_frames['angle_deg'] = np.rad2deg(enough_frames['angle'])
+            p = "angle_deg"
+            if angl_clim is None:
+                lim = (-90, 90)
+            else:
+                lim = angl_clim
         else:
-            lim = (-np.pi / 2, np.pi / 2)
+            lim = None
+            
+        mat = mat_from_binned(enough_frames, value_col=p)
+        
+        if lim is None:
+            lim = np.nanquantile(mat, [0.01, 0.99])
+        
         ax = fig.add_subplot(nrows, ncols, ip + 1)
         divider = make_axes_locatable(ax)
         if camera_ds is not None:
@@ -428,6 +442,7 @@ def plot_reprojection(
     initial_model=None,
     initial_eye_centre=None,
     initial_f_z0=None,
+    example_frame=None,
 ):
     """Plot reprojection of fitted ellipse on example frame
 
@@ -445,6 +460,8 @@ def plot_reprojection(
         initial_model (EllipseModel, optional): Initial model. Defaults to None.
         initial_eye_centre (np.array, optional): Initial eye centre. Defaults to None.
         initial_f_z0 (float, optional): Initial f/z0. Defaults to None.
+        example_frame (int, optional): Frame to use as background and for DLC res. 
+            Defaults to None, taking the frame closest to the fitted eye centre.
 
     Returns:
         matplotlib.figure.Figure: Figure object
@@ -456,16 +473,17 @@ def plot_reprojection(
     dlc_res = dlc_res.copy()
     if "scorer" in dlc_res.columns.names:
         dlc_res.columns = dlc_res.columns.droplevel("scorer")
-    eye_labels = [f"eye_{i}" for i in range(1, 13)]
-    ref = dlc_res["reflection"]
-    eye_track = dlc_res[eye_labels]
-    eye_track.columns = eye_track.columns.droplevel("bodyparts")
-    eye_track = eye_track - ref
-    eyex = eye_track["x"].median(axis=1)
-    eyey = eye_track["y"].median(axis=1)
-    dst = (eyex - fitted_params.pupil_x).abs() + (eyey - fitted_params.pupil_y).abs()
-    example_frame = dst.idxmin()
-
+    if example_frame is None:
+        eye_labels = [f"eye_{i}" for i in range(1, 13)]
+        ref = dlc_res["reflection"]
+        eye_track = dlc_res[eye_labels]
+        eye_track.columns = eye_track.columns.droplevel("bodyparts")
+        eye_track = eye_track - ref
+        eyex = eye_track["x"].median(axis=1)
+        eyey = eye_track["y"].median(axis=1)
+        dst = (eyex - fitted_params.pupil_x).abs() + (eyey - fitted_params.pupil_y).abs()
+        example_frame = dst.idxmin()
+    
     gray, reflection, extent = get_example_frame(
         None, camera_ds, dlc_res, cropping, example_frame
     )

@@ -189,7 +189,7 @@ def reproject_ellipses(
 
     # BIN ELLIPSES BY POSITION
     print("Bin data", flush=True)
-    binned_ellipses = bin_ellipse_by_position(data, min_frame_cutoff=min_frame_cutoff)
+    binned_ellipses, bedg_x, bedg_y = bin_ellipse_by_position(data, nbins=(25, 25))
     enough_frames = binned_ellipses[binned_ellipses.n_frames_in_bin > min_frame_cutoff]
     if plot:
         dlc_tracks = eye_tracking.eye_tracking.get_tracking_datasets(
@@ -206,6 +206,8 @@ def reproject_ellipses(
             fig_title=camera_ds.full_name,
             camera_ds=camera_ds,
             cropping=cropping,
+            bin_edges_y=bedg_y,
+            bin_edges_x=bedg_x
         )
 
     # ESTIMATE EYE CENTER
@@ -343,11 +345,9 @@ def reproject_ellipses(
     parameters = data[
         ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
     ].values
-    is_valid = data.valid.values
     with ProgressBar(total=len(parameters)) as progress:
         eye_rotation = minimise_all(
             parameters,
-            is_valid,
             p0,
             eye_centre,
             f_z0,
@@ -361,17 +361,17 @@ def reproject_ellipses(
     print("Done!")
 
 
-def bin_ellipse_by_position(data, min_frame_cutoff, nbins=(25, 25)):
+def bin_ellipse_by_position(data, nbins=(25, 25)):
     """Bin ellipse parameters by position
 
     Args:
         data (pandas.DataFrame): Ellipse parameters
-        min_frame_cutoff (int): Minimum number of frames in a bin to include it in the
-            fit.
         nbins (tuple, optional): Number of bins in x and y. Defaults to (25, 25).
 
     Returns:
         pandas.DataFrame: Binned ellipse parameters
+        numpy.array: Bin edges in x
+        numpy.array: Bin edges in y
     """
     elli = pd.DataFrame(data[data.valid], copy=True)
     bin_edges_x = np.linspace(elli.pupil_x.min(), elli.pupil_x.max(), nbins[0] + 1)
@@ -388,13 +388,12 @@ def bin_ellipse_by_position(data, min_frame_cutoff, nbins=(25, 25)):
     ns = binned_ellipses.valid.aggregate(len)
     binned_ellipses = binned_ellipses.aggregate(np.nanmedian)
     binned_ellipses["n_frames_in_bin"] = ns
-    return binned_ellipses
+    return binned_ellipses, bin_edges_x, bin_edges_y
 
 
 @njit(parallel=True, nogil=True)
 def minimise_all(
     parameters,
-    is_valid,
     p0,
     eye_centre,
     f_z0,
@@ -424,12 +423,12 @@ def minimise_all(
     """
     nframes = len(parameters)
     eye_rotation = np.zeros((nframes, 3))
-    eye_rotation[~is_valid] += np.nan
+    eye_rotation += np.nan
     for ipos in prange(nframes):
         progress_proxy.update(1)
-        if not is_valid[ipos]:
-            continue
         ellipse_params = parameters[ipos]
+        if any(np.isnan(ellipse_params)):
+            continue
         pa, e, all_errors = minimise_reprojection_error(
             ellipse_params,
             p0,
