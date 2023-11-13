@@ -118,14 +118,15 @@ def load_harp(
     # WRITE messages are mostly the rewards.
     # The reward port is toggled by writing to register 36, let's focus on those events
     reward_message = harp_message[harp_message.address == 36]
-    bits = np.array(np.hstack(reward_message.data.values), dtype="uint16")
-    bits = np.unpackbits(bits.astype(">u2").view("u1"))
-    bits = bits.reshape((len(reward_message), 16))
-    has_data = np.where(bits.sum(axis=0) > 0)[0]
     harp_outputs = {}
-    for trigged_output in has_data:
-        oktime = bits[:, trigged_output] != 0
-        harp_outputs[trigged_output] = reward_message.timestamp_s.values[oktime]
+    if len(reward_message) != 0:
+        bits = np.array(np.hstack(reward_message.data.values), dtype="uint16")
+        bits = np.unpackbits(bits.astype(">u2").view("u1"))
+        bits = bits.reshape((len(reward_message), 16))
+        has_data = np.where(bits.sum(axis=0) > 0)[0]
+        for trigged_output in has_data:
+            oktime = bits[:, trigged_output] != 0
+            harp_outputs[trigged_output] = reward_message.timestamp_s.values[oktime]
 
     # the data corresponds to which port is triggered
     if reward_port in harp_outputs:
