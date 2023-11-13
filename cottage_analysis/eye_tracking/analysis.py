@@ -191,6 +191,10 @@ def plot_movie(
             ]
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if vmin is None:
+            vmin = np.percentile(gray, 1)
+        if vmax is None:
+            vmax = np.percentile(gray, 95)
         for ax in [ax_img, ax_fit, ax_track]:
             img = gray[slice(*borders[:, 1]), slice(*borders[:, 0])] if recrop else gray
             ax.imshow(
@@ -266,8 +270,11 @@ def add_behaviour(
         children_datatype="dataset",
     )
     suite_2p = sess_ds[sess_ds.dataset_type == "suite2p_rois"]
-    assert len(suite_2p) == 1
-    suite_2p = flz.Dataset.from_dataseries(suite_2p.iloc[0], flexilims_session=flm_sess)
+    if len(suite_2p) > 1:
+        warn(f"Found {len(suite_2p)} suite2p_rois datasets for {recording.path}")
+    assert len(suite_2p) != 0, f"No suite2p_rois dataset for {recording.path}"
+    suite_2p = suite_2p.iloc[0]
+    suite_2p = flz.Dataset.from_dataseries(suite_2p, flexilims_session=flm_sess)
 
     ops = np.load(
         suite_2p.path_full / "suite2p" / "plane0" / "ops.npy", allow_pickle=True
