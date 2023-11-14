@@ -59,7 +59,6 @@ def load_harpmessage(
     params = dict(
         harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
         di_names=di_names,
-        verbose=False,
     )
     harp_messages = harp.load_harp(**params)
 
@@ -154,7 +153,7 @@ def find_monitor_frames(
             correlation_threshold=0.8,
             relative_corr_thres=0.02,
             minimum_lag=1.0 / frame_rate,
-            do_plot=True,
+            do_plot=False,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
             save_folder=diagnostics_folder,
             verbose=True,
         )
@@ -325,11 +324,15 @@ def generate_imaging_df(
         return_dataseries=False,
     )
     if "nframes" in suite2p_ds.extra_attributes:
-        frame_number = float(suite2p_ds.extra_attributes["nframes"])
+        volume_number = float(suite2p_ds.extra_attributes["nframes"])
+        # frame_number = float(suite2p_ds.extra_attributes["nframes"])
     else:
-        frame_number = float(
+        volume_number = float(
             np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
+        # frame_number = float(
+        #     np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
+        # )
     nplanes = float(suite2p_ds.extra_attributes["nplanes"])
     fs = float(suite2p_ds.extra_attributes["fs"])
     harp_npz_path = flz.get_datasets(
@@ -345,7 +348,7 @@ def generate_imaging_df(
         harp_message=format_loggers.format_img_frame_logger(
             harpmessage_file=harp_npz_path, register_address=32
         ),
-        frame_number=int(frame_number * nplanes),
+        frame_number=int(volume_number * nplanes),
         frame_period=(1 / fs) / nplanes - 0.001,
         register_address=32,
         frame_period_tolerance=0.001,
@@ -359,7 +362,7 @@ def generate_imaging_df(
         },
         inplace=True,
     )
-    imaging_df.imaging_volume = (
+    imaging_df["imaging_volume"] = (
         (imaging_df.imaging_frame / nplanes).apply(np.floor).astype(int)
     )
     # if return_volumes is True, select rows where imaging_volume changes
@@ -414,8 +417,32 @@ def generate_imaging_df(
     dffs = np.vstack(dffs).T
     spks = np.vstack(spks).T
     # convert dffs to list of arrays
-    imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
-    imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+    if nplanes == 1.0 and dffs.shape[0] > imaging_df["imaging_frame"].idxmax() + 1:
+        print(
+            "Warning: The number of imaging frames from ScanImage is greater than the number of imaging frames synchronised with visual stimulus. Truncating the suite2p traces to match."
+        )
+        last_valid_frame = imaging_df["imaging_frame"].idxmax() + 1
+        imaging_df["dffs"] = np.split(
+            dffs[0:last_valid_frame, :], last_valid_frame, axis=0
+        )
+        imaging_df["spks"] = np.split(
+            spks[0:last_valid_frame, :], last_valid_frame, axis=0
+        )
+    elif nplanes > 1.0 and dffs.shape[0] > imaging_df["imaging_volume"].idxmax() + 1:
+        print(
+            "Warning: The number of imaging frames from ScanImage is greater than the number of imaging frames synchronised with visual stimulus. Truncating the suite2p traces to match."
+        )
+        last_valid_volume = imaging_df["imaging_volume"].idxmax() + 1
+        imaging_df["dffs"] = np.split(
+            dffs[0:last_valid_volume, :], last_valid_volume, axis=0
+        )
+        imaging_df["spks"] = np.split(
+            spks[0:last_valid_volume, :], last_valid_volume, axis=0
+        )
+    else:
+        imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
+        imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+
     return imaging_df
 
 
