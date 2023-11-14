@@ -11,7 +11,7 @@ The rest is lower level stuff to handle harp protocol
 import struct
 import warnings
 from pathlib import Path
-
+from tqdm import tqdm
 import numpy as np
 import mmap
 import pandas as pd
@@ -78,7 +78,6 @@ def load_harp(
     ecoder_cpr=ENCODER_CPR,
     inverse_rotary=True,
     di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
-    verbose=True,
 ):
     """Read harp messages and format output
 
@@ -100,7 +99,7 @@ def load_harp(
         harp_output (pd.DataFrame)
     """
     # Harp
-    harp_message = read_message(path_to_file=harp_bin, verbose=verbose)
+    harp_message = read_message(path_to_file=harp_bin)
     harp_message = pd.DataFrame(harp_message)
     output = dict()
 
@@ -181,17 +180,35 @@ def load_harp(
 
 def read_message(
     path_to_file,
-    verbose=True,
     valid_addresses=None,
     valid_msg_type=None,
     do_checksum=True,
 ):
     """Read binary file containing harp messages
 
-    if verbose is True, display some progress
-    valid_addresses can be specified to return only messages with these addresses and
+       valid_addresses can be specified to return only messages with these addresses and
     ignore the rest msg_type
+
+    Args:
+        path_to_file (str or Path): Path to the binary file
+        valid_addresses (int or sequence of int): If specified, only messages with these
+            addresses will be returned
+        valid_msg_type (int or sequence of int): If specified, only messages with these
+            msg_type will be returned
+        do_checksum (bool): If True, check that the checksum is correct
+
+    Returns:
+        all_msgs (list of dict): Each message is a dictionary with the following keys:
+            - msg_type: 'READ', 'WRITE', 'EVENT', 'READ_ERROR', or 'WRITE_ERROR'
+            - length: length of the message
+            - address: address of the message
+            - port: port of the message
+            - payload_type: type of the payload
+            - data: the data
+            - checksum: the checksum
     """
+    path_to_file = Path(path_to_file)
+    assert path_to_file.exists(), f"File {path_to_file} does not exist"
 
     valid_addresses, valid_msg_type = _validate_arguments(
         valid_addresses, valid_msg_type
@@ -201,61 +218,59 @@ def read_message(
     with open(path_to_file, "rb") as f:
         mmap_file = mmap.mmap(f.fileno(), 0, mmap.PROT_WRITE)
 
-    if verbose:
-        logger = Logger(len(mmap_file))
-
-    with mmap_file as binary_file:
-        msg_start = binary_file.read(5)
-        while msg_start:
-            msg_type, length, address, port, payload_type = struct.unpack(
-                "BBBBB", msg_start
-            )
-
-            # skip irrelevant messages
-            read_this_message = True
-            if (valid_addresses is not None) and (address not in valid_addresses):
-                read_this_message = False
-            if (valid_msg_type is not None) and (msg_type not in valid_msg_type):
-                read_this_message = False
-            if not read_this_message:
-                binary_file.seek(length - 3, 1)
-                if verbose:
-                    logger.log(byte_read=len(msg_start) + length - 3, which="skipped")
-                # read the next msg_start
-                msg_start = binary_file.read(5)
-                continue
-
-            # for good messages make an output dictionary and read the rest
-            msg = dict(
-                msg_type=MESSAGE_TYPE[msg_type],
-                length=length,
-                address=address,
-                port=port,
-                payload_type=payload_type,
-            )
-            if length == 255:
-                # some payload might be big. Then the length is spread in 2 more bits.
-                # see harp protocol
-                raise NotImplementedError()
-
-            msg_end = binary_file.read(
-                length - 3
-            )  # ignore the fields I have already read
-
-            msg.update(unpack_payload(msg_end, payload_type))
-            if do_checksum:
-                msg["calculated_checksum"] = calculate_checksum(
-                    msg_start + msg_end[:-1]
-                )
-            all_msgs.append(msg)
-
-            # read the next message start
+    filesize = path_to_file.stat().st_size
+    step = 0
+    with tqdm(total=filesize, unit="bits", unit_scale=True) as pbar:
+        pbar.set_description("Reading harp messages")
+        with mmap_file as binary_file:
             msg_start = binary_file.read(5)
-            if verbose:
-                logger.log(byte_read=len(msg_start + msg_end), which="read")
-        if verbose:
-            logger.close()
-        return all_msgs
+            while msg_start:
+                pos = binary_file.tell()
+                pbar.update(pos - step)
+                step = pos
+                msg_type, length, address, port, payload_type = struct.unpack(
+                    "BBBBB", msg_start
+                )
+
+                # skip irrelevant messages
+                read_this_message = True
+                if (valid_addresses is not None) and (address not in valid_addresses):
+                    read_this_message = False
+                if (valid_msg_type is not None) and (msg_type not in valid_msg_type):
+                    read_this_message = False
+                if not read_this_message:
+                    binary_file.seek(length - 3, 1)
+                    # read the next msg_start
+                    msg_start = binary_file.read(5)
+                    continue
+
+                # for good messages make an output dictionary and read the rest
+                msg = dict(
+                    msg_type=MESSAGE_TYPE[msg_type],
+                    length=length,
+                    address=address,
+                    port=port,
+                    payload_type=payload_type,
+                )
+                if length == 255:
+                    # some payload might be big. Then the length is spread in 2 more bits.
+                    # see harp protocol
+                    raise NotImplementedError()
+
+                msg_end = binary_file.read(
+                    length - 3
+                )  # ignore the fields I have already read
+
+                msg.update(unpack_payload(msg_end, payload_type))
+                if do_checksum:
+                    msg["calculated_checksum"] = calculate_checksum(
+                        msg_start + msg_end[:-1]
+                    )
+                all_msgs.append(msg)
+
+                # read the next message start
+                msg_start = binary_file.read(5)
+    return all_msgs
 
 
 def calculate_checksum(message):
@@ -296,38 +311,6 @@ def unpack_payload(msg_end, payload_type):
         out_dict["data"] = payload[0]
     out_dict["checksum"] = payload[-1]
     return out_dict
-
-
-class Logger(object):
-    def __init__(
-        self, file_size, log_types=("read", "skipped"), print_every_n_updates=1000
-    ):
-        self.nbytes = 0
-        self.file_size = file_size
-        self.what = {k: 0 for k in log_types}
-        self.last_msg_length = 0
-        self.print_every_n_updates = print_every_n_updates
-        print("Start reading...")
-
-    def log(self, byte_read, which):
-        self.nbytes += byte_read
-        self.what[which] += 1
-        if self.what[which] % self.print_every_n_updates:
-            erase_line = "\b" * self.last_msg_length
-            text_msg = "%d messages %s, %d%% ..." % (
-                self.what[which],
-                which,
-                self.nbytes / self.file_size * 100,
-            )
-            self.last_msg_length = len(text_msg)
-            print(erase_line + text_msg, end="", flush=True)
-
-    def close(self):
-        erase_line = "\b" * self.last_msg_length
-        msg = ", ".join(
-            "%d messages %s" % (num, which) for which, num in self.what.items()
-        )
-        print(erase_line + msg)
 
 
 def _validate_arguments(valid_addresses, valid_msg_type):
