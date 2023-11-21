@@ -748,7 +748,7 @@ def fit_3d_rfs(
 
     """
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
-    if choose_rois:
+    if len(choose_rois)>0:
         resps = resps[:, choose_rois]
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
@@ -903,7 +903,11 @@ def fit_3d_rfs_hyperparam_tuning(
             f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
         )
         coef = np.stack(coef)
+        best_reg_xys = np.ones(len(r2[:,1]))*best_reg_xy
+        best_reg_depths = np.ones(len(r2[:,1]))*best_reg_depth
     else:
+        best_reg_xys = np.zeros(len(r2[:,1]))
+        best_reg_depths = np.zeros(len(r2[:,1]))
         for iparam in np.sort(np.unique(best_hyperparam_idxs)):
             [best_reg_xy, best_reg_depth] = hyperparams[iparam]
             fit_neurons = np.arange(imaging_df[use_col][0].shape[1])[best_hyperparam_idxs==iparam]
@@ -912,9 +916,10 @@ def fit_3d_rfs_hyperparam_tuning(
             coef = np.stack(coef)
             coef[:, :, fit_neurons] = np.stack(coef_temp)
             r2[fit_neurons,:] = r2_temp
-        best_reg_xy, best_reg_depth = None, None
+            best_reg_xys[fit_neurons] = best_reg_xy
+            best_reg_depths[fit_neurons] = best_reg_depth
              
-    return coef, r2, best_reg_xy, best_reg_depth
+    return coef, r2, best_reg_xys, best_reg_depths
 
 
 def find_sig_rfs(coef, coef_ipsi, n_std=5):
