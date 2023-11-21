@@ -59,7 +59,6 @@ def load_harpmessage(
     params = dict(
         harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
         di_names=di_names,
-        verbose=False,
     )
     harp_messages = harp.load_harp(**params)
 
