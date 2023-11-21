@@ -134,7 +134,7 @@ def find_monitor_frames(
             photodiode_sampling=1000,
             plot=True,
             plot_start=10000,
-            plot_range=1000,
+            plot_range=50,
             plot_dir=diagnostics_folder,
         )
         frames_df = find_frames.sync_by_frame_alternating(
