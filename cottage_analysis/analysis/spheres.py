@@ -883,7 +883,7 @@ def fit_3d_rfs_hyperparam_tuning(
     for i, reg_xy in enumerate(reg_xys):
         for j, reg_depth in enumerate(reg_depths):
             print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
-            coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=reg_xy, reg_depth=reg_depth, shift_stim=2, use_col="dffs",k_folds=5, validation=validation)
+            coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=reg_xy, reg_depth=reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
             good_neuron_percs[i,j] = np.mean(r2[:,1]>.01)
             all_coef.append(coef)
             all_rs.append(r2)
@@ -897,7 +897,7 @@ def fit_3d_rfs_hyperparam_tuning(
         max_idx = np.unravel_index(np.argmax(good_neuron_percs), good_neuron_percs.shape)
         best_reg_xy, best_reg_depth = reg_xys[max_idx[0]], reg_depths[max_idx[1]]
         print(f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}, R2>0.01: {good_neuron_percs[max_idx]:.4f}")
-        coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=2, use_col="dffs",k_folds=5, validation=validation)
+        coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
         [best_reg_xy, best_reg_depth] = hyperparams[mode(best_hyperparam_idxs[0][0])]
         print(
             f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
@@ -912,7 +912,7 @@ def fit_3d_rfs_hyperparam_tuning(
             [best_reg_xy, best_reg_depth] = hyperparams[iparam]
             fit_neurons = np.arange(imaging_df[use_col][0].shape[1])[best_hyperparam_idxs==iparam]
             print(f"Best param found for {len(fit_neurons)} neurons: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}")
-            coef_temp, r2_temp = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=2, use_col="dffs",k_folds=5, choose_rois=fit_neurons, validation=validation)
+            coef_temp, r2_temp = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, choose_rois=fit_neurons, validation=validation)
             coef = np.stack(coef)
             coef[:, :, fit_neurons] = np.stack(coef_temp)
             r2[fit_neurons,:] = r2_temp
@@ -920,6 +920,30 @@ def fit_3d_rfs_hyperparam_tuning(
             best_reg_depths[fit_neurons] = best_reg_depth
              
     return coef, r2, best_reg_xys, best_reg_depths
+
+
+def fit_3d_rfs_ipsi(
+    imaging_df,
+    frames,
+    best_reg_xys,
+    best_reg_depths,
+    shift_stims=2,
+    use_col="dffs",
+    k_folds=5,
+    validation=False,
+):
+    best_regs = np.stack([best_reg_xys, best_reg_depths], axis=1)
+    coef_temp, r2_temp= fit_3d_rfs(imaging_df, frames, reg_xy=80, reg_depth=40, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
+    coef = np.zeros_like(np.stack(coef_temp))
+    r2 = np.zeros_like(np.stack(r2_temp))
+    for best_reg in np.unique(best_regs, axis=0):
+        best_reg_neurons = np.where(np.all(best_reg==best_regs, axis=1))[0]
+        print(f"Fit with best param for {len(best_reg_neurons)} neurons: reg_xy: {best_reg[0]}, reg_depth: {best_reg[1]}")
+        coef_temp, r2_temp = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg[0], reg_depth=best_reg[1], shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, choose_rois=best_reg_neurons, validation=validation)
+        coef[:, :, best_reg_neurons] = np.stack(coef_temp)
+        r2[best_reg_neurons,:] = r2_temp
+    return coef, r2
+        
 
 
 def find_sig_rfs(coef, coef_ipsi, n_std=5):
