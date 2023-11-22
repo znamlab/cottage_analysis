@@ -726,7 +726,7 @@ def fit_3d_rfs(
     choose_rois=(),
     validation=False,
 ):
-    """Fit 3D receptive fields using regularized least squares regression.
+    """Fit 3D receptive fields using regularized least squares regression, with only one set of hyperparameters. 
     Runs on all ROIs in parallel.
 
     Args:
@@ -743,8 +743,8 @@ def fit_3d_rfs(
         validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
 
     Returns:
-        coef (np.array): array of coefficients for each pixel
-        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
 
     """
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
@@ -873,9 +873,33 @@ def fit_3d_rfs_hyperparam_tuning(
     shift_stims=2,
     use_col="dffs",
     k_folds=5,
-    tune_separately=False,
+    tune_separately=True,
     validation=False,
 ):
+    """Fit 3D receptive fields using regularized least squares regression, with hyperparameter tuning.
+    Runs on all ROIs in parallel.
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+        frames (np.array): array of frames
+        reg_xys (list): a list of regularization constant for spatial regularization
+        reg_depths (list): a list of regularization constant for depth regularization
+        shift_stim (int): number of frames to shift the stimulus by.
+            This is to account for the delay between the stimulus and the response.
+            Defaults to 2.
+        use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+        k_folds (int): number of folds for cross validation. Defaults to 5.
+        tune_separately (bool): whether to tune hyperparameters separately for each ROI. Defaults to True.
+        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
+
+    Returns:
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
+        best_reg_xys (np.array): array of best reg_xy for each ROI
+        best_reg_depths (np.array): array of best reg_depth for each ROI
+
+    """
+    
     all_coef = []
     all_rs = []
     hyperparams = []
@@ -932,6 +956,27 @@ def fit_3d_rfs_ipsi(
     k_folds=5,
     validation=False,
 ):
+    """Fit 3D receptive fields using the ipsilateral side of stimuli using regularized least squares regression, using the best set of hyperparameter of the contralateral side.
+    Runs on all ROIs in parallel.
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+        frames (np.array): array of frames
+        best_reg_xys (list): a list of best regularization constant for spatial regularization from the contra side fitting.
+        best_reg_depths (list): a list of best regularization constant for depth regularization from the contra side fitting.
+        shift_stim (int): number of frames to shift the stimulus by.
+            This is to account for the delay between the stimulus and the response.
+            Defaults to 2.
+        use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+        k_folds (int): number of folds for cross validation. Defaults to 5.
+        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
+
+    Returns:
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
+
+    """
+    
     best_regs = np.stack([best_reg_xys, best_reg_depths], axis=1)
     coef_temp, r2_temp= fit_3d_rfs(imaging_df, frames, reg_xy=80, reg_depth=40, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
     coef = np.zeros_like(np.stack(coef_temp))
@@ -945,8 +990,17 @@ def fit_3d_rfs_ipsi(
     return coef, r2
         
 
-
 def find_sig_rfs(coef, coef_ipsi, n_std=5):
+    '''Find the neurons with a significant RF (compared to ipsi side)
+
+    Args:
+        coef (_type_): _description_
+        coef_ipsi (_type_): _description_
+        n_std (int, optional): _description_. Defaults to 5.
+
+    Returns:
+        _type_: _description_
+    '''
     coef_mean = np.mean(np.stack(coef, axis=2), axis=2)
     coef_ipsi_mean = np.mean(np.stack(coef_ipsi, axis=2), axis=2)
 

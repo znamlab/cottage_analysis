@@ -16,7 +16,9 @@ from cottage_analysis.analysis import (
     pipeline_utils,
     common_utils,
 )
-from cottage_analysis.plotting import basic_vis_plots
+from cottage_analysis.plotting import (
+    basic_vis_plots,
+    sta_plots)
 
 
 def main(project, session_name, conflicts="skip", photodiode_protocol=2):
@@ -120,43 +122,82 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=2):
         min_sigma=0.25,
     )
 
+    # Save neurons_df
     neurons_df.to_pickle(neurons_ds.path_full)
-    neurons_ds.update_flexilims(mode=conflicts)
-
+    
     # Plot basic plots
-    print("---Start plotting...---")
+    print("---Start basic vis plotting...---")
     basic_vis_plots.basic_vis_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
     )
 
-    # # Regenerate sphere stimuli
-    # print("---Start regenerating sphere stimuli...---")
-    # harp_ds = flz.get_datasets(
-    #     flexilims_session=flexilims_session,
-    #     origin_name=recording["name"],
-    #     dataset_type="harp",
-    #     allow_multiple=False,
-    #     return_dataseries=False,
-    # )
-    # paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
-    # param_log = pd.read_csv(paramlog_path)
+    # Regenerate sphere stimuli
+    print("---RF analysis...---")
+    print("Generating sphere stimuli...")
+    frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=None,
+        filter_datasets={"anatomical_only": 3},
+        recording_type="two_photon",
+        protocol_base="SpheresPermTubeReward",
+        photodiode_protocol=photodiode_protocol,
+        return_volumes=True,
+        resolution=5,
+    )
+    
+    print("Fitting RF...")
+    coef, r2, best_reg_xys, best_reg_depths  = spheres.fit_3d_rfs_hyperparam_tuning(imaging_df_all, 
+                                                frames_all[:,:,int(frames_all.shape[2]//2):], 
+                                                reg_xys=[20, 40, 80, 160, 320], 
+                                                reg_depths=[20, 40, 80, 160, 320], 
+                                                shift_stims=2, 
+                                                use_col="dffs", 
+                                                k_folds=5, 
+                                                tune_separately=True, 
+                                                validation=False)
+    
+    print("Fitting ipsi RF...")
+    coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
+        imaging_df_all,
+        frames_all[:,:,:int(frames_all.shape[2]//2)],
+        best_reg_xys,
+        best_reg_depths,
+        shift_stims=2,
+        use_col="dffs",
+        k_folds=5,
+        validation=False,
+    )
+    
+    for col in ["rf_coef", "rf_rsq", "rf_coef_ipsi", "rf_rsq_ipsi"]:
+        neurons_df[col] = [[np.nan]] * len(
+            neurons_df
+        )
 
-    # output = spheres.regenerate_frames(
-    #     frame_times=imaging_df["harptime_imaging_trigger"].values,
-    #     trials_df=trials_df,
-    #     vs_df=vs_df,
-    #     param_logger=param_log,
-    #     time_column="HarpTime",
-    #     resolution=5,
-    #     sphere_size=10,
-    #     azimuth_limits=(-120, 120),
-    #     elevation_limits=(-40, 40),
-    #     verbose=True,
-    #     output_datatype="int16",
-    #     output=None,
-    # )
-    # print("Visual stimuli regeneration finished.")
+    for i, _ in neurons_df.iterrows():
+        neurons_df.at[i, "rf_coef"] = coef[:, :, i]
+        neurons_df.at[i, "rf_coef_ipsi"] = coef_ipsi[:, :, i]
+        neurons_df.at[i, "rf_rsq"] = r2[i,:]
+        neurons_df.at[i, "rf_rsq_ipsi"] = r2_ipsi[i,:]
 
-
+    # Save neurons_df
+    neurons_df.to_pickle(neurons_ds.path_full)
+    
+    # Plot all ROI RFs
+    print("Plotting RFs...")
+    depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+    sta_plots.basic_vis_SFTF_session(coef=coef, 
+                           neurons_df=neurons_df, 
+                           trials_df=trials_df_all, 
+                           depth_list=depth_list, 
+                           frames=frames_all, 
+                           save_dir=neurons_ds.path_full.parent, 
+                           fontsize_dict={"title": 10, "tick": 10, "label": 10})
+    
+    # Update neurons_ds on flexilims
+    neurons_ds.update_flexilims(mode=conflicts)
+    print("---Analysis finished. Neurons_df saved.---")
+    
+    
 if __name__ == "__main__":
     defopt.run(main)
