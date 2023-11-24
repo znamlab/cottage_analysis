@@ -774,7 +774,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, SFTF=False):
     os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
 
     plot_rows = 10
-    plot_cols = 3
+    plot_cols = 4
 
     for i in tqdm(range(int(len(rois) // plot_rows + 1))):
         plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
