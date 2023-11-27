@@ -116,9 +116,14 @@ def find_monitor_frames(
     )
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
 
-    frame_log = pd.read_csv(
-        harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
-    )
+    if type(harp_ds.extra_attributes["csv_files"]) == str:
+        frame_log = pd.read_csv(
+            harp_ds.path_full / eval(harp_ds.extra_attributes["csv_files"])["FrameLog"]
+            )
+    else:
+        frame_log = pd.read_csv(
+            harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
+        )
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
 
     frame_rate = 1 / frame_log.HarpTime.diff().median()
