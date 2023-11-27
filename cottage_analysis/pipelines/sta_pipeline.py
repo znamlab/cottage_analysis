@@ -11,8 +11,9 @@ import pickle
 
 import flexiznam as flz
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.analysis import spheres, sta, find_depth_neurons, pipeline_utils
+from cottage_analysis.analysis import spheres, sta, find_depth_neurons
 from cottage_analysis.plotting import basic_vis_plots, grating_plots, plotting_utils, sta_plots
+from cottage_analysis.pipelines import pipeline_utils
 
 def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     """
@@ -68,96 +69,96 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     # Analyze depth responses
     # Find depth neurons and fit preferred depth
     print("---Start finding depth neurons...---")
-    # print("Find depth neurons...")
-    # neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
-    #     trials_df=trials_df_all,
-    #     neurons_ds=neurons_ds,
-    #     rs_thr=0.2,
-    #     alpha=0.05,
-    # )
+    print("Find depth neurons...")
+    neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
+        trials_df=trials_df_all,
+        neurons_ds=neurons_ds,
+        rs_thr=0.2,
+        alpha=0.05,
+    )
 
-    # print("Fit preferred depth...")
-    # # Find preferred depth of closed loop with all data
-    # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-    #     trials_df=trials_df_all,
-    #     neurons_df=neurons_df,
-    #     neurons_ds=neurons_ds,
-    #     closed_loop=1,
-    #     choose_trials=None,
-    #     depth_min=0.02,
-    #     depth_max=20,
-    #     niter=10,
-    #     min_sigma=0.5,
-    #     k_folds=1,
-    # )
+    print("Fit preferred depth...")
+    # Find preferred depth of closed loop with all data
+    neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+        trials_df=trials_df_all,
+        neurons_df=neurons_df,
+        neurons_ds=neurons_ds,
+        closed_loop=1,
+        choose_trials=None,
+        depth_min=0.02,
+        depth_max=20,
+        niter=10,
+        min_sigma=0.5,
+        k_folds=1,
+    )
 
-    # # Find preferred depth of closed loop with half the data for plotting purposes
-    # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-    #     trials_df=trials_df_all,
-    #     neurons_df=neurons_df,
-    #     neurons_ds=neurons_ds,
-    #     closed_loop=1,
-    #     choose_trials="odd",
-    #     depth_min=0.02,
-    #     depth_max=20,
-    #     niter=10,
-    #     min_sigma=0.5,
-    #     k_folds=1,
-    # )
+    # Find preferred depth of closed loop with half the data for plotting purposes
+    neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+        trials_df=trials_df_all,
+        neurons_df=neurons_df,
+        neurons_ds=neurons_ds,
+        closed_loop=1,
+        choose_trials="odd",
+        depth_min=0.02,
+        depth_max=20,
+        niter=10,
+        min_sigma=0.5,
+        k_folds=1,
+    )
 
-    # # Find r-squared of k-fold cross validation
-    # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-    #     trials_df=trials_df_all,
-    #     neurons_df=neurons_df,
-    #     neurons_ds=neurons_ds,
-    #     closed_loop=1,
-    #     choose_trials=None,
-    #     depth_min=0.02,
-    #     depth_max=20,
-    #     niter=5,
-    #     min_sigma=0.5,
-    #     k_folds=5,
-    # )
+    # Find r-squared of k-fold cross validation
+    neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+        trials_df=trials_df_all,
+        neurons_df=neurons_df,
+        neurons_ds=neurons_ds,
+        closed_loop=1,
+        choose_trials=None,
+        depth_min=0.02,
+        depth_max=20,
+        niter=5,
+        min_sigma=0.5,
+        k_folds=5,
+    )
     
-    # neurons_df.to_pickle(neurons_ds.path_full)
+    neurons_df.to_pickle(neurons_ds.path_full)
     neurons_df = pd.read_pickle(neurons_ds.path_full)
     
     # Fit RFs of all ROIs
     print("---Start fitting RFs for all ROIs...---")
-    # coef, r2, best_reg_xy, best_reg_depth  = spheres.fit_3d_rfs_hyperparam_tuning(imaging_df_all, 
-    #                                                frames_all[:,:,int(frames_all.shape[2]//2):], 
-    #                                                reg_xys=[20, 40, 80, 160, 320], 
-    #                                                reg_depths=[20, 40, 80, 160, 320], 
-    #                                                shift_stims=2, 
-    #                                                use_col="dffs", 
-    #                                                k_folds=5, 
-    #                                                tune_separately=False, 
-    #                                                use_validation_set=False)
+    coef, r2, best_reg_xy, best_reg_depth  = spheres.fit_3d_rfs_hyperparam_tuning(imaging_df_all, 
+                                                   frames_all[:,:,int(frames_all.shape[2]//2):], 
+                                                   reg_xys=[20, 40, 80, 160, 320], 
+                                                   reg_depths=[20, 40, 80, 160, 320], 
+                                                   shift_stims=2, 
+                                                   use_col="dffs", 
+                                                   k_folds=5, 
+                                                   tune_separately=False, 
+                                                   use_validation_set=False)
     
-    # coef_ipsi, r2_ipsi = spheres.fit_3d_rfs(imaging_df_all, 
-    #                                         frames_all[:,:,:int(frames_all.shape[2]//2)], 
-    #                                         reg_xy=best_reg_xy, 
-    #                                         reg_depth=best_reg_depth, 
-    #                                         shift_stim=2, 
-    #                                         use_col="dffs", 
-    #                                         k_folds=5, 
-    #                                         choose_rois=[],
-    #                                         mode="test")
+    coef_ipsi, r2_ipsi = spheres.fit_3d_rfs(imaging_df_all, 
+                                            frames_all[:,:,:int(frames_all.shape[2]//2)], 
+                                            reg_xy=best_reg_xy, 
+                                            reg_depth=best_reg_depth, 
+                                            shift_stim=2, 
+                                            use_col="dffs", 
+                                            k_folds=5, 
+                                            choose_rois=[],
+                                            mode="test")
     
-    # sig, sig_ipsi = spheres.find_sig_rfs(coef, coef_ipsi, n_std=5)
-    # print(f"Number of significant RFs at contra side: {np.mean(sig)}")
-    # print(f"Number of significant RFs at ipsi side: {np.mean(sig_ipsi)}")
+    sig, sig_ipsi = spheres.find_sig_rfs(coef, coef_ipsi, n_std=5)
+    print(f"Number of significant RFs at contra side: {np.mean(sig)}")
+    print(f"Number of significant RFs at ipsi side: {np.mean(sig_ipsi)}")
     
-    # rf_dict = {"coef":coef,
-    #         "r2":r2,
-    #         "best_reg_xy":best_reg_xy,
-    #         "best_reg_depth":best_reg_depth,
-    #         "coef_ipsi":coef_ipsi,
-    #         "r2_ipsi":r2_ipsi,
-    #         "sig":sig,
-    #         "sig_ipsi":sig_ipsi}
-    # with open(neurons_ds.path_full.parent/'rf_fit.pickle', 'wb') as handle:
-    #     pickle.dump(rf_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    rf_dict = {"coef":coef,
+            "r2":r2,
+            "best_reg_xy":best_reg_xy,
+            "best_reg_depth":best_reg_depth,
+            "coef_ipsi":coef_ipsi,
+            "r2_ipsi":r2_ipsi,
+            "sig":sig,
+            "sig_ipsi":sig_ipsi}
+    with open(neurons_ds.path_full.parent/'rf_fit.pickle', 'wb') as handle:
+        pickle.dump(rf_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     with open(neurons_ds.path_full.parent/'rf_fit.pickle', 'rb') as handle:
         rf_dict = pickle.load(handle)
     coef = rf_dict["coef"]

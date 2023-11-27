@@ -13,12 +13,13 @@ from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
     fit_gaussian_blob,
-    pipeline_utils,
     common_utils,
 )
 from cottage_analysis.plotting import (
     basic_vis_plots,
     sta_plots)
+
+from cottage_analysis.pipelines import pipeline_utils 
 
 
 def main(project, session_name, conflicts="skip", photodiode_protocol=2):
@@ -126,7 +127,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=2):
             choose_trials=None,
             rs_thr=0.01,
             param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
+            niter=10,
             min_sigma=0.25,
         )
 

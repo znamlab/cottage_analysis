@@ -13,12 +13,12 @@ from cottage_analysis.analysis import (
     spheres,
     gratings,
     find_depth_neurons,
-    pipeline_utils,
     common_utils,
     fit_gaussian_blob,
     size_control,
 )
 from cottage_analysis.plotting import grating_plots
+from cottage_analysis.pipelines import pipeline_utils
 
 
 def main(
