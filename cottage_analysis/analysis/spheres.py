@@ -470,7 +470,11 @@ def search_param_log_trials(recording, trials_df, flexilims_session):
         allow_multiple=False,
         return_dataseries=False,
     )
-    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+    if type(harp_ds.extra_attributes["csv_files"]) == str:
+        harp_files = eval(harp_ds.extra_attributes["csv_files"])
+    else:
+        harp_files = harp_ds.extra_attributes["csv_files"]
+    paramlog_path = harp_ds.path_full / harp_files["NewParams"]
     param_log = pd.read_csv(paramlog_path)
     # trial index for each row of param log
     start_idx = (
@@ -664,7 +668,11 @@ def regenerate_frames_all_recordings(
             allow_multiple=False,
             return_dataseries=False,
         )
-        paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+        if type(harp_ds.extra_attributes["csv_files"]) == str:
+            harp_files = eval(harp_ds.extra_attributes["csv_files"])
+        else:
+            harp_files = harp_ds.extra_attributes["csv_files"]
+        paramlog_path = harp_ds.path_full / harp_files["NewParams"]
         param_log = pd.read_csv(paramlog_path)
 
         # Regenerate frames for this trial
