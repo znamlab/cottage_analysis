@@ -7,7 +7,7 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import scipy
-from cottage_analysis.plotting import plotting_utils
+from cottage_analysis.plotting import plotting_utils, grating_plots
 from cottage_analysis.analysis import (
     find_depth_neurons,
     common_utils,
@@ -87,7 +87,7 @@ def plot_depth_neuron_distribution(
     plt.title("Depth preference")
 
 
-def get_depth_color(depth, depth_list, cmap=cm.cool.reversed()):
+def get_depth_color(depth, depth_list, cmap=cm.cool.reversed(), log=True):
     """
     Calculate the color for a certain depth out of a depth list
 
@@ -99,10 +99,16 @@ def get_depth_color(depth, depth_list, cmap=cm.cool.reversed()):
     Returns:
         rgba_color: tuple of 3 with RGB color values.
     """
-    norm = mpl.colors.Normalize(
-        vmin=np.log(min(depth_list)), vmax=np.log(max(depth_list))
-    )
-    rgba_color = cmap(norm(np.log(depth)), bytes=True)
+    if log:
+        norm = mpl.colors.Normalize(
+            vmin=np.log(min(depth_list)), vmax=np.log(max(depth_list))
+        )
+        rgba_color = cmap(norm(np.log(depth)), bytes=True)
+    else:
+        norm = mpl.colors.Normalize(
+            vmin=min(depth_list), vmax=max(depth_list)
+        )
+        rgba_color = cmap(norm(depth), bytes=True)
     rgba_color = tuple(it / 255 for it in rgba_color)
 
     return rgba_color
@@ -445,9 +451,10 @@ def plot_speed_tuning(
     if which_speed == "RS":
         speed_tuning = np.zeros(((len(depth_list) + 1), nbins))
         speed_ci = np.zeros(((len(depth_list) + 1), nbins))
-        bins = np.linspace(
-            start=speed_min, stop=speed_max, num=nbins + 1, endpoint=True
-        )*100
+        bins = (
+            np.linspace(start=speed_min, stop=speed_max, num=nbins + 1, endpoint=True)
+            * 100
+        )
 
     elif which_speed == "OF":
         speed_tuning = np.zeros(((len(depth_list)), nbins))
@@ -515,7 +522,7 @@ def plot_speed_tuning(
     # Find tuning for blank period for RS
     if which_speed == "RS":
         all_speed = trials_df[f"{which_speed}_blank"].values
-        speed_arr = np.array([j for i in all_speed for j in i])*100
+        speed_arr = np.array([j for i in all_speed for j in i]) * 100
         all_dff = trials_df["dff_blank"].values
         dff_arr = np.array([j for i in all_dff for j in i[:, roi]])
 
@@ -762,14 +769,18 @@ def plot_PSTH(
     plotting_utils.despine()
 
 
-def basic_vis_session(neurons_df, trials_df, neurons_ds):
+def basic_vis_session(neurons_df, trials_df, neurons_ds, SFTF=False):
     rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
     os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
-    for i in tqdm(range(int(len(rois) // 10 + 1))):
-        plt.figure(figsize=(3 * 4, 3 * 10))
+
+    plot_rows = 10
+    plot_cols = 4
+
+    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
+        plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
         iroi = 0
-        for roi in rois[i * 10 : np.min([(i + 1) * 10, len(rois)])]:
-            plt.subplot2grid((10, 4), (iroi, 0))
+        for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
             plot_depth_tuning_curve(
                 neurons_df=neurons_df,
                 trials_df=trials_df,
@@ -783,7 +794,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
             )
             plt.title(f"roi{roi}")
 
-            plt.subplot2grid((10, 4), (iroi, 1))
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
             plot_speed_tuning(
                 neurons_df=neurons_df,
                 trials_df=trials_df,
@@ -797,7 +808,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                 smoothing_sd=1,
             )
 
-            plt.subplot2grid((10, 4), (iroi, 2))
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
             plot_speed_tuning(
                 neurons_df=neurons_df,
                 trials_df=trials_df,
@@ -811,7 +822,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                 smoothing_sd=1,
             )
 
-            plt.subplot2grid((10, 4), (iroi, 3))
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
             plot_PSTH(
                 neurons_df=neurons_df,
                 trials_df=trials_df,
@@ -867,7 +878,7 @@ def plot_RS_OF_matrix(
     )
     of_bins = np.insert(of_bins, 0, 0)
 
-    rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i])*100
+    rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
     of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
     dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
 

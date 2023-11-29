@@ -20,7 +20,7 @@ def sync_by_frame_alternating(
     photodiode_sampling=1000,
     plot=False,
     plot_start=10000,
-    plot_range=1000,
+    plot_range=50,
     plot_dir=None,
 ):
     """Find frame refresh based on photodiode signal
@@ -35,8 +35,8 @@ def sync_by_frame_alternating(
                             frame will be ignored. Default to 144.
         photodiode_sampling (float): Sampling rate of the photodiode signal in Hz. Default to 1000.
         plot (bool): Should a summary figure be generated? Default to False.
-        plot_start (int): sample to start the plot. Default to 10000.
-        plot_range (int): samples to plot after plot_start. Default to 1000.
+        plot_start (int): monitor frame index to start the plot. Default to 10000.
+        plot_range (int): monitor frame number to plot after plot_start. Default to 1000.
         plot_dir (Path or str): directory to save the figure. Default to None.
 
     Returns:
@@ -48,12 +48,12 @@ def sync_by_frame_alternating(
     """
 
     # Photodiode value above which the quad is considered white
-    upper_thr = np.percentile(photodiode, 80)
+    upper_thr = np.percentile(photodiode, 75)
     # Photodiode value above which the quad is considered black
-    lower_thr = np.percentile(photodiode, 20)
+    lower_thr = np.percentile(photodiode, 25)
     photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
     # Find peaks of photodiode
-    distance = int(1 / frame_rate * 2 * photodiode_sampling)
+    distance = int(1 / frame_rate * 2 * photodiode_sampling)*0.8
     high_peaks, _ = scsi.find_peaks(photodiode, height=upper_thr, distance=distance)
     first_frame = high_peaks[0]
     low_peaks, _ = scsi.find_peaks(-photodiode, height=-lower_thr, distance=distance)
@@ -71,34 +71,28 @@ def sync_by_frame_alternating(
 
     if plot:
         plt.figure()
-        plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            photodiode[plot_start : (plot_start + plot_range)],
+        plot_start_sample = np.argmin(np.abs(analog_time - frames_df.iloc[plot_start].peak_time))
+        plot_stop_sample = np.argmin(
+            np.abs(analog_time - frames_df.iloc[plot_start + plot_range].peak_time)
         )
-        all_frame_idxs = frames_df.index.values.reshape(-1)
-        take_start = np.argmin(np.abs(all_frame_idxs - plot_start))
-        take_stop = np.argmin(np.abs(all_frame_idxs - plot_start - plot_range))
-        take_idxs = all_frame_idxs[take_start:take_stop]
-
-        plot_peaks = np.intersect1d(
-            all_frame_idxs, (np.arange(plot_start, (plot_start + plot_range), step=1))
-        )
-        plt.figure()
         plt.plot(
-            frames_df.loc[take_idxs, "peak_time"],
-            frames_df.loc[take_idxs, "photodiode"],
+            analog_time[plot_start_sample : plot_stop_sample],
+            photodiode[plot_start_sample : plot_stop_sample],
         )
-        plt.plot(analog_time[plot_peaks], photodiode[plot_peaks], "x")
+        
+        plt.plot(frames_df["peak_time"].values[plot_start:(plot_start+plot_range)],
+            frames_df["photodiode"].values[plot_start:(plot_start+plot_range)],
+            "x")
         plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            analog_time[plot_start_sample : plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
             + upper_thr,
             "--",
             color="gray",
         )
         plt.plot(
-            analog_time[plot_start : (plot_start + plot_range)],
-            np.zeros_like(photodiode[plot_start : (plot_start + plot_range)])
+            analog_time[plot_start_sample : plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
             + lower_thr,
             "--",
             color="gray",

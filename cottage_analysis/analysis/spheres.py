@@ -14,6 +14,10 @@ from cottage_analysis.analysis.fit_gaussian_blob import (
     gabor_3d_rf,
     gaussian_3d_rf,
 )
+from functools import partial
+print = partial(print, flush=True)
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from scipy.stats import mode
 from cottage_analysis.preprocessing import synchronisation
 
 
@@ -117,6 +121,8 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
+    if frame_times[-1] > mouse_pos_time[-1]:
+        frame_times[-1] = frame_times[-2]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
@@ -466,7 +472,11 @@ def search_param_log_trials(recording, trials_df, flexilims_session):
         allow_multiple=False,
         return_dataseries=False,
     )
-    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+    if type(harp_ds.extra_attributes["csv_files"]) == str:
+        harp_files = eval(harp_ds.extra_attributes["csv_files"])
+    else:
+        harp_files = harp_ds.extra_attributes["csv_files"]
+    paramlog_path = harp_ds.path_full / harp_files["NewParams"]
     param_log = pd.read_csv(paramlog_path)
     # trial index for each row of param log
     start_idx = (
@@ -660,7 +670,11 @@ def regenerate_frames_all_recordings(
             allow_multiple=False,
             return_dataseries=False,
         )
-        paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+        if type(harp_ds.extra_attributes["csv_files"]) == str:
+            harp_files = eval(harp_ds.extra_attributes["csv_files"])
+        else:
+            harp_files = harp_ds.extra_attributes["csv_files"]
+        paramlog_path = harp_ds.path_full / harp_files["NewParams"]
         param_log = pd.read_csv(paramlog_path)
 
         # Regenerate frames for this trial
@@ -722,7 +736,7 @@ def fit_3d_rfs(
     choose_rois=(),
     validation=False,
 ):
-    """Fit 3D receptive fields using regularized least squares regression.
+    """Fit 3D receptive fields using regularized least squares regression, with only one set of hyperparameters. 
     Runs on all ROIs in parallel.
 
     Args:
@@ -739,12 +753,12 @@ def fit_3d_rfs(
         validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
 
     Returns:
-        coef (np.array): array of coefficients for each pixel
-        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
 
     """
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
-    if choose_rois:
+    if len(choose_rois)>0:
         resps = resps[:, choose_rois]
     depths = imaging_df.depth.unique()
     depths = depths[~np.isnan(depths)]
@@ -869,24 +883,42 @@ def fit_3d_rfs_hyperparam_tuning(
     shift_stims=2,
     use_col="dffs",
     k_folds=5,
-    tune_separately=False,
+    tune_separately=True,
+    validation=False,
 ):
+    """Fit 3D receptive fields using regularized least squares regression, with hyperparameter tuning.
+    Runs on all ROIs in parallel.
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+        frames (np.array): array of frames
+        reg_xys (list): a list of regularization constant for spatial regularization
+        reg_depths (list): a list of regularization constant for depth regularization
+        shift_stim (int): number of frames to shift the stimulus by.
+            This is to account for the delay between the stimulus and the response.
+            Defaults to 2.
+        use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+        k_folds (int): number of folds for cross validation. Defaults to 5.
+        tune_separately (bool): whether to tune hyperparameters separately for each ROI. Defaults to True.
+        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
+
+    Returns:
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
+        best_reg_xys (np.array): array of best reg_xy for each ROI
+        best_reg_depths (np.array): array of best reg_depth for each ROI
+
+    """
+    
     all_coef = []
     all_rs = []
     hyperparams = []
-    for reg_xy in reg_xys:
-        for reg_depth in reg_depths:
+    good_neuron_percs = np.zeros((len(reg_xys), len(reg_depths)))
+    for i, reg_xy in enumerate(reg_xys):
+        for j, reg_depth in enumerate(reg_depths):
             print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
-            coef, r2 = fit_3d_rfs(
-                imaging_df,
-                frames,
-                reg_xy=40,
-                reg_depth=80,
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                mode="hyperparam_tuning",
-            )
+            coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=reg_xy, reg_depth=reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
+            good_neuron_percs[i,j] = np.mean(r2[:,1]>.01)
             all_coef.append(coef)
             all_rs.append(r2)
             hyperparams.append([reg_xy, reg_depth])
@@ -896,46 +928,227 @@ def fit_3d_rfs_hyperparam_tuning(
     best_hyperparam_idxs = np.argmax(all_rs[:, :, 1], axis=0)
 
     if not tune_separately:
+        max_idx = np.unravel_index(np.argmax(good_neuron_percs), good_neuron_percs.shape)
+        best_reg_xy, best_reg_depth = reg_xys[max_idx[0]], reg_depths[max_idx[1]]
+        print(f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}, R2>0.01: {good_neuron_percs[max_idx]:.4f}")
+        coef, r2 = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
         [best_reg_xy, best_reg_depth] = hyperparams[mode(best_hyperparam_idxs[0][0])]
         print(
             f"Best param found for all ROIs: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
         )
-        coef, r2 = fit_3d_rfs(
-            imaging_df,
-            frames,
-            reg_xy=best_reg_xy,
-            reg_depth=best_reg_depth,
-            shift_stim=2,
-            use_col="dffs",
-            k_folds=5,
-            mode="test",
-        )
         coef = np.stack(coef)
+        best_reg_xys = np.ones(len(r2[:,1]))*best_reg_xy
+        best_reg_depths = np.ones(len(r2[:,1]))*best_reg_depth
     else:
+        best_reg_xys = np.zeros(len(r2[:,1]))
+        best_reg_depths = np.zeros(len(r2[:,1]))
         for iparam in np.sort(np.unique(best_hyperparam_idxs)):
             [best_reg_xy, best_reg_depth] = hyperparams[iparam]
-            fit_neurons = np.arange(imaging_df[use_col][0].shape[1])[
-                best_hyperparam_idxs == iparam
-            ]
-            print(
-                f"Best param found for {len(fit_neurons)} neurons: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}"
-            )
-            coef_temp, r2_temp = spheres.fit_3d_rfs(
-                imaging_df,
-                frames,
-                reg_xy=best_reg_xy,
-                reg_depth=best_reg_depth,
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                choose_rois=fit_neurons,
-                mode="test",
-            )
+            fit_neurons = np.arange(imaging_df[use_col][0].shape[1])[best_hyperparam_idxs==iparam]
+            print(f"Best param found for {len(fit_neurons)} neurons: reg_xy: {best_reg_xy}, reg_depth: {best_reg_depth}")
+            coef_temp, r2_temp = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg_xy, reg_depth=best_reg_depth, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, choose_rois=fit_neurons, validation=validation)
             coef = np.stack(coef)
             coef[:, :, fit_neurons] = np.stack(coef_temp)
-            r2[fit_neurons, :] = r2_temp
+            r2[fit_neurons,:] = r2_temp
+            best_reg_xys[fit_neurons] = best_reg_xy
+            best_reg_depths[fit_neurons] = best_reg_depth
+             
+    return coef, r2, best_reg_xys, best_reg_depths
 
+
+def fit_3d_rfs_ipsi(
+    imaging_df,
+    frames,
+    best_reg_xys,
+    best_reg_depths,
+    shift_stims=2,
+    use_col="dffs",
+    k_folds=5,
+    validation=False,
+):
+    """Fit 3D receptive fields using the ipsilateral side of stimuli using regularized least squares regression, using the best set of hyperparameter of the contralateral side.
+    Runs on all ROIs in parallel.
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+        frames (np.array): array of frames
+        best_reg_xys (list): a list of best regularization constant for spatial regularization from the contra side fitting.
+        best_reg_depths (list): a list of best regularization constant for depth regularization from the contra side fitting.
+        shift_stim (int): number of frames to shift the stimulus by.
+            This is to account for the delay between the stimulus and the response.
+            Defaults to 2.
+        use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+        k_folds (int): number of folds for cross validation. Defaults to 5.
+        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
+
+    Returns:
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
+
+    """
+    
+    best_regs = np.stack([best_reg_xys, best_reg_depths], axis=1)
+    coef_temp, r2_temp= fit_3d_rfs(imaging_df, frames, reg_xy=80, reg_depth=40, shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, validation=validation)
+    coef = np.zeros_like(np.stack(coef_temp))
+    r2 = np.zeros_like(np.stack(r2_temp))
+    for best_reg in np.unique(best_regs, axis=0):
+        best_reg_neurons = np.where(np.all(best_reg==best_regs, axis=1))[0]
+        print(f"Fit with best param for {len(best_reg_neurons)} neurons: reg_xy: {best_reg[0]}, reg_depth: {best_reg[1]}")
+        coef_temp, r2_temp = fit_3d_rfs(imaging_df, frames, reg_xy=best_reg[0], reg_depth=best_reg[1], shift_stim=shift_stims, use_col=use_col,k_folds=k_folds, choose_rois=best_reg_neurons, validation=validation)
+        coef[:, :, best_reg_neurons] = np.stack(coef_temp)
+        r2[best_reg_neurons,:] = r2_temp
     return coef, r2
+        
+
+def find_sig_rfs(coef, coef_ipsi, n_std=5):
+    '''Find the neurons with a significant RF (compared to ipsi side)
+
+    Args:
+        coef (_type_): _description_
+        coef_ipsi (_type_): _description_
+        n_std (int, optional): _description_. Defaults to 5.
+
+    Returns:
+        _type_: _description_
+    '''
+    coef_mean = np.mean(np.stack(coef, axis=2), axis=2)
+    coef_ipsi_mean = np.mean(np.stack(coef_ipsi, axis=2), axis=2)
+
+    threshold = n_std * np.std(coef_ipsi_mean[:-1, :], axis=0) + np.mean(coef_ipsi_mean[:-1, :], axis=0)
+    sig = np.max(coef_mean[:-1, :], axis=0) > threshold
+    sig_ipsi = np.max(coef_ipsi_mean[:-1, :], axis=0) > threshold
+    
+    return sig, sig_ipsi
+
+# def fit_3d_rfs(
+#     imaging_df,
+#     frames,
+#     reg_xy=100,
+#     reg_depth=20,
+#     shift_stim=2,
+#     use_col="dffs",
+#     k_folds=5,
+# ):
+#     """Fit 3D receptive fields using regularized least squares regression.
+#     Runs on all ROIs in parallel.
+
+#     Args:
+#         imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
+#         frames (np.array): array of frames
+#         reg_xy (float): regularization constant for spatial regularization
+#         reg_depth (float): regularization constant for depth regularization
+#         shift_stim (int): number of frames to shift the stimulus by.
+#             This is to account for the delay between the stimulus and the response.
+#             Defaults to 2.
+#         use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
+
+#     Returns:
+#         coef (np.array): array of coefficients for each pixel
+#         r2 (list): list of arrays of r2 for each ROI for training, validation and test sets
+#     """
+#     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
+#     depths = imaging_df.depth.unique()
+#     depths = depths[~np.isnan(depths)]
+#     depths = depths[depths > 0]
+#     depths = np.sort(depths)
+#     L = laplace_matrix(frames.shape[1], frames.shape[2])
+#     Ls = []
+#     Ls_depth = []
+
+#     trial_idx = np.zeros_like(imaging_df.depth)
+#     trial_idx = np.cumsum(
+#         np.logical_and(np.abs(imaging_df.depth.diff()) > 0, imaging_df.depth > 0)
+#     )
+#     trial_idx[imaging_df.depth.isna()] = np.nan
+#     trial_idx[imaging_df.depth < 0] = np.nan
+#     imaging_df["trial_idx"] = trial_idx
+#     # get the depth of the first row for each trial
+#     depths_by_trial = imaging_df.groupby("trial_idx").first().depth
+#     # convert to categorical codes
+#     depths_by_trial.update(pd.Categorical(depths_by_trial).codes)
+#     # convert index to int
+#     depths_by_trial.index = depths_by_trial.index.astype(int)
+
+#     X = np.zeros((frames.shape[0], frames.shape[1] * frames.shape[2] * depths.shape[0]))
+#     for idepth, depth in enumerate(depths):
+#         depth_idx = imaging_df.depth == depth
+#         m = np.roll(np.reshape(frames, (frames.shape[0], -1)), shift_stim, axis=0)[
+#             depth_idx, :
+#         ]
+#         # place m in the right columns of X
+#         X[depth_idx, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = m
+#         # add regularization penalty on the second derivative of the coefficients
+#         # in X and Y
+#         L_xy = np.zeros((L.shape[0], X.shape[1]))
+#         L_xy[:, idepth * L.shape[1] : (idepth + 1) * L.shape[1]] = L
+#         Ls.append(L_xy)
+#         # add regularization penalty on the second derivative of the coefficients
+#         # along the depth axis
+#         L_depth = np.zeros((m.shape[1], X.shape[1]))
+#         L_depth[:, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = (
+#             np.identity(m.shape[1]) * 2
+#         )
+#         if idepth > 0:
+#             L_depth[:, (idepth - 1) * m.shape[1] : idepth * m.shape[1]] = -np.identity(
+#                 m.shape[1]
+#             )
+#         if idepth < depths.shape[0] - 1:
+#             L_depth[
+#                 :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+#             ] = -np.identity(m.shape[1])
+#         Ls_depth.append(L_depth)
+
+#     L = np.concatenate(Ls, axis=0)
+#     L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
+#     L_depth = np.concatenate(Ls_depth, axis=0)
+#     L_depth = np.concatenate([L_depth, np.zeros((L_depth.shape[0], 1))], axis=1)
+#     # add bias
+#     X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
+#     coefs = []
+
+#     Y_pred = np.zeros((resps.shape[0], resps.shape[1], 2)) * np.nan
+#     # randomly split trials into training, validation and test
+#     stratified_kfold = StratifiedKFold(n_splits=k_folds, random_state=42, shuffle=True)
+#     for train_trials, test_trials in stratified_kfold.split(
+#         depths_by_trial.index, depths_by_trial.values
+#     ):
+#         # train_trials, validation_trials = train_test_split(
+#         #     train_trials,
+#         #     stratify=depths_by_trial.iloc[train_trials].values,
+#         #     test_size=(1 / (k_folds - 1)),
+#         # )
+#         test_idx = np.isin(imaging_df.trial_idx, test_trials)
+#         train_idx = np.isin(imaging_df.trial_idx, train_trials)
+#         # validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
+#         X_train = np.concatenate(
+#             [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
+#         )
+#         Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+
+#         Y_train = np.concatenate(
+#             [
+#                 resps[train_idx, :],
+#                 np.zeros((L.shape[0], resps.shape[1])),
+#                 np.zeros((L_depth.shape[0], resps.shape[1])),
+#             ],
+#             axis=0,
+#         )
+#         coef = Q @ Y_train
+#         coefs.append(coef)
+#         # compute predictions for this fold
+#         for isplit, idx in enumerate([train_idx, test_idx]):
+#             Y_pred[idx, :, isplit] = X[idx, :] @ coef
+#     use_idx = np.isfinite(Y_pred[:, 0, 0])
+#     residual_var = np.sum(
+#         (Y_pred[use_idx, :, :] - resps[use_idx, :, np.newaxis]) ** 2,
+#         axis=0,
+#     )
+#     total_var = np.sum(
+#         (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
+#     )
+#     r2 = 1 - residual_var / total_var[:, np.newaxis]
+
+#     return coefs, r2
 
 
 def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):

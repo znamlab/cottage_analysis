@@ -96,7 +96,16 @@ def find_monitor_frames(
         analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
 
     # Get frame log
-    frame_log = pd.read_csv(raw / vis_stim_recording.path / "FrameLog.csv")
+    if type(harp_ds.extra_attributes["csv_files"]) == str:
+        # Some yaml info have been saved as string instead of dict
+        # TODO: fix on flexilims and/or use yaml.safe_load
+        frame_log = pd.read_csv(
+            harp_ds.path_full / eval(harp_ds.extra_attributes["csv_files"])["FrameLog"]
+            )
+    else:
+        frame_log = pd.read_csv(
+            harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
+        )
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
@@ -112,7 +121,7 @@ def find_monitor_frames(
             photodiode_sampling=1000,
             plot=True,
             plot_start=10000,
-            plot_range=1000,
+            plot_range=50,
             plot_dir=diagnostics_folder,
         )
         if sync_kwargs is not None:

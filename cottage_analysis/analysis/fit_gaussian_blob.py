@@ -337,18 +337,18 @@ def fit_rs_of_tuning(
 
     # Initialize neurons_df with columns for RS/OF tuning
     neurons_df = neurons_df.assign(
-        preferred_RS_closed_loop=np.nan,
-        preferred_OF_closed_loop=np.nan,
-        gaussian_blob_popt_closed_loop=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_closed_loop=np.nan,
-        preferred_RS_open_loop_actual=np.nan,
-        preferred_OF_open_loop_actual=np.nan,
-        gaussian_blob_popt_open_loop_actual=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_open_loop_actual=np.nan,
-        preferred_RS_open_loop_virtual=np.nan,
-        preferred_OF_open_loop_virtual=np.nan,
-        gaussian_blob_popt_open_loop_virtual=[[np.nan]] * len(neurons_df),
-        gaussian_blob_rsq_open_loop_virtual=np.nan,
+        preferred_RS_closedloop=np.nan,
+        preferred_OF_closedloop=np.nan,
+        rsof_popt_closedloop=[[np.nan]] * len(neurons_df),
+        rsof_rsq_closedloop=np.nan,
+        preferred_RS_openloop_actual=np.nan,
+        preferred_OF_openloop_actual=np.nan,
+        rsof_popt_openloop_actual=[[np.nan]] * len(neurons_df),
+        rsof_rsq_openloop_actual=np.nan,
+        preferred_RS_openloop_virtual=np.nan,
+        preferred_OF_openloop_virtual=np.nan,
+        rsof_popt_openloop_virtual=[[np.nan]] * len(neurons_df),
+        rsof_rsq_openloop_virtual=np.nan,
     )
 
     # Loop through all protocols (closed loop and open loop)
@@ -415,10 +415,10 @@ def fit_rs_of_tuning(
                     np.exp(popt[2])
                 )  # rad/s
                 # !! Calculated with RS in m and OF in degrees/s
-                # neurons_df.at[
-                #     roi, f"gaussian_blob_popt_{protocol_sfx}{rs_type}"
-                # ] = popt
-                neurons_df.loc[roi, f"gaussian_blob_rsq_{protocol_sfx}{rs_type}"] = rsq
+                neurons_df.at[
+                    roi, f"rsof_popt_{protocol_sfx}{rs_type}"
+                ] = popt
+                neurons_df.loc[roi, f"rsof_rsq_{protocol_sfx}{rs_type}"] = rsq
 
     return neurons_df, neurons_ds
 

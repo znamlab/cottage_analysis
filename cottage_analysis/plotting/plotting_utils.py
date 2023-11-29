@@ -844,16 +844,17 @@ def scatter_plot_fit_line(
     s=1,
     alpha=0.8,
     c="k",
+    label=None,
     log=True,
     fit_line=True,
     model=LinearRegression(),
 ):
     if log:
-        score, coef, intercept, y_pred = linear_regression(
+        score, coef, intercept, y_pred_original = linear_regression(
             X=np.log(X), y=np.log(y), x2=np.log(x2), model=model
         )
         # print(coef, intercept)
-        plt.scatter(X, y, s=s, alpha=alpha, c=c)
+        plt.scatter(X, y, s=s, alpha=alpha, c=c, label=label, edgecolors="none")
 
         y_pred_exp = []
         if fit_line:
@@ -870,12 +871,12 @@ def scatter_plot_fit_line(
             y_pred_exp = np.array(y_pred_exp)
             lower_CI = np.percentile(y_pred_exp, 2.5, axis=0)
             higher_CI = np.percentile(y_pred_exp, 97.5, axis=0)
-            plt.plot(x2, np.exp(y_pred), "r", linewidth=1)
+            plt.plot(x2, np.exp(y_pred_original), color=c, linewidth=1)
             plt.fill_between(
                 x=x2.reshape(-1),
                 y1=lower_CI.reshape(-1),
                 y2=higher_CI.reshape(-1),
-                color="r",
+                color=c,
                 alpha=0.25,
                 zorder=0.01,
                 edgecolor=None,
