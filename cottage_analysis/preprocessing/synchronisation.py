@@ -219,10 +219,15 @@ def generate_vs_df(
         allow_multiple=False,
         return_dataseries=False,
     )
+    if type(harp_ds.extra_attributes["csv_files"]) == str:
+        harp_files = eval(harp_ds.extra_attributes["csv_files"])
+    else:
+        harp_files = harp_ds.extra_attributes["csv_files"]
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
-        frame_log = pd.read_csv(frame_log_path)
+        frame_log = pd.read_csv(
+            harp_ds.path_full / harp_files["FrameLog"]
+        )
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z.rename(
             columns={
@@ -240,7 +245,7 @@ def generate_vs_df(
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
         )
-        encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
+        encoder_path = harp_ds.path_full / harp_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
         frame_log_z.rename(
@@ -260,7 +265,7 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
     # Align paramLog with vs_df
-    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
+    paramlog_path = harp_ds.path_full / harp_files["NewParams"]
     # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
     param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
@@ -330,14 +335,10 @@ def generate_imaging_df(
     )
     if "nframes" in suite2p_ds.extra_attributes:
         volume_number = float(suite2p_ds.extra_attributes["nframes"])
-        # frame_number = float(suite2p_ds.extra_attributes["nframes"])
     else:
         volume_number = float(
             np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
-        # frame_number = float(
-        #     np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
-        # )
     nplanes = float(suite2p_ds.extra_attributes["nplanes"])
     fs = float(suite2p_ds.extra_attributes["fs"])
     harp_npz_path = flz.get_datasets(
