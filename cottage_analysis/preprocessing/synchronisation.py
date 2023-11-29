@@ -1,82 +1,30 @@
+import warnings
+import shutil
 import numpy as np
 import pandas as pd
 import flexiznam as flz
-from cottage_analysis.io_module import harp
+from functools import partial
+from znamutils import slurm_it
+from cottage_analysis.io_module.harp import load_harpmessage
+from cottage_analysis.io_module import onix as onix_io
+from cottage_analysis.preprocessing import onix as onix_prepro
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
-from functools import partial
 
 print = partial(print, flush=True)
 
 
-def load_harpmessage(
-    recording,
-    flexilims_session,
-    conflicts="skip",
-    di_names=("frame_triggers", "lick_detection", "di2_encoder_initial_state"),
-):
-    """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
-
-    Args:
-        recording (str or pandas.Series): recording name or recording entry from flexilims.
-        flexilims_session (flexilims.Flexilims): flexilims session.
-        conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
-        di_names (tuple): names of the digital inputs to rename harp meassage. Defaults
-            to ("frame_triggers", "lick_detection", "di2_encoder_initial_state").
-
-    Returns:
-        np.array: loaded harpmessages as numpy array
-        flz.Dataset: raw harp dataset
-
-    """
-    assert conflicts in ["skip", "overwrite", "abort"]
-    if type(recording) == str:
-        recording = flz.get_entity(
-            datatype="recording", name=recording, flexilims_session=flexilims_session
-        )
-
-    npz_ds = flz.Dataset.from_origin(
-        origin_id=recording["id"],
-        dataset_type="harp_npz",
-        flexilims_session=flexilims_session,
-        conflicts=conflicts,
-    )
-    # find raw data
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording["name"],
-        dataset_type="harp",
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
-        print("Loading existing harp_npz file...")
-        return np.load(npz_ds.path_full), harp_ds
-
-    # parse harp message
-    print("Saving harp messages into npz...")
-    params = dict(
-        harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
-        di_names=di_names,
-    )
-    harp_messages = harp.load_harp(**params)
-
-    # save npz
-    npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
-    npz_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(npz_ds.path_full, **harp_messages)
-
-    # update flexilims
-    npz_ds.extra_attributes.update(params)
-    npz_ds.update_flexilims(mode="overwrite")
-
-    print("Harp messages saved.")
-    return harp_messages, harp_ds
-
-
+@slurm_it(conda_env="cottage_analysis")
 def find_monitor_frames(
-    recording, flexilims_session, photodiode_protocol=5, conflicts="skip"
+    vis_stim_recording,
+    flexilims_session=None,
+    photodiode_protocol=5,
+    conflicts="skip",
+    harp_recording=None,
+    onix_recording=None,
+    sync_kwargs=None,
+    project=None,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -87,22 +35,36 @@ def find_monitor_frames(
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
             Either 2 or 5 for now. Defaults to 5.
         conflicts (str): how to deal with conflicts when updating flexilims. Defaults to "skip".
+        harp_recording (str or pandas.Series): recording name or recording entry
+            from flexilims containing the photodiode signal. If None use
+            vis_stim_recording. Defaults to None.
+        onix_recording (str or pandas.Series): recording name or recording entry
+            from flexilims containing the analog photodiode signal. Defaults to None.
+        sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
+        project (str): project name. Defaults to None. Must be provided if
+            flexilims_session is None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
 
     """
     assert conflicts in ["skip", "overwrite", "abort"]
-    # Find paths
-    if type(recording) == str:
-        recording = flz.get_entity(
-            datatype="recording", name=recording, flexilims_session=flexilims_session
-        )
-        if recording is None:
-            raise ValueError(f"Recording {recording} does not exist.")
-    # Load files
+    if flexilims_session is None:
+        assert (
+            project is not None
+        ), "project must be provided if flexilims_session is None"
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    vis_stim_recording = _get_str_or_recording(vis_stim_recording, flexilims_session)
+    if harp_recording is None:
+        harp_recording = vis_stim_recording
+    else:
+        harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
+        onix_recording = _get_str_or_recording(onix_recording, flexilims_session)
+
+    # Create output and reload
     monitor_frames_ds = flz.Dataset.from_origin(
-        origin_id=recording["id"],
+        origin_id=vis_stim_recording["id"],
         dataset_type="monitor_frames",
         flexilims_session=flexilims_session,
         conflicts=conflicts,
@@ -111,12 +73,32 @@ def find_monitor_frames(
         print("Loading existing monitor frames...")
         return pd.read_pickle(monitor_frames_ds.path_full)
 
-    harp_messages, harp_ds = load_harpmessage(
-        recording=recording, flexilims_session=flexilims_session, conflicts="skip"
-    )
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
 
+    # Get photodiode
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    harp_message, harp_ds = load_harpmessage(
+        recording=harp_recording,
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    if onix_recording is None:
+        # get the photodiode from harp directly
+        photodiode = harp_message["photodiode"]
+        analog_time = harp_message["analog_time"]
+    else:
+        breakout = onix_io.load_breakout(raw / onix_recording.path)
+        onix_data = onix_prepro.preprocess_onix_recording(
+            dict(breakout_data=breakout), harp_message=harp_message
+        )
+        ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
+        photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
+        analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
+
+    # Get frame log
     if type(harp_ds.extra_attributes["csv_files"]) == str:
+        # Some yaml info have been saved as string instead of dict
+        # TODO: fix on flexilims and/or use yaml.safe_load
         frame_log = pd.read_csv(
             harp_ds.path_full / eval(harp_ds.extra_attributes["csv_files"])["FrameLog"]
             )
@@ -125,9 +107,10 @@ def find_monitor_frames(
             harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
         )
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
-
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
+    print(f"Frame rate is {frame_rate:.0f} Hz.")
+
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
     diagnostics_folder = (
         monitor_frames_ds.path_full.parent / "diagnostics" / "frame_sync"
@@ -141,9 +124,11 @@ def find_monitor_frames(
             plot_range=50,
             plot_dir=diagnostics_folder,
         )
+        if sync_kwargs is not None:
+            params.update(sync_kwargs)
         frames_df = find_frames.sync_by_frame_alternating(
-            photodiode=harp_messages["photodiode"],
-            analog_time=harp_messages["analog_time"],
+            photodiode=photodiode,
+            analog_time=analog_time,
             frame_rate=frame_rate,
             **params,
         )
@@ -157,15 +142,18 @@ def find_monitor_frames(
             frame_rate=frame_rate,
             correlation_threshold=0.8,
             relative_corr_thres=0.02,
+            frame_detection_height=0.1,
             minimum_lag=1.0 / frame_rate,
-            do_plot=False,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
+            do_plot=True,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
             save_folder=diagnostics_folder,
             verbose=True,
         )
+        if sync_kwargs is not None:
+            params.update(sync_kwargs)
         frames_df, _ = find_frames.sync_by_correlation(
             frame_log,
-            harp_messages["analog_time"],
-            harp_messages["photodiode"],
+            photodiode_time=analog_time,
+            photodiode_signal=photodiode,
             **params,
         )
     params["photodiode_protocol"] = photodiode_protocol
@@ -181,16 +169,27 @@ def generate_vs_df(
     photodiode_protocol=5,
     flexilims_session=None,
     project=None,
+    harp_recording=None,
+    onix_recording=None,
+    conflicts="skip",
 ):
-    """Generate a DataFrame that contains information for each monitor frame. This requires
-    monitor frames to be synced first.
+    """Generate a DataFrame that contains information for each monitor frame. This 
+    requires monitor frames to be synced first.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity
         photodiode_protocol (int): number of photodiode quad colors used for monitoring
             frame refresh. Either 2 or 5 for now. Defaults to 5.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to None.
-        project (str): project name. Defaults to None. Must be provided if flexilims_session is None.
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to 
+            None.
+        project (str, optional): project name. Defaults to None. Must be provided if 
+            flexilims_session is None.
+        harp_recording (str or pandas.Series, optional): recording name or recording 
+            entry if different from (vis stim) recording. Defaults to None.
+        onix_recording (str or pandas.Series, optional): recording name or recording 
+            entry if photodiode is recorded on onix. Defaults to None.
+        conflicts (str, optional): how to deal with conflicts when updating flexilims. 
+            Defaults to "skip".
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -200,11 +199,19 @@ def generate_vs_df(
     assert photodiode_protocol in [2, 5]
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    recording = _get_str_or_recording(recording, flexilims_session)
+    harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
+    if harp_recording is None:
+        harp_recording = recording
+
     monitor_frames_df = find_monitor_frames(
-        recording=recording,
+        vis_stim_recording=recording,
         flexilims_session=flexilims_session,
         photodiode_protocol=photodiode_protocol,
-        conflicts="skip",
+        harp_recording=harp_recording,
+        onix_recording=onix_recording,
+        conflicts=conflicts,
     )
 
     monitor_frames_df = monitor_frames_df[
@@ -214,16 +221,17 @@ def generate_vs_df(
     monitor_frames_df.closest_frame = monitor_frames_df.closest_frame.astype("int")
     harp_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
-        origin_name=recording.name,
+        origin_name=harp_recording.name,
         dataset_type="harp",
         allow_multiple=False,
         return_dataseries=False,
     )
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log_path = harp_ds.path_full / harp_ds.csv_files["FrameLog"]
-        frame_log = pd.read_csv(frame_log_path)
-        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]]
+        frame_log = pd.read_csv(raw / recording.path / "FrameLog.csv")
+        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
         frame_log_z.rename(
             columns={
                 "FrameIndex": "closest_frame",
@@ -242,7 +250,7 @@ def generate_vs_df(
         )
         encoder_path = harp_ds.path_full / harp_ds.csv_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
-        frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0]
+        frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0].copy()
         frame_log_z.rename(
             columns={"HarpTime": "onset_time", "MouseZ": "mouse_z", "EyeZ": "eye_z"},
             inplace=True,
@@ -260,9 +268,24 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
     # Align paramLog with vs_df
-    paramlog_path = harp_ds.path_full / harp_ds.csv_files["NewParams"]
-    # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(paramlog_path)
+    if "param_log" in recording:
+        param_log = recording.param_log
+    else:
+        warnings.warn(
+            "No param_log found in recording. Using NewParams.csv instead."
+        )
+        param_log = "NewParams.csv"
+    if not (processed / recording.path / param_log).exists():
+        # Copy param_log from raw to processed
+        assert (raw / recording.path / param_log).exists(), (
+            f"param_log {param_log} does not exist in raw or processed."
+        )
+        (processed / recording.path).mkdir(parents=True, exist_ok=True)
+        shutil.copy(raw / recording.path / param_log, 
+            processed / recording.path / param_log
+        )
+    param_log = pd.read_csv(processed / recording.path / param_log)
+
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
@@ -451,6 +474,23 @@ def generate_imaging_df(
     return imaging_df
 
 
+def generate_spike_rate_df(
+    vs_df, onix_recording, flexilims_session, rate_bin, filter_datasets=None
+):
+    """This is the equivalent of generate_imaging_df for spike rate data.
+
+    Spike rate will be calculated for each bin of `rate_bin` secondes.
+
+    Args:
+        vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
+        onix_recording (pandas.Series): recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+        rate_bin (int): bin size in s.
+        filter_datasets (dict, optional): filters to apply on choosing onix datasets.
+            Defaults to None."""
+    return
+
+
 def fill_missing_imaging_volumes(df, nan_col="RS"):
     """
     Create a dataframe with a single row for each imaging volume, by forward filling
@@ -489,3 +529,29 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
         dffs.append(np.load(plane_path / "dff_ast.npy"))
     return np.concatenate(dffs, axis=0).T
+
+
+def _get_str_or_recording(recording, flexilims_session):
+    """Get recording entry from flexilims_session if recording is a string.
+
+    Args:
+        recording (str or pandas.Series): recording name or recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+
+    Returns:
+        pandas.Series: recording entry from flexilims_session.
+    """
+
+    if recording is None:
+        return None
+    elif type(recording) == str:
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recording,
+            flexilims_session=flexilims_session,
+        )
+        if recording is None:
+            raise ValueError(f"Recording {recording} does not exist.")
+        return recording
+    else:
+        return recording
