@@ -15,6 +15,7 @@ from tqdm import tqdm
 import numpy as np
 import mmap
 import pandas as pd
+import flexiznam as flz
 
 from cottage_analysis.io_module import harp
 
