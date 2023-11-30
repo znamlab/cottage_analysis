@@ -11,6 +11,7 @@ def plot_sta(stas, roi):
     vmax = np.quantile(sta[np.isfinite(sta)], .999)
     plt.imshow(sta, origin='lower', vmin=-vmax, vmax=vmax, cmap='bwr')
     
+    
 def plot_sta_fit(coef, depth_list, frames, roi, plot_rows=5, plot_cols=1, plot_y=0, plot_idx=1):
     coef_mean = np.mean(np.stack(coef, axis=2), axis=2)
     fitted_sta = coef_mean[:-1,:].reshape(len(depth_list), frames.shape[1], int(frames.shape[2]//2), coef_mean.shape[1])
@@ -40,11 +41,11 @@ def basic_vis_sta(coef, neurons_df, trials_df, depth_list, frames, roi, plot_row
     plot_sta_fit(coef, depth_list, frames, roi, plot_rows=1+len(depth_list), plot_cols=plot_cols, plot_y=plot_y)
 
 
-def basic_vis_SFTF_session(coef, neurons_df, trials_df, depth_list, frames, save_dir=None, fontsize_dict={"title": 10, "tick": 10, "label": 10}):
+def basic_vis_sta_session(coef, neurons_df, trials_df, depth_list, frames, save_dir=None, fontsize_dict={"title": 10, "tick": 10, "label": 10}):
     if save_dir is not None:
         os.makedirs(save_dir/"plots"/"sta", exist_ok=True)
     for i in tqdm(range(len(neurons_df)//10+1)):
-        if not i*10 >= len(neurons_df):
+        if (i*10) < len(neurons_df): 
             iroi=0
             plt.figure(figsize=(30, 18))
             max_roi = np.min([(i+1)*10,len(neurons_df)-1])

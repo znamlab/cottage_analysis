@@ -50,7 +50,34 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=2):
             f"Session {session_name} already processed... reading saved neurons_df..."
             )
         neurons_df = pd.read_pickle(neurons_ds.path_full)
-    
+        
+        print("Regenerating vis-stim dataframes...")
+        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets={"anatomical_only": 3},
+            recording_type="two_photon",
+            protocol_base="SpheresPermTubeReward",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
+        
+        frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=None,
+            filter_datasets={"anatomical_only": 3},
+            recording_type="two_photon",
+            protocol_base="SpheresPermTubeReward",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            resolution=5,
+        )
+        
+        print("Redoing plotting...")
+        
+        
     else:  
         # Synchronisation
         print("---Start synchronisation...---")
@@ -187,27 +214,28 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=2):
         neurons_df.to_pickle(neurons_ds.path_full)
         
         # Update neurons_ds on flexilims
-        neurons_ds.update_flexilims(mode=conflicts)
+        neurons_ds.update_flexilims(mode="update")
         print("---Analysis finished. Neurons_df saved.---")
         
-        # Plot basic plots
-        print("---Start basic vis plotting...---")
-        print("Plotting Depth responses...")
-        basic_vis_plots.basic_vis_session(
-            neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
-        )
-        
-        # Plot all ROI RFs
-        print("Plotting RFs...")
-        depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-        sta_plots.basic_vis_SFTF_session(coef=coef, 
-                            neurons_df=neurons_df, 
-                            trials_df=trials_df_all, 
-                            depth_list=depth_list, 
-                            frames=frames_all, 
-                            save_dir=neurons_ds.path_full.parent, 
-                            fontsize_dict={"title": 10, "tick": 10, "label": 10})
-        print("---Plotting finished. ---")
+    # Plot basic plots
+    print("---Start basic vis plotting...---")
+    print("Plotting Depth responses...")
+    basic_vis_plots.basic_vis_session(
+        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
+    )
+    
+    # Plot all ROI RFs
+    print("Plotting RFs...")
+    depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+    coef = np.stack(neurons_df["rf_coef"], axis=2)
+    sta_plots.basic_vis_sta_session(coef=coef, 
+                        neurons_df=neurons_df, 
+                        trials_df=trials_df_all, 
+                        depth_list=depth_list, 
+                        frames=frames_all, 
+                        save_dir=neurons_ds.path_full.parent, 
+                        fontsize_dict={"title": 10, "tick": 10, "label": 10})
+    print("---Plotting finished. ---")
 
     
     
