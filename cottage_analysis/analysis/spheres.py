@@ -700,7 +700,7 @@ def regenerate_frames_all_recordings(
             imaging_df_all = imaging_df
         else:
             frames_all = np.concatenate((frames_all, frames), axis=0)
-            imaging_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+            imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
     print(f"Finished concatenating regenerated frames and imaging_df")
 
     return frames_all, imaging_df_all
