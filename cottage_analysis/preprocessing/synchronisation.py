@@ -97,11 +97,11 @@ def find_monitor_frames(
 
     # Get frame log
     if type(harp_ds.extra_attributes["csv_files"]) == str:
-        # Some yaml info have been saved as string instead of dict
-        # TODO: fix on flexilims and/or use yaml.safe_load
+        # Some yaml info have been saved as string instead of dict
+        # TODO: fix on flexilims and/or use yaml.safe_load
         frame_log = pd.read_csv(
             harp_ds.path_full / eval(harp_ds.extra_attributes["csv_files"])["FrameLog"]
-            )
+        )
     else:
         frame_log = pd.read_csv(
             harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
@@ -173,22 +173,22 @@ def generate_vs_df(
     onix_recording=None,
     conflicts="skip",
 ):
-    """Generate a DataFrame that contains information for each monitor frame. This 
+    """Generate a DataFrame that contains information for each monitor frame. This
     requires monitor frames to be synced first.
 
     Args:
         recording (Series): recording entry returned by flexiznam.get_entity
         photodiode_protocol (int): number of photodiode quad colors used for monitoring
             frame refresh. Either 2 or 5 for now. Defaults to 5.
-        flexilims_session (flexilims_session, optional): flexilims session. Defaults to 
+        flexilims_session (flexilims_session, optional): flexilims session. Defaults to
             None.
-        project (str, optional): project name. Defaults to None. Must be provided if 
+        project (str, optional): project name. Defaults to None. Must be provided if
             flexilims_session is None.
-        harp_recording (str or pandas.Series, optional): recording name or recording 
+        harp_recording (str or pandas.Series, optional): recording name or recording
             entry if different from (vis stim) recording. Defaults to None.
-        onix_recording (str or pandas.Series, optional): recording name or recording 
+        onix_recording (str or pandas.Series, optional): recording name or recording
             entry if photodiode is recorded on onix. Defaults to None.
-        conflicts (str, optional): how to deal with conflicts when updating flexilims. 
+        conflicts (str, optional): how to deal with conflicts when updating flexilims.
             Defaults to "skip".
 
     Returns:
@@ -234,9 +234,7 @@ def generate_vs_df(
     processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log = pd.read_csv(
-            harp_ds.path_full / harp_files["FrameLog"]
-        )
+        frame_log = pd.read_csv(harp_ds.path_full / harp_files["FrameLog"])
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
         frame_log_z.rename(
             columns={

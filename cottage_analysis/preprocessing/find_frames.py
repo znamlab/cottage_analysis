@@ -53,7 +53,7 @@ def sync_by_frame_alternating(
     lower_thr = np.percentile(photodiode, 25)
     photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
     # Find peaks of photodiode
-    distance = int(1 / frame_rate * 2 * photodiode_sampling)*0.8
+    distance = int(1 / frame_rate * 2 * photodiode_sampling) * 0.8
     high_peaks, _ = scsi.find_peaks(photodiode, height=upper_thr, distance=distance)
     first_frame = high_peaks[0]
     low_peaks, _ = scsi.find_peaks(-photodiode, height=-lower_thr, distance=distance)
@@ -71,29 +71,31 @@ def sync_by_frame_alternating(
 
     if plot:
         plt.figure()
-        plot_start_sample = np.argmin(np.abs(analog_time - frames_df.iloc[plot_start].peak_time))
+        plot_start_sample = np.argmin(
+            np.abs(analog_time - frames_df.iloc[plot_start].peak_time)
+        )
         plot_stop_sample = np.argmin(
             np.abs(analog_time - frames_df.iloc[plot_start + plot_range].peak_time)
         )
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            photodiode[plot_start_sample : plot_stop_sample],
+            analog_time[plot_start_sample:plot_stop_sample],
+            photodiode[plot_start_sample:plot_stop_sample],
         )
-        
-        plt.plot(frames_df["peak_time"].values[plot_start:(plot_start+plot_range)],
-            frames_df["photodiode"].values[plot_start:(plot_start+plot_range)],
-            "x")
+
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
-            + upper_thr,
+            frames_df["peak_time"].values[plot_start : (plot_start + plot_range)],
+            frames_df["photodiode"].values[plot_start : (plot_start + plot_range)],
+            "x",
+        )
+        plt.plot(
+            analog_time[plot_start_sample:plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample:plot_stop_sample]) + upper_thr,
             "--",
             color="gray",
         )
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
-            + lower_thr,
+            analog_time[plot_start_sample:plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample:plot_stop_sample]) + lower_thr,
             "--",
             color="gray",
         )
