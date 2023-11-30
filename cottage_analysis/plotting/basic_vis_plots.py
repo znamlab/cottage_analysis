@@ -105,9 +105,7 @@ def get_depth_color(depth, depth_list, cmap=cm.cool.reversed(), log=True):
         )
         rgba_color = cmap(norm(np.log(depth)), bytes=True)
     else:
-        norm = mpl.colors.Normalize(
-            vmin=min(depth_list), vmax=max(depth_list)
-        )
+        norm = mpl.colors.Normalize(vmin=min(depth_list), vmax=max(depth_list))
         rgba_color = cmap(norm(depth), bytes=True)
     rgba_color = tuple(it / 255 for it in rgba_color)
 
@@ -777,7 +775,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
     plot_cols = 4
 
     for i in tqdm(range(int(len(rois) // plot_rows + 1))):
-        if i*plot_rows < len(rois)-1:
+        if i * plot_rows < len(rois) - 1:
             plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
             iroi = 0
             for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:

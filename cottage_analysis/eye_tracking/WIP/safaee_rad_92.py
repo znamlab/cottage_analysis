@@ -2,6 +2,7 @@ import numpy as np
 from numpy.polynomial import Polynomial
 from cottage_analysis.eye_tracking import eye_model_fitting
 
+
 def conic(ellipse):
     # NOT IN USE. ATTEMPT TO FOLLOW Safaee-Rad 1992
     ax = np.cos(ellipse.angle)
@@ -224,7 +225,7 @@ def unproject_observations(ellipses, circle_radius, focal_length):
         unprojection_pair = unproject(
             ellipse=ellipse, circle_radius=circle_radius, focal_length=focal_length
         )
-        
+
         # Get projected circles and gaze vectors
         #
         # Project the circle centres and gaze vectors down back onto the image
@@ -237,12 +238,12 @@ def unproject_observations(ellipses, circle_radius, focal_length):
 
         c_proj = project_point(c, focal_length)
         v_proj = project_point(v + c, focal_length) - c_proj
-        
-        v_proj /=  np.linalg.norm(v_proj)
-        
+
+        v_proj /= np.linalg.norm(v_proj)
+
         pupil_unprojection_pairs.append(unprojection_pair)
         pupil_gazelines_proj.append([c_proj, v_proj])
-        
+
     # Get eyeball centre
     #
     # Find a least-squares 'intersection' (point nearest to all lines) of
@@ -270,7 +271,7 @@ if __name__ == "__main__":
     camera = "right_eye_camera"
 
     data_path = processed / project / mouse / session / recording / camera
-    dlc_path = data_path # / "dlc_output"
+    dlc_path = data_path  # / "dlc_output"
     ellipse_fits = None
     print("Fitting ellipses")
     for fname in dlc_path.glob("*.h5"):
@@ -298,4 +299,3 @@ if __name__ == "__main__":
         # ok we did the unprojection
         print(1 + 1)
         all_sol.append(solutions)
-    

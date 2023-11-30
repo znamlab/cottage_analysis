@@ -53,7 +53,7 @@ def sync_by_frame_alternating(
     lower_thr = np.percentile(photodiode, 25)
     photodiode_df = pd.DataFrame({"photodiode": photodiode, "analog_time": analog_time})
     # Find peaks of photodiode
-    distance = int(1 / frame_rate * 2 * photodiode_sampling)*0.8
+    distance = int(1 / frame_rate * 2 * photodiode_sampling) * 0.8
     high_peaks, _ = scsi.find_peaks(photodiode, height=upper_thr, distance=distance)
     first_frame = high_peaks[0]
     low_peaks, _ = scsi.find_peaks(-photodiode, height=-lower_thr, distance=distance)
@@ -71,29 +71,31 @@ def sync_by_frame_alternating(
 
     if plot:
         plt.figure()
-        plot_start_sample = np.argmin(np.abs(analog_time - frames_df.iloc[plot_start].peak_time))
+        plot_start_sample = np.argmin(
+            np.abs(analog_time - frames_df.iloc[plot_start].peak_time)
+        )
         plot_stop_sample = np.argmin(
             np.abs(analog_time - frames_df.iloc[plot_start + plot_range].peak_time)
         )
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            photodiode[plot_start_sample : plot_stop_sample],
+            analog_time[plot_start_sample:plot_stop_sample],
+            photodiode[plot_start_sample:plot_stop_sample],
         )
-        
-        plt.plot(frames_df["peak_time"].values[plot_start:(plot_start+plot_range)],
-            frames_df["photodiode"].values[plot_start:(plot_start+plot_range)],
-            "x")
+
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
-            + upper_thr,
+            frames_df["peak_time"].values[plot_start : (plot_start + plot_range)],
+            frames_df["photodiode"].values[plot_start : (plot_start + plot_range)],
+            "x",
+        )
+        plt.plot(
+            analog_time[plot_start_sample:plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample:plot_stop_sample]) + upper_thr,
             "--",
             color="gray",
         )
         plt.plot(
-            analog_time[plot_start_sample : plot_stop_sample],
-            np.zeros_like(analog_time[plot_start_sample : plot_stop_sample])
-            + lower_thr,
+            analog_time[plot_start_sample:plot_stop_sample],
+            np.zeros_like(analog_time[plot_start_sample:plot_stop_sample]) + lower_thr,
             "--",
             color="gray",
         )
@@ -348,6 +350,8 @@ def create_frame_df(
         db_dict (dict): dict with intermediary results. None if debug is False
         figs (list): list of figure handles. None if do_plot is False
     """
+    figs = [] if do_plot else None
+
     pd_sampling = 1 / np.mean(np.diff(photodiode_time))
     out = detect_frame_onset(
         photodiode=photodiode_signal,
@@ -365,8 +369,11 @@ def create_frame_df(
     # cut frame detected before the recording started
     t0 = frame_log[time_column].iloc[0]
     to_cut = photodiode_time[frame_borders].searchsorted(t0)
-    frame_borders = frame_borders[to_cut:]
-    peak_index = peak_index[to_cut:]
+
+    if to_cut:
+        print(f"Cutting {to_cut} frames detected before the recording started")
+        frame_borders = frame_borders[to_cut:]
+        peak_index = peak_index[to_cut:]
 
     # Format the results in a nicer dataframe
     frame_skip = np.diff(frame_borders) > pd_sampling / frame_rate * 1.5
@@ -385,8 +392,45 @@ def create_frame_df(
     # check if frames are detected after the presentation is over
     after_last = frames_df["onset_time"] >= frame_log[time_column].iloc[-1]
     if after_last.any():
+        end_of_presentation = frame_log[time_column].iloc[-1]
+        last_frame = frames_df["onset_time"].iloc[-1]
+        print(f"Presentation ends at {end_of_presentation:.2f} s")
+        print(f"Last frame detected at {last_frame:.2f} s")
+
         delay = frames_df["onset_time"].iloc[-1] - frame_log[time_column].iloc[-1]
         print(f"{after_last.sum()} frames detected after the last render time.")
+        # in that case, plot the photodiode signal and the last frame detected for
+        # debugging
+        if do_plot:
+            e = last_frame + 20
+            if last_frame_delay is None:
+                e = min(e, end_of_presentation + last_frame_delay)
+                
+            b, e = photodiode_time.searchsorted([end_of_presentation - 1, e])
+            fig = plt.figure(figsize=(12, 4))
+            ax = fig.add_subplot(1, 1, 1)
+            ax.set_title("Recording ends before last frame detected")
+            ax.plot(
+                photodiode_time[b:e] - end_of_presentation,
+                photodiode_signal[b:e],
+                label="photodiode",
+            )
+            ax.axvline(0, color="k", label="end of presentation")
+            late_frames = frames_df[frames_df.onset_time > end_of_presentation]
+            ax.scatter(
+                late_frames.peak_time - end_of_presentation,
+                photodiode_signal[late_frames.peak_sample],
+                label="late frame",
+                color="purple",
+            )
+            ax.legend(loc="best")
+            ax.set_xlabel("Time relative to end of presentation (s)")
+            ax.set_ylabel("Photodiode signal (a.u.)")
+            figs.append(fig)
+
+            if save_folder is not None:
+                fig.savefig(Path(save_folder) / f"presentation_end_issue.png")
+
         if last_frame_delay is not None:
             too_late = (
                 frames_df.onset_time
@@ -404,6 +448,7 @@ def create_frame_df(
                 "Delay between last render and last frame is too large. "
                 f"{delay:.2f}.  Something is wrong"
             )
+
             if not ignore_errors:
                 raise ValueError(msg)
             else:
@@ -420,10 +465,10 @@ def create_frame_df(
             f" ({out_dict['percentage_drop']:.2f}%,"
             f" {out_dict['dropped_frames']} dropped)"
         )
-    figs = None
+
     if do_plot:
         plot_window = np.array([-7.5, 7.5]) / frame_rate * pd_sampling
-        figs = plot_frame_detection_report(
+        rep_fig = plot_frame_detection_report(
             border_index=frame_borders,
             peak_index=peak_index,
             debug_dict=out_dict,
@@ -434,8 +479,9 @@ def create_frame_df(
             photodiode_sampling=pd_sampling,
             highcut=frame_rate * 3,
         )
+        figs.extend(rep_fig)
         if save_folder is not None:
-            for ifig, fig in enumerate(figs):
+            for ifig, fig in enumerate(rep_fig):
                 fig.savefig(Path(save_folder) / f"frame_detection_fig{ifig}.png")
 
     return frames_df, out_dict, figs

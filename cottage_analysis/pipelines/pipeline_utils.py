@@ -12,6 +12,7 @@ from functools import partial
 
 print = partial(print, flush=True)
 
+
 def create_neurons_ds(
     session_name, flexilims_session=None, project=None, conflicts="skip"
 ):
@@ -41,11 +42,14 @@ def create_neurons_ds(
 
     return neurons_ds
 
-def sbatch_session(project, session_name, pipeline_filename, conflicts, photodiode_protocol):
+
+def sbatch_session(
+    project, session_name, pipeline_filename, conflicts, photodiode_protocol
+):
     """Start sbatch script to run analysis_pipeline on a single session.
 
     Args:
-        
+
     """
 
     script_path = str(
@@ -63,7 +67,7 @@ def sbatch_session(project, session_name, pipeline_filename, conflicts, photodio
     command = f"sbatch {args} {script_path}"
     print(command)
     subprocess.Popen(
-        shlex.split(command), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+        shlex.split(command),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
     )
-
-

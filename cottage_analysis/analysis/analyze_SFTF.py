@@ -54,7 +54,9 @@ def main(
         photodiode_protocol=photodiode_protocol,
         protocol_base=protocol_base,
     )
-    neurons_df_sftf = fit_gaussian_blob.fit_sftf_tuning(trials_df=trials_df_all, niter=5, min_sigma=0.25)
+    neurons_df_sftf = fit_gaussian_blob.fit_sftf_tuning(
+        trials_df=trials_df_all, niter=5, min_sigma=0.25
+    )
 
     return trials_df_all, neurons_df_sftf
 
@@ -83,9 +85,7 @@ def plot_sftf_roi(project, session_name, trials_df_all, roi, mode="fitted"):
     angle_range = np.sort(np.unique(trials_df_all.Angle))
 
     if mode == "raw":
-        numerical_columns = trials_df_all.loc[
-            :, trials_df_all.columns.str.isnumeric()
-        ]
+        numerical_columns = trials_df_all.loc[:, trials_df_all.columns.str.isnumeric()]
         named_columns = trials_df_all[
             ["Angle", "SpatialFrequency", "TemporalFrequency"]
         ]
