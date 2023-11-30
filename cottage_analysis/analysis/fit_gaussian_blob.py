@@ -415,9 +415,7 @@ def fit_rs_of_tuning(
                     np.exp(popt[2])
                 )  # rad/s
                 # !! Calculated with RS in m and OF in degrees/s
-                neurons_df.at[
-                    roi, f"rsof_popt_{protocol_sfx}{rs_type}"
-                ] = popt
+                neurons_df.at[roi, f"rsof_popt_{protocol_sfx}{rs_type}"] = popt
                 neurons_df.loc[roi, f"rsof_rsq_{protocol_sfx}{rs_type}"] = rsq
 
     return neurons_df, neurons_ds

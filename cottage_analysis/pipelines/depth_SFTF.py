@@ -59,20 +59,18 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         photodiode_protocol=photodiode_protocol,
         protocol_base="SFTF",
     )
-    
+
     neurons_ds = pipeline_utils.create_neurons_ds(
         session_name=session_name,
         flexilims_session=flexilims_session,
         project=project,
         conflicts=conflicts,
     )
-    
+
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
-        print(
-            "Session already analyzed."
-            )
+        print("Session already analyzed.")
         neurons_df = pd.read_pickle(neurons_ds.path_full)
-        
+
     # Anlyze SFTF responses
     else:
         print("---Fitting SFTF responses...---")
@@ -158,13 +156,13 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     # Visualize all neurons
     print("---Start visualisation---")
     grating_plots.basic_vis_SFTF_session(
-        neurons_df=neurons_df, 
-        trials_df_depth=trials_df_all, 
-        trials_df_sftf=trials_df_all_sftf, 
-        add_depth=True, 
-        save_dir=neurons_ds.path_full.parent, 
-        fontsize_dict={'title': 15, 'label': 10, 'tick': 10}
-        )
+        neurons_df=neurons_df,
+        trials_df_depth=trials_df_all,
+        trials_df_sftf=trials_df_all_sftf,
+        add_depth=True,
+        save_dir=neurons_ds.path_full.parent,
+        fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    )
 
 
 if __name__ == "__main__":
