@@ -405,7 +405,7 @@ def create_frame_df(
             e = last_frame + 20
             if last_frame_delay is None:
                 e = min(e, end_of_presentation + last_frame_delay)
-                
+
             b, e = photodiode_time.searchsorted([end_of_presentation - 1, e])
             fig = plt.figure(figsize=(12, 4))
             ax = fig.add_subplot(1, 1, 1)

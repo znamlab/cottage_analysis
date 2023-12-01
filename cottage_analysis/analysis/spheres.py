@@ -679,7 +679,11 @@ def regenerate_frames_all_recordings(
         param_log = pd.read_csv(paramlog_path)
 
         # Regenerate frames for this trial
-        sphere_size = 10 * (vs_df.OriginalSize.unique()[~np.isnan(vs_df.OriginalSize.unique())][0]) / 0.087
+        sphere_size = (
+            10
+            * (vs_df.OriginalSize.unique()[~np.isnan(vs_df.OriginalSize.unique())][0])
+            / 0.087
+        )
         assert not isinstance(sphere_size, list)
         frames = regenerate_frames(
             frame_times=imaging_df.imaging_harptime,
