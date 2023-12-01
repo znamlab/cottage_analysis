@@ -265,6 +265,12 @@ def generate_vs_df(
 
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
     frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
+    
+    if frame_log_z.closest_frame.isna().any():
+        print(f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end.")
+        frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
+        frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
+    
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
