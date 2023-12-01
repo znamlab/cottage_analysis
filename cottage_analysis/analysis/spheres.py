@@ -122,8 +122,8 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
-    if frame_times[-1] > mouse_pos_time[-1]:
-        frame_times[-1] = frame_times[-2]
+    # If the imaging frame is after the last found monitor frame, use the time for the last imaging frame time that's before the last found monitor frame
+    frame_times[np.where(frame_times>mouse_pos_time[-1])[0]] = frame_times[np.where(frame_times<=mouse_pos_time[-1])[0][-1]]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
