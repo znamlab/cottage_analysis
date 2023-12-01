@@ -105,9 +105,7 @@ def get_depth_color(depth, depth_list, cmap=cm.cool.reversed(), log=True):
         )
         rgba_color = cmap(norm(np.log(depth)), bytes=True)
     else:
-        norm = mpl.colors.Normalize(
-            vmin=min(depth_list), vmax=max(depth_list)
-        )
+        norm = mpl.colors.Normalize(vmin=min(depth_list), vmax=max(depth_list))
         rgba_color = cmap(norm(depth), bytes=True)
     rgba_color = tuple(it / 255 for it in rgba_color)
 
@@ -769,79 +767,80 @@ def plot_PSTH(
     plotting_utils.despine()
 
 
-def basic_vis_session(neurons_df, trials_df, neurons_ds, SFTF=False):
+def basic_vis_session(neurons_df, trials_df, neurons_ds):
     rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
     os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
 
     plot_rows = 10
-    plot_cols = 3
+    plot_cols = 4
 
     for i in tqdm(range(int(len(rois) // plot_rows + 1))):
-        plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
-        iroi = 0
-        for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
-            plot_depth_tuning_curve(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                rs_thr=0.2,
-                plot_fit=False,
-                linewidth=3,
-                linecolor="k",
-                fit_linecolor="r",
-                closed_loop=1,
-            )
-            plt.title(f"roi{roi}")
+        if i * plot_rows < len(rois) - 1:
+            plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
+            iroi = 0
+            for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
+                plot_depth_tuning_curve(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    rs_thr=0.2,
+                    plot_fit=False,
+                    linewidth=3,
+                    linecolor="k",
+                    fit_linecolor="r",
+                    closed_loop=1,
+                )
+                plt.title(f"roi{roi}")
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
-            plot_speed_tuning(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                nbins=10,
-                which_speed="RS",
-                speed_min=0.01,
-                speed_max=1.5,
-                speed_thr=0.01,
-                smoothing_sd=1,
-            )
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
+                plot_speed_tuning(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    is_closed_loop=1,
+                    nbins=10,
+                    which_speed="RS",
+                    speed_min=0.01,
+                    speed_max=1.5,
+                    speed_thr=0.01,
+                    smoothing_sd=1,
+                )
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
-            plot_speed_tuning(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                nbins=10,
-                which_speed="OF",
-                speed_min=0.01,
-                speed_max=1.5,
-                speed_thr=0.01,
-                smoothing_sd=1,
-            )
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
+                plot_speed_tuning(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    is_closed_loop=1,
+                    nbins=10,
+                    which_speed="OF",
+                    speed_min=0.01,
+                    speed_max=1.5,
+                    speed_thr=0.01,
+                    smoothing_sd=1,
+                )
 
-            plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
-            plot_PSTH(
-                neurons_df=neurons_df,
-                trials_df=trials_df,
-                roi=roi,
-                is_closed_loop=1,
-                max_distance=6,
-                nbins=20,
-                frame_rate=15,
-            )
-            plt.tight_layout()
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
+                plot_PSTH(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    is_closed_loop=1,
+                    max_distance=6,
+                    nbins=20,
+                    frame_rate=15,
+                )
+                plt.tight_layout()
 
-            iroi += 1
-        plt.savefig(
-            neurons_ds.path_full.parent
-            / "plots"
-            / "basic_vis"
-            / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
-            dpi=100,
-        )
+                iroi += 1
+            plt.savefig(
+                neurons_ds.path_full.parent
+                / "plots"
+                / "basic_vis"
+                / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+                dpi=100,
+            )
 
 
 def plot_RS_OF_matrix(

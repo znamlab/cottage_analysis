@@ -18,7 +18,7 @@ def fix_bad_path_handling(config_file, user):
 
     Args:
         config_file (str): path to the config.yml file
-        user (str): Name of the user who did the labeling. 
+        user (str): Name of the user who did the labeling.
     """
     with open(config_file, "r") as fhandle:
         config = yaml.safe_load(fhandle)
@@ -49,4 +49,4 @@ def fix_bad_path_handling(config_file, user):
 
 if __name__ == "__main__":
     config_file = "/nemo/lab/znamenskiyp/home/shared/projects/DLC_models/all_eyes_2023/config.yaml"
-    fix_bad_path_handling(config_file, user='Antonin Blot')
+    fix_bad_path_handling(config_file, user="Antonin Blot")

@@ -359,5 +359,5 @@ def choose_trials_subset(trials_df, choose_trials):
                 trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
             choose_trial_nums = choose_trials
         sfx = "_crossval"
-        
+
     return trials_df_chosen, choose_trial_nums, sfx

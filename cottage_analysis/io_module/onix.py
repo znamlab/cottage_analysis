@@ -1,115 +1,29 @@
+import warnings
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import flexiznam as flm
+import flexiznam as flz
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.io_module.harp import load_harp
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
 )
-
-
 ONIX_SAMPLING = 250e6
 
 
-RAW = Path(flm.PARAMETERS["data_root"]["raw"])
-PROCESSED = Path(flm.PARAMETERS["data_root"]["processed"])
-
-MAPPING = [
-    39,
-    37,
-    35,
-    33,
-    47,
-    45,
-    43,
-    41,
-    55,
-    53,
-    51,
-    49,
-    57,
-    63,
-    61,
-    59,
-    62,
-    60,
-    58,
-    56,
-    54,
-    52,
-    50,
-    48,
-    46,
-    44,
-    42,
-    40,
-    38,
-    36,
-    34,
-    32,
-    24,
-    26,
-    28,
-    30,
-    16,
-    18,
-    20,
-    22,
-    8,
-    10,
-    12,
-    14,
-    0,
-    2,
-    4,
-    6,
-    3,
-    5,
-    7,
-    1,
-    9,
-    11,
-    13,
-    15,
-    17,
-    19,
-    21,
-    23,
-    25,
-    27,
-    29,
-    31,
-]
-# The mapping of electrode order as it comes out of the headstage to tetrodes 1 to 16.
-
-
-def load_onix_recording(
-    project,
-    mouse,
-    session,
-    vis_stim_recording=None,
-    harp_recording=None,
-    onix_recording=None,
-    allow_reload=True,
-    raw_folder=RAW,
-    processed_folder=PROCESSED,
-    di_names=("lick_detection", "onix_clock", "di2_encoder_initial_state"),
+def load_onix(
+    onix_ds,
+    project=None,
+    flexilims_session=None,
     cut_if_not_multiple=False,
 ):
     """Main function calling all the subfunctions
 
     Args:
-        project (str): name of the project
-        mouse (str): name of the mouse
-        session (str): name of the session
-        vis_stim_recording (str): recording containing visual stimulation data
-        harp_recording (str): recording containing harp data
-        onix_recording (str): recording containing onix data
-        allow_reload (bool): If True (default) will reload processed data instead of
-                             raw when available
-        di_names (list): list of DI names to load from HARP
+        onix_ds (flexiznam.schema.onix_data.OnixData or str): Onix dataset or its name
+        project (str, optional): Name of the project. Defaults to None.
+        flexilims_session (flexilims.session, optional): Flexilims session. Defaults to
+            None. Must be provided if project is None and onix_ds has no.
         cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
             of the number of channels if False, will load only if the data is a multiple
             of the number of channels. Default False.
@@ -117,49 +31,33 @@ def load_onix_recording(
     Returns:
         data (dict): a dictionary with one element per datasource
     """
-    session_folder = raw_folder / project / mouse / session
-    assert session_folder.is_dir()
-
-    processed_folder = processed_folder / project / mouse / session
-    out = dict()
-
-    flm_sess = flm.get_flexilims_session(project)
-    if harp_recording is not None:
-        harp_message, harp_ds = synchronisation.load_harpmessage(
-            recording="_".join([mouse, session, harp_recording]),
-            flexilims_session=flm_sess,
-            conflicts="skip" if allow_reload else "overwrite",
-            di_names=di_names,
+    if isinstance(onix_ds, str):
+        if flexilims_session is None:
+            flexilims_session = flz.get_flexilims_session(project)
+        onix_ds = flz.Dataset.from_flexilims(
+            name=onix_ds, flexilims_session=flexilims_session
         )
-        out["harp_message"] = dict(harp_message)
 
-    if vis_stim_recording is not None:
-        # add frame loggers and other CSVs
-        out["vis_stim_log"] = load_vis_stim_log(session_folder / vis_stim_recording)
-
-    if onix_recording is not None:
-        # Load onix AI/DI
-        breakout_data = load_breakout(session_folder / onix_recording)
-        out["breakout_data"] = breakout_data
-        try:
-            out["rhd2164_data"] = load_rhd2164(
-                session_folder / onix_recording, cut_if_not_multiple=cut_if_not_multiple
-            )
-        except IOError:
-            print("Could not load RHD2164 data")
-        try:
-            out["ts4131_data"] = load_ts4231(session_folder / onix_recording)
-        except IOError:
-            print("Could not load TS4131 data")
-    return out
-
-
-def load_vis_stim_log(folder):
     out = dict()
-    folder = Path(folder)
-    for csv_file in folder.glob("*.csv"):
-        what = csv_file.stem.split("_")[-1]
-        out[what] = pd.read_csv(csv_file)
+    # Load onix AI/DI
+    breakout_data = load_breakout(
+        onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+    )
+    out["breakout_data"] = breakout_data
+    try:
+        out["rhd2164_data"] = load_rhd2164(
+            onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+        )
+    except IOError:
+        print("Could not load RHD2164 data")
+    try:
+        out["ts4131_data"] = load_ts4231(onix_ds.path_full)
+    except IOError:
+        print("Could not load TS4131 data")
+    try:
+        out["bno055_data"] = load_bno055(onix_ds.path_full)
+    except IOError:
+        print("Could not load BNO055 data")
 
     return out
 
@@ -248,17 +146,16 @@ def load_ts4231(path_to_folder, timestamp=None):
 
 
 def load_breakout(
-    path_to_folder, timestamp=None, num_ai_chan=2, cut_if_not_multiple=False
+    path_to_folder, timestamp=None, num_ai_chan=None, cut_if_not_multiple=False
 ):
     """Load data from the breakout board, ie AI and DI
 
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
         timestamp (str or None): timestamp used in save name
-        num_ai_chan(int): number of analog input-output channels being recorded.
-            In previous versions, it defaulted to 2. Now, the workflow saves how many it
-            records and this function reads it. Keeping the default argument so that we
-            are still able to read old sessions.
+        num_ai_chan(int, optional): number of analog input-output channels recorded.
+            It is read from the breakout-aio-channels.csv file. If the file does not
+            exist, use num_ai_chan and revert to `2` if None. Defaults to None.
         cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
             of the number of channels if False, will load only if the data is a multiple
             of the number of channels. Default False.
@@ -268,6 +165,24 @@ def load_breakout(
     """
     breakout_files = _find_files(path_to_folder, timestamp, "breakout")
     output = dict()
+
+    # first I need to find aio-channels to count the number of channels
+    what_are_they = [e.stem.split("_")[0][len("breakout-") :] for e in breakout_files]
+    if "aio-channels" in what_are_they:
+        if num_ai_chan is not None:
+            warnings.warn(
+                "num_ai_chan is provided but aio-channels file exists. Using aio-channels"
+            )
+        breakout_file = breakout_files.pop(what_are_they.index("aio-channels"))
+        channels = np.loadtxt(breakout_file, delimiter=",", dtype=np.uint8)
+        output["aio-channels"] = channels
+        num_ai_chan = len(channels)
+    else:
+        warnings.warn(f"Could not find aio-channels file. ")
+        if num_ai_chan is None:
+            warnings.warn("num_ai_chan is not provided. Assuming 2 channels.")
+            num_ai_chan = 2
+
     for breakout_file in breakout_files:
         what = breakout_file.stem.split("_")[0][len("breakout-") :]
         if breakout_file.suffix == ".csv":

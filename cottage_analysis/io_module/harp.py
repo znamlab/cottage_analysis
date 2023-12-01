@@ -15,6 +15,9 @@ from tqdm import tqdm
 import numpy as np
 import mmap
 import pandas as pd
+import flexiznam as flz
+
+from cottage_analysis.io_module import harp
 
 ENCODER_CPR = 4096
 WHEEL_DIAMETER = 20e-2  # wheel diameter in meters
@@ -71,7 +74,84 @@ _PAYLOAD_STRUCT = {
 _PAYLOAD_STRUCT = {k: "<" + v for k, v in _PAYLOAD_STRUCT.items()}
 
 
-def load_harp(
+def load_harpmessage(
+    recording,
+    flexilims_session,
+    conflicts="skip",
+    di_names=None,
+):
+    """Save harpmessage into a npz file, or load existing npz file. Then load harpmessage file as a np arrray.
+
+    Args:
+        recording (str or pandas.Series): recording name or recording entry from flexilims.
+        flexilims_session (flexilims.Flexilims): flexilims session.
+        conflicts (str, optional): how to deal with conflicts when updating flexilims.
+            Defaults to "skip".
+        di_names (tuple, optional): names of the digital inputs to rename harp meassage.
+            If None, will try to read from the dataset attributes. Will revert to
+            ("frame_triggers", "lick_detection", "di2_encoder_initial_state") if not
+            availlable. Defaults to None.
+
+    Returns:
+        np.array: loaded harpmessages as numpy array
+        flz.Dataset: raw harp dataset
+
+    """
+    assert conflicts in ["skip", "overwrite", "abort"]
+    if type(recording) == str:
+        recording = flz.get_entity(
+            datatype="recording", name=recording, flexilims_session=flexilims_session
+        )
+
+    npz_ds = flz.Dataset.from_origin(
+        origin_id=recording["id"],
+        dataset_type="harp_npz",
+        flexilims_session=flexilims_session,
+        conflicts=conflicts,
+    )
+    # find raw data
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording["name"],
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
+        print("Loading existing harp_npz file...")
+        return np.load(npz_ds.path_full), harp_ds
+
+    if di_names is None:
+        if "di_names" in harp_ds.extra_attributes:
+            di_names = harp_ds.extra_attributes["di_names"]
+        else:
+            warnings.warn(
+                "No di_names provided or found in extra_attributes. Using default."
+            )
+            di_names = ("frame_triggers", "lick_detection", "di2_encoder_initial_state")
+
+    # parse harp message
+    print("Saving harp messages into npz...")
+    params = dict(
+        harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
+        di_names=di_names,
+    )
+    harp_message = harp.read_harp_binary(**params)
+
+    # save npz
+    npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
+    npz_ds.path_full.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(npz_ds.path_full, **harp_message)
+
+    # update flexilims
+    npz_ds.extra_attributes.update(params)
+    npz_ds.update_flexilims(mode="overwrite")
+
+    print("Harp messages saved.")
+    return harp_message, harp_ds
+
+
+def read_harp_binary(
     harp_bin,
     reward_port=10,
     wheel_diameter=WHEEL_DIAMETER,

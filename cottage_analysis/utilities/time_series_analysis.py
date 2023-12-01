@@ -50,7 +50,7 @@ def cc_func(ts0, ts1, trange, absolute_time=False, keep_zero=True, check=False):
 
     limits = np.vstack([ts0 + t for t in trange])
     lim_ind = ts1.searchsorted(limits)
-    cc = [ts1[b: e] for b, e in lim_ind.T]
+    cc = [ts1[b:e] for b, e in lim_ind.T]
     if not absolute_time:
         cc = [c - s for c, s in zip(cc, ts0)]
     if not keep_zero:
@@ -59,12 +59,12 @@ def cc_func(ts0, ts1, trange, absolute_time=False, keep_zero=True, check=False):
 
 
 def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
-    """ Takes a sequence of spike times and produces a non-normalised density
+    """Takes a sequence of spike times and produces a non-normalised density
     estimate by summing Normals defined by sd at each spike time. The range of
     the output is guessed from the extent of the data (which need not be
     ordered), the resolution is automagically determined from sd; we currently
     used sd*0.05 A 2d np.array is returned with the time scale and
-    non-normalised 'density' as first and second rows. """
+    non-normalised 'density' as first and second rows."""
 
     # Note: once I've understood convolutions and Fourier transforms, they
     # probably represent the quick way of doing this.
@@ -73,8 +73,8 @@ def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
     # Resolution as fraction of sd
 
     data = np.array(data)
-    dmax = np.max(data) + sd * 4. if end is None else float(end)
-    dmin = np.min(data) - sd * 4. if start is None else float(start)
+    dmax = np.max(data) + sd * 4.0 if end is None else float(end)
+    dmin = np.min(data) - sd * 4.0 if start is None else float(start)
 
     res = 0.05
     if dstep is None:
@@ -82,43 +82,45 @@ def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
     else:
         if dstep > sd * res:
             if verbose:
-                print('Warning dstep big relative to sd')
+                print("Warning dstep big relative to sd")
     time = np.arange(dmin, dmax, dstep)
 
-    norm = 1 / np.sqrt(2 * np.pi * sd ** 2) * np.exp(
-        -(time - time[int(time.size / 2)]) ** 2 /
-        (2 * sd ** 2))
+    norm = (
+        1
+        / np.sqrt(2 * np.pi * sd**2)
+        * np.exp(-((time - time[int(time.size / 2)]) ** 2) / (2 * sd**2))
+    )
     kernel = np.vstack((time, norm))
 
-    time, dens = kernel_density(data, kernel, dmin=dmin, dmax=dmax, dstep=dstep,
-                                verbose=verbose)
+    time, dens = kernel_density(
+        data, kernel, dmin=dmin, dmax=dmax, dstep=dstep, verbose=verbose
+    )
     # for t in data:
     #      dens[t_to_i(t-sd*3.)+r] += norm
     return np.vstack((time, dens))
 
 
 def half_exp_density(data, sd):
-    """ Takes a sequence of spike times and produces a non-normalised density
+    """Takes a sequence of spike times and produces a non-normalised density
     estimate by summing Half-exponential (asymetric) defined by sd at each spike
     time. The range of the output is guessed from the extent of the data (which
     need not be ordered), the resolution is automagically determined from sd; we
     currently used sd/10. A 2d np.array is returned with the time scale and
-    non-normalised 'density' as first and second rows. """
+    non-normalised 'density' as first and second rows."""
 
     # Resolution as fraction of sd
     res = 0.1
     data = np.array(data)
-    dmax = float(np.max(data) + sd * 4.)
-    dmin = float(np.min(data) - sd * 4.)
+    dmax = float(np.max(data) + sd * 4.0)
+    dmin = float(np.min(data) - sd * 4.0)
     dstep = sd * res
     time = np.arange(start=dmin, stop=dmax, step=dstep)
     if time.size % 2 != 0:
         time = time[:-1]
     r = np.arange(0, len(time), dtype=int)
     hal = r.size / 2
-    exp = np.zeros(r.size, dtype='float')
-    exp[hal:] = 2 / np.sqrt(2 * sd ** 2) * np.exp(
-        -np.sqrt(2) * np.abs(time[hal:]) / sd)
+    exp = np.zeros(r.size, dtype="float")
+    exp[hal:] = 2 / np.sqrt(2 * sd**2) * np.exp(-np.sqrt(2) * np.abs(time[hal:]) / sd)
 
     time, dens = kernel_density(data, np.vstack((time, exp)))
     return np.vstack((time, dens))
@@ -157,11 +159,11 @@ def kernel_density(data, kernel, dmin=None, dmax=None, dstep=None, verbose=True)
             out[int((d - dmin) / dstep)] += 1
         else:
             ignored += 1
-    bigkernel = np.zeros(out.size, dtype='float')
+    bigkernel = np.zeros(out.size, dtype="float")
     beg = int(bigkernel.size / 2 - kernel.shape[1] / 2)
-    end = int(bigkernel.size / 2 + int(kernel.shape[1] / 2. + 0.5))
+    end = int(bigkernel.size / 2 + int(kernel.shape[1] / 2.0 + 0.5))
     bigkernel[beg:end] = kernel[1][:]
-    conv = np.convolve(bigkernel, out, mode='same')
+    conv = np.convolve(bigkernel, out, mode="same")
     if ignored > 0 and verbose:
-        print('%i data points out of [dmin, dmax] interval were ignored' % ignored)
+        print("%i data points out of [dmin, dmax] interval were ignored" % ignored)
     return time, conv
