@@ -154,7 +154,6 @@ def deinterleave_camera(
             if iframe % 1000 == 0:
                 print("... frame %d" % iframe)
         if intrinsic_calibration is not None:
-
             dst = cv2.undistort(
                 frame,
                 intrinsic_calibration["mtx"],

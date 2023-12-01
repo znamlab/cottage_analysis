@@ -363,7 +363,6 @@ def fit_ellipse(
     project_id,
     likelihood_threshold=None,
 ):
-
     flexilims_session = flz.get_flexilims_session(project_id)
     camera_ds = flz.Dataset.from_flexilims(
         id=camera_ds_id, flexilims_session=flexilims_session
