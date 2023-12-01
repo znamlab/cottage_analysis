@@ -144,9 +144,10 @@ def find_monitor_frames(
             relative_corr_thres=0.02,
             frame_detection_height=0.1,
             minimum_lag=1.0 / frame_rate,
-            do_plot=True,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
+            do_plot=True,
             save_folder=diagnostics_folder,
             verbose=True,
+            ignore_errors=True,
         )
         if sync_kwargs is not None:
             params.update(sync_kwargs)
@@ -362,7 +363,7 @@ def generate_imaging_df(
             harpmessage_file=harp_npz_path, register_address=32
         ),
         frame_number=int(volume_number * nplanes),
-        frame_period=(1 / fs) / nplanes - 0.001,
+        frame_period=(1 / fs) / nplanes,
         register_address=32,
         frame_period_tolerance=0.001,
     )
