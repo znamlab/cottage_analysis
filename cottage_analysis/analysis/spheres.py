@@ -123,6 +123,7 @@ def regenerate_frames(
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
     # If the imaging frame is after the last found monitor frame, use the time for the last imaging frame time that's before the last found monitor frame
+    print(f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} imaging frames are after the last found monitor frame. Using the time for the last imaging frame time that's before the last found monitor frame.")
     frame_times[np.where(frame_times > mouse_pos_time[-1])[0]] = frame_times[
         np.where(frame_times <= mouse_pos_time[-1])[0][-1]
     ]
