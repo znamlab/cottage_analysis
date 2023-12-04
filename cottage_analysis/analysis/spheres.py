@@ -365,7 +365,7 @@ def generate_trials_df(recording, imaging_df):
         )
         stop_volume_blank = np.append(
             stop_volume_blank,
-            (np.abs(imaging_df.imaging_frame - last_blank_stop_time)).idxmin(),
+            (np.abs(imaging_df.imaging_harptime - last_blank_stop_time)).idxmin(),
         )
     stop_volume_stim = start_volume_blank - 1
 
