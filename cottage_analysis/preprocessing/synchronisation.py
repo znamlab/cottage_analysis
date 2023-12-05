@@ -284,6 +284,11 @@ def generate_vs_df(
     # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
     param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
+    if param_log.Frameindex.isna().any():
+        print(f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end.")
+        param_log = param_log[param_log.Frameindex.notnull()]
+        param_log.Frameindex = param_log.Frameindex.astype("int")
+            
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
             left=vs_df,
