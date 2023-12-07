@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
+from matplotlib.colors import ListedColormap
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
@@ -935,3 +936,23 @@ def set_aspect_ratio(ax, ratio=1):
     x_left, x_right = ax.get_xlim()
     y_low, y_high = ax.get_ylim()
     ax.set_aspect(abs((x_right - x_left) / (y_low - y_high)) * ratio)
+
+
+def generate_cmap(cmap_name="WhRd"):
+    """Generate common colormap
+
+    Args:
+        cmap_name (str, optional): color map mame. Defaults to 'WhRd'.
+
+    Returns:
+        cmap (matplotlib.cmap object): matplotlib colormap
+    """
+    if cmap_name == "WhRd":
+        N = 256
+        vals = np.ones((N, 4))
+        vals[:, 0] = np.linspace(1, 1, N)
+        vals[:, 1] = np.linspace(1, 0, N)
+        vals[:, 2] = np.linspace(1, 0, N)
+        cmap = ListedColormap(vals)
+
+    return cmap
