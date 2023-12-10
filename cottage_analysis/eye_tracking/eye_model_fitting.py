@@ -14,10 +14,9 @@ from tqdm import tqdm
 from skimage.measure import EllipseModel
 import pandas as pd
 import numpy as np
-import flexiznam as flz
-from cottage_analysis import eye_tracking
+from cottage_analysis.eye_tracking import eye_io
 from cottage_analysis.eye_tracking import diagnostics
-import cottage_analysis.eye_tracking.analysis as analeyesis
+from cottage_analysis.eye_tracking import utils
 
 
 def fit_ellipses(dlc_res_file, likelihood_threshold=None):
@@ -118,7 +117,7 @@ def estimate_eye_centre(binned_frames, verbose=True):
     n = np.vstack(
         [np.cos(binned_frames.angle.values), np.sin(binned_frames.angle.values)]
     )
-    intercept_minor = pts_intersection(p, n)
+    intercept_minor = utils.pts_intersection(p, n)
     n = np.vstack(
         [
             np.cos(binned_frames.angle + np.pi / 2),
@@ -149,7 +148,7 @@ def reproject_ellipses(
     theta0=0,
     likelihood_threshold=0.88,
     rsquare_threshold=0.99,
-    error_threshold=3,
+    error_threshold=None,
     min_frame_cutoff=10,
     plot=True,
 ):
@@ -167,7 +166,7 @@ def reproject_ellipses(
         rsquare_threshold (float, optional): Threshold on rsquare to include
             points in fit. Defaults to 0.99.
         error_threshold (float, optional): Threshold on error to include points in fit.
-            Defaults to 3.
+            If None, use 5 sd. Defaults to None.
         min_frame_cutoff (int, optional): Minimum number of frames in a bin to include
             it in the fit. Defaults to 10.
         plot (bool, optional): Plot results. Defaults to True.
@@ -175,7 +174,7 @@ def reproject_ellipses(
 
     # GET DATA
     flm_sess = camera_ds.flexilims_session
-    dlc_res, data = analeyesis.get_data(
+    dlc_res, data = eye_io.get_data(
         camera_ds,
         flexilims_session=flm_sess,
         likelihood_threshold=likelihood_threshold,
@@ -192,7 +191,7 @@ def reproject_ellipses(
     binned_ellipses, bedg_x, bedg_y = bin_ellipse_by_position(data, nbins=(25, 25))
     enough_frames = binned_ellipses[binned_ellipses.n_frames_in_bin > min_frame_cutoff]
     if plot:
-        dlc_tracks = eye_tracking.eye_tracking.get_tracking_datasets(
+        dlc_tracks = eye_io.get_tracking_datasets(
             camera_ds, flexilims_session=flm_sess
         )
         dlc_ds = dlc_tracks["cropped"]
@@ -207,7 +206,7 @@ def reproject_ellipses(
             camera_ds=camera_ds,
             cropping=cropping,
             bin_edges_y=bedg_y,
-            bin_edges_x=bedg_x
+            bin_edges_x=bedg_x,
         )
 
     # ESTIMATE EYE CENTER
@@ -221,6 +220,8 @@ def reproject_ellipses(
             cropping=cropping,
             save_folder=save_folder,
             example_frame=1000,
+            bin_edges_y=bedg_y,
+            bin_edges_x=bedg_x,
         )
 
     # OPTIMISE ROUND1 for all binned positions
@@ -234,7 +235,7 @@ def reproject_ellipses(
         ellipse_params = s[
             ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
         ].values
-        p, e, all_errors = minimise_reprojection_error(
+        p, e, all_errors = utils.minimise_reprojection_error(
             ellipse_params,
             p0=p0,
             eye_centre=eye_centre_binned,
@@ -253,6 +254,12 @@ def reproject_ellipses(
             eye_rotation=eye_rotation_initial,
             error=error_at_bin_initial,
             target_file=save_folder / f"initial_gaze_fit.png",
+            camera_ds=camera_ds,
+            dlc_ds=dlc_ds,
+            bin_edges_y=bedg_y,
+            bin_edges_x=bedg_x,
+            example_frame=None,
+            cropping=cropping,
         )
         # Plot fit of median position
         params_most_frequent_bin = enough_frames.loc[
@@ -261,7 +268,7 @@ def reproject_ellipses(
         fit_most_frequent_bin = eye_rotation_initial[
             enough_frames.n_frames_in_bin.values.argmax()
         ]
-        initial_model = reproj_ellipse(
+        initial_model = utils.reproj_ellipse(
             phi=fit_most_frequent_bin[0],
             theta=fit_most_frequent_bin[1],
             r=fit_most_frequent_bin[2],
@@ -285,7 +292,7 @@ def reproject_ellipses(
     source_ellipses = enough_frames.loc[
         :, ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
     ].values
-    (x, y, f_z0), err = optimise_eye_parameters(
+    (x, y, f_z0), err = utils.optimise_eye_parameters(
         ellipses=source_ellipses,
         gazes=eye_rotation_initial,
         p0=(*eye_centre_binned, f_z0_binned),
@@ -311,7 +318,7 @@ def reproject_ellipses(
             ellipse_params = s[
                 ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
             ].values
-            p, e, all_errors = minimise_reprojection_error(
+            p, e, all_errors = utils.minimise_reprojection_error(
                 ellipse_params,
                 p0=p0,
                 eye_centre=eye_centre,
@@ -329,6 +336,33 @@ def reproject_ellipses(
             eye_rotation=eye_rotation_optimised,
             error=error_at_bin,
             target_file=save_folder / f"optimised_gaze_fit.png",
+            camera_ds=camera_ds,
+            dlc_ds=dlc_ds,
+            bin_edges_y=bedg_y,
+            bin_edges_x=bedg_x,
+            example_frame=None,
+            cropping=cropping,
+        )
+
+        fit_most_frequent_bin_opti = eye_rotation_optimised[
+            enough_frames.n_frames_in_bin.values.argmax()
+        ]
+        optimised_model = utils.reproj_ellipse(
+            phi=fit_most_frequent_bin_opti[0],
+            theta=fit_most_frequent_bin_opti[1],
+            r=fit_most_frequent_bin_opti[2],
+            eye_centre=eye_centre,
+            f_z0=f_z0,
+        )
+        diagnostics.plot_reprojection(
+            eye_centre,
+            f_z0,
+            dlc_res,
+            fitted_params=params_most_frequent_bin,
+            fitted_model=optimised_model,
+            cropping=cropping,
+            camera_ds=camera_ds,
+            target_file=save_folder / f"optimised_reprojection_median_eye_position.png",
         )
 
     # SAVE Eye parameters
@@ -339,14 +373,14 @@ def reproject_ellipses(
         f_z0=f_z0,
     )
 
-    # optimise for all frames
+    # OPTIMISE FOR ALL FRAMES
     print("Fitting all frames", flush=True)
     # create a list of all ellipse params
     parameters = data[
         ["pupil_x", "pupil_y", "major_radius", "minor_radius", "angle"]
     ].values
     with ProgressBar(total=len(parameters)) as progress:
-        eye_rotation = minimise_all(
+        eye_rotation = utils.minimise_all(
             parameters,
             p0,
             eye_centre,
@@ -374,13 +408,16 @@ def bin_ellipse_by_position(data, nbins=(25, 25)):
         numpy.array: Bin edges in y
     """
     elli = pd.DataFrame(data[data.valid], copy=True)
-    bin_edges_x = np.linspace(elli.pupil_x.min(), elli.pupil_x.max(), nbins[0] + 1)
-    bin_edges_y = np.linspace(elli.pupil_y.min(), elli.pupil_y.max(), nbins[1] + 1)
+    nbins = (25, 25)
+    bin_edges_x = np.linspace(elli.pupil_x.min(), elli.pupil_x.max(), nbins[0])
+    bin_edges_y = np.linspace(elli.pupil_y.min(), elli.pupil_y.max(), nbins[1])
     bin_width = np.diff(bin_edges_x)[0]
     bin_height = np.diff(bin_edges_y)[0]
-    # find the end of the bin that each ellipse belongs to
-    elli["bin_id_x"] = bin_edges_x.searchsorted(elli.pupil_x.values) - 1
-    elli["bin_id_y"] = bin_edges_y.searchsorted(elli.pupil_y.values) - 1
+    bin_edges_x = np.hstack((bin_edges_x, bin_edges_x[-1] + bin_width))
+    bin_edges_y = np.hstack((bin_edges_y, bin_edges_y[-1] + bin_height))
+    # find the start of the bin that each ellipse belongs to
+    elli["bin_id_x"] = bin_edges_x.searchsorted(elli.pupil_x.values)
+    elli["bin_id_y"] = bin_edges_y.searchsorted(elli.pupil_y.values)
     elli["bin_centre_x"] = bin_edges_x[elli.bin_id_x.values] + bin_width / 2
     elli["bin_centre_y"] = bin_edges_y[elli.bin_id_y.values] + bin_height / 2
 
@@ -389,198 +426,6 @@ def bin_ellipse_by_position(data, nbins=(25, 25)):
     binned_ellipses = binned_ellipses.aggregate(np.nanmedian)
     binned_ellipses["n_frames_in_bin"] = ns
     return binned_ellipses, bin_edges_x, bin_edges_y
-
-
-@njit(parallel=True, nogil=True)
-def minimise_all(
-    parameters,
-    p0,
-    eye_centre,
-    f_z0,
-    progress_proxy,
-    p_range=(1.0, 1.0, 0.5),
-    grid_size=10,
-    niter=3,
-    reduction_factor=3,
-):
-    """Run minimisation of reprojection error on all frames in parallel
-
-    Args:
-
-        parameters (numpy.array): N x 5 array of ellipse parameters
-        is_valid (numpy.array): N array of bool indicating if ellipse is valid
-        p0 (tuple): Starting estimates of parameter (phi, theta, radius), centre of grid
-        eye_centre (numpy.array): x,y of eye centre in camera coordinate
-        f_z0 (float): scale factor
-        progress_proxy (tqdm.tqdm): Progress bar
-        p_range (tuple, optional): range of grid for the 3 parameters. Defaults to
-            (1, 1, 0.5)
-        grid_size (int, optional): number of values for each level of the grid.
-            Defaults to 10.
-        niter (int, optional): number of iteration. Defaults to 3
-        reduction_factor (int, optional): reduction of p_range at each iteration.
-            Defaults to 3
-    """
-    nframes = len(parameters)
-    eye_rotation = np.zeros((nframes, 3))
-    eye_rotation += np.nan
-    for ipos in prange(nframes):
-        progress_proxy.update(1)
-        ellipse_params = parameters[ipos]
-        if any(np.isnan(ellipse_params)):
-            continue
-        pa, e, all_errors = minimise_reprojection_error(
-            ellipse_params,
-            p0,
-            eye_centre,
-            f_z0,
-            p_range,
-            grid_size,
-            niter,
-            reduction_factor,
-        )
-        eye_rotation[ipos] = pa
-    return eye_rotation
-
-
-@njit
-def minimise_reprojection_error(
-    ellipse,
-    p0,
-    eye_centre,
-    f_z0,
-    p_range=(1.0, 1.0, 0.5),
-    grid_size=10,
-    niter=3,
-    reduction_factor=3,
-    debug=False,
-):
-    """Iterative grid search of best gaze vector to minimize reprojection error
-
-    Args:
-        ellipse (tuple): Ellipse to fit, provided either as (x,y, major, minor, angle)
-            tuple of parameters
-        p0 (tuple): Starting estimates of parameter (phi, theta, radius), centre of grid
-        eye_centre (numpy.array): x,y of eye centre in camera coordinate
-        f_z0 (float): scale factor
-        p_range (tuple, optional): range of grid for the 3 parameters. Defaults to
-            (1, 1, 0.5)
-        grid_size (int, optional): number of values for each level of the grid.
-            Defaults to 10.
-        niter (int, optional): number of iteration. Defaults to 3
-        reduction_factor (int, optional): reduction of p_range at each iteration.
-            Defaults to 5
-        verbose (bool, optional): Print progress. Default to True.
-        debug (bool, optional): Return debug info. Defaults to False.
-
-    Returns:
-        parameters (tuple): Best gaze parameters (phi, theta, radius)
-        min_ind (tuple): Index of minimal error in grid for (phi, theta, radius)
-        error (numpy array): len(grid_phi) x len(grid_theta) x len(grid_radius) array
-            of reprojection errors
-    """
-    params = tuple(p0)
-    errors = []
-    for i_iter in range(niter):
-        grids = []
-        for p, r in zip(params, p_range):
-            rng = np.empty(grid_size)
-            if grid_size > 1:
-                rng[:] = np.linspace(-r, r, grid_size)
-            grids.append(rng + p)
-        # ensure last parameter is positive
-        grids[-1] = grids[-1][grids[-1] > 0]
-        params, error, errors_iter = grid_search_best_gaze(
-            ellipse,
-            eye_centre=eye_centre,
-            f_z0=f_z0,
-            grid_phi=grids[0],
-            grid_theta=grids[1],
-            grid_radius=grids[2],
-            debug=debug,
-        )
-        if debug:
-            errors.append((grids, errors_iter))
-
-        p_range = (
-            p_range[0] / reduction_factor,
-            p_range[1] / reduction_factor,
-            p_range[2] / reduction_factor,
-        )
-    return params, error, errors
-
-
-def optimise_eye_parameters(
-    ellipses,
-    gazes,
-    p0,
-    p_range=(50.0, 50.0, 30.0),
-    grid_size=10,
-    niter=5,
-    reduction_factor=3,
-    verbose=True,
-    prange_inner=(np.pi / 3, np.pi / 3, 0.5),
-    niter_inner=3,
-    grid_size_inner=5,
-    refit_from_p0=True,
-    debug=False,
-):
-    """Optimise eye parameters by grid search"""
-
-    params = tuple(p0)
-    if verbose:
-        p_display = np.round(params, 2)
-        print(f"Initial eye parameters: {p_display}.", flush=True)
-
-    errors = []
-
-    for i_iter in range(niter):
-        if verbose:
-            print(f"Iteration {i_iter + 1}", flush=True)
-
-        grids = [np.linspace(-r, r, grid_size) + p for r, p in zip(p_range, params)]
-        # ensure last parameter is positive
-        grids[-1] = grids[-1][grids[-1] > 0]
-        n_p = np.prod([len(g) for g in grids])
-        with ProgressBar(total=n_p) as progress:
-            params, error, errs = grid_search_best_eye(
-                ellipses,
-                gazes,
-                *grids,
-                p_range=prange_inner,
-                niter=niter_inner,
-                grid_size=grid_size_inner,
-                progress_proxy=progress,
-                refit_from_p0=refit_from_p0,
-            )
-            if debug:
-                errors.append((grids, errs))
-
-        if verbose:
-            p_display = np.round(params, 2)
-            print(
-                f"    Best eye parameters: {p_display}. Error: {error:.0f}",
-                flush=True,
-            )
-        p_range = [p / reduction_factor for p in p_range]
-    if debug:
-        return params, error, errors
-    return params, error
-
-
-def get_gaze_vector(phi, theta):
-    """Get the gaze vector from phi and theta
-
-    Args:
-        phi (float): Angle in radians
-        theta (float): Angle in radians
-
-    Returns:
-        numpy.array: 3-D vector of gaze direction in camera coordinates
-    """
-    return np.array(
-        [np.sin(theta), np.sin(phi) * np.cos(theta), -np.cos(phi) * np.cos(theta)]
-    )
 
 
 def convert_to_world(gaze_vec, rmat, is_flipped=True):
@@ -633,267 +478,3 @@ def gaze_to_azel(gaze_vector, zero_median=False):
         azimuth = np.mod(azimuth + np.pi, 2 * np.pi) - np.pi
         elevation = np.mod(elevation + np.pi, 2 * np.pi) - np.pi
     return azimuth, elevation
-
-
-@jit(nopython=True)
-def reproj_centre(phi, theta, eye_centre, f_z0):
-    """Reproject ellipse centre on camera frame
-
-    Wallace and Kerr method.
-
-    There is an extra minus 1 in the y of the centre reprojection compared to their
-    methods to have the camera y axis pointing down
-
-    Args:
-        phi (float): Vertical angle in radians
-        theta (float): Horizontal angle in radians
-        eye_centre (numpy.array): x,y position of eye centre
-        f_z0 (float): Scale factor
-
-    Returns:
-        numpy.array: X, Y of pupil centre in camera coordinates
-    """
-
-    return f_z0 * np.array([np.sin(theta), -np.sin(phi) * np.cos(theta)]) + eye_centre
-
-
-@njit
-def reproj_ellipse(phi, theta, r, eye_centre, f_z0):
-    """Reproject ellipse on camera frame
-
-    Wallace and Kerr method
-
-    Args:
-        phi (float): Vertical angle in radians
-        theta (float): Horizontal angle in radians
-        r (float): Radius of pupil in units of f_z0
-        eye_centre (numpy.array): x,y position of eye centre
-        f_z0 (float): Scale factor
-
-    Returns:
-        EllipseModel: Ellipse in camera coordinates
-    """
-    w3 = -np.cos(phi) * np.cos(theta)
-    major = r * f_z0
-    minor = np.abs(w3) * major
-    # from Wallace et al:
-    if np.sin(phi) != 0:
-        angle = np.arctan(np.tan(theta) / np.sin(phi))
-    else:
-        angle = np.pi / 2 * np.sign(np.tan(theta))
-    centre = reproj_centre(phi, theta, eye_centre, f_z0)
-    if False:
-        # one could also look at the angle to centre
-        vect = centre - eye_centre
-        angle = np.arcsin(vect[0] / np.linalg.norm(vect))
-
-    # params are xc, yc, a, b, theta
-    ellipse = (centre[0], centre[1], major / 2, minor / 2, angle)
-    return ellipse
-
-
-@njit
-def ellipse_distance(model1, model2, ev_pts=None):
-    """Compute the distance between two ellipses
-
-    This is done by summing the distances of points along the border
-
-    Args:
-        model1 (tuple): First ellipse
-        model2 (tuple): Second ellipse
-        ev_pts (numpy.array, optional): Angles to use for comparison. If None will do
-            a full circle in pi/12 increament. Defaults to None.
-
-    Returns:
-        float: Error as sum of distances
-    """
-    if ev_pts is None:
-        ev_pts = np.arange(0, 2 * np.pi, np.pi / 12)
-    xc, yc, a, b, angle = model1
-    pts1 = predict_xy(ev_pts, xc, yc, a, b, angle)
-    xc, yc, a, b, angle = model2
-    pts2 = predict_xy(ev_pts, xc, yc, a, b, angle)
-    # roll to have the same starting point
-    pts1 = _roll(pts1, pts1[:, 0].argmin())
-    pts2 = _roll(pts2, pts2[:, 0].argmin())
-    error = np.sum(np.sqrt(np.sum((pts1 - pts2) ** 2, axis=1)))
-    return error
-
-
-@njit
-def _roll(arr, shift):
-    """Roll an array along the first axis
-
-    Modified from https://stackoverflow.com/questions/61011294/numba-jit-can-t-compile-np-roll
-    """
-    b = np.empty_like(arr)
-    rows_num = arr.shape[0]
-    cols_num = arr.shape[1]
-    for i in range(cols_num):
-        b[shift:, i] = arr[: rows_num - shift, i]
-        b[:shift, i] = arr[rows_num - shift :, i]
-    return b
-
-
-def pts_intersection(pts, normals):
-    """Find best interesection of lines in 2D
-
-    See:
-    https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection#In_two_dimensions_2
-
-    Args:
-        pts (numpy.array): 2 x N array of points on the lines
-        normals (numpy.array): 2 x N array of normals to the lines
-
-    Returns:
-        numpy.array: (x, y) of least-square solution
-    """
-    n_nt = normals.T[:, :, np.newaxis] @ normals.T[:, np.newaxis, :]
-    inv_sum = np.linalg.inv(np.sum(n_nt, axis=0))
-    direct_sum = np.sum(n_nt @ pts.T[:, :, np.newaxis], axis=0)
-    return inv_sum @ direct_sum
-
-
-@njit
-def grid_search_best_gaze(
-    source_ellipse, eye_centre, f_z0, grid_phi, grid_theta, grid_radius, debug=False
-):
-    """Grid search of best gaze vector to minimize reprojection error
-
-    Args:
-        source_ellipse (tuple): Ellipse to fit, (x,y, major, minor, angle) tuple of
-            parameters
-        eye_centre (numpy.array): x,y of eye centre in camera coordinate
-        f_z0 (float): scale factor
-        grid_phi (numpy.array): Values of phi for grid search
-        grid_theta (numpy.array): Values of theta for grid search
-        grid_radius (numpy.array): Values of radius for grid search
-        debug (bool, optional): Return debug info. Defaults to False.
-
-    Returns:
-        parameters (tuple): Best gaze parameters (phi, theta, radius)
-        min_ind (tuple): Index of minimal error in grid for (phi, theta, radius)
-        error (numpy array): len(grid_phi) x len(grid_theta) x len(grid_radius) array
-            of reprojection errors
-    """
-    params = (0, 0, 0)
-    error = np.inf
-    errors = np.zeros((len(grid_phi), len(grid_theta), len(grid_radius)))
-    for ip, phi in enumerate(grid_phi):
-        for it, theta in enumerate(grid_theta):
-            for ir, r in enumerate(grid_radius):
-                el = reproj_ellipse(phi, theta, r, eye_centre=eye_centre, f_z0=f_z0)
-                dst = ellipse_distance(source_ellipse, el)
-                if debug:
-                    errors[ip, it, ir] = dst
-
-                if dst < error:
-                    error = dst
-                    params = (phi, theta, r)
-    return params, error, errors
-
-
-@njit(parallel=True, nogil=True)
-def grid_search_best_eye(
-    source_ellipses,
-    ellipse_fits,
-    grid_eye_x,
-    grid_eye_y,
-    grid_f_z0,
-    progress_proxy,
-    p_range=(np.deg2rad(30), np.deg2rad(30), 0.2),
-    niter=3,
-    grid_size=5,
-    refit_from_p0=True,
-):
-    """Find best eye parameters on the given grid
-
-    Grid search on eye parameters (centre x, y and f/z0 scale). For each combination,
-    optimise phi/theta/radius for all source_ellipses and sum reprojection errors
-
-    Args:
-        source_ellipses (list): List of ellipses or ellipse parameter, input data
-        ellipse_fits (list): List of phi/theta/radius parameters to initial search for
-            each source_ellipse
-        grid_eye_x (numpy.array): List of x values to test
-        grid_eye_y (numpy.array): List of y values to test
-        grid_f_z0 (numpy.array): List of f_z0 values to test
-        progress_proxy (tqdm.tqdm, optional): Progress bar.
-        p_range (tuple, optional): Range of phi/theta/radius to search for each
-            source_ellipse. Defaults to (np.deg2rad(30), np.deg2rad(30), 0.2).
-        niter (int, optional): Number of iteration for each source_ellipse.
-            Defaults to 3.
-        grid_size (int, optional): Number of values for each level of the grid.
-            Defaults to 5.
-        refit_from_p0 (bool, optional): Start inner search from p0. Defaults to False.
-
-
-    Returns:
-        params (tuple): Best (x, y, f_z0) eye parameters
-        index (tuple): Index of best parameter in grid
-        errors (numpy.array): Matrix of error for each position in the grid
-    """
-
-    best_eye = (0, 0, 0)
-    best_error = np.inf
-    eye_params = []
-    for x in grid_eye_x:
-        for y in grid_eye_y:
-            for fz in grid_f_z0:
-                eye_params.append((x, y, fz))
-    errors = np.zeros(len(eye_params))
-
-    for ip in prange(len(eye_params)):
-        progress_proxy.update(1)
-        x, y, fz = eye_params[ip]
-        for ellipse, fit_params in zip(source_ellipses, ellipse_fits):
-            if refit_from_p0:
-                p0 = (0, 0, 1)
-            else:
-                p0 = (fit_params[0], fit_params[1], fit_params[2])
-            p, single_error, all_errors = minimise_reprojection_error(
-                ellipse,
-                p0=p0,
-                eye_centre=np.array([x, y]),
-                f_z0=fz,
-                p_range=p_range,
-                niter=niter,
-                grid_size=grid_size,
-            )
-            errors[ip] += single_error
-
-    best_error = errors.min()
-    best_eye = eye_params[errors.argmin()]
-    return best_eye, best_error, errors
-
-
-@njit
-def predict_xy(t, xc, yc, a, b, angle):
-    """Predict x- and y-coordinates using the estimated model.
-
-    This is extracted from EllipseModel to avoid unessesary checks
-
-    Parameters
-    ----------
-    t : array
-        Angles in circle in radians. Angles start to count from positive
-        x-axis to positive y-axis in a right-handed system.
-    params : (5, ) array, optional
-        Optional custom parameter set.
-
-    Returns
-    -------
-    xy : (..., 2) array
-        Predicted x- and y-coordinates.
-
-    """
-
-    ct = np.cos(t)
-    st = np.sin(t)
-    cangle = math.cos(angle)
-    sangle = math.sin(angle)
-
-    x = xc + a * cangle * ct - b * sangle * st
-    y = yc + a * sangle * ct + b * cangle * st
-
-    return np.concatenate((x[..., None], y[..., None]), axis=t.ndim)

@@ -1,3 +1,9 @@
+"""Main functions for eye tracking analysis
+
+This module contains the main functions for eye tracking analysis. The main function
+is `run_all`, which runs all the steps of the analysis.
+"""
+
 import os
 from pathlib import Path
 import yaml
@@ -5,7 +11,9 @@ import pandas as pd
 import numpy as np
 import flexiznam as flz
 from znamutils import slurm_it
-from cottage_analysis.eye_tracking import diagnostics, eye_model_fitting
+from cottage_analysis.eye_tracking import eye_model_fitting as emf
+from cottage_analysis.eye_tracking import diagnostics
+from cottage_analysis.eye_tracking import eye_io
 
 envs = flz.PARAMETERS["conda_envs"]
 
@@ -152,7 +160,7 @@ def run_all(
             phi0=0,
             likelihood_threshold=0.88,
             rsquare_threshold=0.99,
-            error_threshold=3,
+            error_threshold=None,
         )
         if repro_kwargs is not None:
             repro_kwargs.update(repro_kwargs)
@@ -235,7 +243,7 @@ def dlc_pupil(
     camera_ds = flz.Dataset.from_flexilims(
         flexilims_session=flexilims_session, name=camera_ds_name
     )
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session)
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
     video_path = Path(video_path)
 
@@ -356,47 +364,6 @@ def dlc_pupil(
     return ds, ds.path_full
 
 
-def get_tracking_datasets(camera_ds, flexilims_session):
-    """Get the dlc tracking datasets corresponding to a camera dataset
-
-    This will raise an error if more than one dataset is found for a given type
-
-    Args:
-        camera_ds (flexilims.Dataset): Camera dataset
-        flexilims_session (flexilims.Session): Flexilims session
-
-    Returns:
-        dict: Dictionary with keys "cropped" and "uncropped", containing the
-            corresponding datasets. If no dataset is found, the corresponding value is
-            None
-    """
-    dlc_datasets = flz.get_children(
-        parent_id=camera_ds.origin_id,
-        children_datatype="dataset",
-        flexilims_session=flexilims_session,
-    )
-    dlc_datasets = dlc_datasets[dlc_datasets["dataset_type"] == "dlc_tracking"]
-    ds_dict = dict(cropped=None, uncropped=None)
-    for ds_name, series in dlc_datasets.iterrows():
-        ds = flz.Dataset.from_dataseries(series, flexilims_session=flexilims_session)
-        vid = ds.extra_attributes["videos"]
-        assert (
-            len(vid) == 1
-        ), f"{ds_name} tracking with more than one video, is that normal?"
-        # exclude tracking for other videos
-        if not vid[0].endswith(camera_ds.extra_attributes["video_file"]):
-            continue
-        if isinstance(ds.extra_attributes["cropping"], list):
-            if ds_dict["cropped"] is not None:
-                raise IOError("More than one cropped dataset")
-            ds_dict["cropped"] = ds
-        else:
-            if ds_dict["uncropped"] is not None:
-                raise IOError("More than one uncropped dataset")
-            ds_dict["uncropped"] = ds
-    return ds_dict
-
-
 def create_crop_file(camera_ds, dlc_ds, conflicts="skip"):
     """Create a crop file for DLC tracking
 
@@ -479,7 +446,7 @@ def fit_ellipse(
     camera_ds = flz.Dataset.from_flexilims(
         name=camera_ds_name, flexilims_session=flexilims_session
     )
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session)
     if ds_dict["cropped"] is None:
         raise IOError("No cropped dataset found")
     dlc_ds = ds_dict["cropped"]
@@ -495,7 +462,7 @@ def fit_ellipse(
             return target
 
     print(f"Doing %s" % dlc_file)
-    ellipse_fits = eye_model_fitting.fit_ellipses(
+    ellipse_fits = emf.fit_ellipses(
         dlc_file,
         likelihood_threshold=likelihood_threshold,
     )
@@ -529,7 +496,7 @@ def run_reproject_eye(
     theta0=np.deg2rad(20),
     likelihood_threshold=0.88,
     rsquare_threshold=0.99,
-    error_threshold=3,
+    error_threshold=None,
     conflicts="skip",
 ):
     """Run the reproject_eye function on a camera dataset
@@ -546,8 +513,8 @@ def run_reproject_eye(
             fitting. Defaults to 0.88.
         rsquare_threshold (float, optional): R^2 threshold for ellipse fitting.
             Defaults to 0.99.
-        error_threshold (int, optional): Error threshold for ellipse fitting.
-            Defaults to 3.
+        error_threshold (int, optional): Error threshold for ellipse fitting. If None,
+            use mean + 5 sd. Defaults to None.
         conflicts (str, optional): How to handle conflicts when creating the datasets
             on flexilims. Defaults to "skip".
     """
@@ -588,7 +555,7 @@ def run_reproject_eye(
         rsquare_threshold=rsquare_threshold,
         error_threshold=error_threshold,
     )
-    eye_model_fitting.reproject_ellipses(
+    emf.reproject_ellipses(
         camera_ds=camera_ds,
         target_ds=target_ds,
         **kwargs,
@@ -596,3 +563,4 @@ def run_reproject_eye(
     target_ds.extra_attributes.update(**kwargs)
     target_ds.update_flexilims(mode=conflicts)
     return target_ds
+
