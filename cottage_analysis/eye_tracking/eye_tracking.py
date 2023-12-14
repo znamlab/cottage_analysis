@@ -563,4 +563,3 @@ def run_reproject_eye(
     target_ds.extra_attributes.update(**kwargs)
     target_ds.update_flexilims(mode=conflicts)
     return target_ds
-

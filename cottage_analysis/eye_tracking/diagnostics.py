@@ -5,17 +5,34 @@ import pandas as pd
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from skimage.measure import EllipseModel
 
 import flexiznam as flz
 from znamutils import slurm_it
 
-from cottage_analysis.eye_tracking import analysis
-import cottage_analysis.eye_tracking.eye_tracking as cottage_tracking
+from cottage_analysis.utilities.plot_utils import get_img_from_fig, write_fig_to_video
+from cottage_analysis.eye_tracking import eye_io
+from cottage_analysis.eye_tracking import utils
 
 
 def check_cropping(dlc_ds, camera_ds, rotate180=False, conflicts="skip"):
+    """Check cropping of DLC dataset
+
+    Plot a frame from the video with the DLC tracking and the cropping area.
+
+    Args:
+        dlc_ds (flexiznam.Dataset): DLC dataset
+        camera_ds (flexiznam.Dataset): Camera dataset
+        rotate180 (bool, optional): Whether to rotate the image 180 degrees. Defaults
+            to False.
+        conflicts (str, optional): How to deal with existing crop files. Defaults to
+            "skip".
+
+    Returns:
+        matplotlib.figure.Figure: Figure object
+    """
     dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
     dlc_results = pd.read_hdf(dlc_file)
 
@@ -24,15 +41,18 @@ def check_cropping(dlc_ds, camera_ds, rotate180=False, conflicts="skip"):
 
     if not crop_file.exists() or conflicts != "skip":
         print(f"Creating {crop_file}")
-        cottage_tracking.create_crop_file(camera_ds, dlc_ds, conflicts=conflicts)
+        from cottage_analysis.eye_tracking.eye_tracking import create_crop_file
+
+        create_crop_file(camera_ds, dlc_ds, conflicts=conflicts)
 
     with open(crop_file, "r") as f:
         crop_info = yaml.safe_load(f)
 
     cam_data = cv2.VideoCapture(str(video_path))
     fid = int(cam_data.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
-    cam_data.set(cv2.CAP_PROP_POS_FRAMES, fid - 1)
+    cam_data.set(cv2.CAP_PROP_POS_FRAMES, fid)
     ret, frame = cam_data.read()
+    assert ret, f"Could not read frame {fid}"
     cam_data.release()
     if dlc_ds.extra_attributes["cropping"] is not None:
         crop = dlc_ds.extra_attributes["cropping"]
@@ -108,6 +128,7 @@ def plot_ellipse_fit(
     playback_speed=4,
     vmin=None,
     vmax=None,
+    plot_reprojection=True,
 ):
     """Plot ellipse fit for a given camera dataset
 
@@ -123,16 +144,17 @@ def plot_ellipse_fit(
             Defaults to 4 times faster.
         vmin (float, optional): Minimum value for the colormap. Defaults to None.
         vmax (float, optional): Maximum value for the colormap. Defaults to None.
+        plot_reprojection (bool, optional): Whether to plot the reprojection of the
+            fitted ellipse. Defaults to True.
 
     Returns:
-        None"""
+        None
+    """
     flm_sess = flz.get_flexilims_session(project_id=project)
     camera_ds = flz.Dataset.from_flexilims(
         name=camera_ds_name, flexilims_session=flm_sess
     )
-    ds_dict = cottage_tracking.get_tracking_datasets(
-        camera_ds, flexilims_session=flm_sess
-    )
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session=flm_sess)
     if ds_dict["cropped"] is None:
         raise IOError("No cropped dataset found")
     dlc_ds = ds_dict["cropped"]
@@ -148,7 +170,7 @@ def plot_ellipse_fit(
             likelihood_threshold = 1
     if start_frame is None:
         start_frame = frame_count // 2 - 30
-    analysis.plot_movie(
+    plot_movie(
         camera=camera_ds,
         target_file=dlc_ds.path_full / "ellipse_fit.mp4",
         start_frame=start_frame,
@@ -162,6 +184,7 @@ def plot_ellipse_fit(
         crop_border=dlc_ds.extra_attributes["cropping"],
         recrop=False,
         likelihood_threshold=likelihood_threshold,
+        plot_reproj=plot_reprojection,
     )
 
 
@@ -195,8 +218,9 @@ def get_example_frame(
         cam_data = cv2.VideoCapture(str(video_file))
         if example_frame is None:
             example_frame = int(cam_data.get(cv2.CAP_PROP_FRAME_COUNT) / 2)
-        cam_data.set(cv2.CAP_PROP_POS_FRAMES, example_frame - 1)
+        cam_data.set(cv2.CAP_PROP_POS_FRAMES, example_frame)
         ret, frame = cam_data.read()
+        assert ret, f"Could not read frame {example_frame}"
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if cropping is not None:
             gray = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
@@ -309,7 +333,7 @@ def plot_binned_ellipse_params(
     for ip, p in enumerate(col2plot):
         print(p)
         if p == "angle":
-            enough_frames['angle_deg'] = np.rad2deg(enough_frames['angle'])
+            enough_frames["angle_deg"] = np.rad2deg(enough_frames["angle"])
             p = "angle_deg"
             if angl_clim is None:
                 lim = (-90, 90)
@@ -317,12 +341,12 @@ def plot_binned_ellipse_params(
                 lim = angl_clim
         else:
             lim = None
-            
+
         mat = mat_from_binned(enough_frames, value_col=p)
-        
+
         if lim is None:
             lim = np.nanquantile(mat, [0.01, 0.99])
-        
+
         ax = fig.add_subplot(nrows, ncols, ip + 1)
         divider = make_axes_locatable(ax)
         if camera_ds is not None:
@@ -359,7 +383,7 @@ def mat_from_binned(binned_df, value_col):
     mat = np.zeros((len(bin_row), len(bin_col))) + np.nan
     mat[
         binned_df.index.get_level_values(1) - ind_row.min(),
-        binned_df.index.get_level_values(0) - ind_col.max(),
+        binned_df.index.get_level_values(0) - ind_col.min(),
     ] = binned_df[value_col]
 
     return mat
@@ -377,6 +401,7 @@ def plot_eye_centre_estimate(
     bin_edges_y=None,
     dlc_ds=None,
 ):
+    """Plot eye centre estimate"""
     gray, reflection, extent = get_example_frame(
         binned_frames,
         camera_ds,
@@ -460,7 +485,7 @@ def plot_reprojection(
         initial_model (EllipseModel, optional): Initial model. Defaults to None.
         initial_eye_centre (np.array, optional): Initial eye centre. Defaults to None.
         initial_f_z0 (float, optional): Initial f/z0. Defaults to None.
-        example_frame (int, optional): Frame to use as background and for DLC res. 
+        example_frame (int, optional): Frame to use as background and for DLC res.
             Defaults to None, taking the frame closest to the fitted eye centre.
 
     Returns:
@@ -481,13 +506,14 @@ def plot_reprojection(
         eye_track = eye_track - ref
         eyex = eye_track["x"].median(axis=1)
         eyey = eye_track["y"].median(axis=1)
-        dst = (eyex - fitted_params.pupil_x).abs() + (eyey - fitted_params.pupil_y).abs()
+        dst = (eyex - fitted_params.pupil_x).abs() + (
+            eyey - fitted_params.pupil_y
+        ).abs()
         example_frame = dst.idxmin()
-    
+
     gray, reflection, extent = get_example_frame(
         None, camera_ds, dlc_res, cropping, example_frame
     )
-
     fig = plt.figure()
     ax = plt.subplot(1, 1, 1)
     ax.axis("off")
@@ -506,7 +532,7 @@ def plot_reprojection(
         radius=f_z0,
         facecolor="none",
         edgecolor="g",
-        label=r"$\frac{f}{z_0}$",
+        label=r"$\frac{f}{z_0}$" + f" = {f_z0:.2f}",
     )
     ax.add_artist(eye_binned)
 
@@ -615,14 +641,19 @@ def plot_gaze_fit(
         mat = mat_from_binned(combined, value_col=labels[i])
         ax = plt.subplot(1, nplots, 1 + i)
         if i < 2:
-            cmap = "twilight"
+            cmap = "twilight_shifted"
+            absmax = np.nanmax(np.abs(mat))
+            vmin, vmax = -absmax, absmax
         else:
             cmap = "viridis"
+            vmin, vmax = None, None
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
         if gray is not None:
             ax.imshow(gray, cmap="gray")
-        img = ax.imshow(mat, cmap=cmap, extent=extent, interpolation="nearest")
+        img = ax.imshow(
+            mat, cmap=cmap, extent=extent, interpolation="nearest", vmin=vmin, vmax=vmax
+        )
         ax.set_title(labels[i])
         if gray is not None:
             ax.set_xlim(0, gray.shape[1])
@@ -636,3 +667,329 @@ def plot_gaze_fit(
     if target_file is not None:
         fig.savefig(target_file)
     return fig
+
+
+def plot_movie(
+    camera,
+    target_file,
+    start_frame=0,
+    duration=None,
+    dlc_res=None,
+    reproj_ds=None,
+    ellipse=None,
+    vmax=None,
+    vmin=None,
+    playback_speed=4,
+    crop_border=None,
+    use_original_encoding=False,
+    recrop=False,
+    likelihood_threshold=0.88,
+    adapt_alpha=True,
+    plot_tracking=True,
+    plot_ellipse=True,
+    plot_reproj=False,
+    rotate180=False,
+):
+    """Plot a movie of raw video, video with dlc tracking and video with ellipse fit
+
+    Args:
+        camera (flexiznam.schema.camera_data.CameraData): Camera dataset
+        target_file (str): Full path to video output
+        start_frame (int, optional): First frame to plot. Defaults to 0.
+        duration (float, optional): Duration of video, in seconds. If None, plot until
+            the end. Defaults to None.
+        dlc_res (pandas.DataFrame, optional): DLC results. Will be loaded if None.
+            Defaults to None.
+        reproj_ds (pandas.DataFrame, optional): Reprojection results. Required if
+            plot_reproj is True. Defaults to None.
+        ellipse (pandas.DataFrame, optional): Ellipse fit. Will be loaded if None.
+            Defaults to None.
+        vmax (int, optional): vmax for video grayscale image. Defaults to None
+        vmin (int, optional): vmin for video grayscale image. Defaults to None
+        playback_speed (float, optional): playback speed, relative to original video
+            speed (which might not be real time). Default to 4.
+        crop_border (list, optional): Border to crop video. Defaults to None.
+        use_original_encoding (bool, optional): Whether to use original video encoding
+            (might not be supported by opencv). Defaults to False.
+        recrop (bool, optional): Whether to recrop video. Defaults to False.
+        likelihood_threshold (float, optional): Threshold on DLC likelihood use for
+            scatter color.
+        adapt_alpha (bool, optional): Whether to adapt alpha of scatter points based on
+            likelihood. Defaults to True.
+        plot_tracking (bool, optional): Whether to plot DLC tracking. Defaults to True.
+        plot_ellipse (bool, optional): Whether to plot ellipse fit. Defaults to True.
+        plot_reproj (bool, optional): Whether to plot ellipse fit. Defaults to
+            False.
+        rotate180 (bool, optional): Whether to rotate the image 180 degrees. Defaults
+            to False.
+    """
+
+    if dlc_res is None or ellipse is None:
+        dlc_res, ellipse = eye_io.get_data(
+            camera, flexilims_session=camera.flexilims_session
+        )
+    # Find DLC crop area
+    if recrop:
+        borders = np.zeros((4, 2))
+        for iw, w in enumerate(
+            ("left_eye_corner", "right_eye_corner", "top_eye_lid", "bottom_eye_lid")
+        ):
+            vals = dlc_res.xs(w, level=1, axis=1)
+            vals.columns = vals.columns.droplevel("scorer")
+            v = np.nanmedian(vals[["x", "y"]].values, axis=0)
+            borders[iw, :] = v
+
+        borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
+        borders += ((np.diff(borders, axis=0) * 0.1).T @ np.array([[-1, 1]])).T
+        borders = borders.astype(int)
+    video_file = camera.path_full / camera.extra_attributes["video_file"]
+
+    fig = plt.figure()
+    n_axes = 1
+    if plot_tracking:
+        n_axes += 1
+    if plot_ellipse:
+        n_axes += 1
+    if plot_reproj:
+        n_axes += 1
+    fig.set_size_inches((3 * n_axes, 3))
+
+    img = get_img_from_fig(fig)
+    cam_data = cv2.VideoCapture(str(video_file))
+    fps = cam_data.get(cv2.CAP_PROP_FPS)
+    if use_original_encoding:
+        fcc = int(cam_data.get(cv2.CAP_PROP_FOURCC))
+        fcc = (
+            chr(fcc & 0xFF)
+            + chr((fcc >> 8) & 0xFF)
+            + chr((fcc >> 16) & 0xFF)
+            + chr((fcc >> 24) & 0xFF)
+        )
+    else:
+        fcc = "mp4v"
+    output = cv2.VideoWriter(
+        str(target_file),
+        cv2.VideoWriter_fourcc(*fcc),
+        fps * playback_speed,
+        (img.shape[1], img.shape[0]),
+    )
+
+    if plot_reproj:
+        # plot eye centre
+        assert (
+            reproj_ds is not None
+        ), "reproj_ds must be provided if plot_reproj is True"
+        eye_param = dict(np.load(reproj_ds.path_full.with_name("eye_parameters.npz")))
+        eye_reproj_by_frame = np.load(reproj_ds.path_full)
+
+    if duration is None:
+        nframes = cam_data.get(cv2.CAP_PROP_FRAME_COUNT) - start_frame
+    else:
+        nframes = int(fps * duration)
+    cam_data.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_id in tqdm(np.arange(nframes) + start_frame):
+        # set figure
+        fig.clear()
+        ax_img = fig.add_subplot(1, n_axes, 1)
+        axes = [ax_img]
+        sub_ref = [False]
+        iax = 2
+        if plot_tracking:
+            ax_track = fig.add_subplot(1, n_axes, iax)
+            axes.append(ax_track)
+            sub_ref.append(False)
+            iax += 1
+        if plot_ellipse:
+            ax_fit = fig.add_subplot(1, n_axes, iax)
+            axes.append(ax_fit)
+            sub_ref.append(True)
+            iax += 1
+        if plot_reproj:
+            ax_reproj = fig.add_subplot(1, n_axes, iax)
+            axes.append(ax_reproj)
+            sub_ref.append(True)
+            iax += 1
+        fig.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
+
+        # get image
+        ret, frame = cam_data.read()
+        assert ret, f"Could not read frame {frame_id}"
+        if crop_border is not None:
+            frame = frame[
+                crop_border[2] : crop_border[3], crop_border[0] : crop_border[1]
+            ]
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if vmin is None:
+            vmin = np.percentile(gray, 1)
+            print(f"Keeping 1% of pixel black. vmin = {vmin}")
+        if vmax is None:
+            vmax = np.percentile(gray, 95)
+            print(f"Saturating 5% of pixels. vmax = {vmax}")
+        img = gray[slice(*borders[:, 1]), slice(*borders[:, 0])] if recrop else gray
+
+        # get reflection
+        track = dlc_res.loc[frame_id]
+        track.index = track.index.droplevel(["scorer"])
+        reflection = track.loc[("reflection", ["x", "y"])].values
+
+        # plot image, center on reflection if needed
+        for ax, use_ref in zip(axes, sub_ref):
+            extent = np.array([0, img.shape[1], img.shape[0], 0], dtype=float)
+            if use_ref:
+                extent[:2] -= reflection[0]
+                extent[2:] -= reflection[1]
+            ax.imshow(
+                img,
+                cmap="gray",
+                vmax=vmax,
+                vmin=vmin,
+                extent=extent,
+            )
+            ax.set_yticks([])
+            ax.set_xticks([])
+            if use_ref:
+                ax.set_xlim(-img.shape[1] / 2, img.shape[1] / 2)
+                ax.set_ylim(img.shape[0] / 2, -img.shape[0] / 2)
+
+        # plot DLC
+        if plot_tracking:
+            ax_track = plot_dlc_on_frame(
+                ax_track,
+                frame_id,
+                dlc_res,
+                origin="cropped",
+                likelihood_threshold=likelihood_threshold,
+                adapt_alpha=adapt_alpha,
+                left_bottom=(borders[0, 0], borders[0, 1]) if recrop else [0, 0],
+            )
+
+        # plot ellipse
+        if plot_ellipse:
+            # params are xc, yc, a, b, theta
+            ax_fit.plot(0, 0, marker="o")
+            plot_ellipse_on_frame(
+                ax_fit, frame_id, ellipse, origin="reflection", dlc_res=dlc_res
+            )
+        # plot reprojection
+        if plot_reproj:
+            # plot eye centre
+            ax_reproj.plot(
+                *(eye_param["eye_centre"] + reflection),
+                color="g",
+                marker="o",
+                label="Eye centre",
+            )
+            # and the reproj ellipse
+            phitheta = eye_reproj_by_frame[frame_id]
+            reprellipse = utils.reproj_ellipse(*phitheta, **eye_param)
+            circ_coord = utils.predict_xy(np.arange(0, 2 * np.pi, 0.1), *reprellipse)
+            ax_reproj.plot(circ_coord[:, 0], circ_coord[:, 1], label="Reprojection")
+
+        if rotate180:
+            for ax in axes:
+                ax.invert_yaxis()
+                ax.invert_xaxis()
+        write_fig_to_video(fig, output)
+
+    cam_data.release()
+    output.release()
+    print(f"Saved in {target_file}")
+
+
+def plot_ellipse_on_frame(
+    ax, frame_id, ellipse, origin="reflection", left_bottom=None, dlc_res=None
+):
+    """Plot ellipse fit on a frame
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to plot on
+        frame_id (int): Frame id to plot
+        ellipse (pandas.DataFrame): Ellipse fits
+        origin (str, optional): Origin of the frame. One of "uncropped", "cropped",
+            "reflection". Defaults to "reflection".
+        left_bottom (np.ndarray, optional): Borders of the frame to use if
+            origin="cropped". Defaults to None.
+        dlc_res (pandas.DataFrame, optional): DLC results to use if origin="reflection".
+            Defaults to None.
+
+    Returns:
+        matplotlib.axes.Axes: Axes with plot
+    """
+    if origin == "reflection":
+        track = dlc_res.loc[frame_id]
+        track.index = track.index.droplevel(["scorer"])
+        xs = track.loc[("reflection", "x")]
+        ys = track.loc[("reflection", "y")]
+    elif origin == "uncropped":
+        xs, ys = 0, 0
+    elif origin == "cropped":
+        xs, ys = left_bottom
+    else:
+        raise ValueError(
+            f"Unknown origin {origin}. Must be one of 'reflection',"
+            " 'uncropped', 'cropped'"
+        )
+    params = ellipse.loc[
+        frame_id, ["centre_x", "centre_y", "major_radius", "minor_radius", "angle"]
+    ]
+    circ_coord = utils.predict_xy(np.arange(0, 2 * np.pi, 0.1), *params)
+    ax.plot(circ_coord[:, 0] - xs, circ_coord[:, 1] - ys)
+    return ax
+
+
+def plot_dlc_on_frame(
+    ax,
+    frame_id,
+    dlc_res,
+    origin="reflection",
+    likelihood_threshold=0.8,
+    left_bottom=None,
+    adapt_alpha=True,
+):
+    """Plot DLC results on a frame
+
+    Args:
+        ax (matplotlib.axes.Axes): Axes to plot on
+        frame_id (int): Frame id to plot
+        dlc_res (pandas.DataFrame): DLC results
+        origin (str, optional): Origin of the frame. One of "uncropped", "cropped",
+            "reflection". Defaults to "reflection".
+        likelihood_threshold (float, optional): Threshold on likelihood. Defaults to
+            0.8.
+        left_bottom (np.ndarray, optional): Borders of the frame to use if
+            origin="cropped". Defaults to None.
+        adapt_alpha (bool, optional): Whether to adapt alpha to likelihood. Defaults to
+            True.
+
+    Returns:
+        matplotlib.axes.Axes: Axes with plot
+    """
+    track = dlc_res.loc[frame_id]
+    track.index = track.index.droplevel(["scorer"])
+    xdata = track.loc[[(f"eye_{i}", "x") for i in np.arange(1, 13)]]
+    ydata = track.loc[[(f"eye_{i}", "y") for i in np.arange(1, 13)]]
+    likelihood = track.loc[[(f"eye_{i}", "likelihood") for i in np.arange(1, 13)]]
+    if origin == "reflection":
+        xs = track.loc[("reflection", "x")]
+        ys = track.loc[("reflection", "y")]
+    elif origin == "cropped":
+        xs, ys = 0, 0
+    elif origin == "uncropped":
+        xs, ys = left_bottom
+    else:
+        raise ValueError(
+            f"Unknown origin {origin}. Must be one of 'reflection',"
+            " 'uncropped', 'cropped'"
+        )
+    ax.scatter(
+        xdata - xs,
+        ydata - ys,
+        s=likelihood * 10,
+        alpha=likelihood if adapt_alpha else 1,
+        color=["g" if l > likelihood_threshold else "r" for l in likelihood],
+    )
+    ax.scatter(
+        track.loc[("reflection", "x")] - xs,
+        track.loc[("reflection", "y")] - ys,
+    )
+    return ax

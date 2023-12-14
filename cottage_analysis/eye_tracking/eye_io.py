@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import flexiznam as flz
 
+
 def get_data(
     camera,
     flexilims_session=None,
@@ -78,8 +79,6 @@ def get_data(
     ellipse.loc[~ellipse.valid, "pupil_y"] = np.nan
 
     return dlc_res, ellipse
-
-
 
 
 def get_tracking_datasets(camera_ds, flexilims_session):
