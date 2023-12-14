@@ -305,8 +305,8 @@ def convert_ephys(
     """Convert raw uint16 data in int16
 
     Data from onix is saved as uint16. Kilosort has no option to change expected
-    datatype and expects int16. This function copies the data to the new file changing the
-    datatype.
+    datatype and expects int16. This function copies the data to the new file changing
+    the datatype.
 
     Args:
         uint16_file (str or Path): path to the raw data (F order, uint16)
