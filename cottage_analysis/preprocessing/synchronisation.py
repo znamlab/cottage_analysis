@@ -144,9 +144,10 @@ def find_monitor_frames(
             relative_corr_thres=0.02,
             frame_detection_height=0.1,
             minimum_lag=1.0 / frame_rate,
-            do_plot=True,  # CHANGE TO FALSE UNTIL THE INDEX BUG IS FIXED
+            do_plot=True,
             save_folder=diagnostics_folder,
             verbose=True,
+            ignore_errors=True,
         )
         if sync_kwargs is not None:
             params.update(sync_kwargs)
@@ -245,6 +246,12 @@ def generate_vs_df(
             },
             inplace=True,
         )
+        
+        if frame_log_z.closest_frame.isna().any():
+            print(f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end.")
+            frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
+            frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
+    
         merge_on = "closest_frame"
     else:
         # TODO account for display lag
@@ -264,6 +271,7 @@ def generate_vs_df(
 
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
     frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
+    
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
@@ -276,6 +284,12 @@ def generate_vs_df(
     # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
     param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
+    if "Frameindex" in param_log.columns:
+        if param_log.Frameindex.isna().any():
+            print(f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end.")
+            param_log = param_log[param_log.Frameindex.notnull()]
+            param_log.Frameindex = param_log.Frameindex.astype("int")
+            
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
             left=vs_df,
@@ -362,7 +376,7 @@ def generate_imaging_df(
             harpmessage_file=harp_npz_path, register_address=32
         ),
         frame_number=int(volume_number * nplanes),
-        frame_period=(1 / fs) / nplanes - 0.001,
+        frame_period=(1 / fs) / nplanes,
         register_address=32,
         frame_period_tolerance=0.001,
     )

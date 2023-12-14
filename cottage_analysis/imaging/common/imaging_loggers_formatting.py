@@ -10,13 +10,13 @@ Load and format loggers for camera timestamps, vis-stim frames, parameters
 """
 
 
-#%% Import packages
+# %% Import packages
 import os
 import numpy as np
 import pandas as pd
 
 
-#%% Load loggers
+# %% Load loggers
 
 
 def load_csv(filepath):
@@ -41,7 +41,7 @@ def load_csv(filepath):
     return data_df
 
 
-#%% Format logger dataframes
+# %% Format logger dataframes
 
 
 def format_camera_timestamps(cam_timestamps):

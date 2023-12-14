@@ -123,7 +123,11 @@ def regenerate_frames(
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
     # If the imaging frame is after the last found monitor frame, use the time for the last imaging frame time that's before the last found monitor frame
-    frame_times[np.where(frame_times>mouse_pos_time[-1])[0]] = frame_times[np.where(frame_times<=mouse_pos_time[-1])[0][-1]]
+    if len(np.where(frame_times > mouse_pos_time[-1])[0]) > 0:
+        print(f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} imaging frames are after the last found monitor frame. Using the time for the last imaging frame time that's before the last found monitor frame.")
+    frame_times[np.where(frame_times > mouse_pos_time[-1])[0]] = frame_times[
+        np.where(frame_times <= mouse_pos_time[-1])[0][-1]
+    ]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
@@ -361,7 +365,7 @@ def generate_trials_df(recording, imaging_df):
         )
         stop_volume_blank = np.append(
             stop_volume_blank,
-            (np.abs(imaging_df.imaging_frame - last_blank_stop_time)).idxmin(),
+            (np.abs(imaging_df.imaging_harptime - last_blank_stop_time)).idxmin(),
         )
     stop_volume_stim = start_volume_blank - 1
 

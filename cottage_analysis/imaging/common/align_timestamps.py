@@ -11,11 +11,11 @@ Assign corresponding harp timestamps of df2 (usually logged stimuli parameters) 
 
 """
 
-#%% Import packages
+# %% Import packages
 import pandas as pd
 
 
-#%%
+# %%
 def align_dataframes(df1, df2, align_basis, direction):
     """
     Align 2 dataframes

@@ -163,10 +163,15 @@ def find_imaging_frames(
         frame_triggers (pd.DataFrame): DataFrame containing harptime for each imaging frame trigger.
 
     """
+    # TODO: This version always rejects the last imaging frame. check 
     frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
+    frame_triggers = frame_triggers[
+        frame_triggers.FrameTriggers == 1
+    ]  # only keep frame onset
     frame_triggers = frame_triggers.rename(
         columns={"Timestamp": "HarpTime"}, inplace=False
     )
+
     # shift diff by -1 to get the start of the frame
     frame_triggers["HarpTime_diff"] = frame_triggers.HarpTime.diff().shift(-1)
 
@@ -176,6 +181,9 @@ def find_imaging_frames(
         <= frame_period_tolerance,
         "FramePeriod",
     ] = 1
+    print(
+        f"{np.sum(frame_triggers.FramePeriod!=1)} frames are not {frame_period:.4f} s"
+    )
     frame_triggers = frame_triggers[frame_triggers.FramePeriod == 1]
     n_frame_triggers = len(frame_triggers)
     frame_triggers["ImagingFrame"] = np.arange(len(frame_triggers))
