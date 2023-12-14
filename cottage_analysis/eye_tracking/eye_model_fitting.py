@@ -5,7 +5,7 @@ Fitting of eye tracking results
 Code adapted from the C++ version https://github.com/LeszekSwirski/singleeyefitter
 """
 import warnings
-import math
+import cv2
 import numpy as np
 from numba import jit, njit, prange
 from numba_progress import ProgressBar
@@ -191,9 +191,7 @@ def reproject_ellipses(
     binned_ellipses, bedg_x, bedg_y = bin_ellipse_by_position(data, nbins=(25, 25))
     enough_frames = binned_ellipses[binned_ellipses.n_frames_in_bin > min_frame_cutoff]
     if plot:
-        dlc_tracks = eye_io.get_tracking_datasets(
-            camera_ds, flexilims_session=flm_sess
-        )
+        dlc_tracks = eye_io.get_tracking_datasets(camera_ds, flexilims_session=flm_sess)
         dlc_ds = dlc_tracks["cropped"]
         cropping = dlc_ds.extra_attributes["cropping"]
 
@@ -478,3 +476,43 @@ def gaze_to_azel(gaze_vector, zero_median=False):
         azimuth = np.mod(azimuth + np.pi, 2 * np.pi) - np.pi
         elevation = np.mod(elevation + np.pi, 2 * np.pi) - np.pi
     return azimuth, elevation
+
+
+def fit_globe(dlc_res, camera_ds, cropping, local_threshold=65, block_size=3):
+    """Fit a circle to the eye border
+
+    Args:
+        dlc_res (pandas.DataFrame): DLC results
+        camera_ds (flexiznam.schema.camera_data.CameraData): Camera dataset
+        cropping (tuple): Cropping of the image
+        local_threshold (int, optional): Local threshold for segmentation. Defaults to
+            65.
+        block_size (int, optional): Block size for segmentation. Defaults to 3.
+
+    Returns:
+        numpy.array: N x 3 array of circle parameters
+        numpy.array: N array of errors
+    """
+    circle_fit = np.zeros((len(dlc_res), 3)) + np.nan
+    errors_fit = np.zeros(len(dlc_res)) + np.nan
+    video_file = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
+    cam_data = cv2.VideoCapture(str(video_file))
+
+    for frame_id in tqdm(range(len(dlc_res))):
+        ret, frame = cam_data.read()
+        assert ret, f"Could not read frame {frame_id}"
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        cropped = gray[cropping[2] : cropping[3], cropping[0] : cropping[1]]
+        segmented_img = utils.segment_eye_border(
+            cropped, local_threshold=local_threshold, block_size=block_size
+        )
+        if segmented_img is None:
+            continue
+        y, x = np.where(segmented_img)
+        if len(x) < 10:
+            continue
+        out = utils.fit_circle(x, y)
+        circle_fit[frame_id, :] = out[:3]
+        errors_fit[frame_id] = out[3] / len(x)
+    cam_data.release()
+    return circle_fit, errors_fit
