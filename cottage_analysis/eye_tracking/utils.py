@@ -90,11 +90,16 @@ def ellipse_distance(model1, model2, ev_pts=None):
     pts1 = predict_xy(ev_pts, xc, yc, a, b, angle)
     xc, yc, a, b, angle = model2
     pts2 = predict_xy(ev_pts, xc, yc, a, b, angle)
-    # roll to have the same starting point
-    pts1 = _roll(pts1, pts1[:, 0].argmin())
-    pts2 = _roll(pts2, pts2[:, 0].argmin())
-    error = np.sum(np.sqrt(np.sum((pts1 - pts2) ** 2, axis=1)))
-    return error
+
+    total_dst = 0.0
+    for i in range(len(pts1)):
+        min_dist = np.inf
+        for j in range(len(pts2)):
+            dist = np.sqrt(np.sum((pts1[i] - pts2[j]) ** 2))
+            if dist < min_dist:
+                min_dist = dist
+        total_dst += min_dist
+    return total_dst
 
 
 @njit
@@ -475,7 +480,7 @@ def fit_circle(x, y):
     Args:
         x (array): x coordinates of the points
         y (array): y coordinates of the points
-    
+
     Returns:
         xc (float): x coordinate of the center of the circle
         yc (float): y coordinate of the center of the circle
@@ -484,12 +489,12 @@ def fit_circle(x, y):
     """
 
     def calc_R(xc, yc):
-        """ calculate the distance of each 2D points from the center (xc, yc) """
-        return np.sqrt((x-xc)**2 + (y-yc)**2)
+        """calculate the distance of each 2D points from the center (xc, yc)"""
+        return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
 
     def f_2(c):
-        """ calculate the algebraic distance between the data points and the mean 
-        circle centered at c=(xc, yc) """
+        """calculate the algebraic distance between the data points and the mean
+        circle centered at c=(xc, yc)"""
         Ri = calc_R(*c)
         return Ri - Ri.mean()
 
@@ -497,11 +502,12 @@ def fit_circle(x, y):
     center, ier = leastsq(f_2, center_estimate)
 
     xc, yc = center
-    Ri       = calc_R(*center)
-    r        = Ri.mean()
-    residual   = np.sum((Ri - r)**2)
+    Ri = calc_R(*center)
+    r = Ri.mean()
+    residual = np.sum((Ri - r) ** 2)
 
     return xc, yc, r, residual
+
 
 def segment_eye_border(img, local_threshold=65, block_size=3):
     """Segment the eye border from the image
@@ -516,8 +522,14 @@ def segment_eye_border(img, local_threshold=65, block_size=3):
     Returns:
         numpy.array: Segmented image or None if no contour is found
     """
-    th = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-            cv2.THRESH_BINARY,local_threshold, block_size)
+    th = cv2.adaptiveThreshold(
+        img,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        local_threshold,
+        block_size,
+    )
     inverted_img = cv2.bitwise_not(th)
     # Define the kernel size and shape
     kernel_size = (7, 7)
@@ -525,7 +537,9 @@ def segment_eye_border(img, local_threshold=65, block_size=3):
     # Create the kernel for binary erosion
     kernel = cv2.getStructuringElement(kernel_shape, kernel_size)
     eroded_img = cv2.erode(inverted_img, kernel, iterations=1)
-    contours, _ = cv2.findContours(eroded_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(
+        eroded_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
     if len(contours) == 0:
         return None
     # Find the contour with the largest area
