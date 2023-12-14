@@ -156,7 +156,7 @@ def run_all(
             # if we already ran the analysis once, the path has been set to the results
             ds.path = ds.path.parent
         repro_kwargs = dict(
-            theta0=np.deg2rad(20),
+            theta0=0,
             phi0=0,
             likelihood_threshold=0.88,
             rsquare_threshold=0.99,

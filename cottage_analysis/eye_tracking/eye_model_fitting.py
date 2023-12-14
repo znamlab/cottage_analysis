@@ -294,15 +294,16 @@ def reproject_ellipses(
         ellipses=source_ellipses,
         gazes=eye_rotation_initial,
         p0=(*eye_centre_binned, f_z0_binned),
-        p_range=(70.0, 70.0, 50.0),
-        grid_size=20,
+        p_range=(100.0, 100.0, 100.0),
+        grid_size=10,
         niter=2,
         reduction_factor=5,
         verbose=True,
-        prange_inner=(np.pi / 2, np.pi / 2, 1),
+        prange_inner=(np.pi / 5, np.pi / 5, 1),
         niter_inner=2,
-        grid_size_inner=10,
-        refit_from_p0=True,
+        grid_size_inner=5,
+        refit_from_p0=False,
+        debug=False,
     )
     eye_centre = np.array([x, y])
 
