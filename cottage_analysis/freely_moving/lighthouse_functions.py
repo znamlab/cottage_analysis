@@ -14,9 +14,9 @@ def obtain_transform_matrix(data_ref, data_x, data_y, calib_length):
             in the aruco system when the lighthouse is placed in the y axis
         calib_length (float): length of the axis in which the lighthouse is placed
     """
-    light_posit_ref = data_ref[['x', 'y', 'z']].mean(axis=0).values
-    light_posit_x = data_x[['x', 'y', 'z']].mean(axis=0).values
-    light_posit_y = data_y[['x', 'y', 'z']].mean(axis=0).values
+    light_posit_ref = data_ref[["x", "y", "z"]].mean(axis=0).values
+    light_posit_x = data_x[["x", "y", "z"]].mean(axis=0).values
+    light_posit_y = data_y[["x", "y", "z"]].mean(axis=0).values
 
     light_posit_refx = light_posit_x - light_posit_ref
     light_posit_refy = light_posit_y - light_posit_ref
@@ -56,7 +56,6 @@ def obtain_transform_matrix(data_ref, data_x, data_y, calib_length):
     return transform_matrix
 
 
-
 def transform_data(data, transform_matrix):
     """Transforms the data from the lighthouse system to the aruco system
 
@@ -70,7 +69,7 @@ def transform_data(data, transform_matrix):
     """
     trans_data = data.copy()
     for index, row in trans_data.iterrows():
-        point_vector = row[['x', 'y', 'z']].values
+        point_vector = row[["x", "y", "z"]].values
         point_vector = np.append(point_vector, 1)
         trans_point = np.matmul(transform_matrix, np.transpose(point_vector))
         (
