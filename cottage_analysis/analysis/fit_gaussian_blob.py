@@ -294,6 +294,7 @@ def fit_rs_of_tuning(
     neurons_df,
     neurons_ds,
     choose_trials=None,
+    closedloop_only=False,
     rs_thr=0.01,
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
     niter=5,
@@ -406,17 +407,17 @@ def fit_rs_of_tuning(
                     p0_func=p0_func,
                 )
 
-                neurons_df.at[roi, f"preferred_RS_{protocol_sfx}{rs_type}"] = np.exp(
+                neurons_df.at[roi, f"preferred_RS_{protocol_sfx}{rs_type}{sfx}"] = np.exp(
                     popt[1]
                 )
                 neurons_df.at[
-                    roi, f"preferred_OF_{protocol_sfx}{rs_type}"
+                    roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}"
                 ] = np.radians(
                     np.exp(popt[2])
                 )  # rad/s
                 # !! Calculated with RS in m and OF in degrees/s
-                neurons_df.at[roi, f"rsof_popt_{protocol_sfx}{rs_type}"] = popt
-                neurons_df.loc[roi, f"rsof_rsq_{protocol_sfx}{rs_type}"] = rsq
+                neurons_df.at[roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}"] = popt
+                neurons_df.loc[roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}"] = rsq
 
     return neurons_df, neurons_ds
 
