@@ -768,17 +768,16 @@ def plot_PSTH(
 
 
 def basic_vis_session(neurons_df, trials_df, neurons_ds):
-    rois = neurons_df[neurons_df.is_depth_neuron == 1].roi.values
+    rois = neurons_df.roi.values
     os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
 
     plot_rows = 10
-    plot_cols = 4
+    plot_cols = 5
 
     for i in tqdm(range(int(len(rois) // plot_rows + 1))):
         if i * plot_rows < len(rois) - 1:
             plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
-            iroi = 0
-            for roi in rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]:
+            for iroi, roi in enumerate(rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]):
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
                 plot_depth_tuning_curve(
                     neurons_df=neurons_df,
@@ -833,7 +832,21 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                 )
                 plt.tight_layout()
 
-                iroi += 1
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 4))
+                plot_RS_OF_matrix(
+                    trials_df=trials_df,
+                    roi=roi,
+                    log_range={
+                        "rs_bin_log_min": 0,
+                        "rs_bin_log_max": 2.5,
+                        "rs_bin_num": 6,
+                        "of_bin_log_min": -1.5,
+                        "of_bin_log_max": 3.5,
+                        "of_bin_num": 11,
+                        "log_base": 10,
+                    },
+                )
+                
             plt.savefig(
                 neurons_ds.path_full.parent
                 / "plots"
@@ -992,6 +1005,36 @@ def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=T
 
     return ticks_select1, ticks_select2, bin_edges1, bin_edges2
 
+
+def plot_RS_OF_fitted_tuning(neurons_df, roi, model="gaussian_2d", min_sigma=0.25, log_range={
+    "rs_bin_log_min": 0,
+    "rs_bin_log_max": 2.5,
+    "rs_bin_num": 6,
+    "of_bin_log_min": -1.5,
+    "of_bin_log_max": 3.5,
+    "of_bin_num": 11,
+    "log_base": 10,}):
+    
+    """
+    Plot the fitted tuning of a neuron.
+    """
+    rs = np.logspace(log_range["rs_bin_log_min"],log_range["rs_bin_log_max"],100, base=10)/100 # cm/s --> m/s
+    of = np.logspace(log_range["of_bin_log_min"],log_range["of_bin_log_max"],100, base=10) # deg/s
+    
+    rs_grid, of_grid= np.meshgrid(np.log(rs), np.log(of))
+    if model == "gaussian_2d":
+        resp_pred = fit_gaussian_blob.gaussian_2d((rs_grid, of_grid), *neurons_df["rsof_popt_closedloop_g2d"].iloc[roi], min_sigma=0.25)
+    elif model == "gaussian_additive":
+        resp_pred = fit_gaussian_blob.gaussian_additive((rs_grid, of_grid), *neurons_df["rsof_popt_closedloop_gadd"].iloc[roi], min_sigma=0.25)
+    elif model == "gaussian_OF":
+        resp_pred = fit_gaussian_blob.gaussian_1d(of_grid, *neurons_df["rsof_popt_closedloop_gof"].iloc[roi], min_sigma=0.25)
+    resp_pred = resp_pred.reshape((len(of), len(rs)))
+    
+    plt.imshow(resp_pred, origin="lower",
+           extent=[rs.min()*100, rs.max()*100, of.min(), of.max()],
+           aspect=rs.max()*100/of.max()*log_range["of_bin_num"]/log_range["rs_bin_num"],
+           cmap="Reds"
+           )
 
 # -------OLD----------------
 
