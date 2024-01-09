@@ -482,7 +482,7 @@ def gaze_to_azel(gaze_vector, zero_median=False):
         elevation = np.mod(elevation + np.pi, 2 * np.pi) - np.pi
     else:
         # rotate by 90 degrees to put azimuth facing the mouse (instead of right)
-        azimuth -= np.pi / 2
+        azimuth += np.pi / 2
         azimuth = np.mod(azimuth + np.pi, 2 * np.pi) - np.pi
 
     return azimuth, elevation
