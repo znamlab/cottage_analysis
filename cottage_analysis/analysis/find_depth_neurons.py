@@ -276,9 +276,15 @@ def fit_preferred_depth(
             rsq = common_utils.calculate_r_squared(
                 np.concatenate(X_test_all), np.concatenate(X_pred_all)
             )
-            rval, pval = spearmanr(np.concatenate(X_test_all), np.concatenate(X_pred_all))
+            rval, pval = spearmanr(
+                np.concatenate(X_test_all), np.concatenate(X_pred_all)
+            )
             neurons_df.at[roi, f"depth_tuning_test_rsq{protocol_sfx}{sfx}"] = rsq
-            neurons_df.at[roi, f"depth_tuning_test_spearmanr_rval{protocol_sfx}{sfx}"] = rval
-            neurons_df.at[roi, f"depth_tuning_test_spearmanr_pval{protocol_sfx}{sfx}"] = pval
+            neurons_df.at[
+                roi, f"depth_tuning_test_spearmanr_rval{protocol_sfx}{sfx}"
+            ] = rval
+            neurons_df.at[
+                roi, f"depth_tuning_test_spearmanr_pval{protocol_sfx}{sfx}"
+            ] = pval
 
     return neurons_df, neurons_ds

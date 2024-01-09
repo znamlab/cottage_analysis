@@ -246,12 +246,14 @@ def generate_vs_df(
             },
             inplace=True,
         )
-        
+
         if frame_log_z.closest_frame.isna().any():
-            print(f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end.")
+            print(
+                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end."
+            )
             frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
             frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
-    
+
         merge_on = "closest_frame"
     else:
         # TODO account for display lag
@@ -271,7 +273,7 @@ def generate_vs_df(
 
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
     frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
-    
+
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
@@ -286,10 +288,12 @@ def generate_vs_df(
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if "Frameindex" in param_log.columns:
         if param_log.Frameindex.isna().any():
-            print(f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end.")
+            print(
+                f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end."
+            )
             param_log = param_log[param_log.Frameindex.notnull()]
             param_log.Frameindex = param_log.Frameindex.astype("int")
-            
+
     if photodiode_protocol == 5:
         vs_df = pd.merge_asof(
             left=vs_df,

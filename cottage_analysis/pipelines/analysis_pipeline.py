@@ -19,7 +19,8 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-#TODO: add decoder
+# TODO: add decoder
+
 
 def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     """
@@ -156,7 +157,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             niter=10,
             min_sigma=0.25,
         )
-        
+
         # Fit gaussian blob cross validation for closed_loop only
         neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
             trials_df=trials_df_all,
@@ -172,7 +173,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         )
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
-        
+
         # Fit with additive RS-OF model
         print("---Start fitting additive RS-OF model...---")
         neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
@@ -204,7 +205,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         )
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
-        
+
         # Regenerate sphere stimuli
         print("---RF analysis...---")
         print("Generating sphere stimuli...")

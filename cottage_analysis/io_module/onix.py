@@ -137,8 +137,10 @@ def load_ts4231(path_to_folder, timestamp=None):
     for photodiode in ts_files:
         try:
             data = pd.read_csv(
-                photodiode, header=0, names=["clock", "x", "y", "z", "timestamp"],
-                parse_dates=["timestamp"]
+                photodiode,
+                header=0,
+                names=["clock", "x", "y", "z", "timestamp"],
+                parse_dates=["timestamp"],
             )
         except pd.errors.EmptyDataError:
             continue

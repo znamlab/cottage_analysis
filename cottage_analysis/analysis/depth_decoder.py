@@ -413,13 +413,7 @@ def main(project, mouse, session):
         session_analysis_folder = (
             root / project / "Analysis" / mouse / session / protocol
         )
-        (
-            _,
-            _,
-            _,
-            suite2p_folder,
-            _,
-        ) = generate_file_folders(
+        (_, _, _, suite2p_folder, _,) = generate_file_folders(
             project=project,
             mouse=mouse,
             session=session,
