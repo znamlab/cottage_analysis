@@ -7,7 +7,6 @@
 #SBATCH --partition=gpu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --output=eye_label.out
-#SBATCH --error=eye_label.err
 #SBATCH --mail-user=blota@crick.ac.uk
 
 echo 'ml-ing'

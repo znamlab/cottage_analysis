@@ -7,6 +7,8 @@ tests/test_data/tests_outputs
 *checkpoint.ipynb
 *logs/*
 build
+scratch.py
+launch.json
 scripts/ccyp*
 cottage_analysis/analysis/tests/*
 cottage_analysis/depth_analysis/*

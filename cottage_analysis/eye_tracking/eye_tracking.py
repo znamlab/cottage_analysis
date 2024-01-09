@@ -1,80 +1,183 @@
+"""Main functions for eye tracking analysis
+
+This module contains the main functions for eye tracking analysis. The main function
+is `run_all`, which runs all the steps of the analysis.
+"""
+
 import os
 from pathlib import Path
 import yaml
 import pandas as pd
 import numpy as np
-from functools import partial
 import flexiznam as flz
-from cottage_analysis.eye_tracking import slurm_job
-from cottage_analysis.eye_tracking import eye_model_fitting
+from znamutils import slurm_it
+from cottage_analysis.eye_tracking import eye_model_fitting as emf
+from cottage_analysis.eye_tracking import diagnostics
+from cottage_analysis.eye_tracking import eye_io
+
+envs = flz.PARAMETERS["conda_envs"]
 
 
-def run_dlc(
-    camera_ds,
+def run_all(
     flexilims_session,
-    dlc_model,
-    crop=False,
-    redo=False,
+    dlc_model_detect,
+    dlc_model_tracking,
+    camera_ds_name,
+    origin_id=None,
+    conflicts="abort",
     use_slurm=True,
-    slurm_folder=None,
-    job_dependency=None,
+    dependency=None,
+    run_detect=True,
+    run_tracking=True,
+    run_ellipse=True,
+    run_reprojection=True,
+    repro_kwargs=None,
 ):
-    """Run dlc tracking on a camera dataset
-
-    Wrapper around eye_tracking.slurm_job.slurm_dlc_pupil (which does the proper tracking)
-
-    Will find the corresponding dlc dataset and delete it if redo is True.
-    If crop is True, one uncropped dataset must exist, and a crop file will be created
+    """Run all preprocessing steps for a session
 
     Args:
-        camera_ds (Dataset): The camera dataset to track
-        flm_sess (flexilims.Session): The flexilims session
-        dlc_model (str): Name of the dlc model to use
-        crop (bool, optional): Whether to crop the video. Defaults to False.
-        redo (bool, optional): Whether to redo tracking if it already exists. If True,
-            the tracking data and the flexilims entry will be deleted first, before
-            rerunning the analysis. Defaults to False.
-        use_slurm (bool, optional): Whether to use slurm to run the job. Defaults to
+        flexilims_session (flexilims.Session): Flexilims session
+        dlc_model_detect (str): Name of the dlc model to use for eye detection and
+            initial cropping, must be in the `DLC_MODELS` project
+        dlc_model_tracking (str): Name of the dlc model to use for eye tracking, must
+            be in the `DLC_MODELS` project
+        camera_ds_name (str): Name of the camera dataset on flexilims.
+        origin_id (str, optional): ID of the origin dataset on flexilims. If None,
+            origin is read from the camera dataset. Defaults to None.
+        conflicts (str, optional): How to handle conflicts when creating the datasets
+            on flexilims. Defaults to "abort".
+        use_slurm (bool, optional): Start slurm jobs. Defaults to True.
+        dependency (str, optional): Dependency for slurm. Defaults to None.
+        run_detect (bool, optional): Whether to run the eye detection. Defaults to True.
+        run_tracking (bool, optional): Whether to run the tracking. Defaults to True.
+        run_ellipse (bool, optional): Whether to run the ellipse fitting. Defaults to
             True.
-        slurm_folder (str, optional): Path to the folder where to create the slurm scripts
-            and slurm logs. Defaults to None, in which case the folder will be created
-            using from_flexilims.
-        job_dependency (str, optional): Job id to wait for before starting the job.
-            Defaults to None.
+        run_reprojection (bool, optional): Whether to run the eye reprojection.
+            Defaults to True.
+
+    Returns:
+        pandas.DataFrame: Log of job id of each step
     """
-
-    # Check if analysis is already done and delete output if redo=True
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
-    which = "cropped" if crop else "uncropped"
-    ds = ds_dict[which]
-    if ds is not None:
-        if not redo:
-            print("  Already done. Skip")
-            return
-        else:
-            print("  Erasing previous tracking to redo")
-            # delete labeled and filtered version too. DLC would just not do anything
-            # if the output files already exist
-            delete_tracking_dataset(ds, flexilims_session)
-
-    # Now start the job/function
-    if use_slurm:
-        func = partial(
-            slurm_job.slurm_dlc_pupil,
-            slurm_folder=slurm_folder,
-            job_dependency=job_dependency,
+    project = flz.lookup_project(flexilims_session.project_id)
+    if origin_id is None:
+        camera_ds = flz.Dataset.from_flexilims(
+            name=camera_ds_name, flexilims_session=flexilims_session
         )
+        origin_id = camera_ds.origin_id
+        cam_ds_short_name = camera_ds.dataset_name
     else:
-        func = dlc_pupil
+        origin = flz.get_entity(id=origin_id, flexilims_session=flexilims_session)
+        basename = "_".join(origin.genealogy)
+        assert camera_ds_name.startswith(basename), (
+            f"camera_ds_name {camera_ds_name} does not start with origin basename "
+            f"{basename}"
+        )
+        cam_ds_short_name = camera_ds_name[len(basename) + 1 :]
+    log = dict(dataset_name=cam_ds_short_name)
 
-    process = func(
-        camera_ds_id=camera_ds.id,
-        model_name=dlc_model,
-        origin_id=camera_ds.origin_id,
-        project=camera_ds.project,
-        crop=crop,
+    # Run uncropped DLC
+    ds = flz.Dataset.from_origin(
+        origin_id=origin_id,
+        dataset_type="dlc_tracking",
+        flexilims_session=flexilims_session,
+        base_name=f"{cam_ds_short_name}_dlc_tracking_uncropped",
+        conflicts=conflicts,
     )
-    return process
+    ds.path_full.mkdir(parents=True, exist_ok=True)
+    if run_detect:
+        job_id = dlc_pupil(
+            camera_ds_name,
+            model_name=dlc_model_detect,
+            project=project,
+            crop=False,
+            conflicts=conflicts,
+            use_slurm=use_slurm,
+            job_dependency=dependency,
+            slurm_folder=ds.path_full,
+        )
+    if not use_slurm or not run_detect:
+        job_id = None
+    log["dlc_uncropped"] = job_id if job_id is not None else "Done"
+
+    # look for cropped dataset
+    ds = flz.Dataset.from_origin(
+        origin_id=origin_id,
+        dataset_type="dlc_tracking",
+        flexilims_session=flexilims_session,
+        base_name=f"{cam_ds_short_name}_dlc_tracking_cropped",
+        conflicts=conflicts,
+    )
+    if run_tracking:
+        # Run cropped DLC
+        ds.path_full.mkdir(parents=True, exist_ok=True)
+        job_id = dlc_pupil(
+            camera_ds_name,
+            model_name=dlc_model_tracking,
+            project=project,
+            crop=True,
+            conflicts=conflicts,
+            use_slurm=use_slurm,
+            job_dependency=job_id,
+            slurm_folder=ds.path_full,
+        )
+        if not use_slurm:
+            job_id = None
+
+        log["dlc_cropped"] = job_id if job_id is not None else "Done"
+
+    if run_ellipse:
+        # Run ellipse fit
+        job_id = fit_ellipse(
+            camera_ds_name,
+            project=project,
+            likelihood_threshold=None,
+            job_dependency=job_id,
+            use_slurm=use_slurm,
+            slurm_folder=ds.path_full,
+            conflicts=conflicts,
+        )
+        log["ellipse"] = job_id if job_id is not None else "Done"
+        if not use_slurm:
+            job_id = None
+
+    if run_reprojection:
+        # Run reprojection
+        ds = flz.Dataset.from_origin(
+            origin_id=origin_id,
+            dataset_type="eye_reprojection",
+            flexilims_session=flexilims_session,
+            base_name=f"{cam_ds_short_name}_eye_reprojection",
+            conflicts=conflicts,
+        )
+        if ds.path.suffix != ".npy":
+            # When we create the dataset, the path is set to the folder, not the file
+            ds.path_full.mkdir(parents=True, exist_ok=True)
+        else:
+            # if we already ran the analysis once, the path has been set to the results
+            ds.path = ds.path.parent
+        repro_kwargs = dict(
+            theta0=0,
+            phi0=0,
+            likelihood_threshold=0.88,
+            rsquare_threshold=0.99,
+            error_threshold=None,
+        )
+        if repro_kwargs is not None:
+            repro_kwargs.update(repro_kwargs)
+        job_id = run_reproject_eye(
+            project=project,
+            camera_ds_name=camera_ds_name,
+            conflicts=conflicts,
+            use_slurm=use_slurm,
+            slurm_folder=ds.path_full,
+            job_dependency=job_id,
+            **repro_kwargs,
+        )
+        if not use_slurm:
+            job_id = None
+
+        log["reprojection"] = job_id if job_id is not None else "Done"
+    return pd.Series(log)
 
 
 def delete_tracking_dataset(ds, flexilims_session):
@@ -103,10 +206,20 @@ def delete_tracking_dataset(ds, flexilims_session):
     flexilims_session.delete(ds.id)
 
 
+@slurm_it(
+    conda_env=envs["dlc"],
+    module_list=["cuDNN/8.4.1.50-CUDA-11.7.0"],
+    slurm_options=dict(
+        ntasks=1,
+        time="12:00:00",
+        mem="32G",
+        gres="gpu:1",
+        partition="gpu",
+    ),
+)
 def dlc_pupil(
-    camera_ds_id,
+    camera_ds_name,
     model_name,
-    origin_id,
     project,
     crop=False,
     conflicts="abort",
@@ -117,33 +230,49 @@ def dlc_pupil(
     directly when not using slurm or by slurm_job.slurm_dlc_pupil when using slurm.
 
     Args:
-        video_path (str): Path to the video file
+        camera_ds_name (str): Name of the camera dataset on flexilims
         model_name (str): Name of the dlc model to use. Must be in the `DLC_models`
-        origin_id (str): hex code of the origin on flexilims
+            project
         project (str): Name of the project on flexilims
         crop (bool, optional): Whether to crop the video. Defaults to False.
         conflicts (str, optional): How to handle conflicts when creating the dataset on
             flexilims. Defaults to "abort".
     """
-    # import dlc only in functions that need it as it takes a long time to load
-    import deeplabcut
 
     flexilims_session = flz.get_flexilims_session(project)
     camera_ds = flz.Dataset.from_flexilims(
-        flexilims_session=flexilims_session, id=camera_ds_id
+        flexilims_session=flexilims_session, name=camera_ds_name
     )
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session)
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
-
-    processed_path = Path(flz.PARAMETERS["data_root"]["processed"])
-    dlc_model_config = processed_path / "DLC_models" / model_name / "config.yaml"
-
     video_path = Path(video_path)
+
+    suffix = "cropped" if crop else "uncropped"
+    basename = f"{camera_ds.dataset_name}_dlc_tracking_{suffix}"
+    ds = flz.Dataset.from_origin(
+        origin_id=camera_ds.origin_id,
+        dataset_type="dlc_tracking",
+        flexilims_session=flexilims_session,
+        base_name=basename,
+        conflicts=conflicts,
+    )
+
+    if ds.flexilims_status() != "not online":
+        if conflicts == "overwrite":
+            delete_tracking_dataset(
+                ds_dict["cropped" if crop else "uncropped"], flexilims_session
+            )
+        elif conflicts == "skip":
+            print(f"  DLC {suffix} already done. Skip")
+            return ds, ds.path_full
+
+    processed_path = flz.get_data_root(which="processed", project="DLC_models")
+    dlc_model_config = processed_path / "DLC_models" / model_name / "config.yaml"
 
     if crop:
         uncropped_ds = ds_dict["uncropped"]
         assert uncropped_ds is not None, "No uncropped dataset found"
-        crop_info = create_crop_file(camera_ds, uncropped_ds)
+        crop_info = create_crop_file(camera_ds, uncropped_ds, conflicts=conflicts)
         crop_info = [
             crop_info["xmin"],
             crop_info["xmax"],
@@ -155,15 +284,6 @@ def dlc_pupil(
         crop_info = None
         suffix = "uncropped"
 
-    basename = f"{video_path.stem}_dlc_tracking_{suffix}"
-    flm_sess = flz.get_flexilims_session(project)
-    ds = flz.Dataset.from_origin(
-        origin_id=origin_id,
-        dataset_type="dlc_tracking",
-        flexilims_session=flm_sess,
-        base_name=basename,
-        conflicts=conflicts,
-    )
     target_folder = Path(ds.path_full)
     target_folder.mkdir(exist_ok=True, parents=True)
 
@@ -193,6 +313,22 @@ def dlc_pupil(
     )
 
     print("Analyzing", flush=True)
+    # import dlc only in functions that need it as it takes a long time to load
+    import deeplabcut
+
+    # check that it will use the GPU
+    import tensorflow
+
+    print(f"Using tensorflow {tensorflow.__version__}", flush=True)
+    from tensorflow.python.client import device_lib
+
+    def get_available_devices():
+        local_device_protos = device_lib.list_local_devices()
+        return [x.name for x in local_device_protos]
+
+    print("Available devices:")
+    print(get_available_devices(), flush=True)
+
     out = deeplabcut.analyze_videos(**analyse_kwargs)
 
     dlc_output = target_folder / f"{video_path.stem}{out}.h5"
@@ -210,51 +346,25 @@ def dlc_pupil(
     )
     ds.update_flexilims(mode="overwrite")
 
-
-def get_tracking_datasets(camera_ds, flexilims_session):
-    """Get the dlc tracking datasets corresponding to a camera dataset
-
-    This will raise an error if more than one dataset is found for a given type
-
-    Args:
-        camera_ds (flexilims.Dataset): Camera dataset
-        flexilims_session (flexilims.Session): Flexilims session
-
-    Returns:
-        dict: Dictionary with keys "cropped" and "uncropped", containing the
-            corresponding datasets. If no dataset is found, the corresponding value is
-            None
-    """
-    dlc_datasets = flz.get_children(
-        parent_id=camera_ds.origin_id,
-        children_datatype="dataset",
-        flexilims_session=flexilims_session,
-    )
-    dlc_datasets = dlc_datasets[dlc_datasets["dataset_type"] == "dlc_tracking"]
-    ds_dict = dict(cropped=None, uncropped=None)
-    for ds_name, series in dlc_datasets.iterrows():
-        ds = flz.Dataset.from_flexilims(
-            data_series=series, flexilims_session=flexilims_session
+    # Save diagnostic plot
+    print("Saving diagnostic plot", flush=True)
+    if not crop:
+        diagnostics.check_cropping(dlc_ds=ds, camera_ds=camera_ds, conflicts=conflicts)
+    else:
+        print("Labelling video")
+        deeplabcut.create_labeled_video(
+            config=dlc_model_config,
+            videos=[str(video_path)],
+            color_by="individual",
+            keypoints_only=False,
+            trailpoints=0,
+            draw_skeleton=True,
+            confidence_to_alpha=True,
         )
-        vid = ds.extra_attributes["videos"]
-        assert (
-            len(vid) == 1
-        ), f"{ds_name} tracking with more than one video, is that normal?"
-        # exclude tracking for other videos
-        if not vid[0].endswith(camera_ds.extra_attributes["video_file"]):
-            continue
-        if isinstance(ds.extra_attributes["cropping"], list):
-            if ds_dict["cropped"] is not None:
-                raise IOError("More than one cropped dataset")
-            ds_dict["cropped"] = ds
-        else:
-            if ds_dict["uncropped"] is not None:
-                raise IOError("More than one uncropped dataset")
-            ds_dict["uncropped"] = ds
-    return ds_dict
+    return ds, ds.path_full
 
 
-def create_crop_file(camera_ds, dlc_ds):
+def create_crop_file(camera_ds, dlc_ds, conflicts="skip"):
     """Create a crop file for DLC tracking
 
     Uses the results of the uncropped tracking to find the crop area and save it in a
@@ -263,6 +373,9 @@ def create_crop_file(camera_ds, dlc_ds):
     Args:
         camera_ds (flexilims.Dataset): Camera dataset, must contain project information
         dlc_ds (flexilims.Dataset): dlc_tracking dataset, containing uncropped tracking
+            results
+        conflicts (str, optional): How to handle conflicts when creating the crop file.
+            Defaults to "skip". Behaviour is "skip" or "overwrite", won't append.
 
     Returns:
         dict: Crop information
@@ -275,7 +388,7 @@ def create_crop_file(camera_ds, dlc_ds):
     video_path = camera_ds.path_full / camera_ds.extra_attributes["video_file"]
     crop_file = dlc_ds.path_full / f"{video_path.stem}_crop_tracking.yml"
 
-    if crop_file.exists():
+    if crop_file.exists() and (conflicts == "skip" or (not conflicts)):
         print("Crop file already exists. Delete manually to redo")
         with open(crop_file, "r") as fhandle:
             crop_info = yaml.safe_load(fhandle)
@@ -283,6 +396,7 @@ def create_crop_file(camera_ds, dlc_ds):
 
     with open(metadata_path, "r") as fhandle:
         metadata = yaml.safe_load(fhandle)
+    metadata = {k.lower(): v for k, v in metadata.items()}
     dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
     print("Creating crop file")
     dlc_res = pd.read_hdf(dlc_file)
@@ -290,8 +404,8 @@ def create_crop_file(camera_ds, dlc_ds):
     borders = np.zeros((4, 2))
     for iw, w in enumerate(
         (
-            "left_eye_corner",
-            "right_eye_corner",
+            "temporal_eye_corner",
+            "nasal_eye_corner",
             "top_eye_lid",
             "bottom_eye_lid",
         )
@@ -302,8 +416,8 @@ def create_crop_file(camera_ds, dlc_ds):
         borders[iw, :] = v
 
     borders = np.vstack([np.nanmin(borders, axis=0), np.nanmax(borders, axis=0)])
-    borders += ((np.diff(borders, axis=0) * 0.2).T @ np.array([[-1, 1]])).T
-    for i, w in enumerate(["Width", "Height"]):
+    borders += ((np.diff(borders, axis=0) * 0.3).T @ np.array([[-1, 1]])).T
+    for i, w in enumerate(["width", "height"]):
         borders[:, i] = np.clip(borders[:, i], 0, metadata[w])
     borders = borders.astype(int)
     crop_info = dict(
@@ -320,67 +434,132 @@ def create_crop_file(camera_ds, dlc_ds):
     return crop_info
 
 
-def run_fit_ellipse(
-    camera_ds,
-    flexilims_session,
-    likelihood_threshold=None,
-    job_dependency=None,
-    redo=False,
-    use_slurm=True,
-    slurms_folder=None,
-):
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
-    if ds_dict["cropped"] is None:
-        raise IOError("No cropped dataset found")
-    dlc_ds = ds_dict["cropped"]
-    dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
-    target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
-    if target.exists():
-        if not redo:
-            print("  Already done. Skip")
-            return
-        os.remove(target)
-    if use_slurm:
-        if slurms_folder is None:
-            slurms_folder = dlc_ds.path_full
-        func = partial(
-            slurm_job.fit_ellipses,
-            job_dependency=job_dependency,
-            slurm_folder=slurms_folder,
-        )
-    else:
-        func = fit_ellipse
-    job_id = func(
-        camera_ds_id=camera_ds.id,
-        project_id=camera_ds.project_id,
-        likelihood_threshold=likelihood_threshold,
-    )
-    return job_id
-
-
+@slurm_it(conda_env="cottage_analysis")
 def fit_ellipse(
-    camera_ds_id,
-    project_id,
+    camera_ds_name,
+    project,
     likelihood_threshold=None,
+    conflicts="skip",
+    plot=True,
 ):
-    flexilims_session = flz.get_flexilims_session(project_id)
+    flexilims_session = flz.get_flexilims_session(project)
     camera_ds = flz.Dataset.from_flexilims(
-        id=camera_ds_id, flexilims_session=flexilims_session
+        name=camera_ds_name, flexilims_session=flexilims_session
     )
-    ds_dict = get_tracking_datasets(camera_ds, flexilims_session)
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session)
     if ds_dict["cropped"] is None:
         raise IOError("No cropped dataset found")
     dlc_ds = ds_dict["cropped"]
     dlc_file = dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"]
-    target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
-
     assert dlc_file.exists()
 
+    target = dlc_ds.path_full / f"{dlc_file.stem}_ellipse_fits.csv"
+    if target.exists():
+        if conflicts == "overwrite":
+            os.remove(target)
+        else:
+            print("  Ellipse fit already done. Skip")
+            return target
+
     print(f"Doing %s" % dlc_file)
-    ellipse_fits = eye_model_fitting.fit_ellipses(
+    ellipse_fits = emf.fit_ellipses(
         dlc_file,
         likelihood_threshold=likelihood_threshold,
     )
     print(f"Fitted, save to {target}")
     ellipse_fits.to_csv(target, index=False)
+
+    if plot:
+        print("Diagnostic plot")
+        diagnostics.plot_ellipse_fit(
+            camera_ds_name=camera_ds_name,
+            project=project,
+            likelihood_threshold=likelihood_threshold,
+            duration=60,
+        )
     print("Done")
+
+
+@slurm_it(
+    conda_env=envs["cottage_analysis"],
+    slurm_options={
+        "time": "48:00:00",
+        "mem": "64G",
+        "partition": "cpu",
+        "cpus-per-task": 32,
+    },
+)
+def run_reproject_eye(
+    camera_ds_name,
+    project,
+    phi0=0,
+    theta0=np.deg2rad(20),
+    likelihood_threshold=0.88,
+    rsquare_threshold=0.99,
+    error_threshold=None,
+    conflicts="skip",
+):
+    """Run the reproject_eye function on a camera dataset
+
+    DLC and ellipse fitting must have been done first
+
+    Args:
+        camera_ds_name (str): Name of the camera dataset on flexilims
+        project (str): Name of the project on flexilims
+        phi0 (int, optional): Initial guess for the phi angle. Defaults to 0.
+        theta0 (float, optional): Initial guess for the theta angle. Defaults to
+            np.deg2rad(20).
+        likelihood_threshold (float, optional): Likelihood threshold for ellipse
+            fitting. Defaults to 0.88.
+        rsquare_threshold (float, optional): R^2 threshold for ellipse fitting.
+            Defaults to 0.99.
+        error_threshold (int, optional): Error threshold for ellipse fitting. If None,
+            use mean + 5 sd. Defaults to None.
+        conflicts (str, optional): How to handle conflicts when creating the datasets
+            on flexilims. Defaults to "skip".
+    """
+    flexilims_session = flz.get_flexilims_session(project)
+    camera_ds = flz.Dataset.from_flexilims(
+        flexilims_session=flexilims_session, name=camera_ds_name
+    )
+
+    target_ds = flz.Dataset.from_origin(
+        origin_id=camera_ds.origin_id,
+        dataset_type="eye_reprojection",
+        flexilims_session=flexilims_session,
+        base_name=f"{camera_ds.dataset_name}_eye_reprojection",
+        conflicts=conflicts,
+    )
+    if target_ds.path.suffix != ".npy":
+        assert (
+            target_ds.path_full.is_dir()
+        ), f"target_ds.path_full {target_ds.path_full} is not a directory"
+        target_ds.path = target_ds.path / "eye_rotation_by_frame.npy"
+
+    if target_ds.path_full.exists():
+        if conflicts == "skip":
+            print("  Reprojection already done. Skip")
+            return target_ds
+        elif conflicts == "abort":
+            raise IOError("Reprojection already done")
+        elif conflicts == "overwrite":
+            print("  Reprojection already done. Overwrite")
+            os.remove(target_ds.path_full)
+        else:
+            raise ValueError(f"Unknown conflict mode {conflicts}")
+
+    kwargs = dict(
+        theta0=theta0,
+        phi0=phi0,
+        likelihood_threshold=likelihood_threshold,
+        rsquare_threshold=rsquare_threshold,
+        error_threshold=error_threshold,
+    )
+    emf.reproject_ellipses(
+        camera_ds=camera_ds,
+        target_ds=target_ds,
+        **kwargs,
+    )
+    target_ds.extra_attributes.update(**kwargs)
+    target_ds.update_flexilims(mode=conflicts)
+    return target_ds

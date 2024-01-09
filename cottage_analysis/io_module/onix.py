@@ -106,6 +106,21 @@ def load_rhd2164(
     return output
 
 
+def reorder_array(ephys_data):
+    """
+    Reorder the rows of the ephys data based on a predefined mapping. This is useful because data does not come
+    neatly ordered as [electrode 1 tetrode 1, electrode 2 tetrode 1, ..., electrode 4 tetrode 16] from the headstage.
+    This function remaps inputs so that tetrodes are in order and remain together.
+
+    Parameters:
+    - ephys_data (np.ndarray): The ephys data to reorder. Usually, processed_ephys['ephys'].
+
+    Returns:
+    - np.ndarray: The reordered ephys data.
+    """
+    return ephys_data[MAPPING]
+
+
 def load_ts4231(path_to_folder, timestamp=None):
     """Load data from the lighthouse system
 
@@ -122,7 +137,8 @@ def load_ts4231(path_to_folder, timestamp=None):
     for photodiode in ts_files:
         try:
             data = pd.read_csv(
-                photodiode, header=0, names=["timestamp", "clock", "x", "y", "z"]
+                photodiode, header=0, names=["clock", "x", "y", "z", "timestamp"],
+                parse_dates=["timestamp"]
             )
         except pd.errors.EmptyDataError:
             continue
@@ -246,14 +262,52 @@ def load_bno055(
     return output
 
 
+def load_camera_times(camera_dir):
+    """
+    Loads the metadata of the setup cameras.
+    Args:
+        camera_dir(str or Path): the complete path to the camera output directory
+    Returns:
+        output(dict): a dictionary containing one key per camera. Inside, a dictionary with the metadata of the camera.
+    """
+    camera_dir = Path(camera_dir)
+
+    # Check if provided path is a directory
+    if not camera_dir.is_dir():
+        raise IOError(f"{camera_dir} is not a directory")
+
+    # Search for all files containing the word 'camera' and ending with 'timestamps'
+    camera_files = list(camera_dir.glob("*camera*timestamps*"))
+
+    # If no valid files found, raise an error
+    if not camera_files:
+        raise IOError(f"Could not find any timestamp files in {camera_dir}")
+
+    output = dict()
+    seen_names = set()  # Set to track seen camera names
+
+    for cam_file in camera_files:
+        # Use the part before '_timestamps' as the key for the dictionary
+        key = cam_file.stem.split("_timestamps")[0]
+
+        # Check for duplicate names
+        if key in seen_names:
+            raise ValueError(f"Duplicate timestamp file detected for camera: {key}")
+
+        seen_names.add(key)
+        output[key] = pd.read_csv(cam_file)
+
+    return output
+
+
 def convert_ephys(
     uint16_file, target, nchan=64, overwrite=False, batch_size=1e6, verbose=True
 ):
     """Convert raw uint16 data in int16
 
     Data from onix is saved as uint16. Kilosort has no option to change expected
-    datatype and expects int16. This function copies the data to the new file changing the
-    datatype.
+    datatype and expects int16. This function copies the data to the new file changing
+    the datatype.
 
     Args:
         uint16_file (str or Path): path to the raw data (F order, uint16)

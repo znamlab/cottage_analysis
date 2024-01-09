@@ -5,12 +5,33 @@ import cv2
 import numpy as np
 import mmap
 import pandas as pd
+from tqdm import tqdm
 
 DEPTH_DICT = {8: np.uint8, 16: np.uint16}
 
 
 def load_video(data_folder, camera, order="F", metadata_file=None, binary_file=None):
-    """Load the video from a camera saved as raw binary file + metadata"""
+    """Load the video from a camera saved as raw binary file + metadata
+
+    The metadata file is a txt file with the following format:
+
+    ```
+    width: 640
+    height: 480
+    depth: 8
+    ```
+
+    Args:
+        data_folder (str): path to the folder containing the data
+        camera (str): name of the camera
+        order (str, optional): order of the frames in the binary file. Defaults to "F".
+        metadata_file (str, optional): path to the metadata file. Defaults to None.
+        binary_file (str, optional): path to the binary file. Defaults to None.
+
+    Returns:
+        np.ndarray: array of shape (height, width, frames)
+
+    """
     if metadata_file is None:
         metadata_file = os.path.join(data_folder, "%s_metadata.txt" % camera)
     assert os.path.isfile(metadata_file)
@@ -46,6 +67,22 @@ def write_array_to_video(
     """Write an array to a mp4 file
 
     The array must shape must be (lines/height x columns/width x frames)
+
+    Args:
+        target_file (str): path to the target file
+        video_array (np.ndarray): array to write
+        frame_rate (float): frame rate of the video
+        is_color (bool, optional): is the video color? Defaults to False.
+        verbose (bool, optional): print progress? Defaults to True.
+        codec (str, optional): codec to use. Defaults to "mp4v".
+        extension (str, optional): extension of the file. Defaults to ".mp4".
+        min_brightness (int, optional): minimum brightness. Defaults to None.
+        max_brightness (int, optional): maximum brightness. Defaults to None.
+        perc_saturation (int, optional): percentage of saturation to remove. Defaults to 0.
+        overwrite (bool, optional): overwrite the file if it exists. Defaults to False.
+
+    Returns:
+        None
     """
     if not target_file.endswith(extension):
         target_file += extension
@@ -112,9 +149,33 @@ def write_array_to_video(
 
 
 def deinterleave_camera(
-    camera_file, target_file, make_grey=False, verbose=True, intrinsic_calibration=None
+    camera_file,
+    target_file,
+    make_grey=False,
+    verbose=True,
+    intrinsic_calibration=None,
+    frame_rate=60.0,
 ):
-    """Load a mini camera with interleaved frames"""
+    """Deinterleave a video file
+
+    This function is intended for Wehrcam, which save NTSC video as interlaced. The even
+    pixels correspond to the first acquired field, the odd pixels to the second field.
+    This function deinterleave the video and save it as a new file with the same
+    resolution by interpolating the missing pixels. The two fields are often in y. To
+    account for that the output frame is 1 pixel shorter than the input frame in height.
+
+    Args:
+        camera_file (str): path to the video file
+        target_file (str): path to the target file
+        make_grey (bool, optional): convert to grey? Defaults to False.
+        verbose (bool, optional): print progress? Defaults to True.
+        intrinsic_calibration (dict, optional): intrinsic calibration parameters.
+            Defaults to None.
+        frame_rate (float, optional): frame rate of the video. Defaults to 60.
+
+    Returns:
+        None
+    """
     camera_file = Path(camera_file)
     if not camera_file.exists():
         raise IOError("%s is not a file" % camera_file)
@@ -140,21 +201,19 @@ def deinterleave_camera(
         + chr((fcc >> 24) & 0xFF)
     )
     output = cv2.VideoWriter(
-        str(target_file), cv2.VideoWriter_fourcc(*fcc), 60, (frame_width, frame_height)
+        str(target_file),
+        cv2.VideoWriter_fourcc(*fcc),
+        frame_rate,
+        (frame_width, frame_height - 1),
     )
-    ret, frame = cap.read()
+    nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    for iframe in tqdm(range(nframes)) if verbose else range(nframes):
+        ret, frame = cap.read()
+        if make_grey:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if make_grey:
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    deint_frame = np.zeros_like(frame)
-    iframe = 0
-    while ret:
-        if verbose:
-            iframe += 1
-            if iframe % 1000 == 0:
-                print("... frame %d" % iframe)
         if intrinsic_calibration is not None:
-            dst = cv2.undistort(
+            frame = cv2.undistort(
                 frame,
                 intrinsic_calibration["mtx"],
                 intrinsic_calibration["dist"],
@@ -162,11 +221,8 @@ def deinterleave_camera(
                 newcameramtx,
             )
         for ilines in range(2):
-            deint_frame[::2, ...] = frame[ilines::2, ...]
-            deint_frame[1::2, ...] = deint_frame[::2, ...]
-            output.write(deint_frame)
-        ret, frame = cap.read()
-    if verbose:
-        print("Done (total %d frames)" % iframe)
+            deint = cv2.resize(frame[ilines::2, ...], (frame_width, frame_height))
+            output.write(deint[1 - ilines : frame_height - ilines, ...])
+
     cap.release()
     output.release()

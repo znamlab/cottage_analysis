@@ -20,5 +20,8 @@ setup(
         "tables",
         "scikit-learn",
         "tqdm",
+        "numba",
+        "numba_progress",
+        "scikit-image",
     ],
 )
