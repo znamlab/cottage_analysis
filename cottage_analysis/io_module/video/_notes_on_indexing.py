@@ -73,7 +73,7 @@ print("We can check that by looking as c_data.swapaxes(0, 2).flatten():")
 print(c_data.swapaxes(0, 2).flatten())
 
 
-#%% Test to transform data into frame-major
+# %% Test to transform data into frame-major
 ammp_filename = "/Users/hey2/Desktop/f_data.npy"
 newmmp_filename = "/Users/hey2/Desktop/new_data.npy"
 Nrows = 3  # Height
