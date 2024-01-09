@@ -5,11 +5,6 @@ from matplotlib.colors import ListedColormap
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
-from cottage_analysis.depth_analysis.depth_preprocess.process_params import (
-    create_speed_arr,
-    create_trace_arr_per_roi,
-    thr,
-)
 from cottage_analysis.analysis.common_utils import get_confidence_interval
 from sklearn.linear_model import LinearRegression
 
@@ -361,107 +356,6 @@ def get_tuning_function(means, counts, smoothing_sd=1):
     return tuning
 
 
-def plot_dFF_binned_speed(
-    speed_arr,
-    trace_arr,
-    speed_bins,
-    depth_list,
-    title,
-    xlabel,
-    linecolors,
-    log=False,
-    xlim=[],
-    ylim=[],
-    speed_arr_blank=[],
-    trace_arr_blank=[],
-    fontsize=20,
-    axis_fontsize=10,
-):
-    binned_stats = get_binned_stats(
-        xarr=speed_arr, yarr=trace_arr, bin_number=speed_bins
-    )
-    ci_range = 0.95
-    z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
-    ci = z * binned_stats["bin_stds"] / np.sqrt(binned_stats["bin_counts"])
-    ci[np.isnan(ci)] = 0
-    if log:
-        binned_stats["bin_centers"] = np.exp(binned_stats["bin_centers"])
-    for idepth, linecolor in zip(range(len(depth_list)), linecolors):
-        tuning = get_tuning_function(
-            binned_stats["bin_means"][idepth, :], binned_stats["bin_counts"][idepth, :]
-        )
-        plt.plot(
-            binned_stats["bin_centers"][idepth, :],
-            tuning,
-            color=linecolor,
-            label=f"{int(depth_list[idepth] * 100)} cm",
-        )
-        plt.errorbar(
-            x=binned_stats["bin_centers"][idepth, :],
-            y=binned_stats["bin_means"][idepth, :],
-            yerr=ci[idepth, :],
-            fmt="o",
-            color=linecolor,
-            ls="none",
-        )
-    if (len(trace_arr_blank) > 0) and (len(speed_arr_blank) > 0):
-        binned_stats_blank = get_binned_stats(
-            xarr=speed_arr_blank, yarr=trace_arr_blank, bin_number=speed_bins
-        )
-        if log:
-            binned_stats_blank["bin_centers"] = np.exp(
-                binned_stats_blank["bin_centers"]
-            )
-        ci_blank = (
-            z
-            * binned_stats_blank["bin_stds"]
-            / np.sqrt(binned_stats_blank["bin_counts"])
-        )
-        ci_blank[np.isnan(ci_blank)] = 0
-        plt.errorbar(
-            x=binned_stats_blank["bin_centers"][0, :],
-            y=binned_stats_blank["bin_means"][0, :],
-            yerr=ci_blank[0, :],
-            fmt="o",
-            color="gray",
-            label="_",
-            ls="none",
-        )
-        tuning = get_tuning_function(
-            binned_stats_blank["bin_means"],
-            binned_stats_blank["bin_counts"],
-        )
-        plt.plot(
-            binned_stats_blank["bin_centers"][0, :],
-            tuning[0, :],
-            color="gray",
-            label="blank",
-        )
-
-    plt.ylim([-0.1, np.nanmax(binned_stats["bin_means"]) * 1.2])
-    if log:
-        plt.gca().set_xscale("log")
-    plt.xlabel(xlabel, fontsize=axis_fontsize)
-    plt.ylabel(r"$\Delta$F/F", fontsize=axis_fontsize)
-    plt.title(title, fontsize=fontsize)
-    plt.legend(
-        fontsize=axis_fontsize,
-        loc="upper left",
-        bbox_to_anchor=[1.0, 1.0],
-        frameon=False,
-    )
-    despine()
-    if log:
-        plt.xticks([0.1, 1, 10, 100, 1000])
-        plt.gca().xaxis.set_minor_locator(mticker.LogLocator(numticks=999, subs="auto"))
-    if xlim:
-        plt.xlim(xlim)
-    if ylim:
-        plt.ylim(ylim)
-
-    return plt.gca().get_xlim(), plt.gca().get_ylim()
-
-
 def get_binned_stats_2d(
     xarr1,
     xarr2,
@@ -542,26 +436,6 @@ def set_RS_OF_heatmap_axis_ticks(binned_stats):
     _, _ = plt.yticks(ticks_select2, bin_edges2)
 
 
-def plot_RS_OF_heatmap(
-    binned_stats,
-    log=True,
-    log_base=10,
-    xlabel="Running Speed (cm/s)",
-    ylabel="Optic Flow (degree/s)",
-    vmin=None,
-    vmax=None,
-    cmap="Reds",
-):
-    plt.imshow(
-        binned_stats["bin_means"].T, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax
-    )
-    set_RS_OF_heatmap_axis_ticks(binned_stats)
-    plt.colorbar()
-
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-
-
 def get_mutual_info(arr1, arr2):
     arr1_mask = ~np.isnan(arr1)
     arr2_mask = ~np.isnan(arr2)
@@ -613,65 +487,6 @@ def find_roi_center(cells_mask, roi):
     return int(x_center), int(y_center), int(radius)
 
 
-def plot_depth_tuning(trace_arr, speed_arr, speed_thr_cal, depths):
-    trace_arr = trace_arr.copy()
-    trace_arr[speed_arr < speed_thr_cal] = np.nan
-    trace_arr_mean_eachtrial = np.nanmean(trace_arr, axis=2)
-
-    ci_range = 0.95
-    z = scipy.stats.norm.ppf(1 - ((1 - ci_range) / 2))
-    ci = (
-        z
-        * np.std(trace_arr_mean_eachtrial, axis=1)
-        / np.sqrt(trace_arr_mean_eachtrial.shape[1])
-    )
-    plot_line_with_error(
-        np.mean(trace_arr_mean_eachtrial, axis=1),
-        np.mean(trace_arr_mean_eachtrial, axis=1) - ci,
-        np.mean(trace_arr_mean_eachtrial, axis=1) + ci,
-        "k",
-        xarr=depths,
-    )
-    plt.xscale("log")
-    plt.ylabel(r"$\Delta$F/F")
-    plt.xlabel("Depth (cm)")
-    plt.xticks([10, 100, 1000])
-    plt.gca().xaxis.set_minor_locator(mticker.LogLocator(numticks=999, subs="auto"))
-    despine()
-
-
-def plot_mean_responses(
-    trace_arr, position_arr, depth_list, line_colors, corridor_length=600
-):
-    distance_bins = 60
-    binned_stats = get_binned_arr(
-        xarr=position_arr,
-        yarr=trace_arr,
-        bin_number=distance_bins,
-        bin_edge_min=0,
-        bin_edge_max=6,
-    )
-    for idepth, linecolor in zip(range(len(depth_list)), line_colors):
-        CI_low, CI_high = get_confidence_interval(
-            binned_stats["binned_yrr"][idepth],
-            mean_arr=np.nanmean(binned_stats["binned_yrr"][idepth], axis=0),
-        )
-        plot_line_with_error(
-            xarr=np.linspace(0, corridor_length, distance_bins),
-            arr=np.nanmean(binned_stats["binned_yrr"][idepth], axis=0),
-            CI_low=CI_low,
-            CI_high=CI_high,
-            linecolor=linecolor,
-            label=f"{depth_list[idepth] * 100} cm",
-        )
-        plt.legend(
-            fontsize=10, loc="upper left", bbox_to_anchor=[1.0, 1.0], frameon=False
-        )
-    plt.xlabel("Distance (cm)")
-    plt.ylabel(r"$\Delta$F/F")
-    despine()
-
-
 def plot_sta(sta, extent=[-120, 120, -40, 40], clim=None):
     ndepths = sta.shape[0]
     fig, axes = plt.subplots(ndepths, 1, sharex="all", sharey="all", figsize=(5, 7.5))
@@ -694,139 +509,6 @@ def plot_sta(sta, extent=[-120, 120, -40, 40], clim=None):
     fig.supylabel("Elevation (degrees)")
     fig.supxlabel("Azimuth (degrees)")
     return fig, axes, ims
-
-
-def plot_roi_summary(
-    roi,
-    dffs,
-    depth_list,
-    stim_dict,
-    frame_rate,
-    distance_arr,
-    speeds,
-    speed_arr_noblank,
-    speed_arr_blank,
-    speed_thr,
-    speed_thr_cal,
-    optics,
-    line_colors,
-):
-    # Trace array of dFF
-    trace_arr_noblank, _ = create_trace_arr_per_roi(
-        roi,
-        dffs,
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-    trace_arr_blank, _ = create_trace_arr_per_roi(
-        roi,
-        dffs,
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        isStim=False,
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-    speed_arr_noblank, _ = create_speed_arr(
-        speeds,
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-    of_arr_noblank, _ = create_speed_arr(
-        optics,
-        depth_list,
-        stim_dict,
-        mode="sort_by_depth",
-        protocol="fix_length",
-        blank_period=0,
-        frame_rate=frame_rate,
-    )
-
-    rs_bin_log_min = 0
-    rs_bin_log_max = 2.5
-    rs_bin_num = 6
-    of_bin_log_min = -1.5
-    of_bin_log_max = 3.5
-    of_bin_num = 11
-    log_base = 10
-
-    plt.figure(figsize=(12, 5))
-    plt.subplot(2, 3, 4)
-    plot_depth_tuning(
-        trace_arr_noblank,
-        speed_arr_noblank,
-        speed_thr_cal,
-        [depth * 100 for depth in depth_list],
-    )
-    plt.subplot(2, 3, 1)
-    plot_mean_responses(
-        trace_arr_noblank, distance_arr, depth_list, line_colors, corridor_length=600
-    )
-
-    plt.subplot(2, 3, 5)
-    plot_dFF_binned_speed(
-        speed_arr=np.log(np.degrees(of_arr_noblank)),
-        trace_arr=trace_arr_noblank,
-        speed_bins=25,
-        depth_list=depth_list,
-        log=True,
-        ylim=None,
-        title="",
-        xlabel="Optic flow speed (degrees/s)",
-        linecolors=line_colors,
-        fontsize=12,
-        axis_fontsize=10,
-    )
-    plt.subplot(2, 3, 2)
-    plot_dFF_binned_speed(
-        speed_arr=thr(speed_arr_noblank * 100, speed_thr * 100),
-        trace_arr=trace_arr_noblank,
-        speed_bins=25,
-        depth_list=depth_list,
-        speed_arr_blank=thr(speed_arr_blank * 100, speed_thr * 100),
-        trace_arr_blank=trace_arr_blank,
-        log=False,
-        title="",
-        xlabel="Running speed (cm/s)",
-        linecolors=line_colors,
-        fontsize=10,
-        axis_fontsize=10,
-    )
-
-    plt.subplot(1, 3, 3)
-
-    binned_stats = get_binned_stats_2d(
-        xarr1=thr(speed_arr_noblank * 100, speed_thr * 100),
-        xarr2=np.degrees(of_arr_noblank),
-        yarr=trace_arr_noblank,
-        bin_edges=[
-            np.logspace(rs_bin_log_min, rs_bin_log_max, num=rs_bin_num, base=log_base),
-            np.logspace(of_bin_log_min, of_bin_log_max, num=of_bin_num, base=log_base),
-        ],
-        log=True,
-        log_base=log_base,
-    )
-
-    plot_RS_OF_heatmap(
-        binned_stats=binned_stats,
-        log=True,
-        log_base=10,
-        xlabel="Running speed (cm/s)",
-        ylabel="Optic flow speed (degrees/s)",
-        cmap="Reds",
-    )
-
-    plt.tight_layout(pad=2)
 
 
 def linear_regression(X, y, x2, model=LinearRegression()):
@@ -887,49 +569,6 @@ def scatter_plot_fit_line(
         plt.xscale("log")
         plt.yscale("log")
         despine()
-
-
-def get_PSTH(
-    values,
-    dffs,
-    depth_list,
-    stim_dict,
-    distance_arr,
-    distance_bins,
-    roi=0,
-    is_trace=False,
-    frame_rate=15,
-):
-    if is_trace:
-        values_arr, _ = create_trace_arr_per_roi(
-            roi,
-            dffs,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
-        )
-    else:
-        values_arr, _ = create_speed_arr(
-            values,
-            depth_list,
-            stim_dict,
-            mode="sort_by_depth",
-            protocol="fix_length",
-            blank_period=0,
-            frame_rate=frame_rate,
-        )
-
-    binned_stats = get_binned_arr(
-        xarr=distance_arr,
-        yarr=values_arr,
-        bin_number=distance_bins,
-        bin_edge_min=0,
-        bin_edge_max=6,
-    )
-    return binned_stats
 
 
 def set_aspect_ratio(ax, ratio=1):
