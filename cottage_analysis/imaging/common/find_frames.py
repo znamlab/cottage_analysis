@@ -163,7 +163,7 @@ def find_imaging_frames(
         frame_triggers (pd.DataFrame): DataFrame containing harptime for each imaging frame trigger.
 
     """
-    # TODO: This version always rejects the last imaging frame. check
+    # TODO: This version always rejects the last imaging frame. check 
     frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
     frame_triggers = frame_triggers[
         frame_triggers.FrameTriggers == 1
