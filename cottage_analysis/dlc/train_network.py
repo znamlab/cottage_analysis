@@ -14,11 +14,10 @@ MODEL = "wehrcam_track_eye"
 if __name__ == "__main__":
     import socket
 
-
     hostname = socket.gethostname()
     print("Running on %s" % hostname)
     if hostname == "C02Z85AULVDC":
-    print("Running on %s" % hostname)
+        print("Running on %s" % hostname)
     if hostname == "C02Z85AULVDC":
         # that's my laptop
         ROOT_DIR = "/Volumes/lab-znamenskiyp/home/"
