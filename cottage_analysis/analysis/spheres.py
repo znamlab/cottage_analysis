@@ -540,13 +540,8 @@ def sync_all_recordings(
     recordings = recordings[recordings.name.str.contains(protocol_base)]
 
     for i, recording_name in enumerate(recordings.name):
-        recording = flz.get_entity(
-            datatype="recording",
-            name=recording_name,
-            flexilims_session=flexilims_session,
-        )
-
         print(f"Processing recording {i+1}/{len(recordings)}")
+        recording, harp_recording, onix_rec = get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix)
         vs_df = synchronisation.generate_vs_df(
             recording=recording,
             photodiode_protocol=photodiode_protocol,
@@ -628,12 +623,7 @@ def regenerate_frames_all_recordings(
     recordings = recordings[recordings.name.str.contains(protocol_base)]
 
     for i, recording_name in enumerate(recordings.name):
-        recording = flz.get_entity(
-            datatype="recording",
-            name=recording_name,
-            flexilims_session=flexilims_session,
-        )
-
+        recording, harp_recording, onix_rec = get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix)
         # Generate vs_df, imaging_df, trials_df for this recording
         print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
         vs_df = synchronisation.generate_vs_df(
@@ -1126,3 +1116,51 @@ def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):
         coef_fit[:-1, roi] = func((xs.flatten(), ys.flatten(), zs.flatten()), *popt)
         params.append(popt)
     return coef_fit, params
+
+def get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix):
+    """Get the recording, harp recording and onix recording for a given recording name.
+
+    Args:
+        recording_name (str): name of the recording.
+        flexilims_session (flexilims_session): flexilims session.
+        harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
+        use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
+
+    Returns:
+        (recording, harp_recording, onix_rec): tuple of recording, harp recording and onix recording.
+    """
+    recording = flz.get_entity(
+        datatype="recording",
+        name=recording_name,
+        flexilims_session=flexilims_session,
+    )
+
+    if harp_is_in_recording:
+        harp_recording = recording
+    else:
+        harp_recording = flz.get_children(
+            parent_id=recording.origin_id,
+            children_datatype="recording",
+            flexilims_session=flexilims_session,
+            filter=dict(protocol="harpdata"),
+        )
+        assert (
+            len(harp_recording) == 1
+        ), f"{len(harp_recording)} harp recording(s) found for {recording_name}"
+        harp_recording = harp_recording.iloc[0]
+
+    if use_onix:
+        onix_rec = flz.get_children(
+            parent_id=recording.origin_id,
+            children_datatype="recording",
+            flexilims_session=flexilims_session,
+            filter=dict(protocol="onix"),
+        )
+        assert (
+            len(onix_rec) == 1
+        ), f"{len(onix_rec)} onix recording(s) found for {recording_name}"
+        onix_rec = onix_rec.iloc[0]
+    else:
+        onix_rec = None
+    
+    return recording, harp_recording, onix_rec
