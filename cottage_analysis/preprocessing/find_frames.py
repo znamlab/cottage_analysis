@@ -106,7 +106,6 @@ def sync_by_frame_alternating(
     return frames_df
 
 
-@slurm_it(conda_env="cottage_analysis")
 def sync_by_correlation(
     frame_log,
     photodiode_time,
@@ -393,20 +392,20 @@ def create_frame_df(
     after_last = frames_df["onset_time"] >= frame_log[time_column].iloc[-1]
     if after_last.any():
         end_of_presentation = frame_log[time_column].iloc[-1]
-        last_frame = frames_df["onset_time"].iloc[-1]
+        last_frame_time = frames_df["onset_time"].iloc[-1]
         print(f"Presentation ends at {end_of_presentation:.2f} s")
-        print(f"Last frame detected at {last_frame:.2f} s")
+        print(f"Last frame detected at {last_frame_time:.2f} s")
 
         delay = frames_df["onset_time"].iloc[-1] - frame_log[time_column].iloc[-1]
         print(f"{after_last.sum()} frames detected after the last render time.")
         # in that case, plot the photodiode signal and the last frame detected for
         # debugging
         if do_plot:
-            e = last_frame + 20
-            if last_frame_delay is None:
-                e = min(e, end_of_presentation + last_frame_delay)
+            end_time = last_frame_time + 10
+            if last_frame_delay is not None:
+                end_time = min(end_time, end_of_presentation + last_frame_delay)
 
-            b, e = photodiode_time.searchsorted([end_of_presentation - 1, e])
+            b, e = photodiode_time.searchsorted([end_of_presentation - 1, end_time])
             fig = plt.figure(figsize=(12, 4))
             ax = fig.add_subplot(1, 1, 1)
             ax.set_title("Recording ends before last frame detected")
