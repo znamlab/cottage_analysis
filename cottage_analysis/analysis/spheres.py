@@ -561,13 +561,23 @@ def sync_all_recordings(
             sync_kwargs=sync_kwargs,
         )
 
-        imaging_df = synchronisation.generate_imaging_df(
-            vs_df=vs_df,
-            recording=recording,
-            flexilims_session=flexilims_session,
-            filter_datasets=filter_datasets,
-            return_volumes=return_volumes,
-        )
+        if recording_type == "two_photon":
+            imaging_df = synchronisation.generate_imaging_df(
+                vs_df=vs_df,
+                recording=recording,
+                flexilims_session=flexilims_session,
+                filter_datasets=filter_datasets,
+                return_volumes=return_volumes,
+            )
+        else:
+            imaging_df = synchronisation.generate_spike_rate_df(
+                vs_df=vs_df,
+                onix_recording=onix_rec,
+                harp_recording=harp_recording,
+                flexilims_session=flexilims_session,
+                filter_datasets=filter_datasets,
+                return_multiunit=False,
+            )
 
         imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
 
@@ -654,13 +664,23 @@ def regenerate_frames_all_recordings(
             sync_kwargs=sync_kwargs,
         )
 
-        imaging_df = synchronisation.generate_imaging_df(
-            vs_df=vs_df,
-            recording=recording,
-            flexilims_session=flexilims_session,
-            filter_datasets=filter_datasets,
-            return_volumes=return_volumes,
-        )
+        if recording_type == "two_photon":
+            imaging_df = synchronisation.generate_imaging_df(
+                vs_df=vs_df,
+                recording=recording,
+                flexilims_session=flexilims_session,
+                filter_datasets=filter_datasets,
+                return_volumes=return_volumes,
+            )
+        else:
+            imaging_df = synchronisation.generate_spike_rate_df(
+                vs_df=vs_df,
+                onix_recording=onix_rec,
+                harp_recording=harp_recording,
+                flexilims_session=flexilims_session,
+                filter_datasets=filter_datasets,
+                return_multiunit=False,
+            )
 
         imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
 
