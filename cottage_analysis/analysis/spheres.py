@@ -466,19 +466,22 @@ def generate_trials_df(recording, imaging_df):
     return trials_df
 
 
-def search_param_log_trials(recording, trials_df, flexilims_session):
+def search_param_log_trials(harp_recording, trials_df, flexilims_session, vis_stim_recording=None):
     """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
 
     Args:
-        recording (Series or str): Recording or recording name. Must contain visstim info
+        harp_recording (Series or str): Harp recording
         trials_df (pd.DataFrane): Dataframe that contails information for each trial.
         flexilims_session (flexilims_session): flexilims session.
+        vis_stim_recording (Series or str, optional): Visual stimulation recording. 
+            required if `recording` does not contain vis_stim info. Defaults to None.
 
     Returns:
         Dataframe: Dataframe that contails information for each trial.
     """
-    recording = get_str_or_recording(recording, flexilims_session)
-    param_log = get_param_log(flexilims_session, vis_stim_recording=recording)
+    harp_recording = get_str_or_recording(harp_recording, flexilims_session)
+    param_log = get_param_log(flexilims_session, vis_stim_recording=vis_stim_recording,
+                              harp_recording=harp_recording)
 
     # trial index for each row of param log
     start_idx = (
@@ -584,14 +587,15 @@ def sync_all_recordings(
                 return_multiunit=False,
             )
 
-        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
+        imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
 
         trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
 
         trials_df = search_param_log_trials(
-            recording=recording,
+            harp_recording=harp_recording,
             trials_df=trials_df,
             flexilims_session=flexilims_session,
+            vis_stim_recording=recording, 
         )
 
         if i == 0:
@@ -694,9 +698,10 @@ def regenerate_frames_all_recordings(
         trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
 
         trials_df = search_param_log_trials(
-            recording=recording,
+            harp_recording=harp_recording,
             trials_df=trials_df,
             flexilims_session=flexilims_session,
+            vis_stim_recording=recording,
         )
 
         # Load paramlog
