@@ -1236,13 +1236,15 @@ def interpolate_sync(frames_df, residuals_threshold=0.08, verbose=True):
     frames_df["interpolation_seeds"] = False
     frames_df.loc[good_frames, "interpolation_seeds"] = True
 
-    closest_frame[~good_frames] = np.interp(
-        frames_df.loc[~good_frames, "onset_time"],
-        frames_df.loc[good_frames, "onset_time"],
-        frames_df.loc[good_frames, "closest_frame"],
-        left=np.nan,
-        right=np.nan,
-    )
+    if np.sum(~good_frames):
+        assert np.sum(good_frames), "No frame left for interpolation"
+        closest_frame[~good_frames] = np.interp(
+            frames_df.loc[~good_frames, "onset_time"],
+            frames_df.loc[good_frames, "onset_time"],
+            frames_df.loc[good_frames, "closest_frame"],
+            left=np.nan,
+            right=np.nan,
+        )
     closest_frame = np.round(closest_frame)
     frames_df.loc[:, "closest_frame"] = closest_frame
     frames_df.loc[~good_frames, "lag"] = np.nan
