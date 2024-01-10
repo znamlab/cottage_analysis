@@ -506,6 +506,10 @@ def sync_all_recordings(
     protocol_base="SpheresPermTubeReward",
     photodiode_protocol=5,
     return_volumes=True,
+    harp_is_in_recording=True,
+    use_onix=False,
+    conflicts="skip",
+    sync_kwargs=None,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -519,6 +523,10 @@ def sync_all_recordings(
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
             Either 2 or 5 for now. Defaults to 5.
         return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+        harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
+        use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
+        conflicts (str): how to handle conflicts. Defaults to "skip".
+        sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df for all recordings, one concatenated trials_df for all recordings.
@@ -546,7 +554,11 @@ def sync_all_recordings(
             recording=recording,
             photodiode_protocol=photodiode_protocol,
             flexilims_session=flexilims_session,
+            harp_recording=harp_recording,
+            onix_recording=onix_rec,
             project=project,
+            conflicts=conflicts,
+            sync_kwargs=sync_kwargs,
         )
 
         imaging_df = synchronisation.generate_imaging_df(
@@ -588,6 +600,9 @@ def regenerate_frames_all_recordings(
     photodiode_protocol=5,
     return_volumes=True,
     resolution=5,
+    sync_kwargs=None,
+    harp_is_in_recording=True,
+    use_onix=False,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -602,6 +617,9 @@ def regenerate_frames_all_recordings(
             Either 2 or 5 for now. Defaults to 5.
         return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
         resolution (float): size of a pixel in degrees
+        sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
+        harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
+        use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
 
     Returns:
         (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all recordings (nframes * y * x), one concatenated imaging_df for all recordings.
@@ -630,7 +648,10 @@ def regenerate_frames_all_recordings(
             recording=recording,
             photodiode_protocol=photodiode_protocol,
             flexilims_session=flexilims_session,
+            harp_recording=harp_recording,
+            onix_recording=onix_rec,
             project=project,
+            sync_kwargs=sync_kwargs,
         )
 
         imaging_df = synchronisation.generate_imaging_df(
