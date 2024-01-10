@@ -5,6 +5,7 @@ import pandas as pd
 import flexiznam as flz
 from functools import partial
 from znamutils import slurm_it
+from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.harp import load_harpmessage
 from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.preprocessing import onix as onix_prepro
@@ -55,12 +56,12 @@ def find_monitor_frames(
         ), "project must be provided if flexilims_session is None"
         flexilims_session = flz.get_flexilims_session(project_id=project)
 
-    vis_stim_recording = _get_str_or_recording(vis_stim_recording, flexilims_session)
+    vis_stim_recording = get_str_or_recording(vis_stim_recording, flexilims_session)
     if harp_recording is None:
         harp_recording = vis_stim_recording
     else:
-        harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
-        onix_recording = _get_str_or_recording(onix_recording, flexilims_session)
+        harp_recording = get_str_or_recording(harp_recording, flexilims_session)
+        onix_recording = get_str_or_recording(onix_recording, flexilims_session)
 
     # Create output and reload
     monitor_frames_ds = flz.Dataset.from_origin(
@@ -201,8 +202,8 @@ def generate_vs_df(
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
 
-    recording = _get_str_or_recording(recording, flexilims_session)
-    harp_recording = _get_str_or_recording(harp_recording, flexilims_session)
+    recording = get_str_or_recording(recording, flexilims_session)
+    harp_recording = get_str_or_recording(harp_recording, flexilims_session)
     if harp_recording is None:
         harp_recording = recording
 
@@ -532,29 +533,3 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
         dffs.append(np.load(plane_path / "dff_ast.npy"))
     return np.concatenate(dffs, axis=0).T
-
-
-def _get_str_or_recording(recording, flexilims_session):
-    """Get recording entry from flexilims_session if recording is a string.
-
-    Args:
-        recording (str or pandas.Series): recording name or recording entry from flexilims.
-        flexilims_session (flexilims.Flexilims): flexilims session.
-
-    Returns:
-        pandas.Series: recording entry from flexilims_session.
-    """
-
-    if recording is None:
-        return None
-    elif type(recording) == str:
-        recording = flz.get_entity(
-            datatype="recording",
-            name=recording,
-            flexilims_session=flexilims_session,
-        )
-        if recording is None:
-            raise ValueError(f"Recording {recording} does not exist.")
-        return recording
-    else:
-        return recording
