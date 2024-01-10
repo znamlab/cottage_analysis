@@ -493,7 +493,11 @@ def fit_rs_of_tuning(
     )
 
     # Loop through all protocols (closed loop and open loop)
-    for iprotocol, is_closedloop in enumerate(trials_df.closed_loop.unique()):
+    if closedloop_only:
+        all_protocols = [1]
+    else:
+        all_protocols = trials_df.closed_loop.unique()
+    for iprotocol, is_closedloop in enumerate(all_protocols):
         print(
             f"Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}..."
         )
