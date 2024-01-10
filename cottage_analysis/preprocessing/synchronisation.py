@@ -92,13 +92,25 @@ def find_monitor_frames(
         photodiode = harp_message["photodiode"]
         analog_time = harp_message["analog_time"]
     else:
+        onix_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=onix_recording.name,
+            dataset_type="onix",
+            allow_multiple=False,
+        )
         breakout = onix_io.load_breakout(raw / onix_recording.path)
         onix_data = onix_prepro.preprocess_onix_recording(
             dict(breakout_data=breakout), harp_message=harp_message
         )
-        ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
+        if "aio_mapping" in onix_ds.extra_attributes:
+            ch_pd = onix_ds.extra_attributes["aio_mapping"]["photodiode"]
+        else:
+            ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
         photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
         analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
+        # to make it faster, decimate the photodiode signal
+        photodiode = scipy.signal.decimate(photodiode, 5)
+        analog_time = analog_time[::5]
 
     # Get frame log
     frame_log = get_frame_log(
