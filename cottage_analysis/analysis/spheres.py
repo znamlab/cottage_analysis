@@ -14,6 +14,8 @@ from cottage_analysis.analysis.fit_gaussian_blob import (
     gabor_3d_rf,
     gaussian_3d_rf,
 )
+from cottage_analysis.utilities.misc import get_str_or_recording
+from cottage_analysis.io_module.visstim import get_param_log
 
 print = partial(print, flush=True)
 from scipy.stats import mode
@@ -472,19 +474,9 @@ def search_param_log_trials(recording, trials_df, flexilims_session):
     Returns:
         Dataframe: Dataframe that contails information for each trial.
     """
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="harp",
-        allow_multiple=False,
-        return_dataseries=False,
-    )
-    if type(harp_ds.extra_attributes["csv_files"]) == str:
-        harp_files = eval(harp_ds.extra_attributes["csv_files"])
-    else:
-        harp_files = harp_ds.extra_attributes["csv_files"]
-    paramlog_path = harp_ds.path_full / harp_files["NewParams"]
-    param_log = pd.read_csv(paramlog_path)
+    vis_stim_recording = get_str_or_recording(vis_stim_recording, flexilims_session)
+    param_log = get_param_log(flexilims_session, vis_stim_recording=vis_stim_recording)
+    
     # trial index for each row of param log
     start_idx = (
         trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
@@ -670,19 +662,7 @@ def regenerate_frames_all_recordings(
         )
 
         # Load paramlog
-        harp_ds = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=recording.name,
-            dataset_type="harp",
-            allow_multiple=False,
-            return_dataseries=False,
-        )
-        if type(harp_ds.extra_attributes["csv_files"]) == str:
-            harp_files = eval(harp_ds.extra_attributes["csv_files"])
-        else:
-            harp_files = harp_ds.extra_attributes["csv_files"]
-        paramlog_path = harp_ds.path_full / harp_files["NewParams"]
-        param_log = pd.read_csv(paramlog_path)
+        param_log = get_param_log(flexilims_session, vis_stim_recording=recording)
 
         # Regenerate frames for this trial
         sphere_size = (
