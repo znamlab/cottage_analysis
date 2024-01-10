@@ -2,16 +2,20 @@ import warnings
 import shutil
 import numpy as np
 import pandas as pd
+import scipy.signal
 import flexiznam as flz
 from functools import partial
 from znamutils import slurm_it
 from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.harp import load_harpmessage
 from cottage_analysis.io_module import onix as onix_io
+from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
+from cottage_analysis.io_module.spikes import load_kilosort_folder
 from cottage_analysis.preprocessing import onix as onix_prepro
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
+
 
 print = partial(print, flush=True)
 
@@ -97,16 +101,12 @@ def find_monitor_frames(
         analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
 
     # Get frame log
-    if type(harp_ds.extra_attributes["csv_files"]) == str:
-        # Some yaml info have been saved as string instead of dict
-        # TODO: fix on flexilims and/or use yaml.safe_load
-        frame_log = pd.read_csv(
-            harp_ds.path_full / eval(harp_ds.extra_attributes["csv_files"])["FrameLog"]
-        )
-    else:
-        frame_log = pd.read_csv(
-            harp_ds.path_full / harp_ds.extra_attributes["csv_files"]["FrameLog"]
-        )
+    frame_log = get_frame_log(
+        flexilims_session,
+        harp_recording=harp_recording,
+        vis_stim_recording=vis_stim_recording,
+    )
+
     recording_duration = frame_log.HarpTime.values[-1] - frame_log.HarpTime.values[0]
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
@@ -232,11 +232,15 @@ def generate_vs_df(
         harp_files = eval(harp_ds.extra_attributes["csv_files"])
     else:
         harp_files = harp_ds.extra_attributes["csv_files"]
-    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
-    processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
+
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
-        frame_log = pd.read_csv(harp_ds.path_full / harp_files["FrameLog"])
+        frame_log = get_frame_log(
+            harp_ds.flexilims_session,
+            harp_recording=harp_recording,
+            vis_stim_recording=recording,
+        )
+
         frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
         frame_log_z.rename(
             columns={
@@ -283,9 +287,12 @@ def generate_vs_df(
         allow_exact_matches=True,
     )
     # Align paramLog with vs_df
-    paramlog_path = harp_ds.path_full / harp_files["NewParams"]
+    param_log = get_param_log(
+        flexilims_session=flexilims_session,
+        harp_recording=harp_recording,
+        vis_stim_recording=recording,
+    )
     # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = pd.read_csv(paramlog_path)
     param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
     if "Frameindex" in param_log.columns:
         if param_log.Frameindex.isna().any():
