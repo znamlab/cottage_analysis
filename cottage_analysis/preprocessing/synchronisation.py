@@ -174,6 +174,7 @@ def generate_vs_df(
     harp_recording=None,
     onix_recording=None,
     conflicts="skip",
+    sync_kwargs=None,
 ):
     """Generate a DataFrame that contains information for each monitor frame. This
     requires monitor frames to be synced first.
@@ -192,6 +193,8 @@ def generate_vs_df(
             entry if photodiode is recorded on onix. Defaults to None.
         conflicts (str, optional): how to deal with conflicts when updating flexilims.
             Defaults to "skip".
+        sync_kwargs (dict, optional): keyword arguments for the sync function. Defaults
+            to None.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -214,6 +217,7 @@ def generate_vs_df(
         harp_recording=harp_recording,
         onix_recording=onix_recording,
         conflicts=conflicts,
+        sync_kwargs=sync_kwargs,
     )
 
     monitor_frames_df = monitor_frames_df[
