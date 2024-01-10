@@ -94,10 +94,10 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
 
     if harp_recording is None and vis_stim_recording is None:
         raise ValueError("Provide at least one recording.")
-    
+
     if vis_stim_recording is not None:
         vis_stim_recording = get_str_or_recording(
-           vis_stim_recording, flexilims_session=flexilims_session
+            vis_stim_recording, flexilims_session=flexilims_session
         )
         vis_stim_ds = flz.get_datasets(
             flexilims_session=flexilims_session,
@@ -108,7 +108,7 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
         )
     else:  # use harp recording, which should contain the visual stimulation info
         harp_recording = get_str_or_recording(
-           harp_recording, flexilims_session=flexilims_session
+            harp_recording, flexilims_session=flexilims_session
         )
         harp_ds = flz.get_datasets(
             flexilims_session=flexilims_session,
@@ -118,5 +118,5 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
             return_dataseries=False,
         )
         vis_stim_ds = harp_ds
-        
+
     return vis_stim_ds

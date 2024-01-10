@@ -22,8 +22,9 @@ from cottage_analysis.pipelines import pipeline_utils
 # TODO: add decoder
 
 
-def main(project, session_name, conflicts="skip", photodiode_protocol=5,
-         sync_kwargs=None):
+def main(
+    project, session_name, conflicts="skip", photodiode_protocol=5, sync_kwargs=None
+):
     """
     Main function to analyze a session.
 

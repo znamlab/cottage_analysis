@@ -124,10 +124,13 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
-    # If the imaging frame is after the last found monitor frame, use the time for the last imaging frame time that's before the last found monitor frame
+    # If the imaging frame is after the last found monitor frame, use the time for the
+    # last imaging frame time that's before the last found monitor frame
     if len(np.where(frame_times > mouse_pos_time[-1])[0]) > 0:
         print(
-            f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} imaging frames are after the last found monitor frame. Using the time for the last imaging frame time that's before the last found monitor frame."
+            f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} "
+            "imaging frames are after the last found monitor frame. Using the time for "
+            "the last imaging frame time that's before the last found monitor frame."
         )
     frame_times[np.where(frame_times > mouse_pos_time[-1])[0]] = frame_times[
         np.where(frame_times <= mouse_pos_time[-1])[0][-1]
@@ -476,7 +479,7 @@ def search_param_log_trials(recording, trials_df, flexilims_session):
     """
     recording = get_str_or_recording(recording, flexilims_session)
     param_log = get_param_log(flexilims_session, vis_stim_recording=recording)
-    
+
     # trial index for each row of param log
     start_idx = (
         trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
@@ -549,7 +552,9 @@ def sync_all_recordings(
 
     for i, recording_name in enumerate(recordings.name):
         print(f"Processing recording {i+1}/{len(recordings)}")
-        recording, harp_recording, onix_rec = get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix)
+        recording, harp_recording, onix_rec = get_relevant_recordings(
+            recording_name, flexilims_session, harp_is_in_recording, use_onix
+        )
         vs_df = synchronisation.generate_vs_df(
             recording=recording,
             photodiode_protocol=photodiode_protocol,
@@ -651,7 +656,9 @@ def regenerate_frames_all_recordings(
     recordings = recordings[recordings.name.str.contains(protocol_base)]
 
     for i, recording_name in enumerate(recordings.name):
-        recording, harp_recording, onix_rec = get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix)
+        recording, harp_recording, onix_rec = get_relevant_recordings(
+            recording_name, flexilims_session, harp_is_in_recording, use_onix
+        )
         # Generate vs_df, imaging_df, trials_df for this recording
         print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
         vs_df = synchronisation.generate_vs_df(
@@ -1158,7 +1165,10 @@ def fit_3d_rfs_parametric(coef, nx, ny, nz, model="gaussian"):
         params.append(popt)
     return coef_fit, params
 
-def get_relevant_recordings(recording_name, flexilims_session, harp_is_in_recording, use_onix):
+
+def get_relevant_recordings(
+    recording_name, flexilims_session, harp_is_in_recording, use_onix
+):
     """Get the recording, harp recording and onix recording for a given recording name.
 
     Args:
@@ -1203,5 +1213,5 @@ def get_relevant_recordings(recording_name, flexilims_session, harp_is_in_record
         onix_rec = onix_rec.iloc[0]
     else:
         onix_rec = None
-    
+
     return recording, harp_recording, onix_rec
