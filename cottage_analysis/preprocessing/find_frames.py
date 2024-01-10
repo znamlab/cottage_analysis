@@ -126,6 +126,7 @@ def sync_by_correlation(
     save_folder=None,
     ignore_errors=False,
     last_frame_delay=100,
+    detect_only=False,
 ):
     """Find best shift to synchronise photodiode with ideal sequence
 
@@ -165,6 +166,8 @@ def sync_by_correlation(
         ignore_errors (bool): If True, will skip quality checks and try to force through
         last_frame_delay (float): If ignore_errors is True, frame detected more than
             this many seconds after the last rendered frame will be ignored
+        detect_only (bool): If True, will only detect frames and not attempt to find
+            the best fit. Useful for debugging. Default to False
 
     Returns:
         frames_df (pd.DataFrame): dataframe with a line per detected frame
@@ -221,47 +224,60 @@ def sync_by_correlation(
         fig_dict = dict(frame_dection=figs)
     else:
         fig_dict = dict()
-
-    # Second step: cross correlation
-    frames_df, db_di = run_cross_correlation(
-        frames_df,
-        frame_log,
-        photodiode_time,
-        normed_pd,
-        time_column,
-        sequence_column,
-        num_frame_to_corr,
-        maxlag,
-        expected_lag,
-        frame_rate,
-        verbose,
-        debug or do_plot,
-        pd_sampling,
-    )
-    if db_di is not None:
-        db_dict.update(db_di)
-
-    # Now attempt the matching of the correlated frames to the logger (i.e. find if
-    # `bef`, `center` and `aft` agree or if I can identify the best)
-    frames_df = _match_fit_to_logger(
-        frames_df,
-        correlation_threshold=correlation_threshold,
-        relative_corr_thres=relative_corr_thres,
-        minimum_lag=minimum_lag,
-        verbose=verbose,
-    )
     extra_out = {}
     if do_plot:
         extra_out["figures"] = fig_dict
     if debug:
         extra_out["debug_info"] = db_dict
 
+    if not detect_only:
+        # Second step: cross correlation
+        frames_df, db_di = run_cross_correlation(
+            frames_df,
+            frame_log,
+            photodiode_time,
+            normed_pd,
+            time_column,
+            sequence_column,
+            num_frame_to_corr,
+            maxlag,
+            expected_lag,
+            frame_rate,
+            verbose,
+            debug or do_plot,
+            pd_sampling,
+        )
+        if db_di is not None:
+            db_dict.update(db_di)
+
+        # Now attempt the matching of the correlated frames to the logger (i.e. find if
+        # `bef`, `center` and `aft` agree or if I can identify the best)
+        frames_df = _match_fit_to_logger(
+            frames_df,
+            correlation_threshold=correlation_threshold,
+            relative_corr_thres=relative_corr_thres,
+            minimum_lag=minimum_lag,
+            verbose=verbose,
+        )
+    else:
+        cl = (
+            frame_log[time_column].values.searchsorted(frames_df["onset_time"].values)
+            - 1
+        )
+        frames_df["closest_frame"] = np.clip(cl, 0, len(frame_log) - 1)
+        frames_df["lag"] = (
+            frames_df["onset_time"].values
+            - frame_log[time_column].iloc[frames_df["closest_frame"]].values
+        )
+        frames_df["sync_reason"] = "consensus of 3"
+        frames_df.loc[frames_df["lag"] < 0, "sync_reason"] = "closest to photodiode"
+        frames_df["residuals"] = 0
     # Then interpolate the missing frames
     interpolate_sync(frames_df, verbose=verbose)
     # and remove the last double detected frames
     frames_df = _remove_double_frames(frames_df, verbose=True)
 
-    if do_plot and (save_folder is not None):
+    if do_plot and (save_folder is not None) and not detect_only:
         if verbose:
             print("Plotting diagnostic figures")
         fig = plt.figure()
