@@ -467,15 +467,15 @@ def search_param_log_trials(recording, trials_df, flexilims_session):
     """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
 
     Args:
-        recording (Series): recording entry returned by flexiznam.get_entity(name=recording_name, project_id=project).
+        recording (Series or str): Recording or recording name. Must contain visstim info
         trials_df (pd.DataFrane): Dataframe that contails information for each trial.
         flexilims_session (flexilims_session): flexilims session.
 
     Returns:
         Dataframe: Dataframe that contails information for each trial.
     """
-    vis_stim_recording = get_str_or_recording(vis_stim_recording, flexilims_session)
-    param_log = get_param_log(flexilims_session, vis_stim_recording=vis_stim_recording)
+    recording = get_str_or_recording(recording, flexilims_session)
+    param_log = get_param_log(flexilims_session, vis_stim_recording=recording)
     
     # trial index for each row of param log
     start_idx = (
