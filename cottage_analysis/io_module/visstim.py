@@ -94,19 +94,26 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
 
     if harp_recording is None and vis_stim_recording is None:
         raise ValueError("Provide at least one recording.")
-
-    if vis_stim_recording is not None:
-        vis_stim_recording = get_str_or_recording(
+    vis_stim_recording = get_str_or_recording(
             vis_stim_recording, flexilims_session=flexilims_session
         )
-        vis_stim_ds = flz.get_datasets(
-            flexilims_session=flexilims_session,
-            origin_name=vis_stim_recording.name,
-            dataset_type="visstim",
-            allow_multiple=False,
-            return_dataseries=False,
+    harp_recording = get_str_or_recording(
+            harp_recording, flexilims_session=flexilims_session
         )
-    else:  # use harp recording, which should contain the visual stimulation info
+    
+    if harp_recording is None:
+        use_harp = False
+    else:
+        # harp exists
+        if vis_stim_recording is None:
+            use_harp = True
+        elif (vis_stim_recording.name == harp_recording.name):
+            # harp is the same as vis_stim, so use harp
+            use_harp = True
+        else:
+            use_harp = False
+    
+    if use_harp:  # use visual stimulation recording
         harp_recording = get_str_or_recording(
             harp_recording, flexilims_session=flexilims_session
         )
@@ -118,5 +125,15 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
             return_dataseries=False,
         )
         vis_stim_ds = harp_ds
-
+    else:  # use harp recording, which should contain the visual stimulation info
+        vis_stim_recording = get_str_or_recording(
+            vis_stim_recording, flexilims_session=flexilims_session
+        )
+        vis_stim_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=vis_stim_recording.name,
+            dataset_type="visstim",
+            allow_multiple=False,
+            return_dataseries=False,
+        )
     return vis_stim_ds
