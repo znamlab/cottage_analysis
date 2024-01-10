@@ -415,9 +415,9 @@ def create_frame_df(
                 label="photodiode",
             )
             ax.axvline(0, color="k", label="end of presentation")
-            late_frames = frames_df[frames_df.onset_time > end_of_presentation]
+            late_frames = frames_df[after_last & (frames_df.onset_time < end_time)]
             ax.scatter(
-                late_frames.peak_time - end_of_presentation,
+                late_frames.onset_time - end_of_presentation,
                 photodiode_signal[late_frames.peak_sample],
                 label="late frame",
                 color="purple",
