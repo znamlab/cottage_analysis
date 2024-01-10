@@ -479,7 +479,13 @@ def generate_imaging_df(
 
 
 def generate_spike_rate_df(
-    vs_df, onix_recording, flexilims_session, rate_bin, filter_datasets=None
+    vs_df,
+    onix_recording,
+    harp_recording,
+    flexilims_session,
+    rate_bin=0.1,
+    filter_datasets=None,
+    return_multiunit=True,
 ):
     """This is the equivalent of generate_imaging_df for spike rate data.
 
@@ -487,12 +493,78 @@ def generate_spike_rate_df(
 
     Args:
         vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
-        onix_recording (pandas.Series): recording entry from flexilims.
+        onix_recording (pandas.Series or str): recording entry from flexilims.
+        harp_recording (pandas.Series or str): recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
         rate_bin (int): bin size in s.
         filter_datasets (dict, optional): filters to apply on choosing onix datasets.
             Defaults to None."""
-    return
+    onix_recording = get_str_or_recording(onix_recording, flexilims_session)
+    harp_recording = get_str_or_recording(harp_recording, flexilims_session)
+    spike_ds = flz.get_datasets(
+        origin_id=onix_recording.id,
+        dataset_type="kilosort2",
+        allow_multiple=False,
+        flexilims_session=flexilims_session,
+    )
+
+    out = load_kilosort_folder(spike_ds.path_full, return_multiunit)
+    if return_multiunit:
+        ks_data, good_units, mua_units = out
+        units = {**good_units, **mua_units}
+    else:
+        ks_data, units = out
+
+    # create a dataframe that looks like the imaging df, but using bins of rate_bin
+    bins = np.arange(
+        vs_df.monitor_harptime.min() - 10,
+        vs_df.monitor_harptime.max() + 10 + rate_bin,
+        rate_bin,
+    )
+    imaging_df = pd.DataFrame(
+        dict(
+            imaging_harptime=bins[:-1],
+            imaging_harptime_end=bins[1:],
+            imaging_frame=np.arange(len(bins) - 1),
+        )
+    )
+
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=vs_df,
+        left_on="imaging_harptime_end",
+        right_on="monitor_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
+    harpmessage = load_harpmessage(
+        recording=harp_recording, flexilims_session=flexilims_session
+    )[0]
+    mouse_z_harp_df = pd.DataFrame(
+        {
+            "mouse_z_harptime": harpmessage["analog_time"],
+            "mouse_z_harp": np.cumsum(harpmessage["rotary_meter"]),
+        }
+    )
+    # select the last mouse z before the end of each imaging volume / frame
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=mouse_z_harp_df,
+        left_on="imaging_harptime_end",
+        right_on="mouse_z_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
+
+    # get the spike rate for each units
+    spks = np.zeros((len(units), len(bins) - 1))
+    for iu, unit in enumerate(units):
+        rate = np.histogram(units[unit], bins=bins)[0] / rate_bin
+        spks[iu, :] = rate
+    imaging_df["spks"] = np.split(spks, spks.shape[1], axis=1)
+    imaging_df["dffs"] = np.split(spks, spks.shape[1], axis=1)
+    return imaging_df
 
 
 def fill_missing_imaging_volumes(df, nan_col="RS"):
