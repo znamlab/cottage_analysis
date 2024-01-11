@@ -223,10 +223,11 @@ def fit_preferred_depth(
         )
 
         for roi in tqdm(range(X.dff_stim.iloc[0].shape[1])):
+            # XXX TODO: check if this is correct and explain why X=y and y=X
             popt, rsq = common_utils.iterate_fit(
-                gaussian_func_,
-                np.log(np.array(y)),
-                np.array(np.stack(X["trial_mean_dff"])[:, roi]).flatten(),
+                func=gaussian_func_,
+                X=np.log(np.array(y)),
+                y=np.array(np.stack(X["trial_mean_dff"])[:, roi]).flatten(),
                 lower_bounds=[0, np.log(depth_min), 0, -np.inf],
                 upper_bounds=[np.inf, np.log(depth_max), np.inf, np.inf],
                 niter=niter,
