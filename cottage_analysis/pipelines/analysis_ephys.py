@@ -23,7 +23,12 @@ from cottage_analysis.pipelines import pipeline_utils
 
 
 def main(
-    project, session_name, conflicts="skip", photodiode_protocol=5, sync_kwargs=None
+    project,
+    session_name,
+    conflicts="skip",
+    photodiode_protocol=5,
+    sync_kwargs=None,
+    use_onix=True,
 ):
     """
     Main function to analyze a session.
@@ -66,7 +71,7 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             harp_is_in_recording=False,
-            use_onix=True,
+            use_onix=use_onix,
             conflicts="skip",
             sync_kwargs=sync_kwargs,
         )
@@ -82,7 +87,7 @@ def main(
             return_volumes=True,
             resolution=5,
             sync_kwargs=sync_kwargs,
-            use_onix=True,
+            use_onix=use_onix,
             harp_is_in_recording=False,
         )
 
@@ -101,7 +106,7 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             harp_is_in_recording=False,
-            use_onix=True,
+            use_onix=use_onix,
             conflicts=conflicts,
             sync_kwargs=sync_kwargs,
         )
@@ -235,7 +240,7 @@ def main(
             return_volumes=True,
             resolution=5,
             sync_kwargs=sync_kwargs,
-            use_onix=True,
+            use_onix=use_onix,
             harp_is_in_recording=False,
         )
 
@@ -306,7 +311,8 @@ def main(
 if __name__ == "__main__":
     main(
         project="blota_onix_pilote",
-        session_name="BRYA142.5d_S20231005",
-        sync_kwargs=dict(frame_detection_height=0.05, detect_only=True),
-        conflicts="skip",
+        session_name="BRYA142.5d_S20230920",
+        sync_kwargs=dict(frame_detection_height=0.05, detect_only=False),
+        conflicts="overwrite",
+        use_onix=False,
     )

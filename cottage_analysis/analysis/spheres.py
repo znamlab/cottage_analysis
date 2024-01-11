@@ -466,22 +466,27 @@ def generate_trials_df(recording, imaging_df):
     return trials_df
 
 
-def search_param_log_trials(harp_recording, trials_df, flexilims_session, vis_stim_recording=None):
+def search_param_log_trials(
+    harp_recording, trials_df, flexilims_session, vis_stim_recording=None
+):
     """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
 
     Args:
         harp_recording (Series or str): Harp recording
         trials_df (pd.DataFrane): Dataframe that contails information for each trial.
         flexilims_session (flexilims_session): flexilims session.
-        vis_stim_recording (Series or str, optional): Visual stimulation recording. 
+        vis_stim_recording (Series or str, optional): Visual stimulation recording.
             required if `recording` does not contain vis_stim info. Defaults to None.
 
     Returns:
         Dataframe: Dataframe that contails information for each trial.
     """
     harp_recording = get_str_or_recording(harp_recording, flexilims_session)
-    param_log = get_param_log(flexilims_session, vis_stim_recording=vis_stim_recording,
-                              harp_recording=harp_recording)
+    param_log = get_param_log(
+        flexilims_session,
+        vis_stim_recording=vis_stim_recording,
+        harp_recording=harp_recording,
+    )
 
     # trial index for each row of param log
     start_idx = (
@@ -553,17 +558,18 @@ def sync_all_recordings(
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
 
+    load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         print(f"Processing recording {i+1}/{len(recordings)}")
         recording, harp_recording, onix_rec = get_relevant_recordings(
-            recording_name, flexilims_session, harp_is_in_recording, use_onix
+            recording_name, flexilims_session, harp_is_in_recording, load_onix
         )
         vs_df = synchronisation.generate_vs_df(
             recording=recording,
             photodiode_protocol=photodiode_protocol,
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
-            onix_recording=onix_rec,
+            onix_recording=onix_rec if use_onix else None,
             project=project,
             conflicts=conflicts,
             sync_kwargs=sync_kwargs,
@@ -584,7 +590,7 @@ def sync_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=False,
+                return_multiunit=True,
             )
 
         imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
@@ -595,7 +601,7 @@ def sync_all_recordings(
             harp_recording=harp_recording,
             trials_df=trials_df,
             flexilims_session=flexilims_session,
-            vis_stim_recording=recording, 
+            vis_stim_recording=recording,
         )
 
         if i == 0:
@@ -658,10 +664,10 @@ def regenerate_frames_all_recordings(
         flexilims_session=flexilims_session,
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
-
+    load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         recording, harp_recording, onix_rec = get_relevant_recordings(
-            recording_name, flexilims_session, harp_is_in_recording, use_onix
+            recording_name, flexilims_session, harp_is_in_recording, load_onix
         )
         # Generate vs_df, imaging_df, trials_df for this recording
         print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
@@ -670,7 +676,7 @@ def regenerate_frames_all_recordings(
             photodiode_protocol=photodiode_protocol,
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
-            onix_recording=onix_rec,
+            onix_recording=onix_rec if use_onix else None,
             project=project,
             sync_kwargs=sync_kwargs,
         )
@@ -690,7 +696,7 @@ def regenerate_frames_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=False,
+                return_multiunit=True,
             )
 
         imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
