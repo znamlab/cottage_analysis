@@ -55,7 +55,9 @@ def load_onix(
     except IOError:
         print("Could not load TS4131 data")
     try:
-        out["bno055_data"] = load_bno055(onix_ds.path_full)
+        out["bno055_data"] = load_bno055(
+            onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+        )
     except IOError:
         print("Could not load BNO055 data")
 
@@ -225,6 +227,7 @@ def load_bno055(
     num_chans_gravity=3,
     num_chans_linear_accel=3,
     num_chans_quaternion=4,
+    cut_if_not_multiple=False,
 ):
     """Loads the IMU data in a memmap dictionary
     Args:
@@ -257,8 +260,13 @@ def load_bno055(
             output["no_idea"] = other.iloc[:, 3]
             continue
         assert bno_file.suffix == ".raw"
-
-        data = np.fromfile(bno_file, dtype=np.double).reshape(-1, num_chan_dict[what])
+        data = _load_binary_file(
+            bno_file,
+            dtype=np.double,
+            nchan=num_chan_dict[what],
+            order="F",
+            cut_if_not_multiple=cut_if_not_multiple,
+        )
 
         output[what] = data
     return output
