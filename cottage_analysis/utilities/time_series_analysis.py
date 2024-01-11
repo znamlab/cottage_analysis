@@ -101,7 +101,7 @@ def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
 
 
 def half_exp_density(data, sd):
-    """Takes a sequence of spike times and produces a non-normalised density
+    """Takes a sequence of spike times and produces a normalised density
     estimate by summing Half-exponential (asymetric) defined by sd at each spike
     time. The range of the output is guessed from the extent of the data (which
     need not be ordered), the resolution is automagically determined from sd; we
@@ -118,10 +118,14 @@ def half_exp_density(data, sd):
     if time.size % 2 != 0:
         time = time[:-1]
     r = np.arange(0, len(time), dtype=int)
-    hal = r.size / 2
+    hal = r.size // 2
     exp = np.zeros(r.size, dtype="float")
-    exp[hal:] = 2 / np.sqrt(2 * sd**2) * np.exp(-np.sqrt(2) * np.abs(time[hal:]) / sd)
-
+    exp[hal:] = (
+        2
+        / np.sqrt(2 * sd**2)
+        * np.exp(-np.sqrt(2) * np.abs(time[hal:] - time[hal]) / sd)
+    )
+    exp /= exp.sum()
     time, dens = kernel_density(data, np.vstack((time, exp)))
     return np.vstack((time, dens))
 
