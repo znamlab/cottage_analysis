@@ -29,6 +29,7 @@ def main(
     photodiode_protocol=5,
     sync_kwargs=None,
     use_onix=True,
+    process_mua=False,
 ):
     """
     Main function to analyze a session.
@@ -74,6 +75,7 @@ def main(
             use_onix=use_onix,
             conflicts="skip",
             sync_kwargs=sync_kwargs,
+            process_mua=process_mua,
         )
 
         frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
@@ -89,6 +91,7 @@ def main(
             sync_kwargs=sync_kwargs,
             use_onix=use_onix,
             harp_is_in_recording=False,
+            process_mua=process_mua,
         )
 
         print("Redoing plotting...")
@@ -109,6 +112,7 @@ def main(
             use_onix=use_onix,
             conflicts=conflicts,
             sync_kwargs=sync_kwargs,
+            process_mua=process_mua,
         )
 
         # Find depth neurons and fit preferred depth
@@ -242,6 +246,7 @@ def main(
             sync_kwargs=sync_kwargs,
             use_onix=use_onix,
             harp_is_in_recording=False,
+            process_mua=process_mua,
         )
 
         print("Fitting RF...")
@@ -311,8 +316,9 @@ def main(
 if __name__ == "__main__":
     main(
         project="blota_onix_pilote",
-        session_name="BRYA142.5d_S20230920",
+        session_name="BRYA142.5d_S20230831",
         sync_kwargs=dict(frame_detection_height=0.05, detect_only=False),
         conflicts="overwrite",
         use_onix=False,
+        process_mua=False,
     )

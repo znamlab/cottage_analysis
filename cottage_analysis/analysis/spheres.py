@@ -521,6 +521,7 @@ def sync_all_recordings(
     use_onix=False,
     conflicts="skip",
     sync_kwargs=None,
+    process_mua=False,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -538,6 +539,7 @@ def sync_all_recordings(
         use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
         conflicts (str): how to handle conflicts. Defaults to "skip".
         sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
+        process_mua (bool): if True, process multiunit activity. Defaults to False.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df for all recordings, one concatenated trials_df for all recordings.
@@ -590,7 +592,7 @@ def sync_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=True,
+                return_multiunit=process_mua,
             )
 
         imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
@@ -628,6 +630,7 @@ def regenerate_frames_all_recordings(
     sync_kwargs=None,
     harp_is_in_recording=True,
     use_onix=False,
+    process_mua=False,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -645,6 +648,7 @@ def regenerate_frames_all_recordings(
         sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
         harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
         use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
+        process_mua (bool): if True, process multiunit activity. Defaults to False.
 
     Returns:
         (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all recordings (nframes * y * x), one concatenated imaging_df for all recordings.
@@ -696,7 +700,7 @@ def regenerate_frames_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=True,
+                return_multiunit=process_mua,
             )
 
         imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
