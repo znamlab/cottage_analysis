@@ -95,24 +95,24 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
     if harp_recording is None and vis_stim_recording is None:
         raise ValueError("Provide at least one recording.")
     vis_stim_recording = get_str_or_recording(
-            vis_stim_recording, flexilims_session=flexilims_session
-        )
+        vis_stim_recording, flexilims_session=flexilims_session
+    )
     harp_recording = get_str_or_recording(
-            harp_recording, flexilims_session=flexilims_session
-        )
-    
+        harp_recording, flexilims_session=flexilims_session
+    )
+
     if harp_recording is None:
         use_harp = False
     else:
         # harp exists
         if vis_stim_recording is None:
             use_harp = True
-        elif (vis_stim_recording.name == harp_recording.name):
+        elif vis_stim_recording.name == harp_recording.name:
             # harp is the same as vis_stim, so use harp
             use_harp = True
         else:
             use_harp = False
-    
+
     if use_harp:  # use visual stimulation recording
         harp_recording = get_str_or_recording(
             harp_recording, flexilims_session=flexilims_session
