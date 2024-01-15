@@ -73,7 +73,7 @@ MAPPING = [
 
 
 def preprocess_onix_recording(
-    data, harp_message, breakout_di_names=None, debounce_window=1000
+    data, harp_message, breakout_di_names=None, debounce_window=1000, cut_onix=False
 ):
     """Preprocess the ONIX recording data.
 
@@ -83,6 +83,8 @@ def preprocess_onix_recording(
         breakout_di_names (dict, optional): A dictionary mapping the breakout digital
         debounce_window (int, optional): Window to debounce signal in samples. Defaults
             to 1000.
+        cut_onix (bool, optional): If True, cut the onix clock to match the harp clock.
+            This is useful when the clock is running constantly. Defaults to False.
 
     Returns:
         dict: The preprocessed ONIX recording data. (same as input)
@@ -91,17 +93,22 @@ def preprocess_onix_recording(
         data["breakout_data"], breakout_di_names, debounce_window=debounce_window
     )
     h2o, o2h = sync_harp2onix(
-        harp_message, data["breakout_data"]["digital_inputs"]["oni_clock_di"]
+        harp_message,
+        data["breakout_data"]["digital_inputs"]["oni_clock_di"],
+        cut_onix=cut_onix,
     )
     data["harp2onix"], data["onix2harp"] = h2o, o2h
     return data
 
 
-def sync_harp2onix(harp_message, oni_clock_di):
+def sync_harp2onix(harp_message, oni_clock_di, cut_onix=False):
     """Synchronise harp to onix using clock digital input
 
     Args:
         harp_message: output of load_harp
+        oni_clock_di: digital input of breakout box
+        cut_onix: if True, cut the onix clock to match the harp clock. This is
+            useful when the clock is running constantly. Defaults to False.
 
     Returns:
         harp_message: same as input, with two new fields: 'analog_time_onix' and
@@ -120,7 +127,7 @@ def sync_harp2onix(harp_message, oni_clock_di):
     nharp = len(heart_harp)
     noni = len(heart_oni)
     if nharp != noni:
-        if nharp < noni and nharp / noni > 0.99:
+        if nharp < noni and (cut_onix or (nharp / noni > 0.99)):
             print("Cutting %d heartbeats from onix clock" % (noni - nharp))
             heart_oni = heart_oni[:nharp]
         elif nharp > noni and noni / nharp > 0.99:
