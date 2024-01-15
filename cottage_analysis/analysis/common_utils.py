@@ -77,6 +77,11 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
+    valid = ~np.isnan(X) & ~np.isnan(y)
+    if np.any(~valid):
+        print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        X = X[valid]
+        y = y[valid]
     np.random.seed(42)
     for i_iter in range(niter):
         if p0_func is not None:
