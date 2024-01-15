@@ -7,10 +7,14 @@ import flexiznam as flz
 from functools import partial
 from znamutils import slurm_it
 from cottage_analysis.utilities.misc import get_str_or_recording
+
 from cottage_analysis.io_module.harp import load_harpmessage
 from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
-from cottage_analysis.io_module.spikes import load_kilosort_folder
+from cottage_analysis.io_module.spikes import (
+    load_kilosort_folder,
+    get_smoothed_spike_rate,
+)
 from cottage_analysis.preprocessing import onix as onix_prepro
 from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
@@ -506,9 +510,11 @@ def generate_spike_rate_df(
     onix_recording,
     harp_recording,
     flexilims_session,
-    rate_bin=0.1,
+    rate_bin=1 / 30.0,
+    exp_sd=0.1,
     filter_datasets=None,
-    return_multiunit=True,
+    return_multiunit=False,
+    unit_list=None,
 ):
     """This is the equivalent of generate_imaging_df for spike rate data.
 
@@ -520,8 +526,15 @@ def generate_spike_rate_df(
         harp_recording (pandas.Series or str): recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
         rate_bin (int): bin size in s.
+        exp_sd (float): standard deviation of the exponential filter to apply on the spike rate.
         filter_datasets (dict, optional): filters to apply on choosing onix datasets.
-            Defaults to None."""
+            Defaults to None.
+        return_multiunit (bool): if True, process multiunits as well. Defaults to False.
+        unit_list (list): list of units to process. Defaults to None.
+
+    Returns:
+        DataFrame: contains information for each neuron / frame.
+    """
     onix_recording = get_str_or_recording(onix_recording, flexilims_session)
     harp_recording = get_str_or_recording(harp_recording, flexilims_session)
     spike_ds = flz.get_datasets(
@@ -531,12 +544,40 @@ def generate_spike_rate_df(
         flexilims_session=flexilims_session,
     )
 
-    out = load_kilosort_folder(spike_ds.path_full, return_multiunit)
+    out = load_kilosort_folder(spike_ds.path_full, return_multiunit=return_multiunit)
     if return_multiunit:
         ks_data, good_units, mua_units = out
         units = {**good_units, **mua_units}
     else:
         ks_data, units = out
+    if unit_list is not None:
+        units = {k: v for k, v in units.items() if k in unit_list}
+
+    # Express spikes in harptime
+    harp_message, harp_ds = load_harpmessage(
+        recording=harp_recording,
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    onix_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=onix_recording.name,
+        dataset_type="onix",
+        allow_multiple=False,
+    )
+    breakout = onix_io.load_breakout(onix_ds.path_full)
+    rhd = onix_io.load_rhd2164(onix_ds.path_full, cut_if_not_multiple=True)
+    onix_data = onix_prepro.preprocess_onix_recording(
+        dict(breakout_data=breakout), harp_message=harp_message, cut_onix=True
+    )
+    onix_data.keys()
+    units_harp = {}
+    for cl, spike_index in units.items():
+        # if the recording has been interupted we can have spike_index further than
+        # clock. Cut them
+        spike_index = spike_index[spike_index < len(rhd["clock"])]
+        spike_clock = rhd["clock"][spike_index]
+        units_harp[cl] = onix_data["onix2harp"](spike_clock)
 
     # create a dataframe that looks like the imaging df, but using bins of rate_bin
     bins = np.arange(
@@ -581,12 +622,12 @@ def generate_spike_rate_df(
     )
 
     # get the spike rate for each units
-    spks = np.zeros((len(units), len(bins) - 1))
-    for iu, unit in enumerate(units):
-        rate = np.histogram(units[unit], bins=bins)[0] / rate_bin
-        spks[iu, :] = rate
-    imaging_df["spks"] = np.split(spks, spks.shape[1], axis=1)
-    imaging_df["dffs"] = np.split(spks, spks.shape[1], axis=1)
+    spks = get_smoothed_spike_rate(
+        units_harp, bins, exp_sd=exp_sd, save_folder=spike_ds.path_full
+    )
+
+    imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+    imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     return imaging_df
 
 
