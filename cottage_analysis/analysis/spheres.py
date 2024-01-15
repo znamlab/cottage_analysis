@@ -469,7 +469,8 @@ def generate_trials_df(recording, imaging_df):
 def search_param_log_trials(
     harp_recording, trials_df, flexilims_session, vis_stim_recording=None
 ):
-    """Add the start param logger row and stop param logger row to each trial. This is required for regenerate_spheres.
+    """Add the start param logger row and stop param logger row to each trial.
+    This is required for regenerate_spheres.
 
     Args:
         harp_recording (Series or str): Harp recording
@@ -521,7 +522,7 @@ def sync_all_recordings(
     use_onix=False,
     conflicts="skip",
     sync_kwargs=None,
-    process_mua=False,
+    ephys_kwargs=None,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -539,7 +540,9 @@ def sync_all_recordings(
         use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
         conflicts (str): how to handle conflicts. Defaults to "skip".
         sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
-        process_mua (bool): if True, process multiunit activity. Defaults to False.
+        return_multiunit (bool): if True, process multiunit activity. Defaults to False.
+        ephys_kwargs (dict): Keyword arguments for synchronisation.generate_spike_rate_df.
+            `return_multiunit` or `exp_sd` for instance. Defaults to None.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df for all recordings, one concatenated trials_df for all recordings.
@@ -592,7 +595,7 @@ def sync_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=process_mua,
+                **ephys_kwargs,
             )
 
         imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
@@ -630,7 +633,7 @@ def regenerate_frames_all_recordings(
     sync_kwargs=None,
     harp_is_in_recording=True,
     use_onix=False,
-    process_mua=False,
+    ephys_kwargs=None,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -648,7 +651,10 @@ def regenerate_frames_all_recordings(
         sync_kwargs (dict): kwargs for synchronisation.generate_vs_df. Defaults to None.
         harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
         use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
-        process_mua (bool): if True, process multiunit activity. Defaults to False.
+        ephys_kwargs (dict): Keyword arguments for synchronisation.generate_spike_rate_df.
+            `return_multiunit` or `exp_sd` for instance. Defaults to None.
+
+
 
     Returns:
         (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all recordings (nframes * y * x), one concatenated imaging_df for all recordings.
@@ -700,7 +706,7 @@ def regenerate_frames_all_recordings(
                 harp_recording=harp_recording,
                 flexilims_session=flexilims_session,
                 filter_datasets=filter_datasets,
-                return_multiunit=process_mua,
+                **ephys_kwargs,
             )
 
         imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
@@ -715,7 +721,11 @@ def regenerate_frames_all_recordings(
         )
 
         # Load paramlog
-        param_log = get_param_log(flexilims_session, vis_stim_recording=recording)
+        param_log = get_param_log(
+            flexilims_session,
+            vis_stim_recording=recording,
+            harp_recording=harp_recording,
+        )
 
         # Regenerate frames for this trial
         sphere_size = (
