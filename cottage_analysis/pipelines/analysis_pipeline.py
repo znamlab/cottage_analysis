@@ -20,6 +20,7 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 from cottage_analysis.pipelines import pipeline_utils
 
 # TODO: add decoder
+# TODO: separate steps
 
 
 def main(project, session_name, conflicts="skip", photodiode_protocol=5):
@@ -154,7 +155,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             choose_trials=None,
             rs_thr=0.01,
             param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=10,
+            niter=1,
             min_sigma=0.25,
         )
 
@@ -168,7 +169,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             closedloop_only=True,
             rs_thr=0.01,
             param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=10,
+            niter=1,
             min_sigma=0.25,
         )
         # Save neurons_df
@@ -184,7 +185,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             choose_trials=None,
             rs_thr=0.01,
             param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=10,
+            niter=1,
             min_sigma=0.25,
         )
         # Save neurons_df
@@ -200,7 +201,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             choose_trials=None,
             rs_thr=0.01,
             param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=10,
+            niter=1,
             min_sigma=0.25,
         )
         # Save neurons_df
@@ -227,7 +228,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             frames_all[:, :, int(frames_all.shape[2] // 2) :],
             reg_xys=[10, 20, 40, 80, 160, 320, 640],
             reg_depths=[10, 20, 40, 80, 160, 320, 640],
-            shift_stims=2,
+            shift_stim=2,
             use_col="dffs",
             k_folds=5,
             tune_separately=True,
@@ -240,7 +241,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             frames_all[:, :, : int(frames_all.shape[2] // 2)],
             best_reg_xys,
             best_reg_depths,
-            shift_stims=2,
+            shift_stim=2,
             use_col="dffs",
             k_folds=5,
             validation=False,
