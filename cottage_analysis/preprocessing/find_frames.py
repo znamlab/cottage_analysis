@@ -872,6 +872,8 @@ def ideal_photodiode(
 
     sequence = frame_log[sequence_column].values
     computer_switch_time = frame_log[time_column].values
+    assert np.isnan(sequence).sum() == 0, "Sequence contains NaN"
+    assert np.isnan(computer_switch_time).sum() == 0, "Time contains NaN"
     actual_rate = 1 / np.median(np.diff(computer_switch_time))
     ideal_switch_times = np.arange(len(sequence) + 1) / actual_rate
     frame_log["ideal_switch_times"] = ideal_switch_times[:-1]
