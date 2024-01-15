@@ -766,13 +766,18 @@ def plot_PSTH(
     plotting_utils.despine()
 
 
-def basic_vis_session(neurons_df, trials_df, neurons_ds):
+def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
     rois = neurons_df.roi.values
     os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
 
     plot_rows = 10
     plot_cols = 5
 
+    params = dict(
+        rs_thr=0.2,
+        rs_curve=dict(speed_min=0.001, speed_max=1, nbins=10, speed_thr=0.001),
+    )
+    params.update(kwargs)
     for i in tqdm(range(int(len(rois) // plot_rows + 1))):
         if i * plot_rows < len(rois) - 1:
             plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
@@ -784,7 +789,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                     neurons_df=neurons_df,
                     trials_df=trials_df,
                     roi=roi,
-                    rs_thr=0.2,
+                    rs_thr=params["rs_thr"],
                     plot_fit=False,
                     linewidth=3,
                     linecolor="k",
@@ -799,12 +804,9 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                     trials_df=trials_df,
                     roi=roi,
                     is_closed_loop=1,
-                    nbins=10,
                     which_speed="RS",
-                    speed_min=0.01,
-                    speed_max=1.5,
-                    speed_thr=0.01,
                     smoothing_sd=1,
+                    **params["rs_curve"],
                 )
 
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
@@ -834,18 +836,20 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds):
                 plt.tight_layout()
 
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 4))
+                log_range = {
+                    "rs_bin_log_min": 0,
+                    "rs_bin_log_max": 2.5,
+                    "rs_bin_num": 6,
+                    "of_bin_log_min": -1.5,
+                    "of_bin_log_max": 3.5,
+                    "of_bin_num": 11,
+                    "log_base": 10,
+                }
+                log_range.update(kwargs["RS_OF_matrix_log_range"])
                 plot_RS_OF_matrix(
                     trials_df=trials_df,
                     roi=roi,
-                    log_range={
-                        "rs_bin_log_min": 0,
-                        "rs_bin_log_max": 2.5,
-                        "rs_bin_num": 6,
-                        "of_bin_log_min": -1.5,
-                        "of_bin_log_max": 3.5,
-                        "of_bin_num": 11,
-                        "log_base": 10,
-                    },
+                    log_range=log_range,
                 )
 
             plt.savefig(
