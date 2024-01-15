@@ -223,7 +223,7 @@ def fit_preferred_depth(
         )
 
         for roi in tqdm(range(X.dff_stim.iloc[0].shape[1])):
-            # XXX TODO: check if this is correct and explain why X=y and y=X
+            # XXX TODO: check if this is correct and explain why X=y and y=X
             popt, rsq = common_utils.iterate_fit(
                 func=gaussian_func_,
                 X=np.log(np.array(y)),
