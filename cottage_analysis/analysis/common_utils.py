@@ -187,3 +187,38 @@ def choose_trials_subset(trials_df, choose_trials):
         sfx = "_crossval"
 
     return trials_df_chosen, choose_trial_nums, sfx
+
+
+def find_thresh_sequence(array, threshold, length):
+    mask = array < threshold
+    conv = np.convolve(mask, np.ones(length, dtype=int), 'valid')
+    indices = np.where(conv >= length)[0]
+    indices = fill_missing_elements(indices, length)
+    
+    # check if the sequence is following the last found index
+    if indices[-1] + length > len(array):
+        last_index = len(array)
+    else:
+        last_index = indices[-1] + length
+    if np.mean(array[indices[-1]:last_index] < threshold) == 1:
+        indices = np.concatenate((indices, np.arange(indices[-1]+1, last_index, 1)))
+    
+    return indices
+
+
+def fill_missing_elements(arr, fill_n):
+    # if an element is larger than the previous element by more than 1, insert the consecutive x more integers after the previous element in the array. 
+    diffs = np.diff(arr)
+    gap_indices = np.where(diffs > 1)[0]
+    
+    # Generate the missing numbers for each gap
+    if len(gap_indices)>0:
+        new_elems = [np.arange(arr[i] + 1, arr[i] + fill_n) for i in gap_indices]
+        
+        # Concatenate the original array with the new elements and flatten
+        filled_array = np.sort(np.concatenate((arr, np.concatenate(new_elems))))
+    
+    else:
+        filled_array = arr
+    
+    return filled_array
