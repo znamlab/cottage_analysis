@@ -347,8 +347,6 @@ def grating_tuning(
 
 def fit_rs_of_tuning(
     trials_df,
-    neurons_df,
-    neurons_ds,
     model="gaussian_2d",
     choose_trials=None,
     closedloop_only=False,
@@ -455,42 +453,9 @@ def fit_rs_of_tuning(
                 offset=np.random.normal(),
             )
 
-    # Initialize neurons_df with columns for RS/OF tuning
-    neurons_df = neurons_df.assign(
-        preferred_RS_closedloop_g2d=np.nan,
-        preferred_OF_closedloop_g2d=np.nan,
-        rsof_popt_closedloop_g2d=[[np.nan]] * len(neurons_df),
-        rsof_rsq_closedloop_g2d=np.nan,
-        preferred_RS_openloop_actual_g2d=np.nan,
-        preferred_OF_openloop_actual_g2d=np.nan,
-        rsof_popt_openloop_actual_g2d=[[np.nan]] * len(neurons_df),
-        rsof_rsq_openloop_actual_g2d=np.nan,
-        preferred_RS_openloop_virtual_g2d=np.nan,
-        preferred_OF_openloop_virtual_g2d=np.nan,
-        rsof_popt_openloop_virtual_g2d=[[np.nan]] * len(neurons_df),
-        rsof_rsq_openloop_virtual_g2d=np.nan,
-        preferred_RS_closedloop_crossval_g2d=np.nan,
-        preferred_OF_closedloop_crossval_g2d=np.nan,
-        rsof_popt_closedloop_crossval_g2d=[[np.nan]] * len(neurons_df),
-        rsof_rsq_closedloop_crossval_g2d=np.nan,
-        preferred_RS_closedloop_gadd=np.nan,
-        preferred_OF_closedloop_gadd=np.nan,
-        rsof_popt_closedloop_gadd=[[np.nan]] * len(neurons_df),
-        rsof_rsq_closedloop_gadd=np.nan,
-        preferred_RS_openloop_actual_gadd=np.nan,
-        preferred_OF_openloop_actual_gadd=np.nan,
-        rsof_popt_openloop_actual_gadd=[[np.nan]] * len(neurons_df),
-        rsof_rsq_openloop_actual_gadd=np.nan,
-        preferred_RS_openloop_virtual_gadd=np.nan,
-        preferred_OF_openloop_virtual_gadd=np.nan,
-        rsof_popt_openloop_virtual_gadd=[[np.nan]] * len(neurons_df),
-        rsof_rsq_openloop_virtual_gadd=np.nan,
-        preferred_OF_closedloop_gof=np.nan,
-        rsof_popt_closedloop_gof=[[np.nan]] * len(neurons_df),
-        rsof_rsq_closedloop_gof=np.nan,
-        preferred_OF_openloop_gof=np.nan,
-        rsof_popt_openloop_gof=[[np.nan]] * len(neurons_df),
-    )
+    # Initialize neurons_df with columns for ROI number
+    neurons_df_temp = pd.DataFrame(
+        columns=['roi'], data=np.arange(trials_df["dff_stim"].iloc[0].shape[1]))
 
     # Loop through all protocols (closed loop and open loop)
     if closedloop_only:
@@ -546,7 +511,16 @@ def fit_rs_of_tuning(
                     model_func_ = partial(gaussian_2d, min_sigma=min_sigma)
                 elif model == "gaussian_additive":
                     model_func_ = partial(gaussian_additive, min_sigma=min_sigma)
-                for roi in tqdm(range(dff.shape[1])):
+                    
+                # Initialize columns with nan
+                neurons_df_temp[f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                neurons_df_temp[f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
+                neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                
+                # Fit for each neuron
+                # for roi in tqdm(range(dff.shape[1])):
+                for roi in tqdm(range(2)):
                     popt, rsq = common_utils.iterate_fit(
                         model_func_,
                         (rs_to_use, of),
@@ -557,23 +531,29 @@ def fit_rs_of_tuning(
                         p0_func=p0_func,
                     )
 
-                    neurons_df.at[
+                    neurons_df_temp.at[
                         roi, f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = np.exp(popt[1])
-                    neurons_df.at[
+                    neurons_df_temp.at[
                         roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = np.radians(
                         np.exp(popt[2])
                     )  # rad/s
                     # !! Calculated with RS in m and OF in degrees/s
-                    neurons_df.at[
+                    neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = popt
-                    neurons_df.loc[
+                    neurons_df_temp.loc[
                         roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = rsq
 
             elif model == "gaussian_OF":
+                # Initialize columns with nan
+                neurons_df_temp[f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                neurons_df_temp[f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
+                neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                
                 model_func_ = partial(gaussian_1d, min_sigma=min_sigma)
                 for roi in tqdm(range(dff.shape[1])):
                     popt, rsq = common_utils.iterate_fit(
@@ -586,18 +566,18 @@ def fit_rs_of_tuning(
                         p0_func=p0_func,
                     )
 
-                    neurons_df.at[
-                        roi, f"preferred_OF_{protocol_sfx}{sfx}{model_sfx}"
+                    neurons_df_temp.at[
+                        roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = np.radians(np.exp(popt[1]))
                     # !! Calculated with OF in degrees/s
-                    neurons_df.at[
-                        roi, f"rsof_popt_{protocol_sfx}{sfx}{model_sfx}"
+                    neurons_df_temp.at[
+                        roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = popt
-                    neurons_df.loc[
-                        roi, f"rsof_rsq_{protocol_sfx}{sfx}{model_sfx}"
+                    neurons_df_temp.loc[
+                        roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                     ] = rsq
 
-    return neurons_df, neurons_ds
+    return neurons_df_temp
 
 
 def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
