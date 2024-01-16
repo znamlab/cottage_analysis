@@ -144,13 +144,13 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             min_sigma=0.5,
             k_folds=5,
         )
+        # Save neurons_df
+        neurons_df.to_pickle(neurons_ds.path_full)
 
         # Fit gaussian blob to neuronal activity
         print("---Start fitting 2D gaussian blob...---")
-        neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
+        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
             trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
             model="gaussian_2d",
             choose_trials=None,
             rs_thr=0.01,
@@ -158,12 +158,11 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             niter=1,
             min_sigma=0.25,
         )
+        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_2d.pickle")
 
         # Fit gaussian blob cross validation for closed_loop only
-        neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
+        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
             trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
             model="gaussian_2d",
             choose_trials="even",
             closedloop_only=True,
@@ -172,15 +171,12 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             niter=1,
             min_sigma=0.25,
         )
-        # Save neurons_df
-        neurons_df.to_pickle(neurons_ds.path_full)
+        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_2d_crossval.pickle")
 
         # Fit with additive RS-OF model
         print("---Start fitting additive RS-OF model...---")
-        neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
+        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
             trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
             model="gaussian_additive",
             choose_trials=None,
             rs_thr=0.01,
@@ -189,14 +185,12 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             min_sigma=0.25,
         )
         # Save neurons_df
-        neurons_df.to_pickle(neurons_ds.path_full)
+        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_additive.pickle")
 
         # Fit with OF-only model
         print("---Start fitting OF-only model...---")
-        neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
+        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
             trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
             model="gaussian_OF",
             choose_trials=None,
             rs_thr=0.01,
@@ -205,7 +199,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
             min_sigma=0.25,
         )
         # Save neurons_df
-        neurons_df.to_pickle(neurons_ds.path_full)
+        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_OF.pickle")
 
         # Regenerate sphere stimuli
         print("---RF analysis...---")
