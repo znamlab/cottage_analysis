@@ -497,6 +497,7 @@ def fit_rs_of_tuning(
         all_protocols = [1]
     else:
         all_protocols = trials_df.closed_loop.unique()
+        assert len(all_protocols) <= 2, "More than 2 protocols detected!"
     for iprotocol, is_closedloop in enumerate(all_protocols):
         print(
             f"Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}..."
@@ -507,7 +508,7 @@ def fit_rs_of_tuning(
             protocol_sfx = "openloop"
         trials_df_protocol = trials_df[trials_df.closed_loop == is_closedloop]
         trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
-            trials_df, choose_trials
+            trials_df_protocol, choose_trials
         )
 
         # Concatenate arrays of RS/OF/dff from all trials together
