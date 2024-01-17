@@ -35,8 +35,8 @@ def get_confidence_interval(arr, sem=[], alpha=0.05, mean_arr=[]):
         CI_low = mean_arr - z * sem
         CI_high = mean_arr + z * sem
     else:
-        CI_low = np.average(arr, axis=0) - z * sem
-        CI_high = np.average(arr, axis=0) + z * sem
+        CI_low = np.nanmean(arr, axis=0) - z * sem
+        CI_high = np.nanmean(arr, axis=0) + z * sem
     return CI_low, CI_high
 
 
@@ -136,8 +136,8 @@ def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0
     z = scipy.stats.norm.ppf((1 - sig_level / 2))
     if len(arr) > 0:
         sem = scipy.stats.sem(arr, axis=axis, nan_policy="omit")
-        CI_low = np.average(arr, axis=axis) - z * sem
-        CI_high = np.average(arr, axis=axis) + z * sem
+        CI_low = np.nanmean(arr, axis=axis) - z * sem
+        CI_high = np.nanmean(arr, axis=axis) + z * sem
     elif len(mean_arr) > 0 and len(sem_arr) > 0:
         CI_low = mean_arr - z * sem
         CI_high = mean_arr + z * sem
@@ -196,12 +196,13 @@ def find_thresh_sequence(array, threshold, length):
     indices = fill_missing_elements(indices, length)
     
     # check if the sequence is following the last found index
-    if indices[-1] + length > len(array):
-        last_index = len(array)
-    else:
-        last_index = indices[-1] + length
-    if np.mean(array[indices[-1]:last_index] < threshold) == 1:
-        indices = np.concatenate((indices, np.arange(indices[-1]+1, last_index, 1)))
+    if len(indices) > 0:
+        if indices[-1] + length > len(array):
+            last_index = len(array)
+        else:
+            last_index = indices[-1] + length
+        if np.mean(array[indices[-1]:last_index] < threshold) == 1:
+            indices = np.concatenate((indices, np.arange(indices[-1]+1, last_index, 1)))
     
     return indices
 
