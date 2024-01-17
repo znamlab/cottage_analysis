@@ -23,7 +23,9 @@ from cottage_analysis.pipelines import pipeline_utils
 # TODO: separate steps
 
 
-def main(project, session_name, conflicts="skip", photodiode_protocol=5):
+def main(
+    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
+):
     """
     Main function to analyze a session.
 
@@ -32,12 +34,19 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
+        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
     """
     print(
         f"------------------------------- \n \
         Start analysing {session_name}   \n \
         -------------------------------"
     )
+    if use_slurm:
+        slurm_folder = Path(os.path.expanduser("~/slurm_logs"))
+        slurm_folder.mkdir(exist_ok=True)
+    else:
+        slurm_folder = None
+
     flexilims_session = flz.get_flexilims_session(project)
 
     neurons_ds = pipeline_utils.create_neurons_ds(
@@ -47,37 +56,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         conflicts=conflicts,
     )
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
-        print(
-            f"Session {session_name} already processed... reading saved neurons_df..."
-        )
-        neurons_df = pd.read_pickle(neurons_ds.path_full)
-
-        print("Regenerating vis-stim dataframes...")
-        vs_df_all, trials_df_all = spheres.sync_all_recordings(
-            session_name=session_name,
-            flexilims_session=flexilims_session,
-            project=project,
-            filter_datasets={"anatomical_only": 3},
-            recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
-            photodiode_protocol=photodiode_protocol,
-            return_volumes=True,
-        )
-
-        frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
-            session_name=session_name,
-            flexilims_session=flexilims_session,
-            project=None,
-            filter_datasets={"anatomical_only": 3},
-            recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
-            photodiode_protocol=photodiode_protocol,
-            return_volumes=True,
-            resolution=5,
-        )
-
-        print("Redoing plotting...")
-
+        print(f"Session {session_name} already processed... reading saved data...")
     else:
         # Synchronisation
         print("---Start synchronisation...---")
@@ -147,60 +126,6 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
 
-        # Fit gaussian blob to neuronal activity
-        print("---Start fitting 2D gaussian blob...---")
-        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
-            trials_df=trials_df_all,
-            model="gaussian_2d",
-            choose_trials=None,
-            rs_thr=0.01,
-            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
-            min_sigma=0.25,
-        )
-        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_2d.pickle")
-
-        # Fit gaussian blob cross validation for closed_loop only
-        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
-            trials_df=trials_df_all,
-            model="gaussian_2d",
-            choose_trials="even",
-            closedloop_only=True,
-            rs_thr=0.01,
-            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
-            min_sigma=0.25,
-        )
-        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_2d_crossval.pickle")
-
-        # Fit with additive RS-OF model
-        print("---Start fitting additive RS-OF model...---")
-        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
-            trials_df=trials_df_all,
-            model="gaussian_additive",
-            choose_trials=None,
-            rs_thr=0.01,
-            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
-            min_sigma=0.25,
-        )
-        # Save neurons_df
-        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_additive.pickle")
-
-        # Fit with OF-only model
-        print("---Start fitting OF-only model...---")
-        neurons_df_temp = fit_gaussian_blob.fit_rs_of_tuning(
-            trials_df=trials_df_all,
-            model="gaussian_OF",
-            choose_trials=None,
-            rs_thr=0.01,
-            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
-            min_sigma=0.25,
-        )
-        # Save neurons_df
-        neurons_df_temp.to_pickle(neurons_ds.path_full.parent/"neurons_df_temp_gaussian_OF.pickle")
-
         # Regenerate sphere stimuli
         print("---RF analysis...---")
         print("Generating sphere stimuli...")
@@ -255,27 +180,63 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
 
         # Update neurons_ds on flexilims
         neurons_ds.update_flexilims(mode="update")
+
+        # Fit gaussian blob to neuronal activity
+        print("---Start fitting 2D gaussian blob...---")
+        outputs = []
+        to_do = [
+            ("gaussian_2d", None),
+            ("gaussian_2d", "even"),
+            ("gaussian_additive", None),
+            ("gaussian_OF", None),
+        ]
+        common_params = dict(
+            rs_thr=0.01,
+            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
+            niter=1,
+            min_sigma=0.25,
+        )
+
+        for model, trials in to_do:
+            name = f"{session_name}_{model}"
+            if trials is not None:
+                name += "_crossval"
+            out = pipeline_utils.load_and_fit(
+                project,
+                session_name,
+                photodiode_protocol,
+                model=model,
+                choose_trials=trials,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                scripts_name=name,
+                **common_params,
+            )
+            outputs.append(out)
+
+        # Merge fit dataframes
+        job_dependency = outputs if use_slurm else None
+        out = pipeline_utils.merge_fit_dataframes(
+            project,
+            session_name,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_merge_fit_dataframes",
+        )
+        job_dependency = out if use_slurm else None
         print("---Analysis finished. Neurons_df saved.---")
 
     # Plot basic plots
     print("---Start basic vis plotting...---")
-    print("Plotting Depth responses...")
-    basic_vis_plots.basic_vis_session(
-        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
-    )
-
-    # Plot all ROI RFs
-    print("Plotting RFs...")
-    depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-    coef = np.stack(neurons_df["rf_coef"], axis=2)
-    sta_plots.basic_vis_sta_session(
-        coef=coef,
-        neurons_df=neurons_df,
-        trials_df=trials_df_all,
-        depth_list=depth_list,
-        frames=frames_all,
-        save_dir=neurons_ds.path_full.parent,
-        fontsize_dict={"title": 10, "tick": 10, "label": 10},
+    pipeline_utils.run_basic_plots(
+        project,
+        session_name,
+        photodiode_protocol,
+        use_slurm=use_slurm,
+        slurm_folder=slurm_folder,
+        job_dependency=job_dependency,
+        scripts_name=f"{session_name}_basic_vis_plots",
     )
     print("---Plotting finished. ---")
 
