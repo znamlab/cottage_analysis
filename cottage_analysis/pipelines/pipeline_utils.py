@@ -15,6 +15,7 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
 
+CONDA_ENV = "2p_analysis_cottage2"
 
 def create_neurons_ds(
     session_name, flexilims_session=None, project=None, conflicts="skip"
@@ -47,7 +48,7 @@ def create_neurons_ds(
 
 
 def sbatch_session(
-    project, session_name, pipeline_filename, conflicts, photodiode_protocol
+    project, session_name, pipeline_filename, conflicts, photodiode_protocol, use_slurm=False
 ):
     """Start sbatch script to run analysis_pipeline on a single session.
 
@@ -63,7 +64,7 @@ def sbatch_session(
 
     log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
-    args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol}"
+    args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
 
     args = args + f" --output={log_path}"
 
@@ -137,7 +138,7 @@ def load_session(
 
 
 @slurm_it(
-    conda_env="cottage_analysis", slurm_options={"mem": "32G", "time": "42:00:00"}
+    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "42:00:00", "cpus-per-task": 8}
 )
 def load_and_fit(
     project,
@@ -175,7 +176,7 @@ def load_and_fit(
     return fit_df
 
 
-@slurm_it(conda_env="cottage_analysis", slurm_options={"mem": "32G", "time": "2:00:00"})
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "2:00:00"})
 def merge_fit_dataframes(project, session_name):
     """Merge fit dataframe from all fits
 
@@ -213,7 +214,7 @@ def merge_fit_dataframes(project, session_name):
     return neurons_df
 
 
-@slurm_it(conda_env="cottage_analysis", slurm_options={"mem": "32G", "time": "9:00:00"})
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "9:00:00"})
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
     (
