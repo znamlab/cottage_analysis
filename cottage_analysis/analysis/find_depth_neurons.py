@@ -38,23 +38,34 @@ def find_depth_list(df):
     return depth_list
 
 
-def average_dff_for_all_trials(trials_df, rs_thr=0.2, closed_loop=1):
+def average_dff_for_all_trials(trials_df, rs_thr=0.2, stay_still=False, still_time=0, frame_rate=15, closed_loop=1):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
     Args:
         trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
         rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
+        stay_still (bool, optional): whether to only use the frames when the mouse is not running. Defaults to False.
+        still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
+        frame_rate (int, optional): frame rate of the recording. Defaults to 15.
     """
     trials_df = trials_df[trials_df.closed_loop == 1]
     depth_list = find_depth_list(trials_df)
-    if rs_thr is None:
+    if rs_thr is None: # no rs_thr, use all data
         trials_df["trial_mean_dff"] = trials_df.apply(
             lambda x: np.nanmean(x.dff_stim, axis=0), axis=1
         )
-    else:
+    elif (stay_still==False) and (rs_thr is not None): # use running data, speed > rs_thr
         trials_df["trial_mean_dff"] = trials_df.apply(
             lambda x: np.nanmean(x.dff_stim[x.RS_stim >= rs_thr, :], axis=0), axis=1
         )
+    elif stay_still and (rs_thr is not None): # use not running data, speed < rs_thr
+        trials_df["trial_mean_dff"] = trials_df.apply(
+            lambda x: np.nanmean(x.dff_stim[common_utils.find_thresh_sequence(x.RS_stim, rs_thr, still_time*frame_rate), :], axis=0), axis=1
+            )
+    elif stay_still and (rs_thr is None):
+        print("ERROR: calculating under not_running condition without rs_thr to determine max speed")
+        return
+    
     grouped_trials = trials_df.groupby(by="depth")
 
     mean_dff_arr = []
