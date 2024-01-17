@@ -519,8 +519,7 @@ def fit_rs_of_tuning(
                 neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
                 
                 # Fit for each neuron
-                # for roi in tqdm(range(dff.shape[1])):
-                for roi in tqdm(range(2)):
+                for roi in tqdm(range(dff.shape[1])):
                     popt, rsq = common_utils.iterate_fit(
                         model_func_,
                         (rs_to_use, of),
