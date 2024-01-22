@@ -174,7 +174,7 @@ def reproject_ellipses(
 
     # GET DATA
     flm_sess = camera_ds.flexilims_session
-    dlc_res, data = eye_io.get_data(
+    dlc_res, data, dlc_ds = eye_io.get_data(
         camera_ds,
         flexilims_session=flm_sess,
         likelihood_threshold=likelihood_threshold,

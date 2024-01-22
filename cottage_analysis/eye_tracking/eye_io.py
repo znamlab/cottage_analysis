@@ -41,16 +41,16 @@ def get_data(
         children_datatype="dataset",
     )
     cam_analysis = rec_ds[rec_ds.name.map(lambda x: camera.dataset_name in x)]
-    dlc = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
+    dlc_ds = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
     if ds_is_cropped:
-        dlc = dlc[[(c is not None) for c in dlc.cropping]]
+        dlc_ds = dlc_ds[[(c is not None) for c in dlc_ds.cropping]]
     else:
-        dlc = dlc[[(c is None) for c in dlc.cropping]]
-    assert len(dlc) == 1
-    dlc = flz.Dataset.from_dataseries(dlc.iloc[0], flexilims_session=flexilims_session)
-    dlc_res = pd.read_hdf(dlc.path_full / dlc.extra_attributes["dlc_file"])
+        dlc_ds = dlc_ds[[(c is None) for c in dlc_ds.cropping]]
+    assert len(dlc_ds) == 1
+    dlc_ds = flz.Dataset.from_dataseries(dlc_ds.iloc[0], flexilims_session=flexilims_session)
+    dlc_res = pd.read_hdf(dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"])
     # Get ellipse fits
-    ellipse_csv = list(dlc.path_full.glob("*ellipse_fits.csv"))
+    ellipse_csv = list(dlc_ds.path_full.glob("*ellipse_fits.csv"))
     assert len(ellipse_csv) == 1
     ellipse = pd.read_csv(ellipse_csv[0])
     # add dlc likelihood
@@ -92,7 +92,7 @@ def get_data(
     ellipse.loc[~ellipse.valid, "pupil_x"] = np.nan
     ellipse.loc[~ellipse.valid, "pupil_y"] = np.nan
 
-    return dlc_res, ellipse
+    return dlc_res, ellipse, dlc_ds
 
 
 def get_tracking_datasets(camera_ds, flexilims_session):
