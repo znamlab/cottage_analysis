@@ -2,10 +2,12 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 import flexiznam as flz
-from cottage_analysis.analysis import common_utils
+from cottage_analysis.analysis import common_utils, find_depth_neurons
 from collections import namedtuple
 import pandas as pd
 from functools import partial
+from sklearn.model_selection import StratifiedKFold
+from scipy.stats import spearmanr
 
 print = partial(print, flush=True)
 
@@ -354,6 +356,7 @@ def fit_rs_of_tuning(
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
     niter=5,
     min_sigma=0.25,
+    k_folds=1,
 ):
     # Set bounds for gaussian fit params
     if model == "gaussian_2d":
@@ -458,11 +461,14 @@ def fit_rs_of_tuning(
         columns=['roi'], data=np.arange(trials_df["dff_stim"].iloc[0].shape[1]))
 
     # Loop through all protocols (closed loop and open loop)
+    if k_folds > 1:
+        closedloop_only = True
     if closedloop_only:
         all_protocols = [1]
     else:
         all_protocols = trials_df.closed_loop.unique()
         assert len(all_protocols) <= 2, "More than 2 protocols detected!"
+        
     for iprotocol, is_closedloop in enumerate(all_protocols):
         print(
             f"Process protocol {iprotocol+1}/{len(trials_df.closed_loop.unique())}..."
@@ -481,6 +487,21 @@ def fit_rs_of_tuning(
         rs_eye = np.concatenate(trials_df_fit["RS_eye_stim"].values)
         of = np.concatenate(trials_df_fit["OF_stim"].values)
         dff = np.concatenate(trials_df_fit["dff_stim"].values, axis=0)
+        
+        # give class labels to each depth
+        depth_list = find_depth_neurons.find_depth_list(trials_df)
+        log_depth_list = np.log(depth_list)
+        log_depth_list = np.append(
+            log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
+        )
+        log_depth_list = np.insert(
+            log_depth_list, 0, (log_depth_list[0] - log_depth_list[1] + log_depth_list[0])
+        )
+        depth_list_expand = np.exp(log_depth_list)
+        bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
+        trials_df_fit["depth_label"] = pd.cut(trials_df_fit["depth"], bins=bins, labels=np.arange(len(depth_list)))
+        trials_df_fit["depth_label"] = [[x]*len(y) for x, y in zip(trials_df_fit["depth_label"], trials_df_fit["RS_stim"])]
+        depth_labels = np.concatenate(trials_df_fit["depth_label"].values)
 
         # Take out the values where running is below a certain threshold
         running = (
@@ -490,6 +511,7 @@ def fit_rs_of_tuning(
         rs_eye = rs_eye[running]
         of = of[running]
         dff = dff[running, :]
+        depth_labels = depth_labels[running]
 
         # Fit data to 2D gaussian function
         if (is_closedloop) or (model == "gaussian_OF"):
@@ -518,63 +540,155 @@ def fit_rs_of_tuning(
                 neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
                 neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
                 
-                # Fit for each neuron
-                for roi in tqdm(range(dff.shape[1])):
-                    popt, rsq = common_utils.iterate_fit(
-                        model_func_,
-                        (rs_to_use, of),
-                        dff[:, roi],
-                        lower_bounds,
-                        upper_bounds,
-                        niter=niter,
-                        p0_func=p0_func,
-                    )
+                # If k_folds = 1, fit for all data
+                if k_folds == 1:
+                    # Fit for each neuron
+                    for roi in tqdm(range(dff.shape[1])):
+                        popt, rsq = common_utils.iterate_fit(
+                            model_func_,
+                            (rs_to_use, of),
+                            dff[:, roi],
+                            lower_bounds,
+                            upper_bounds,
+                            niter=niter,
+                            p0_func=p0_func,
+                        )
 
-                    neurons_df_temp.at[
-                        roi, f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = np.exp(popt[1])
-                    neurons_df_temp.at[
-                        roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = np.radians(
-                        np.exp(popt[2])
-                    )  # rad/s
-                    # !! Calculated with RS in m and OF in degrees/s
-                    neurons_df_temp.at[
-                        roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = popt
-                    neurons_df_temp.loc[
-                        roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = rsq
+                        neurons_df_temp.at[
+                            roi, f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = np.exp(popt[1])
+                        neurons_df_temp.at[
+                            roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = np.radians(
+                            np.exp(popt[2])
+                        )  # rad/s
+                        # !! Calculated with RS in m and OF in degrees/s
+                        neurons_df_temp.at[
+                            roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = popt
+                        neurons_df_temp.loc[
+                            roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = rsq
+                        
+                # If k_folds > 1, fit for each fold, then get a test rsq for each neuron
+                if k_folds > 1:
+                    print("Fit with cross-validation...")
+                    neurons_df_temp[f"rsof_test_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"rsof_test_spearmanr_rval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    stratified_kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+                    # Loop through each roi
+                    for roi in tqdm(range(dff.shape[1])):
+                        # loop through the folds
+                        dff_pred_all = []
+                        dff_test_all = []
+                        for fold, (train_index, test_index) in enumerate(
+                            stratified_kfold.split(dff[:, roi], depth_labels)):
+                            dff_train, dff_test = dff[train_index, roi], dff[test_index, roi]
+                            rs_train, rs_test = rs_to_use[train_index], rs_to_use[test_index]
+                            of_train, of_test = of[train_index], of[test_index]
+                            dff_test_all.append(dff_test)
+
+                            popt, _ = common_utils.iterate_fit(
+                                model_func_,
+                                (rs_train, of_train),
+                                dff_train,
+                                lower_bounds,
+                                upper_bounds,
+                                niter=niter,
+                                p0_func=p0_func,
+                            )
+                            dff_pred = model_func_((rs_test, of_test), *popt)
+                            dff_pred_all.append(dff_pred)
+                        rsq = common_utils.calculate_r_squared(
+                            np.concatenate(dff_test_all), np.concatenate(dff_pred_all)
+                        )
+                        rval, pval = spearmanr(
+                            np.concatenate(dff_test_all), np.concatenate(dff_pred_all)
+                        )
+                        neurons_df_temp.at[roi, f"rsof_test_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = rsq
+                        neurons_df_temp.at[
+                            roi, f"rsof_test_spearmanr_rval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = rval
+                        neurons_df_temp.at[
+                            roi, f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = pval
 
             elif model == "gaussian_OF":
-                # Initialize columns with nan
-                neurons_df_temp[f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
-                neurons_df_temp[f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
-                neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
-                neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
-                
-                model_func_ = partial(gaussian_1d, min_sigma=min_sigma)
-                for roi in tqdm(range(dff.shape[1])):
-                    popt, rsq = common_utils.iterate_fit(
-                        model_func_,
-                        of,
-                        dff[:, roi],
-                        lower_bounds,
-                        upper_bounds,
-                        niter=niter,
-                        p0_func=p0_func,
-                    )
+                if k_folds == 1:
+                    # Initialize columns with nan
+                    neurons_df_temp[f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
+                    neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    
+                    model_func_ = partial(gaussian_1d, min_sigma=min_sigma)
+                    for roi in tqdm(range(dff.shape[1])):
+                        popt, rsq = common_utils.iterate_fit(
+                            model_func_,
+                            of,
+                            dff[:, roi],
+                            lower_bounds,
+                            upper_bounds,
+                            niter=niter,
+                            p0_func=p0_func,
+                        )
 
-                    neurons_df_temp.at[
-                        roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = np.radians(np.exp(popt[1]))
-                    # !! Calculated with OF in degrees/s
-                    neurons_df_temp.at[
-                        roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = popt
-                    neurons_df_temp.loc[
-                        roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
-                    ] = rsq
+                        neurons_df_temp.at[
+                            roi, f"preferred_OF_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = np.radians(np.exp(popt[1]))
+                        # !! Calculated with OF in degrees/s
+                        neurons_df_temp.at[
+                            roi, f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = popt
+                        neurons_df_temp.loc[
+                            roi, f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = rsq
+                
+                # If k_folds > 1, fit for each fold, then get a test rsq for each neuron
+                elif k_folds > 1:
+                    print("Fit with cross-validation...")
+                    neurons_df_temp[f"rsof_test_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"rsof_test_spearmanr_rval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    neurons_df_temp[f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
+                    stratified_kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+                    # Loop through each roi
+                    for roi in tqdm(range(dff.shape[1])):
+                        # loop through the folds
+                        dff_pred_all = []
+                        dff_test_all = []
+                        for fold, (train_index, test_index) in enumerate(
+                            stratified_kfold.split(dff[:, roi], depth_labels)
+                        ):
+                            dff_train, dff_test = dff[train_index, roi], dff[test_index, roi]
+                            of_train, of_test = of[train_index], of[test_index]
+                            dff_test_all.append(dff_test)
+
+                            popt, _ = common_utils.iterate_fit(
+                                model_func_,
+                                of_train,
+                                dff_train,
+                                lower_bounds,
+                                upper_bounds,
+                                niter=niter,
+                                p0_func=p0_func,
+                            )
+                            dff_pred = model_func_(of_test, *popt)
+                            dff_pred_all.append(dff_pred)
+                        rsq = common_utils.calculate_r_squared(
+                            np.concatenate(dff_test_all), np.concatenate(dff_pred_all)
+                        )
+                        rval, pval = spearmanr(
+                            np.concatenate(dff_test_all), np.concatenate(dff_pred_all)
+                        )
+                        neurons_df_temp.at[roi, f"rsof_test_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = rsq
+                        neurons_df_temp.at[
+                            roi, f"rsof_test_spearmanr_rval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = rval
+                        neurons_df_temp.at[
+                            roi, f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
+                        ] = pval
+            
 
     return neurons_df_temp
 

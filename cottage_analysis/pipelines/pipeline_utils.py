@@ -138,7 +138,7 @@ def load_session(
 
 
 @slurm_it(
-    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "42:00:00", "cpus-per-task": 8}
+    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "4:00:00", "cpus-per-task": 8}
 )
 def load_and_fit(
     project,
@@ -150,6 +150,7 @@ def load_and_fit(
     param_range,
     niter,
     min_sigma,
+    k_folds=1
 ):
 
     (neurons_ds, neurons_df, vs_df_all, trials_df_all,) = load_session(
@@ -165,12 +166,14 @@ def load_and_fit(
         param_range=param_range,
         niter=niter,
         min_sigma=min_sigma,
+        k_folds=k_folds,
     )
     # save fit_df
     # create name from model and choose_trials
     suffix = f"{model}"
     if choose_trials is not None:
         suffix = suffix + f"_crossval"
+    suffix = suffix + f"_k{k_folds}"
     target = neurons_ds.path_full.with_name(f"fit_rs_of_tuning_{suffix}.pickle")
     fit_df.to_pickle(target)
     return fit_df
