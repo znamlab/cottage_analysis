@@ -725,7 +725,7 @@ def plot_movie(
     """
 
     if dlc_res is None or ellipse is None:
-        dlc_res, ellipse = eye_io.get_data(
+        dlc_res, ellipse, dlc_ds = eye_io.get_data(
             camera, flexilims_session=camera.flexilims_session
         )
     # Find DLC crop area

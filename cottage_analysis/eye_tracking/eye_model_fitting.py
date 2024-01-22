@@ -427,48 +427,51 @@ def bin_ellipse_by_position(data, nbins=(25, 25)):
     return binned_ellipses, bin_edges_x, bin_edges_y
 
 
-def convert_to_world(gaze_vec, rvec, is_flipped=True):
+def convert_to_world(gaze_vec, rvec):
     """Convert gaze vectors from camera to world coordinates
 
-    This include weird adhoc transformation because the camera images where flipped
-    vertically
+    Convert rvec to matrix and multiply the gaze vector to get the gaze vector in
+    aruco == world coordinates
 
     Args:
         gaze_vec (numpy.array): N x 3 array of gaze in camera coordinate
         rvec (numpy.array): rvec from extrinsics
-        is_flipped (bool, optional): Is the image flipped vertically. Defaults to True.
 
     Returns:
         numpy array: N x 3 array
     """
     rmat = cv2.Rodrigues(rvec)[0]
     gaze_vec = np.array(gaze_vec, copy=True)
-    if is_flipped:
-        gaze_vec[:, 1] *= -1  # to have back y going up instead of down
-        rotated_gaze_vec = (rmat @ gaze_vec.T).T
-        rotated_gaze_vec = rotated_gaze_vec[
-            :, [0, 2, 1]
-        ]  # because of camera mirror made it a lefthand coordinate system
-    else:
-        rotated_gaze_vec = (rmat.T @ gaze_vec.T).T
-
+    rotated_gaze_vec = (rmat.T @ gaze_vec.T).T
     return rotated_gaze_vec
 
 
-def gaze_to_azel(gaze_vector, zero_median=False):
+
+def gaze_to_azel(gaze_vector, zero_median=False, worled_is_mirrored=False):
     """Transform gaze vectors in world coordinates to Azimuth and Elevation
 
     This assumes that the gaze vector come in the aruco reference frame , with y
     pointing in front of the mouse, x to the right and z up
+    Except if `world_is_mirrored` is True, in which case the aruco has been wrongly
+    oriented and y points to the right, x to the left and z up. We therefore need to 
+    flip the x and y coordinates and reverse them both.
+    
 
     Args:
         gaze_vector (numpy.array): N x 3 array of gaze
         zero_median (bool, optional): Subtract the median. Defaults to False.
+        worled_is_mirrored (bool, optional): Whether the world is mirrored. Defaults to
+            False.
 
     Returns:
         azimuth (numpy.array): len(N) array of azimuth in radians in the range [-pi, pi]
         elevation (numpy.array): len(N) array of elevation in radians
     """
+    if worled_is_mirrored:
+        print('Mirrored world')
+        gaze_vector[:, :2] *= -1
+        gaze_vector = gaze_vector[:, [1, 0, 2]]
+    
     azimuth = np.arctan2(gaze_vector[:, 1], gaze_vector[:, 0])
     elevation = np.arctan2(
         gaze_vector[:, 2], np.sqrt(np.sum(gaze_vector[:, :2] ** 2, axis=1))
