@@ -8,6 +8,7 @@ def get_data(
     flexilims_session=None,
     likelihood_threshold=0.88,
     rsquare_threshold=0.99,
+    maximum_reflection_distance=50,
     error_threshold=None,
     ds_is_cropped=True,
 ):
@@ -22,6 +23,8 @@ def get_data(
             Defaults to 0.88.
         rsquare_threshold (float, optional): Threshold on rsquare of ellipse fit.
             Defaults to 0.99.
+        maximum_reflection_distance (int, optional): Maximum distance between
+            of reflection to its median position, in px. Defaults to 50.
         error_threshold (float, optional): Threshold on error of ellipse fit, in px.
             If None, use 5 sd. Defaults to None.
         ds_is_cropped (bool, optional): Whether the dataset is cropped. Defaults to
@@ -61,11 +64,21 @@ def get_data(
     if error_threshold is None:
         error_threshold = np.nanmean(ellipse.error) + 5 * np.nanstd(ellipse.error)
 
+    # add reflection distance
+    reflection = dlc_res.xs("reflection", axis="columns", level=1)
+    reflection.columns = reflection.columns.droplevel("scorer")
+    reflection_dist = np.sqrt(
+        (reflection.x - reflection.x.median()) ** 2
+        + (reflection.y - reflection.y.median()) ** 2
+    )
+    ellipse["reflection_dist"] = reflection_dist
+
     valid = (
         (ellipse.dlc_avg_likelihood > likelihood_threshold)
         & (ellipse.rsquare > rsquare_threshold)
         & (ellipse.error < error_threshold)
         & (reflection_like > likelihood_threshold)
+        & (reflection_dist < maximum_reflection_distance)
     )
     ellipse["valid"] = valid
 
@@ -73,6 +86,7 @@ def get_data(
     reflection.columns = reflection.columns.droplevel("scorer")
     ellipse["reflection_x"] = reflection.x.values
     ellipse["reflection_y"] = reflection.y.values
+    ellipse["reflection_likelihood"] = reflection_like.values
     ellipse["pupil_x"] = ellipse.centre_x - ellipse.reflection_x
     ellipse["pupil_y"] = ellipse.centre_y - ellipse.reflection_y
     ellipse.loc[~ellipse.valid, "pupil_x"] = np.nan
