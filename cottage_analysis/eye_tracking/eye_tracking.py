@@ -476,6 +476,7 @@ def fit_ellipse(
             project=project,
             likelihood_threshold=likelihood_threshold,
             duration=60,
+            plot_reprojection=False
         )
     print("Done")
 

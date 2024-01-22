@@ -128,7 +128,7 @@ def plot_ellipse_fit(
     playback_speed=4,
     vmin=None,
     vmax=None,
-    plot_reprojection=True,
+    plot_reprojection=False,
 ):
     """Plot ellipse fit for a given camera dataset
 
@@ -145,7 +145,7 @@ def plot_ellipse_fit(
         vmin (float, optional): Minimum value for the colormap. Defaults to None.
         vmax (float, optional): Maximum value for the colormap. Defaults to None.
         plot_reprojection (bool, optional): Whether to plot the reprojection of the
-            fitted ellipse. Defaults to True.
+            fitted ellipse. Defaults to False.
 
     Returns:
         None
@@ -725,7 +725,7 @@ def plot_movie(
     """
 
     if dlc_res is None or ellipse is None:
-        dlc_res, ellipse = eye_io.get_data(
+        dlc_res, ellipse, dlc_ds = eye_io.get_data(
             camera, flexilims_session=camera.flexilims_session
         )
     # Find DLC crop area

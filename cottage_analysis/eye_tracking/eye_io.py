@@ -8,6 +8,7 @@ def get_data(
     flexilims_session=None,
     likelihood_threshold=0.88,
     rsquare_threshold=0.99,
+    maximum_reflection_distance=50,
     error_threshold=None,
     ds_is_cropped=True,
 ):
@@ -22,6 +23,8 @@ def get_data(
             Defaults to 0.88.
         rsquare_threshold (float, optional): Threshold on rsquare of ellipse fit.
             Defaults to 0.99.
+        maximum_reflection_distance (int, optional): Maximum distance between
+            of reflection to its median position, in px. Defaults to 50.
         error_threshold (float, optional): Threshold on error of ellipse fit, in px.
             If None, use 5 sd. Defaults to None.
         ds_is_cropped (bool, optional): Whether the dataset is cropped. Defaults to
@@ -38,16 +41,16 @@ def get_data(
         children_datatype="dataset",
     )
     cam_analysis = rec_ds[rec_ds.name.map(lambda x: camera.dataset_name in x)]
-    dlc = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
+    dlc_ds = cam_analysis[cam_analysis.dataset_type == "dlc_tracking"]
     if ds_is_cropped:
-        dlc = dlc[[(c is not None) for c in dlc.cropping]]
+        dlc_ds = dlc_ds[[(c is not None) for c in dlc_ds.cropping]]
     else:
-        dlc = dlc[[(c is None) for c in dlc.cropping]]
-    assert len(dlc) == 1
-    dlc = flz.Dataset.from_dataseries(dlc.iloc[0], flexilims_session=flexilims_session)
-    dlc_res = pd.read_hdf(dlc.path_full / dlc.extra_attributes["dlc_file"])
+        dlc_ds = dlc_ds[[(c is None) for c in dlc_ds.cropping]]
+    assert len(dlc_ds) == 1
+    dlc_ds = flz.Dataset.from_dataseries(dlc_ds.iloc[0], flexilims_session=flexilims_session)
+    dlc_res = pd.read_hdf(dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"])
     # Get ellipse fits
-    ellipse_csv = list(dlc.path_full.glob("*ellipse_fits.csv"))
+    ellipse_csv = list(dlc_ds.path_full.glob("*ellipse_fits.csv"))
     assert len(ellipse_csv) == 1
     ellipse = pd.read_csv(ellipse_csv[0])
     # add dlc likelihood
@@ -61,11 +64,21 @@ def get_data(
     if error_threshold is None:
         error_threshold = np.nanmean(ellipse.error) + 5 * np.nanstd(ellipse.error)
 
+    # add reflection distance
+    reflection = dlc_res.xs("reflection", axis="columns", level=1)
+    reflection.columns = reflection.columns.droplevel("scorer")
+    reflection_dist = np.sqrt(
+        (reflection.x - reflection.x.median()) ** 2
+        + (reflection.y - reflection.y.median()) ** 2
+    )
+    ellipse["reflection_dist"] = reflection_dist
+
     valid = (
         (ellipse.dlc_avg_likelihood > likelihood_threshold)
         & (ellipse.rsquare > rsquare_threshold)
         & (ellipse.error < error_threshold)
         & (reflection_like > likelihood_threshold)
+        & (reflection_dist < maximum_reflection_distance)
     )
     ellipse["valid"] = valid
 
@@ -73,12 +86,13 @@ def get_data(
     reflection.columns = reflection.columns.droplevel("scorer")
     ellipse["reflection_x"] = reflection.x.values
     ellipse["reflection_y"] = reflection.y.values
+    ellipse["reflection_likelihood"] = reflection_like.values
     ellipse["pupil_x"] = ellipse.centre_x - ellipse.reflection_x
     ellipse["pupil_y"] = ellipse.centre_y - ellipse.reflection_y
     ellipse.loc[~ellipse.valid, "pupil_x"] = np.nan
     ellipse.loc[~ellipse.valid, "pupil_y"] = np.nan
 
-    return dlc_res, ellipse
+    return dlc_res, ellipse, dlc_ds
 
 
 def get_tracking_datasets(camera_ds, flexilims_session):
