@@ -56,7 +56,7 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
             print("ERROR: calculating under not_running condition without rs_thr to determine max speed")
         else: # use not running data, speed < rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[common_utils.find_thresh_sequence(x.RS_stim, rs_thr_max, still_time*frame_rate), :], axis=0), axis=1
+                lambda x: np.nanmean(x.dff_stim[common_utils.find_thresh_sequence(array=x.RS_stim, threshold_max=rs_thr_max, length=still_time*frame_rate, shift=still_time*frame_rate), :], axis=0), axis=1
                 )
     else:
         if (rs_thr is None) and (rs_thr_max is None): # no rs_thr, use all data

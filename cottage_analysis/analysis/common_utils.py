@@ -189,22 +189,38 @@ def choose_trials_subset(trials_df, choose_trials):
     return trials_df_chosen, choose_trial_nums, sfx
 
 
-def find_thresh_sequence(array, threshold, length):
-    mask = array < threshold
-    conv = np.convolve(mask, np.ones(length, dtype=int), 'valid')
-    indices = np.where(conv >= length)[0]
-    indices = fill_missing_elements(indices, length)
-    
-    # check if the sequence is following the last found index
-    if len(indices) > 0:
-        if indices[-1] + length > len(array):
-            last_index = len(array)
+def find_thresh_sequence(array, length, shift, threshold_min=None, threshold_max=None, ):
+    '''Find a sequance within an array where the values are below a threshold for a certain length.
+
+    Args:
+        array (np.1darray): array to be searched
+        length (int): length of sequence
+        shift (int): length of shift to the right (positive) or left (negative); positive shift = the sequence is in the past
+        threshold_min (float, optional): min threshold. Defaults to None.
+        threshold_max (float, optional): max threshold. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    '''
+    # shift an array by the shift amount
+    if (threshold_min is None) and (threshold_max is None):
+        print('WARNING: No threshold is given. Full array is returned.')
+        indices = np.arange(len(array))
+    else:
+        if threshold_min is None:
+            mask = array < threshold_max
+        elif threshold_max is None:
+            mask = array > threshold_min
         else:
-            last_index = indices[-1] + length
-        if np.mean(array[indices[-1]:last_index] < threshold) == 1:
-            indices = np.concatenate((indices, np.arange(indices[-1]+1, last_index, 1)))
-    
-    return indices
+            mask = (array > threshold_min) & (array < threshold_max)
+        conv = np.convolve(mask, np.ones(length, dtype=int), 'valid')
+        indices = np.where(conv >= length)[0]
+        indices = indices + int(shift) -1 
+        
+        # Get rid of the indices that's larger than the length of the array
+        indices = indices[indices < len(array)]
+        
+        return indices
 
 
 def fill_missing_elements(arr, fill_n):
