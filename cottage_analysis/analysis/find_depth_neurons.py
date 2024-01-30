@@ -8,7 +8,7 @@ import flexiznam as flz
 
 from sklearn.model_selection import StratifiedKFold
 
-from cottage_analysis.analysis import common_utils
+from cottage_analysis.analysis import common_utils, size_control
 from functools import partial
 
 print = partial(print, flush=True)
@@ -38,7 +38,7 @@ def find_depth_list(df):
     return depth_list
 
 
-def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_only=False, still_time=0, frame_rate=15, closed_loop=1):
+def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_only=False, still_time=0, frame_rate=15, closed_loop=1, param="depth"):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
     Args:
@@ -49,7 +49,7 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
         still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
         frame_rate (int, optional): frame rate of the recording. Defaults to 15.
     """
-    trials_df = trials_df[trials_df.closed_loop == 1]
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     depth_list = find_depth_list(trials_df)
     if still_only:
         if rs_thr_max is None:
@@ -75,25 +75,47 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
             trials_df["trial_mean_dff"] = trials_df.apply(
                 lambda x: np.nanmean(x.dff_stim[(x.RS_stim > rs_thr) & (x.RS_stim < rs_thr_max), :], axis=0), axis=1
             )
-    
-    grouped_trials = trials_df.groupby(by="depth")
 
-    mean_dff_arr = []
-    trial_nos = []
-    for depth in depth_list:
-        trial_nos.append(
-            np.stack(
+    if param == "depth":
+        grouped_trials = trials_df.groupby(by="depth")
+        mean_dff_arr = []
+        trial_nos = []
+        for depth in depth_list:
+            trial_nos.append(
+                np.stack(
+                    np.array(grouped_trials.get_group(depth)["trial_mean_dff"].values)
+                ).shape[0]
+            )
+        trial_no_min = np.min(trial_nos)
+        for depth in depth_list:
+            trial_mean_dff = np.stack(
                 np.array(grouped_trials.get_group(depth)["trial_mean_dff"].values)
-            ).shape[0]
-        )
-    trial_no_min = np.min(trial_nos)
-    for depth in depth_list:
-        trial_mean_dff = np.stack(
-            np.array(grouped_trials.get_group(depth)["trial_mean_dff"].values)
-        )[:trial_no_min, :]
-        mean_dff_arr.append(trial_mean_dff)
-    mean_dff_arr = np.stack(mean_dff_arr)
-
+            )[:trial_no_min, :]
+            mean_dff_arr.append(trial_mean_dff)
+        mean_dff_arr = np.stack(mean_dff_arr)
+    
+    elif param == "size":
+        trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+        grouped_trials = trials_df.groupby(by="physical_size")
+        size_list = np.sort(trials_df["physical_size"].unique())
+        trial_nos = []
+        for size in size_list:
+            trial_nos.append(
+                np.stack(
+                    np.array(grouped_trials.get_group(size)["trial_mean_dff"].values)
+                ).shape[0]
+            )
+        trial_no_max = np.max(trial_nos)
+        mean_dff_arr = np.full((len(size_list), 
+                                 trial_no_max, 
+                                 trials_df["trial_mean_dff"].iloc[0].shape[0]),
+                               np.nan)
+        for isize, size in enumerate(size_list):
+            trial_mean_dff = np.stack(
+                np.array(grouped_trials.get_group(size)["trial_mean_dff"].values)
+            )
+            mean_dff_arr[isize, :len(trial_mean_dff), :] = trial_mean_dff
+    
     return mean_dff_arr
 
 
@@ -159,6 +181,7 @@ def fit_preferred_depth(
     niter=10,
     min_sigma=0.5,
     k_folds=1,
+    param="depth",
 ):
     """Function to fit depth tuning with gaussian function
 
@@ -174,21 +197,43 @@ def fit_preferred_depth(
         niter (int, optional): Number of rounds of fitting iterations. Defaults to 10.
         min_sigma (float, optional): min sigma for gaussian fitting. Defaults to 0.5.
         k_folds (int, optional): Number of folds for k-fold cross-validation. Defaults to 1.
+        param (str, optional): "depth" or "size". Defaults to "depth".
 
     Returns:
         (pd.DataFrame, Series): neurons_df, neurons_df
     """
 
     # Function to initialize depth tuning parameters
-    def p0_func():
-        return np.concatenate(
-            (
-                np.exp(np.random.normal(size=1)),
-                np.atleast_1d(np.log(neurons_df.loc[roi, "best_depth"])),
-                np.exp(np.random.normal(size=1)),
-                np.random.normal(size=1),
-            )
-        ).flatten()
+    if param == "depth":
+        def p0_func():
+            return np.concatenate(
+                (
+                    np.exp(np.random.normal(size=1)),
+                    np.atleast_1d(np.log(neurons_df.loc[roi, "best_depth"])),
+                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
+                )
+            ).flatten()
+    elif param == "size":
+        neurons_df, neurons_ds = size_control.find_best_size(trials_df=trials_df,
+                                    neurons_df=neurons_df,
+                                    neurons_ds=neurons_ds,
+                                    rs_thr=rs_thr,
+                                    rs_thr_max=None,
+                                    is_closedloop=closed_loop,
+                                    still_only=False,
+                                    still_time=0,
+                                    frame_rate=15,)
+        trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+        def p0_func():
+            return np.concatenate(
+                (
+                    np.exp(np.random.normal(size=1)),
+                    np.atleast_1d(np.log(neurons_df.loc[roi, "best_size"])),
+                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
+                )
+            ).flatten()
 
     # Choose trials
     depth_list = find_depth_list(trials_df)
@@ -206,79 +251,103 @@ def fit_preferred_depth(
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
     # if k_folds > 1: fit data in nfolds, save rsq for test data as depth_tuning_test_rsq;
 
-    # give class labels to each depth
-    log_depth_list = np.log(depth_list)
-    log_depth_list = np.append(
-        log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
-    )
-    log_depth_list = np.insert(
-        log_depth_list, 0, (log_depth_list[0] - log_depth_list[1] + log_depth_list[0])
-    )
-    depth_list_expand = np.exp(log_depth_list)
-    bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
-    trials_df_fit["depth_label"] = pd.cut(
-        trials_df_fit["depth"], bins=bins, labels=np.arange(len(depth_list))
-    )
-    X = trials_df_fit.drop(columns=["depth_label"])
-    y_label = trials_df_fit["depth_label"]
-    y = trials_df_fit["depth"]
+    # give class labels to each depth / size
+    if param == "depth":
+        log_depth_list = np.log(depth_list)
+        log_depth_list = np.append(
+            log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
+        )
+        log_depth_list = np.insert(
+            log_depth_list, 0, (log_depth_list[0] - log_depth_list[1] + log_depth_list[0])
+        )
+        depth_list_expand = np.exp(log_depth_list)
+        bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
+        trials_df_fit["depth_label"] = pd.cut(
+            trials_df_fit["depth"], bins=bins, labels=np.arange(len(depth_list))
+        )
+        Y = trials_df_fit.drop(columns=["depth_label"])
+        X_label = trials_df_fit["depth_label"]
+        X = trials_df_fit["depth"]
+    elif param == "size":
+        size_list = np.sort(trials_df_fit["physical_size"].unique())
+        log_size_list = np.log(size_list)
+        log_size_list = np.append(
+            log_size_list, (log_size_list[-1] + log_size_list[1] - log_size_list[0])
+            )
+        log_size_list = np.insert(
+            log_size_list, 0, (log_size_list[0] - log_size_list[1] + log_size_list[0])
+                              )
+        size_list_expand = np.exp(log_size_list)
+        bins = (size_list_expand[1:] + size_list_expand[:-1]) / 2
+        trials_df_fit["size_label"] = pd.cut(
+            trials_df_fit["physical_size"], bins=bins, labels=np.arange(len(size_list))
+        )
+        Y = trials_df_fit.drop(columns=["size_label"])
+        X_label = trials_df_fit["size_label"]
+        X = trials_df_fit["physical_size"]
 
     # thresholding running speed
     if rs_thr is None:
-        X["trial_mean_dff"] = X.apply(lambda x: np.nanmean(x.dff_stim, axis=0), axis=1)
+        Y["trial_mean_dff"] = Y.apply(lambda x: np.nanmean(x.dff_stim, axis=0), axis=1)
     else:
-        X["trial_mean_dff"] = X.apply(
+        Y["trial_mean_dff"] = Y.apply(
             lambda x: np.nanmean(x.dff_stim[x.RS_stim >= rs_thr, :], axis=0), axis=1
         )
 
+    if param == "depth":
+        lower_bounds = [0, np.log(depth_min), 0, -np.inf]
+        upper_bounds = [np.inf, np.log(depth_max), np.inf, np.inf]
+    elif param == "size":
+        lower_bounds = [0, np.log(size_list_expand[0]), 0, -np.inf]
+        upper_bounds = [np.inf, np.log(size_list_expand[-1]), np.inf, np.inf]
+        
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
     gaussian_func_ = partial(gaussian_func, min_sigma=min_sigma)
     if k_folds == 1:
         # Create empty columns for fitting results
-        neurons_df[f"preferred_depth{protocol_sfx}{sfx}"] = np.nan
-        neurons_df[f"depth_tuning_popt{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+        neurons_df[f"preferred_{param}{protocol_sfx}{sfx}"] = np.nan
+        neurons_df[f"{param}_tuning_popt{protocol_sfx}{sfx}"] = [[np.nan]] * len(
             neurons_df
         )
-        neurons_df[f"depth_tuning_trials{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+        neurons_df[f"{param}_tuning_trials{protocol_sfx}{sfx}"] = [[np.nan]] * len(
             neurons_df
         )
 
-        for roi in tqdm(range(X.dff_stim.iloc[0].shape[1])):
-            # XXX TODO: check if this is correct and explain why X=y and y=X
+        for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
             popt, rsq = common_utils.iterate_fit(
                 func=gaussian_func_,
-                X=np.log(np.array(y)),
-                y=np.array(np.stack(X["trial_mean_dff"])[:, roi]).flatten(),
-                lower_bounds=[0, np.log(depth_min), 0, -np.inf],
-                upper_bounds=[np.inf, np.log(depth_max), np.inf, np.inf],
+                X=np.log(np.array(X)),
+                y=np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten(),
+                lower_bounds=lower_bounds,
+                upper_bounds=upper_bounds,
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_depth{protocol_sfx}{sfx}"] = np.exp(popt[1])
-            neurons_df.at[roi, f"depth_tuning_popt{protocol_sfx}{sfx}"] = popt
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}"] = np.exp(popt[1])
+            neurons_df.at[roi, f"{param}_tuning_popt{protocol_sfx}{sfx}"] = popt
             neurons_df.at[
-                roi, f"depth_tuning_trials{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_trials{protocol_sfx}{sfx}"
             ] = choose_trial_nums
 
     # if k_folds > 1: fit data in nfolds, save rsq for test data as depth_tuning_test_rsq;
     elif k_folds > 1:
-        neurons_df[f"depth_tuning_test_rsq{protocol_sfx}{sfx}"] = np.nan
+        neurons_df[f"{param}_tuning_test_rsq{protocol_sfx}{sfx}"] = np.nan
         # initialize StratifiedKFold with the number of folds you want
         stratified_kfold = StratifiedKFold(
             n_splits=k_folds, shuffle=True, random_state=42
         )
 
         # Loop through each roi
-        for roi in tqdm(range(X.dff_stim.iloc[0].shape[1])):
+        for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
             # loop through the folds
-            X_pred_all = []
-            X_test_all = []
+            y_pred_all = []
+            y_test_all = []
             for fold, (train_index, test_index) in enumerate(
-                stratified_kfold.split(X, y_label)
+                stratified_kfold.split(Y, X_label)
             ):
                 X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-                y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-                X_test_all.append(
+                y_train, y_test = Y.iloc[train_index], Y.iloc[test_index]
+                y_test_all.append(
                     (np.stack(X_test["trial_mean_dff"])[:, roi]).flatten()
                 )
 
@@ -286,27 +355,27 @@ def fit_preferred_depth(
                 # fit gaussian function to the average dffs for each trial (depth tuning)
                 popt, _ = common_utils.iterate_fit(
                     gaussian_func_,
-                    np.log(np.array(y_train)).flatten(),
-                    np.array(np.stack(X_train["trial_mean_dff"])[:, roi]).flatten(),
-                    lower_bounds=[0, np.log(depth_min), 0, -np.inf],
-                    upper_bounds=[np.inf, np.log(depth_max), np.inf, np.inf],
+                    np.log(np.array(X_train)).flatten(),
+                    np.array(np.stack(y_train["trial_mean_dff"])[:, roi]).flatten(),
+                    lower_bounds=lower_bounds,
+                    upper_bounds=upper_bounds,
                     niter=niter,
                     p0_func=p0_func,
                 )
-                X_pred = gaussian_func_(np.log(y_test), *popt)
-                X_pred_all.append(X_pred)
+                y_pred = gaussian_func_(np.log(X_test), *popt)
+                y_pred_all.append(y_pred)
             rsq = common_utils.calculate_r_squared(
-                np.concatenate(X_test_all), np.concatenate(X_pred_all)
+                np.concatenate(y_test_all), np.concatenate(y_pred_all)
             )
             rval, pval = spearmanr(
-                np.concatenate(X_test_all), np.concatenate(X_pred_all)
+                np.concatenate(y_test_all), np.concatenate(y_pred_all)
             )
-            neurons_df.at[roi, f"depth_tuning_test_rsq{protocol_sfx}{sfx}"] = rsq
+            neurons_df.at[roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}"] = rsq
             neurons_df.at[
-                roi, f"depth_tuning_test_spearmanr_rval{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_test_spearmanr_rval{protocol_sfx}{sfx}"
             ] = rval
             neurons_df.at[
-                roi, f"depth_tuning_test_spearmanr_pval{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}"
             ] = pval
 
     return neurons_df, neurons_ds

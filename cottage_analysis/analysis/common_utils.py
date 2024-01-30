@@ -8,38 +8,6 @@ from cottage_analysis.analysis import find_depth_neurons
 from pathlib import Path
 
 
-def get_confidence_interval(arr, sem=[], alpha=0.05, mean_arr=[]):
-    """
-    Get confidence interval of an input array using normal approximation.
-
-    Args:
-        arr (np.ndarray): 2d array, for example ndepths x ntrials to calculate
-            confidence interval across trials.
-        sem (np.ndarray): 1d array, for example ndepths to calculate confidence
-            interval across depths.
-        alpha (float, optional): Significant level. Default 0.05.
-        mean_arr (np.ndarray): 1d array, for example ndepths to calculate confidence
-            interval across depths.
-
-    Returns:
-        CI_low (np.1darray): lower bound of confidence interval.
-        CI_high (np.1darray): upper bound of confidence interval.
-
-    """
-    z = scipy.stats.norm.ppf((1 - alpha / 2))
-    if len(sem) > 0:
-        sem = sem
-    else:
-        sem = scipy.stats.sem(arr, nan_policy="omit")
-    if len(mean_arr) > 0:
-        CI_low = mean_arr - z * sem
-        CI_high = mean_arr + z * sem
-    else:
-        CI_low = np.nanmean(arr, axis=0) - z * sem
-        CI_high = np.nanmean(arr, axis=0) + z * sem
-    return CI_low, CI_high
-
-
 def calculate_r_squared(y, y_hat):
     """Calculate R squared as the fraction of variance explained.
 

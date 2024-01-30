@@ -191,11 +191,17 @@ def plot_depth_tuning_curve(
     trials_df,
     roi,
     rs_thr=0.2,
+    rs_thr_max=None,
+    still_only=False,
+    still_time=0,
+    frame_rate=15,
     plot_fit=True,
     linewidth=3,
     linecolor="k",
     fit_linecolor="r",
     closed_loop=1,
+    param="depth",
+    use_col="depth_tuning_popt_closedloop",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """
@@ -210,29 +216,41 @@ def plot_depth_tuning_curve(
         linewidth (int, optional): linewidth. Defaults to 3.
         linecolor (str, optional): linecolor of true data. Defaults to "k".
         fit_linecolor (str, optional): linecolor of fitted curve. Defaults to "r".
+        closed_loop (int, optional): 1 for closed loop, 0 for open loop. Defaults to 1.
+        param (str, optional): 'depth' for virtual depth, 'size' for physical size. Defaults to 'depth'.
+        use_col (str, optional): column name of the gaussian fit parameters. Defaults to 'depth_tuning_popt_closedloop'.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
     """
 
     # Load average activity and confidence interval for this roi
-    depth_list = np.array(find_depth_neurons.find_depth_list(trials_df))
-    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(
-        trials_df, rs_thr=rs_thr
-    )[:, :, roi]
+    if param == "depth":
+        param_list = np.array(find_depth_neurons.find_depth_list(trials_df))
+    elif param == "size":
+        param_list = np.sort(trials_df["physical_size"].unique())
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(trials_df=trials_df,
+                                                  rs_thr=rs_thr, 
+                                                  rs_thr_max=rs_thr_max, 
+                                                  still_only=still_only, 
+                                                  still_time=still_time, 
+                                                  frame_rate=frame_rate, 
+                                                  closed_loop=closed_loop, 
+                                                  param=param)[:, :, roi]
     CI_low, CI_high = common_utils.get_confidence_interval(mean_dff_arr)
-    mean_arr = np.mean(mean_dff_arr, axis=1)
+    mean_arr = np.nanmean(mean_dff_arr, axis=1)
 
     # Load gaussian fit params for this roi
     if plot_fit:
         min_sigma = 0.5
-        [a, x0, log_sigma, b] = neurons_df.loc[roi, "gaussian_depth_tuning_popt"]
-        x = np.geomspace(depth_list[0], depth_list[-1], num=100)
+        [a, x0, log_sigma, b] = neurons_df.loc[roi, use_col]
+        x = np.geomspace(param_list[0], param_list[-1], num=100)
         gaussian_arr = find_depth_neurons.gaussian_func(
             np.log(x), a, x0, log_sigma, b, min_sigma
         )
 
     # Plotting
-    plt.plot(np.log(depth_list), mean_arr, color=linecolor, linewidth=linewidth)
+    plt.plot(np.log(param_list), mean_arr, color=linecolor, linewidth=linewidth)
     plt.fill_between(
-        np.log(depth_list),
+        np.log(param_list),
         CI_low,
         CI_high,
         color=linecolor,
@@ -242,14 +260,23 @@ def plot_depth_tuning_curve(
     )
     if plot_fit:
         plt.plot(np.log(x), gaussian_arr, color=fit_linecolor, linewidth=linewidth)
-    plt.xticks(
-        np.log(depth_list),
-        (np.array(depth_list) * 100).astype("int"),
-        fontsize=fontsize_dict["tick"],
-        rotation=45,
-    )
+    if param=="depth":
+        plt.xticks(
+            np.log(param_list),
+            (np.array(param_list) * 100).astype("int"),
+            fontsize=fontsize_dict["tick"],
+            rotation=45,
+        )
+        plt.xlabel(f"Virtual depth (cm)", fontsize=fontsize_dict["label"])
+    elif param=="size":
+        plt.xticks(
+            np.log(param_list),
+            (np.array(param_list)*0.87/10),
+            fontsize=fontsize_dict["tick"],
+            rotation=45,
+        )
+        plt.xlabel(f"Actual radius (cm)", fontsize=fontsize_dict["label"])
     plt.yticks(fontsize=fontsize_dict["tick"])
-    plt.xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
     plt.ylabel("\u0394F/F", fontsize=fontsize_dict["label"])
 
     plotting_utils.despine()
@@ -768,97 +795,104 @@ def plot_PSTH(
 
 def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
     rois = neurons_df.roi.values
-    os.makedirs(neurons_ds.path_full.parent / "plots" / "basic_vis", exist_ok=True)
+    for is_closedloop in np.sort(trials_df.closed_loop.unique()):
+        if is_closedloop:
+            sfx = "closedloop"
+        else:
+            sfx = "openloop"
+        os.makedirs(neurons_ds.path_full.parent / "plots" / f"basic_vis_{sfx}", exist_ok=True)
 
-    plot_rows = 10
-    plot_cols = 5
+        plot_rows = 10
+        plot_cols = 5
 
-    params = dict(
-        rs_thr=0.2,
-        rs_curve=dict(speed_min=0.001, speed_max=1, nbins=10, speed_thr=0.001),
-    )
-    params.update(kwargs)
-    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
-        if i * plot_rows < len(rois) - 1:
-            plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
-            for iroi, roi in enumerate(
-                rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
-            ):
-                plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
-                plot_depth_tuning_curve(
-                    neurons_df=neurons_df,
-                    trials_df=trials_df,
-                    roi=roi,
-                    rs_thr=params["rs_thr"],
-                    plot_fit=False,
-                    linewidth=3,
-                    linecolor="k",
-                    fit_linecolor="r",
-                    closed_loop=1,
+        params = dict(
+            rs_thr=0.2,
+            rs_curve=dict(speed_min=0.001, speed_max=1, nbins=10, speed_thr=0.001),
+        )
+        params.update(kwargs)
+        for i in tqdm(range(int(len(rois) // plot_rows + 1))):
+            if i * plot_rows < len(rois) - 1:
+                plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
+                for iroi, roi in enumerate(
+                    rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
+                ):
+                    plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
+                    plot_depth_tuning_curve(
+                        neurons_df=neurons_df,
+                        trials_df=trials_df,
+                        roi=roi,
+                        rs_thr=params["rs_thr"],
+                        plot_fit=False,
+                        linewidth=3,
+                        linecolor="k",
+                        fit_linecolor="r",
+                        closed_loop=is_closedloop,
+                    )
+                    plt.title(f"roi{roi}")
+
+                    plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
+                    plot_speed_tuning(
+                        neurons_df=neurons_df,
+                        trials_df=trials_df,
+                        roi=roi,
+                        is_closed_loop=is_closedloop,
+                        which_speed="RS",
+                        smoothing_sd=1,
+                        **params["rs_curve"],
+                    )
+
+                    plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
+                    plot_speed_tuning(
+                        neurons_df=neurons_df,
+                        trials_df=trials_df,
+                        roi=roi,
+                        is_closed_loop=is_closedloop,
+                        nbins=10,
+                        which_speed="OF",
+                        speed_min=0.01,
+                        speed_max=1.5,
+                        speed_thr=0.01,
+                        smoothing_sd=1,
+                    )
+
+                    plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
+                    plot_PSTH(
+                        neurons_df=neurons_df,
+                        trials_df=trials_df,
+                        roi=roi,
+                        is_closed_loop=is_closedloop,
+                        max_distance=6,
+                        nbins=20,
+                        frame_rate=15,
+                    )
+                    plt.tight_layout()
+
+                    plt.subplot2grid((plot_rows, plot_cols), (iroi, 4))
+                    log_range = {
+                        "rs_bin_log_min": 0,
+                        "rs_bin_log_max": 2.5,
+                        "rs_bin_num": 6,
+                        "of_bin_log_min": -1.5,
+                        "of_bin_log_max": 3.5,
+                        "of_bin_num": 11,
+                        "log_base": 10,
+                    }
+                    log_range.update(kwargs["RS_OF_matrix_log_range"])
+                    plot_RS_OF_matrix(
+                        trials_df=trials_df[trials_df.closed_loop == is_closedloop],
+                        roi=roi,
+                        log_range=log_range,
+                    )
+
+                plt.savefig(
+                    neurons_ds.path_full.parent
+                    / "plots"
+                    / f"basic_vis_{sfx}"
+                    / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+                    dpi=100,
                 )
-                plt.title(f"roi{roi}")
-
-                plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
-                plot_speed_tuning(
-                    neurons_df=neurons_df,
-                    trials_df=trials_df,
-                    roi=roi,
-                    is_closed_loop=1,
-                    which_speed="RS",
-                    smoothing_sd=1,
-                    **params["rs_curve"],
-                )
-
-                plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
-                plot_speed_tuning(
-                    neurons_df=neurons_df,
-                    trials_df=trials_df,
-                    roi=roi,
-                    is_closed_loop=1,
-                    nbins=10,
-                    which_speed="OF",
-                    speed_min=0.01,
-                    speed_max=1.5,
-                    speed_thr=0.01,
-                    smoothing_sd=1,
-                )
-
-                plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
-                plot_PSTH(
-                    neurons_df=neurons_df,
-                    trials_df=trials_df,
-                    roi=roi,
-                    is_closed_loop=1,
-                    max_distance=6,
-                    nbins=20,
-                    frame_rate=15,
-                )
-                plt.tight_layout()
-
-                plt.subplot2grid((plot_rows, plot_cols), (iroi, 4))
-                log_range = {
-                    "rs_bin_log_min": 0,
-                    "rs_bin_log_max": 2.5,
-                    "rs_bin_num": 6,
-                    "of_bin_log_min": -1.5,
-                    "of_bin_log_max": 3.5,
-                    "of_bin_num": 11,
-                    "log_base": 10,
-                }
-                log_range.update(kwargs["RS_OF_matrix_log_range"])
-                plot_RS_OF_matrix(
-                    trials_df=trials_df,
-                    roi=roi,
-                    log_range=log_range,
-                )
-
-            plt.savefig(
-                neurons_ds.path_full.parent
-                / "plots"
-                / "basic_vis"
-                / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
-                dpi=100,
-            )
+                
+                plt.close()
 
 
 def plot_RS_OF_matrix(

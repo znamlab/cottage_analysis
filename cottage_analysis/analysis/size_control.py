@@ -4,7 +4,7 @@ from tqdm import tqdm
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
-from cottage_analysis.analysis import spheres
+from cottage_analysis.analysis import spheres, find_depth_neurons
 import flexiznam as flz
 from pathlib import Path
 
@@ -301,3 +301,61 @@ def sync_all_recordings(
     print(f"Finished concatenating vs_df and trials_df")
 
     return vs_df_all, trials_df_all
+
+
+def find_best_size(
+    trials_df,
+    neurons_df,
+    neurons_ds,
+    rs_thr=None,
+    rs_thr_max=None,
+    is_closedloop=1,
+    still_only=False,
+    still_time=0,
+    frame_rate=15,
+):
+    """Find the size with max mean response for each neuron.
+    
+    Args:
+        trials_df (pd.DataFrame): trials dataframe.
+        neurons_df (pd.DataFrame): neurons dataframe.
+        neurons_ds (neurons_ds): neurons dataset.
+        rs_thr (float, optional): minimum running speed threshold. Defaults to None.
+        rs_thr_max (float, optional): maximum running speed threshold. Defaults to None.
+        is_closedloop (int, optional): 1 for closed loop, 0 for open loop. Defaults to 1.
+        still_only (bool, optional): if True, only use still trials. Defaults to False.
+        still_time (int, optional): still time in seconds. Defaults to 0.
+        frame_rate (int, optional): frame rate. Defaults to 15.
+    """
+    trials_df = trials_df[trials_df.closed_loop == is_closedloop]
+    trials_df = get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+    size_list = np.sort(trials_df["physical_size"].unique())
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(trials_df=trials_df,
+                                                  rs_thr=rs_thr, 
+                                                  rs_thr_max=rs_thr_max, 
+                                                  still_only=still_only, 
+                                                  still_time=still_time, 
+                                                  frame_rate=frame_rate, 
+                                                  closed_loop=is_closedloop, 
+                                                  param="size")
+    for roi in np.arange(len(neurons_df)):
+        neurons_df.loc[roi, "best_size"] = size_list[
+            np.argmax(np.nanmean(mean_dff_arr[:, :, roi], axis=1))
+        ]
+        
+    return neurons_df, neurons_ds
+    
+    
+def get_physical_size(trials_df, use_cols, k=1):
+    """Get physical size of the stimulus.
+    
+    Args:
+        trials_df (pd.DataFrame): trials dataframe.
+        use_cols (list): list of columns to use. (["size", "depth"])
+        k (int, optional): scaling factor. Defaults to 1.
+    
+    Returns:
+        pd.DataFrame: trials dataframe with physical size column.
+    """
+    trials_df["physical_size"] = trials_df[use_cols[0]] * trials_df[use_cols[1]] * k
+    return trials_df
