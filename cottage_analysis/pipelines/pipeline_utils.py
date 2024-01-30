@@ -6,6 +6,8 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from functools import partial
+import warnings
+from pandas.errors import SettingWithCopyWarning
 
 import flexiznam as flz
 from znamutils import slurm_it
@@ -138,7 +140,7 @@ def load_session(
 
 
 @slurm_it(
-    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "4:00:00", "cpus-per-task": 8}
+    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8}
 )
 def load_and_fit(
     project,
@@ -152,6 +154,7 @@ def load_and_fit(
     min_sigma,
     k_folds=1
 ):
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     (neurons_ds, neurons_df, vs_df_all, trials_df_all,) = load_session(
         project, session_name, photodiode_protocol, regenerate_frames=False
@@ -179,7 +182,7 @@ def load_and_fit(
     return fit_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "2:00:00"})
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "2:00:00"})
 def merge_fit_dataframes(project, session_name):
     """Merge fit dataframe from all fits
 
@@ -187,6 +190,7 @@ def merge_fit_dataframes(project, session_name):
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
     """
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
 
     neurons_ds = create_neurons_ds(
@@ -201,6 +205,7 @@ def merge_fit_dataframes(project, session_name):
     to_remove = []
 
     for df in neurons_ds.path_full.parent.glob("fit_rs_of_tuning_*.pickle"):
+        print(f"Merging {df}...")
         to_remove.append(df)
         df = pd.read_pickle(df)
         assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
@@ -214,12 +219,17 @@ def merge_fit_dataframes(project, session_name):
 
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full)
+    print("All dataframes merged. Neurons_df saved.")
     return neurons_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "9:00:00"})
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "9:00:00"})
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
+    
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
+    
     (
         neurons_ds,
         neurons_df,
@@ -228,8 +238,21 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         frames_all,
         imaging_df_all,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
+    
+    kwargs = {
+        "RS_OF_matrix_log_range": {
+                    "rs_bin_log_min": 0,
+                    "rs_bin_log_max": 2.5,
+                    "rs_bin_num": 6,
+                    "of_bin_log_min": -1.5,
+                    "of_bin_log_max": 3.5,
+                    "of_bin_num": 11,
+                    "log_base": 10,
+                }
+    }
+    
     basic_vis_plots.basic_vis_session(
-        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
+        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
     )
 
     # Plot all ROI RFs

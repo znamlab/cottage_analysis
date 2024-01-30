@@ -615,6 +615,7 @@ def fit_rs_of_tuning(
                         ] = pval
 
             elif model == "gaussian_OF":
+                model_func_ = partial(gaussian_1d, min_sigma=min_sigma)
                 if k_folds == 1:
                     # Initialize columns with nan
                     neurons_df_temp[f"preferred_RS_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
@@ -622,7 +623,6 @@ def fit_rs_of_tuning(
                     neurons_df_temp[f"rsof_popt_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = [[np.nan]] * len(neurons_df_temp)
                     neurons_df_temp[f"rsof_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}"] = np.nan
                     
-                    model_func_ = partial(gaussian_1d, min_sigma=min_sigma)
                     for roi in tqdm(range(dff.shape[1])):
                         popt, rsq = common_utils.iterate_fit(
                             model_func_,
@@ -688,6 +688,12 @@ def fit_rs_of_tuning(
                         neurons_df_temp.at[
                             roi, f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"
                         ] = pval
+                        
+        if k_folds > 1:
+            neurons_df_temp = neurons_df_temp[["roi", 
+                                               f"rsof_test_rsq_{protocol_sfx}{rs_type}{sfx}{model_sfx}", 
+                                               f"rsof_test_spearmanr_rval_{protocol_sfx}{rs_type}{sfx}{model_sfx}",
+                                               f"rsof_test_spearmanr_pval_{protocol_sfx}{rs_type}{sfx}{model_sfx}"]]
             
 
     return neurons_df_temp
