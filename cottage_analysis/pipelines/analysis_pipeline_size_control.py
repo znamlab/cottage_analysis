@@ -20,12 +20,8 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-# TODO: add decoder
-# TODO: separate steps
-
-
 def main(
-    project, session_name, conflicts="skip", photodiode_protocol=5,
+    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
 ):
     """
     Main function to analyze a session.
@@ -35,6 +31,7 @@ def main(
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
+        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
     """
     print(
         f"------------------------------- \n \
@@ -76,34 +73,50 @@ def main(
             alpha=0.05,
         )
 
-        # print("Fit preferred depth...")
-        # # Find preferred depth of closed loop with all data
-        # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-        #     trials_df=trials_df_all,
-        #     neurons_df=neurons_df,
-        #     neurons_ds=neurons_ds,
-        #     closed_loop=1,
-        #     choose_trials=None,
-        #     depth_min=0.02,
-        #     depth_max=20,
-        #     niter=10,
-        #     min_sigma=0.5,
-        #     k_folds=1,
-        # )
-
-        # # Find r-squared of k-fold cross validation
-        # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-        #     trials_df=trials_df_all,
-        #     neurons_df=neurons_df,
-        #     neurons_ds=neurons_ds,
-        #     closed_loop=1,
-        #     choose_trials=None,
-        #     depth_min=0.02,
-        #     depth_max=20,
-        #     niter=10,
-        #     min_sigma=0.5,
-        #     k_folds=5,
-        # )
+        # Fit preferred depth 
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials=None,
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=1,
+            param="depth",
+        )
+        
+        # Fit cross-validated preferred depth with half the trials
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials="odd",
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=1,
+            param="depth",
+        )
+        
+        # Fit cross-validated preferred depth with 5-fold cross-validation 
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials=None,
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=5,
+            param="depth",
+        )
         
         # Fit preferred depth for different sizes
         for isize, size in enumerate(np.sort(trials_df_all["size"].unique())):
@@ -118,13 +131,60 @@ def main(
                 niter=10,
                 min_sigma=0.5,
                 k_folds=1,
+                param="depth",
             )
             neurons_df[f"preferred_depth_size{int(size)}"] = neurons_df_temp["preferred_depth_closedloop"]
             neurons_df[f"depth_tuning_popt_size{int(size)}"] = neurons_df_temp["depth_tuning_popt_closedloop"]
         
+        # Fit preferred physical size
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials=None,
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=1,
+            param="size",
+        )
+        
+        # Fit cross-validated preferred physical size with half the trials
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials="odd",
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=1,
+            param="size",
+        )
+        
+        # Fit cross-validated preferred physical size with 5-fold cross-validation 
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials=None,
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=5,
+            param="size",
+        )
+        
+        
         # Save neurons_df
-        # neurons_df.to_pickle(neurons_ds.path_full)
-        # neurons_ds.update_flexilims(mode="update")
+        neurons_df.to_pickle(neurons_ds.path_full)
+        neurons_ds.update_flexilims(mode="update")
         
     return neurons_df
         
