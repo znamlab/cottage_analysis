@@ -346,7 +346,7 @@ def find_best_size(
     return neurons_df, neurons_ds
     
     
-def get_physical_size(trials_df, use_cols, k=1):
+def get_physical_size(trials_df, use_cols=["size", "depth"], k=1):
     """Get physical size of the stimulus.
     
     Args:

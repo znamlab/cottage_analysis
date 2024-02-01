@@ -8,15 +8,12 @@ import pickle
 from tqdm import tqdm
 
 import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import (
-    spheres,
     find_depth_neurons,
-    fit_gaussian_blob,
     common_utils,
     size_control,
 )
-from cottage_analysis.plotting import basic_vis_plots, sta_plots
+from cottage_analysis.plotting import basic_vis_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
@@ -122,7 +119,7 @@ def main(
         for isize, size in enumerate(np.sort(trials_df_all["size"].unique())):
             neurons_df_temp, neurons_ds = find_depth_neurons.fit_preferred_depth(
                 trials_df=trials_df_all[trials_df_all["size"] == size],
-                neurons_df=neurons_df,
+                neurons_df=neurons_df.copy(),
                 neurons_ds=neurons_ds,
                 closed_loop=1,
                 choose_trials=None,
@@ -185,6 +182,9 @@ def main(
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
         neurons_ds.update_flexilims(mode="update")
+        
+        # Plotting
+        basic_vis_plots.size_control_session(neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds)
         
     return neurons_df
         

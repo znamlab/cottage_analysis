@@ -12,13 +12,11 @@ from cottage_analysis.analysis import (
     find_depth_neurons,
     common_utils,
     fit_gaussian_blob,
+    size_control,
 )
 
 # TODO:
 # 1. plot depth tuning curve with the smoothing tuning method
-# 2. plot PSTH with the normal shading error bar
-# 3. plot 8 depth example cells
-
 
 def plot_depth_neuron_distribution(
     neurons_df,
@@ -1104,3 +1102,94 @@ def plot_RS_OF_fitted_tuning(
         / log_range["rs_bin_num"],
         cmap="Reds",
     )
+
+
+def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
+    rois = neurons_df.roi.values
+    trials_df = trials_df[trials_df.closed_loop == 1]
+    trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+    os.makedirs(neurons_ds.path_full.parent / "plots" / f"size_control_basic_vis", exist_ok=True)
+
+    plot_rows = 10
+    plot_cols = 3
+
+    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
+        if i * plot_rows < len(rois) - 1:
+            plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
+            for iroi, roi in enumerate(
+                rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
+            ):
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
+                plot_depth_tuning_curve(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    rs_thr=None,
+                    rs_thr_max=None,
+                    still_only=False,
+                    still_time=0,
+                    frame_rate=15,
+                    plot_fit=True,
+                    linewidth=3,
+                    linecolor="k",
+                    fit_linecolor="r",
+                    closed_loop=1,
+                    param="depth",
+                    use_col="depth_tuning_popt_closedloop",
+                    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+                )
+                
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
+                linecolors = ["aqua", "b", "midnightblue"]
+                for isize, size in enumerate(np.sort(trials_df["size"].unique())):
+                    plot_depth_tuning_curve(
+                        neurons_df=neurons_df,
+                        trials_df=trials_df[trials_df["size"]==size],
+                        roi=roi,
+                        rs_thr=None,
+                        rs_thr_max=None,
+                        still_only=False,
+                        still_time=0,
+                        frame_rate=15,
+                        plot_fit=False,
+                        linewidth=3,
+                        linecolor=linecolors[isize],
+                        fit_linecolor="r",
+                        closed_loop=1,
+                        param="depth",
+                        use_col="depth_tuning_popt_closedloop",
+                        fontsize_dict={"title": 15, "label": 10, "tick": 10},
+                    )
+                    
+                plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
+                plot_depth_tuning_curve(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    rs_thr=None,
+                    rs_thr_max=None,
+                    still_only=False,
+                    still_time=0,
+                    frame_rate=15,
+                    plot_fit=True,
+                    linewidth=3,
+                    linecolor=linecolors[isize],
+                    fit_linecolor="r",
+                    closed_loop=1,
+                    param="size",
+                    use_col="size_tuning_popt_closedloop",
+                    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+                )
+            
+            plt.savefig(
+                neurons_ds.path_full.parent 
+                / "plots" 
+                / f"size_control_basic_vis"
+                / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+                dpi=100,
+            )
+            
+            plt.close()
+                
+                
+                
