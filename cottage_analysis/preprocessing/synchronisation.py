@@ -127,6 +127,11 @@ def find_monitor_frames(
     frame_rate = 1 / frame_log.HarpTime.diff().median()
     print(f"Recording is {recording_duration:.0f} s long.")
     print(f"Frame rate is {frame_rate:.0f} Hz.")
+    
+    # If the last frame log row contains Nan, remove it and warn
+    if frame_log.iloc[-1].isna().any():
+        frame_log = frame_log[:-1]
+        print(f"WARNING: Removed last row of FrameLog.csv with NaN probably due to bonsai crash.")
 
     # Get frames from photodiode trace, depending on the photodiode protocol is 2 or 5
     diagnostics_folder = (
