@@ -79,44 +79,44 @@ def basic_vis_sta_session(
     trials_df,
     depth_list,
     frames,
+    is_closedloop=1,
     save_dir=None,
     fontsize_dict={"title": 10, "tick": 10, "label": 10},
 ):
-    for is_closedloop in np.sort(trials_df.closed_loop.unique()):
-        if is_closedloop:
-            sfx = "closedloop"
-        else:
-            sfx = "openloop"
-            
-        if save_dir is not None:
-            os.makedirs(save_dir / "plots" / f"sta_{sfx}", exist_ok=True)
-            
-        for i in tqdm(range(len(neurons_df) // 10 + 1)):
-            if (i * 10) < len(neurons_df):
-                iroi = 0
-                plt.figure(figsize=(30, 18))
-                max_roi = np.min([(i + 1) * 10, len(neurons_df) - 1])
-                for roi in np.arange(len(neurons_df))[i * 10 : max_roi]:
-                    basic_vis_sta(
-                        coef,
-                        neurons_df,
-                        trials_df,
-                        depth_list,
-                        frames,
-                        roi,
-                        is_closedloop=is_closedloop,
-                        plot_rows=len(depth_list) + 1,
-                        plot_cols=10,
-                        plot_y=iroi,
-                        fontsize_dict=fontsize_dict,
-                    )
-                    iroi += 1
-                plt.savefig(
-                    save_dir
-                    / "plots"
-                    / f"sta_{sfx}"
-                    / f"roi{np.arange(len(neurons_df))[i*10]}-{np.arange(len(neurons_df))[max_roi]}.png",
-                    dpi=100,
-                    bbox_inches="tight",
+    if is_closedloop:
+        sfx = "closedloop"
+    else:
+        sfx = "openloop"
+        
+    if save_dir is not None:
+        os.makedirs(save_dir / "plots" / f"sta_{sfx}", exist_ok=True)
+        
+    for i in tqdm(range(len(neurons_df) // 10 + 1)):
+        if (i * 10) < len(neurons_df):
+            iroi = 0
+            plt.figure(figsize=(30, 18))
+            max_roi = np.min([(i + 1) * 10, len(neurons_df) - 1])
+            for roi in np.arange(len(neurons_df))[i * 10 : max_roi]:
+                basic_vis_sta(
+                    coef,
+                    neurons_df,
+                    trials_df,
+                    depth_list,
+                    frames,
+                    roi,
+                    is_closedloop=is_closedloop,
+                    plot_rows=len(depth_list) + 1,
+                    plot_cols=10,
+                    plot_y=iroi,
+                    fontsize_dict=fontsize_dict,
                 )
-                plt.close()
+                iroi += 1
+            plt.savefig(
+                save_dir
+                / "plots"
+                / f"sta_{sfx}"
+                / f"roi{np.arange(len(neurons_df))[i*10]}-{np.arange(len(neurons_df))[max_roi]}.png",
+                dpi=100,
+                bbox_inches="tight",
+            )
+            plt.close()
