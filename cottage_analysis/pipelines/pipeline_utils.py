@@ -258,13 +258,19 @@ def run_basic_plots(project, session_name, photodiode_protocol):
     # Plot all ROI RFs
     print("Plotting RFs...")
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-    coef = np.stack(neurons_df["rf_coef"], axis=2)
-    sta_plots.basic_vis_sta_session(
-        coef=coef,
-        neurons_df=neurons_df,
-        trials_df=trials_df_all,
-        depth_list=depth_list,
-        frames=frames_all,
-        save_dir=neurons_ds.path_full.parent,
-        fontsize_dict={"title": 10, "tick": 10, "label": 10},
-    )
+    for is_closedloop in trials_df_all.closed_loop.unique():
+        if is_closedloop:
+            sfx = "_closedloop"
+        else:
+            sfx = "_openloop"
+        coef = np.stack(neurons_df[f"rf_coef{sfx}"], axis=2)
+        sta_plots.basic_vis_sta_session(
+            coef=coef,
+            neurons_df=neurons_df,
+            trials_df=trials_df_all,
+            depth_list=depth_list,
+            frames=frames_all,
+            is_closedloop = is_closedloop,
+            save_dir=neurons_ds.path_full.parent,
+            fontsize_dict={"title": 10, "tick": 10, "label": 10},
+        )

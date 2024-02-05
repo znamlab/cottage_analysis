@@ -221,6 +221,7 @@ def plot_depth_tuning_curve(
     """
 
     # Load average activity and confidence interval for this roi
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     if param == "depth":
         param_list = np.array(find_depth_neurons.find_depth_list(trials_df))
     elif param == "size":
