@@ -627,6 +627,7 @@ def regenerate_frames_all_recordings(
     filter_datasets=None,
     recording_type="two_photon",
     protocol_base="SpheresPermTubeReward",
+    is_closedloop=1,
     photodiode_protocol=5,
     return_volumes=True,
     resolution=5,
@@ -644,6 +645,7 @@ def regenerate_frames_all_recordings(
         filter_datasets (dict): dictionary of filter keys and values to filter for the desired suite2p dataset (e.g. {'anatomical':3}) Default to None.
         recording_type (str, optional): Type of the recording. Defaults to "two_photon".
         protocol_base (str, optional): Base of the protocol. Defaults to "SpheresPermTubeReward".
+        is_closedloop (bool): if True, closed loop session. Defaults to True.
         photodiode_protocol (int): number of photodiode quad colors used for monitoring frame refresh.
             Either 2 or 5 for now. Defaults to 5.
         return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
@@ -673,7 +675,10 @@ def regenerate_frames_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    if is_closedloop:
+        recordings = recordings[(recordings.name.str.contains(protocol_base)) & (~recordings.name.str.contains("Playback"))]
+    else:
+        recordings = recordings[(recordings.name.str.contains(protocol_base+"Playback"))]
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         recording, harp_recording, onix_rec = get_relevant_recordings(

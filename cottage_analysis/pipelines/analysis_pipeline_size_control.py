@@ -55,7 +55,7 @@ def main(
             project=project,
             filter_datasets={"anatomical_only": 3},
             recording_type="two_photon",
-            protocol_base="SizeControl",
+            protocol_base="SpheresPermTubeReward",
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )

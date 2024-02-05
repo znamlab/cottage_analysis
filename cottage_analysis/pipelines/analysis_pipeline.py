@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import pickle
 from tqdm import tqdm
+import warnings
 
 import flexiznam as flz
 from cottage_analysis.preprocessing import synchronisation
@@ -42,10 +43,14 @@ def main(
         -------------------------------"
     )
     if use_slurm:
-        slurm_folder = Path(os.path.expanduser(f"~/{session_name}/slurm_logs"))
+        slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
+        slurm_folder.mkdir(exist_ok=True)
+        slurm_folder = Path(slurm_folder/f"{session_name}")
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
+        
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     flexilims_session = flz.get_flexilims_session(project)
 
@@ -96,96 +101,113 @@ def main(
             k_folds=1,
         )
 
-        # # Find preferred depth of closed loop with half the data for plotting purposes
-        # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-        #     trials_df=trials_df_all,
-        #     neurons_df=neurons_df,
-        #     neurons_ds=neurons_ds,
-        #     closed_loop=1,
-        #     choose_trials="odd",
-        #     depth_min=0.02,
-        #     depth_max=20,
-        #     niter=10,
-        #     min_sigma=0.5,
-        #     k_folds=1,
-        # )
+        # Find preferred depth of closed loop with half the data for plotting purposes
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials="odd",
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=1,
+        )
 
-        # # Find r-squared of k-fold cross validation
-        # neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-        #     trials_df=trials_df_all,
-        #     neurons_df=neurons_df,
-        #     neurons_ds=neurons_ds,
-        #     closed_loop=1,
-        #     choose_trials=None,
-        #     depth_min=0.02,
-        #     depth_max=20,
-        #     niter=10,
-        #     min_sigma=0.5,
-        #     k_folds=5,
-        # )
-        # # Save neurons_df
-        # neurons_df.to_pickle(neurons_ds.path_full)
+        # Find r-squared of k-fold cross validation
+        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+            trials_df=trials_df_all,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            closed_loop=1,
+            choose_trials=None,
+            depth_min=0.02,
+            depth_max=20,
+            niter=10,
+            min_sigma=0.5,
+            k_folds=5,
+        )
+        
+        # Save neurons_df
+        neurons_df.to_pickle(neurons_ds.path_full)
 
-        # # Regenerate sphere stimuli
-        # print("---RF analysis...---")
-        # print("Generating sphere stimuli...")
-        # frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
-        #     session_name=session_name,
-        #     flexilims_session=flexilims_session,
-        #     project=None,
-        #     filter_datasets={"anatomical_only": 3},
-        #     recording_type="two_photon",
-        #     protocol_base="SpheresPermTubeReward",
-        #     photodiode_protocol=photodiode_protocol,
-        #     return_volumes=True,
-        #     resolution=5,
-        # )
+        # Regenerate sphere stimuli
+        print("---RF analysis...---")
+        print("Generating sphere stimuli...")
+        for is_closedloop in trials_df_all["closed_loop"].unique():
+            if is_closedloop:
+                sfx = "_closedloop"
+            else:
+                sfx = "_openloop"   
+            frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
+                session_name=session_name,
+                flexilims_session=flexilims_session,
+                project=None,
+                filter_datasets={"anatomical_only": 3},
+                recording_type="two_photon",
+                is_closedloop=is_closedloop,
+                protocol_base="SpheresPermTubeReward",
+                photodiode_protocol=photodiode_protocol,
+                return_volumes=True,
+                resolution=5,
+            )
 
-        # print("Fitting RF...")
-        # coef, r2, best_reg_xys, best_reg_depths = spheres.fit_3d_rfs_hyperparam_tuning(
-        #     imaging_df_all,
-        #     frames_all[:, :, int(frames_all.shape[2] // 2) :],
-        #     reg_xys=[1.25, 2.5, 5, 10, 20, 40, 80, 160, 320, 640, 1280],
-        #     reg_depths=[1.25, 2.5, 5, 10, 20, 40, 80, 160, 320, 640, 1280],
-        #     shift_stim=2,
-        #     use_col="dffs",
-        #     k_folds=5,
-        #     tune_separately=True,
-        #     validation=False,
-        # )
+            print(f"Fitting RF{sfx}...")
+            coef, r2, best_reg_xys, best_reg_depths = spheres.fit_3d_rfs_hyperparam_tuning(
+                imaging_df_all,
+                frames_all[:, :, int(frames_all.shape[2] // 2) :],
+                reg_xys=np.geomspace(2.5,10240,13),
+                reg_depths=np.geomspace(2.5,10240,13),
+                shift_stim=2,
+                use_col="dffs",
+                k_folds=5,
+                tune_separately=True,
+                validation=False,
+            )
 
-        # print("Fitting ipsi RF...")
-        # coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
-        #     imaging_df_all,
-        #     frames_all[:, :, : int(frames_all.shape[2] // 2)],
-        #     best_reg_xys,
-        #     best_reg_depths,
-        #     shift_stim=2,
-        #     use_col="dffs",
-        #     k_folds=5,
-        #     validation=False,
-        # )
+            print("Fitting ipsi RF...")
+            coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
+                imaging_df_all,
+                frames_all[:, :, : int(frames_all.shape[2] // 2)],
+                best_reg_xys,
+                best_reg_depths,
+                shift_stim=2,
+                use_col="dffs",
+                k_folds=5,
+                validation=False,
+            )
 
-        # for col in ["rf_coef", "rf_rsq", "rf_coef_ipsi", "rf_rsq_ipsi"]:
-        #     neurons_df[col] = [[np.nan]] * len(neurons_df)
+            for col in [f"rf_coef{sfx}", 
+                        f"rf_rsq{sfx}", 
+                        f"rf_coef_ipsi{sfx}", 
+                        f"rf_rsq_ipsi{sfx}"]:
+                neurons_df[col] = [[np.nan]] * len(neurons_df)
 
-        # for i, _ in neurons_df.iterrows():
-        #     neurons_df.at[i, "rf_coef"] = coef[:, :, i]
-        #     neurons_df.at[i, "rf_coef_ipsi"] = coef_ipsi[:, :, i]
-        #     neurons_df.at[i, "rf_rsq"] = r2[i, :]
-        #     neurons_df.at[i, "rf_rsq_ipsi"] = r2_ipsi[i, :]
-        #     neurons_df.at[i, "rf_reg_xy"] = best_reg_xys[i]
-        #     neurons_df.at[i, "rf_reg_depth"] = best_reg_depths[i]
+            for i, _ in neurons_df.iterrows():
+                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i]
+                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i]
+                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :]
+                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = r2_ipsi[i, :]
+                neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
+                neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
-        # # Save neurons_df
-        # neurons_df.to_pickle(neurons_ds.path_full)
+        # Save neurons_df
+        neurons_df.to_pickle(neurons_ds.path_full)
 
-    #     # Update neurons_ds on flexilims
-    #     neurons_ds.update_flexilims(mode="update")
+        # Update neurons_ds on flexilims
+        neurons_ds.update_flexilims(mode="update")
 
         # Fit gaussian blob to neuronal activity
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
+        common_params = dict(
+            rs_thr=0.01,
+            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
+            niter=5,
+            min_sigma=0.25,
+        )
+                
         to_do = [
             ("gaussian_2d", None, 1),
             ("gaussian_2d", "even", 1),
@@ -195,12 +217,6 @@ def main(
             ("gaussian_additive", None, 5),
             ("gaussian_OF", None, 5),
         ]
-        common_params = dict(
-            rs_thr=0.01,
-            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-            niter=1,
-            min_sigma=0.25,
-        )
 
         for model, trials, k_folds in to_do:
             name = f"{session_name}_{model}"
@@ -214,39 +230,39 @@ def main(
                 photodiode_protocol,
                 model=model,
                 choose_trials=trials,
-                k_folds=k_folds,
                 use_slurm=use_slurm,
                 slurm_folder=slurm_folder,
                 scripts_name=name,
+                k_folds=k_folds,
                 **common_params,
             )
             outputs.append(out)
 
-    #     # Merge fit dataframes
-    #     job_dependency = outputs if use_slurm else None
-    #     out = pipeline_utils.merge_fit_dataframes(
-    #         project,
-    #         session_name,
-    #         use_slurm=use_slurm,
-    #         slurm_folder=slurm_folder,
-    #         job_dependency=job_dependency,
-    #         scripts_name=f"{session_name}_merge_fit_dataframes",
-    #     )
-    #     job_dependency = out if use_slurm else None
-    #     print("---Analysis finished. Neurons_df saved.---")
+        # Merge fit dataframes
+        job_dependency = outputs if use_slurm else None
+        out = pipeline_utils.merge_fit_dataframes(
+            project,
+            session_name,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_merge_fit_dataframes",
+        )
+        
+        print("---Analysis finished. Neurons_df saved.---")
 
-    # # Plot basic plots
-    # print("---Start basic vis plotting...---")
-    # pipeline_utils.run_basic_plots(
-    #     project,
-    #     session_name,
-    #     photodiode_protocol,
-    #     use_slurm=use_slurm,
-    #     slurm_folder=slurm_folder,
-    #     job_dependency=job_dependency,
-    #     scripts_name=f"{session_name}_basic_vis_plots",
-    # )
-    # print("---Plotting finished. ---")
+        # Plot basic plots
+        print("---Start basic vis plotting...---")
+        pipeline_utils.run_basic_plots(
+            project,
+            session_name,
+            photodiode_protocol,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_basic_vis_plots",
+        )
+        print("---Plotting finished. ---")
 
 
 if __name__ == "__main__":
