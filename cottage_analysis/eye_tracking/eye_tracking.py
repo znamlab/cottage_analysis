@@ -5,6 +5,7 @@ is `run_all`, which runs all the steps of the analysis.
 """
 
 import os
+import shutil
 from pathlib import Path
 import yaml
 import pandas as pd
@@ -180,6 +181,42 @@ def run_all(
     return pd.Series(log)
 
 
+def clear_tracking_info(camera_ds, flexilims_session):
+    """Clear tracking information for a camera dataset
+
+    This will delete all tracking datasets associated with the camera dataset.
+    and the reprojection dataset.
+    Args:
+        camera_ds (flexiznam.Dataset): Camera dataset
+        flexilims_session (flexilims.Session): Flexilims session
+    """
+    ds_dict = eye_io.get_tracking_datasets(camera_ds, flexilims_session)
+    for ds in ds_dict.values():
+        if ds is not None:
+            if ds.path_full.is_dir():
+                print(f"        deleting {ds.path_full}")
+                shutil.rmtree(ds.path_full)
+            flexilims_session.delete(ds.id)
+    cam_ds_short_name = camera_ds.dataset_name
+    repro_ds = flz.Dataset.from_origin(
+        origin_id=camera_ds.origin_id,
+        dataset_type="eye_reprojection",
+        flexilims_session=flexilims_session,
+        base_name=f"{cam_ds_short_name}_eye_reprojection",
+        conflicts='skip',
+    )
+    if repro_ds.path_full.exists():
+        if not repro_ds.path_full.is_dir():
+            assert repro_ds.path_full.suffix == ".npy"
+            p = repro_ds.path_full.parent
+        else:
+            p = repro_ds.path_full
+        print(f"        deleting {p}")
+        shutil.rmtree(p)
+    if repro_ds.flexilims_status() != "not online":
+        flexilims_session.delete(repro_ds.id)
+
+    
 def delete_tracking_dataset(ds, flexilims_session):
     """Delete a dlc_tracking dataset
 
