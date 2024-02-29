@@ -47,7 +47,9 @@ def get_data(
     else:
         dlc_ds = dlc_ds[[(c is None) for c in dlc_ds.cropping]]
     assert len(dlc_ds) == 1
-    dlc_ds = flz.Dataset.from_dataseries(dlc_ds.iloc[0], flexilims_session=flexilims_session)
+    dlc_ds = flz.Dataset.from_dataseries(
+        dlc_ds.iloc[0], flexilims_session=flexilims_session
+    )
     dlc_res = pd.read_hdf(dlc_ds.path_full / dlc_ds.extra_attributes["dlc_file"])
     # Get ellipse fits
     ellipse_csv = list(dlc_ds.path_full.glob("*ellipse_fits.csv"))

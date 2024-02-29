@@ -87,10 +87,10 @@ def basic_vis_sta_session(
         sfx = "closedloop"
     else:
         sfx = "openloop"
-        
+
     if save_dir is not None:
         os.makedirs(save_dir / "plots" / f"sta_{sfx}", exist_ok=True)
-        
+
     for i in tqdm(range(len(neurons_df) // 10 + 1)):
         if (i * 10) < len(neurons_df):
             iroi = 0

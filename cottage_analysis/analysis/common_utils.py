@@ -157,8 +157,14 @@ def choose_trials_subset(trials_df, choose_trials):
     return trials_df_chosen, choose_trial_nums, sfx
 
 
-def find_thresh_sequence(array, length, shift, threshold_min=None, threshold_max=None, ):
-    '''Find a sequance within an array where the values are below a threshold for a certain length.
+def find_thresh_sequence(
+    array,
+    length,
+    shift,
+    threshold_min=None,
+    threshold_max=None,
+):
+    """Find a sequance within an array where the values are below a threshold for a certain length.
 
     Args:
         array (np.1darray): array to be searched
@@ -169,10 +175,10 @@ def find_thresh_sequence(array, length, shift, threshold_min=None, threshold_max
 
     Returns:
         _type_: _description_
-    '''
+    """
     # shift an array by the shift amount
     if (threshold_min is None) and (threshold_max is None):
-        print('WARNING: No threshold is given. Full array is returned.')
+        print("WARNING: No threshold is given. Full array is returned.")
         indices = np.arange(len(array))
     else:
         if threshold_min is None:
@@ -181,29 +187,29 @@ def find_thresh_sequence(array, length, shift, threshold_min=None, threshold_max
             mask = array > threshold_min
         else:
             mask = (array > threshold_min) & (array < threshold_max)
-        conv = np.convolve(mask, np.ones(length, dtype=int), 'valid')
+        conv = np.convolve(mask, np.ones(length, dtype=int), "valid")
         indices = np.where(conv >= length)[0]
-        indices = indices + int(shift) -1 
-        
-        # Get rid of the indices that's larger than the length of the array
+        indices = indices + int(shift) - 1
+
+        # Get rid of the indices that's larger than the length of the array
         indices = indices[indices < len(array)]
-        
+
         return indices
 
 
 def fill_missing_elements(arr, fill_n):
-    # if an element is larger than the previous element by more than 1, insert the consecutive x more integers after the previous element in the array. 
+    # if an element is larger than the previous element by more than 1, insert the consecutive x more integers after the previous element in the array.
     diffs = np.diff(arr)
     gap_indices = np.where(diffs > 1)[0]
-    
+
     # Generate the missing numbers for each gap
-    if len(gap_indices)>0:
+    if len(gap_indices) > 0:
         new_elems = [np.arange(arr[i] + 1, arr[i] + fill_n) for i in gap_indices]
-        
+
         # Concatenate the original array with the new elements and flatten
         filled_array = np.sort(np.concatenate((arr, np.concatenate(new_elems))))
-    
+
     else:
         filled_array = arr
-    
+
     return filled_array

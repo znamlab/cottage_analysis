@@ -38,7 +38,16 @@ def find_depth_list(df):
     return depth_list
 
 
-def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_only=False, still_time=0, frame_rate=15, closed_loop=1, param="depth"):
+def average_dff_for_all_trials(
+    trials_df,
+    rs_thr=0.2,
+    rs_thr_max=None,
+    still_only=False,
+    still_time=0,
+    frame_rate=15,
+    closed_loop=1,
+    param="depth",
+):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
     Args:
@@ -53,27 +62,46 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
     depth_list = find_depth_list(trials_df)
     if still_only:
         if rs_thr_max is None:
-            print("ERROR: calculating under not_running condition without rs_thr to determine max speed")
-        else: # use not running data, speed < rs_thr_max
+            print(
+                "ERROR: calculating under not_running condition without rs_thr to determine max speed"
+            )
+        else:  # use not running data, speed < rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[common_utils.find_thresh_sequence(array=x.RS_stim, threshold_max=rs_thr_max, length=still_time*frame_rate, shift=still_time*frame_rate), :], axis=0), axis=1
-                )
+                lambda x: np.nanmean(
+                    x.dff_stim[
+                        common_utils.find_thresh_sequence(
+                            array=x.RS_stim,
+                            threshold_max=rs_thr_max,
+                            length=still_time * frame_rate,
+                            shift=still_time * frame_rate,
+                        ),
+                        :,
+                    ],
+                    axis=0,
+                ),
+                axis=1,
+            )
     else:
-        if (rs_thr is None) and (rs_thr_max is None): # no rs_thr, use all data
+        if (rs_thr is None) and (rs_thr_max is None):  # no rs_thr, use all data
             trials_df["trial_mean_dff"] = trials_df.apply(
                 lambda x: np.nanmean(x.dff_stim, axis=0), axis=1
-            )        
-        elif rs_thr_max is None: # no rs_thr_max, use all data above rs_thr
+            )
+        elif rs_thr_max is None:  # no rs_thr_max, use all data above rs_thr
             trials_df["trial_mean_dff"] = trials_df.apply(
                 lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr, :], axis=0), axis=1
             )
-        elif rs_thr is None: # no rs_thr, use all data below rs_thr_max
+        elif rs_thr is None:  # no rs_thr, use all data below rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[x.RS_stim < rs_thr_max, :], axis=0), axis=1
+                lambda x: np.nanmean(x.dff_stim[x.RS_stim < rs_thr_max, :], axis=0),
+                axis=1,
             )
-        else: # use data between rs_thr and rs_thr_max
+        else:  # use data between rs_thr and rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[(x.RS_stim > rs_thr) & (x.RS_stim < rs_thr_max), :], axis=0), axis=1
+                lambda x: np.nanmean(
+                    x.dff_stim[(x.RS_stim > rs_thr) & (x.RS_stim < rs_thr_max), :],
+                    axis=0,
+                ),
+                axis=1,
             )
 
     if param == "depth":
@@ -93,9 +121,11 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
             )[:trial_no_min, :]
             mean_dff_arr.append(trial_mean_dff)
         mean_dff_arr = np.stack(mean_dff_arr)
-    
+
     elif param == "size":
-        trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+        trials_df = size_control.get_physical_size(
+            trials_df, use_cols=["size", "depth"], k=1
+        )
         grouped_trials = trials_df.groupby(by="physical_size")
         size_list = np.sort(trials_df["physical_size"].unique())
         trial_nos = []
@@ -106,16 +136,20 @@ def average_dff_for_all_trials(trials_df, rs_thr=0.2, rs_thr_max=None, still_onl
                 ).shape[0]
             )
         trial_no_max = np.max(trial_nos)
-        mean_dff_arr = np.full((len(size_list), 
-                                 trial_no_max, 
-                                 trials_df["trial_mean_dff"].iloc[0].shape[0]),
-                               np.nan)
+        mean_dff_arr = np.full(
+            (
+                len(size_list),
+                trial_no_max,
+                trials_df["trial_mean_dff"].iloc[0].shape[0],
+            ),
+            np.nan,
+        )
         for isize, size in enumerate(size_list):
             trial_mean_dff = np.stack(
                 np.array(grouped_trials.get_group(size)["trial_mean_dff"].values)
             )
-            mean_dff_arr[isize, :len(trial_mean_dff), :] = trial_mean_dff
-    
+            mean_dff_arr[isize, : len(trial_mean_dff), :] = trial_mean_dff
+
     return mean_dff_arr
 
 
@@ -205,6 +239,7 @@ def fit_preferred_depth(
 
     # Function to initialize depth tuning parameters
     if param == "depth":
+
         def p0_func():
             return np.concatenate(
                 (
@@ -214,17 +249,23 @@ def fit_preferred_depth(
                     np.random.normal(size=1),
                 )
             ).flatten()
+
     elif param == "size":
-        neurons_df, neurons_ds = size_control.find_best_size(trials_df=trials_df,
-                                    neurons_df=neurons_df,
-                                    neurons_ds=neurons_ds,
-                                    rs_thr=rs_thr,
-                                    rs_thr_max=None,
-                                    is_closedloop=closed_loop,
-                                    still_only=False,
-                                    still_time=0,
-                                    frame_rate=15,)
-        trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
+        neurons_df, neurons_ds = size_control.find_best_size(
+            trials_df=trials_df,
+            neurons_df=neurons_df,
+            neurons_ds=neurons_ds,
+            rs_thr=rs_thr,
+            rs_thr_max=None,
+            is_closedloop=closed_loop,
+            still_only=False,
+            still_time=0,
+            frame_rate=15,
+        )
+        trials_df = size_control.get_physical_size(
+            trials_df, use_cols=["size", "depth"], k=1
+        )
+
         def p0_func():
             return np.concatenate(
                 (
@@ -258,7 +299,9 @@ def fit_preferred_depth(
             log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
         )
         log_depth_list = np.insert(
-            log_depth_list, 0, (log_depth_list[0] - log_depth_list[1] + log_depth_list[0])
+            log_depth_list,
+            0,
+            (log_depth_list[0] - log_depth_list[1] + log_depth_list[0]),
         )
         depth_list_expand = np.exp(log_depth_list)
         bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
@@ -273,10 +316,10 @@ def fit_preferred_depth(
         log_size_list = np.log(size_list)
         log_size_list = np.append(
             log_size_list, (log_size_list[-1] + log_size_list[1] - log_size_list[0])
-            )
+        )
         log_size_list = np.insert(
             log_size_list, 0, (log_size_list[0] - log_size_list[1] + log_size_list[0])
-                              )
+        )
         size_list_expand = np.exp(log_size_list)
         bins = (size_list_expand[1:] + size_list_expand[:-1]) / 2
         trials_df_fit["size_label"] = pd.cut(
@@ -300,7 +343,7 @@ def fit_preferred_depth(
     elif param == "size":
         lower_bounds = [0, np.log(size_list_expand[0]), 0, -np.inf]
         upper_bounds = [np.inf, np.log(size_list_expand[-1]), np.inf, np.inf]
-        
+
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
     gaussian_func_ = partial(gaussian_func, min_sigma=min_sigma)
     if k_folds == 1:
@@ -323,7 +366,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}"] = np.exp(popt[1])
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}"] = np.exp(
+                popt[1]
+            )
             neurons_df.at[roi, f"{param}_tuning_popt{protocol_sfx}{sfx}"] = popt
             neurons_df.at[
                 roi, f"{param}_tuning_trials{protocol_sfx}{sfx}"

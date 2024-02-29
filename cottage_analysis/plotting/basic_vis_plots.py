@@ -18,6 +18,7 @@ from cottage_analysis.analysis import (
 # TODO:
 # 1. plot depth tuning curve with the smoothing tuning method
 
+
 def plot_depth_neuron_distribution(
     neurons_df,
     iscell,
@@ -226,14 +227,16 @@ def plot_depth_tuning_curve(
         param_list = np.array(find_depth_neurons.find_depth_list(trials_df))
     elif param == "size":
         param_list = np.sort(trials_df["physical_size"].unique())
-    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(trials_df=trials_df,
-                                                  rs_thr=rs_thr, 
-                                                  rs_thr_max=rs_thr_max, 
-                                                  still_only=still_only, 
-                                                  still_time=still_time, 
-                                                  frame_rate=frame_rate, 
-                                                  closed_loop=closed_loop, 
-                                                  param=param)[:, :, roi]
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(
+        trials_df=trials_df,
+        rs_thr=rs_thr,
+        rs_thr_max=rs_thr_max,
+        still_only=still_only,
+        still_time=still_time,
+        frame_rate=frame_rate,
+        closed_loop=closed_loop,
+        param=param,
+    )[:, :, roi]
     CI_low, CI_high = common_utils.get_confidence_interval(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
 
@@ -259,7 +262,7 @@ def plot_depth_tuning_curve(
     )
     if plot_fit:
         plt.plot(np.log(x), gaussian_arr, color=fit_linecolor, linewidth=linewidth)
-    if param=="depth":
+    if param == "depth":
         plt.xticks(
             np.log(param_list),
             (np.array(param_list) * 100).astype("int"),
@@ -267,10 +270,10 @@ def plot_depth_tuning_curve(
             rotation=45,
         )
         plt.xlabel(f"Virtual depth (cm)", fontsize=fontsize_dict["label"])
-    elif param=="size":
+    elif param == "size":
         plt.xticks(
             np.log(param_list),
-            (np.array(param_list)*0.87/10),
+            (np.array(param_list) * 0.87 / 10),
             fontsize=fontsize_dict["tick"],
             rotation=45,
         )
@@ -799,7 +802,9 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
             sfx = "closedloop"
         else:
             sfx = "openloop"
-        os.makedirs(neurons_ds.path_full.parent / "plots" / f"basic_vis_{sfx}", exist_ok=True)
+        os.makedirs(
+            neurons_ds.path_full.parent / "plots" / f"basic_vis_{sfx}", exist_ok=True
+        )
 
         plot_rows = 10
         plot_cols = 5
@@ -890,7 +895,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
                     dpi=100,
                 )
-                
+
                 plt.close()
 
 
@@ -1108,8 +1113,12 @@ def plot_RS_OF_fitted_tuning(
 def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
     rois = neurons_df.roi.values
     trials_df = trials_df[trials_df.closed_loop == 1]
-    trials_df = size_control.get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
-    os.makedirs(neurons_ds.path_full.parent / "plots" / f"size_control_basic_vis", exist_ok=True)
+    trials_df = size_control.get_physical_size(
+        trials_df, use_cols=["size", "depth"], k=1
+    )
+    os.makedirs(
+        neurons_ds.path_full.parent / "plots" / f"size_control_basic_vis", exist_ok=True
+    )
 
     plot_rows = 10
     plot_cols = 3
@@ -1139,13 +1148,13 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     use_col="depth_tuning_popt_closedloop",
                     fontsize_dict={"title": 15, "label": 10, "tick": 10},
                 )
-                
+
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
                 linecolors = ["aqua", "b", "midnightblue"]
                 for isize, size in enumerate(np.sort(trials_df["size"].unique())):
                     plot_depth_tuning_curve(
                         neurons_df=neurons_df,
-                        trials_df=trials_df[trials_df["size"]==size],
+                        trials_df=trials_df[trials_df["size"] == size],
                         roi=roi,
                         rs_thr=None,
                         rs_thr_max=None,
@@ -1161,7 +1170,7 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         use_col="depth_tuning_popt_closedloop",
                         fontsize_dict={"title": 15, "label": 10, "tick": 10},
                     )
-                    
+
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
                 plot_depth_tuning_curve(
                     neurons_df=neurons_df,
@@ -1181,16 +1190,13 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     use_col="size_tuning_popt_closedloop",
                     fontsize_dict={"title": 15, "label": 10, "tick": 10},
                 )
-            
+
             plt.savefig(
-                neurons_ds.path_full.parent 
-                / "plots" 
+                neurons_ds.path_full.parent
+                / "plots"
                 / f"size_control_basic_vis"
                 / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
                 dpi=100,
             )
-            
+
             plt.close()
-                
-                
-                

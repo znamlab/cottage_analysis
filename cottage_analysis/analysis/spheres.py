@@ -676,9 +676,14 @@ def regenerate_frames_all_recordings(
         flexilims_session=flexilims_session,
     )
     if is_closedloop:
-        recordings = recordings[(recordings.name.str.contains(protocol_base)) & (~recordings.name.str.contains("Playback"))]
+        recordings = recordings[
+            (recordings.name.str.contains(protocol_base))
+            & (~recordings.name.str.contains("Playback"))
+        ]
     else:
-        recordings = recordings[(recordings.name.str.contains(protocol_base+"Playback"))]
+        recordings = recordings[
+            (recordings.name.str.contains(protocol_base + "Playback"))
+        ]
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         recording, harp_recording, onix_rec = get_relevant_recordings(

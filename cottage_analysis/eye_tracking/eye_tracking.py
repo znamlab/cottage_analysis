@@ -203,7 +203,7 @@ def clear_tracking_info(camera_ds, flexilims_session):
         dataset_type="eye_reprojection",
         flexilims_session=flexilims_session,
         base_name=f"{cam_ds_short_name}_eye_reprojection",
-        conflicts='skip',
+        conflicts="skip",
     )
     if repro_ds.path_full.exists():
         if not repro_ds.path_full.is_dir():
@@ -216,7 +216,7 @@ def clear_tracking_info(camera_ds, flexilims_session):
     if repro_ds.flexilims_status() != "not online":
         flexilims_session.delete(repro_ds.id)
 
-    
+
 def delete_tracking_dataset(ds, flexilims_session):
     """Delete a dlc_tracking dataset
 
@@ -513,7 +513,7 @@ def fit_ellipse(
             project=project,
             likelihood_threshold=likelihood_threshold,
             duration=60,
-            plot_reprojection=False
+            plot_reprojection=False,
         )
     print("Done")
 

@@ -45,11 +45,11 @@ def main(
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
-        slurm_folder = Path(slurm_folder/f"{session_name}")
+        slurm_folder = Path(slurm_folder / f"{session_name}")
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
-        
+
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     flexilims_session = flz.get_flexilims_session(project)
@@ -128,7 +128,7 @@ def main(
             min_sigma=0.5,
             k_folds=5,
         )
-        
+
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
 
@@ -139,7 +139,7 @@ def main(
             if is_closedloop:
                 sfx = "_closedloop"
             else:
-                sfx = "_openloop"   
+                sfx = "_openloop"
             frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
@@ -154,11 +154,16 @@ def main(
             )
 
             print(f"Fitting RF{sfx}...")
-            coef, r2, best_reg_xys, best_reg_depths = spheres.fit_3d_rfs_hyperparam_tuning(
+            (
+                coef,
+                r2,
+                best_reg_xys,
+                best_reg_depths,
+            ) = spheres.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
                 frames_all[:, :, int(frames_all.shape[2] // 2) :],
-                reg_xys=np.geomspace(2.5,10240,13),
-                reg_depths=np.geomspace(2.5,10240,13),
+                reg_xys=np.geomspace(2.5, 10240, 13),
+                reg_depths=np.geomspace(2.5, 10240, 13),
                 shift_stim=2,
                 use_col="dffs",
                 k_folds=5,
@@ -178,10 +183,12 @@ def main(
                 validation=False,
             )
 
-            for col in [f"rf_coef{sfx}", 
-                        f"rf_rsq{sfx}", 
-                        f"rf_coef_ipsi{sfx}", 
-                        f"rf_rsq_ipsi{sfx}"]:
+            for col in [
+                f"rf_coef{sfx}",
+                f"rf_rsq{sfx}",
+                f"rf_coef_ipsi{sfx}",
+                f"rf_rsq_ipsi{sfx}",
+            ]:
                 neurons_df[col] = [[np.nan]] * len(neurons_df)
 
             for i, _ in neurons_df.iterrows():
@@ -197,7 +204,7 @@ def main(
 
         # # Update neurons_ds on flexilims
         # neurons_ds.update_flexilims(mode="update")
-        
+
         # Merge fit dataframes
         out = pipeline_utils.merge_fit_dataframes(
             project,
@@ -207,7 +214,7 @@ def main(
             job_dependency=None,
             scripts_name=f"{session_name}_merge_fit_dataframes",
         )
-        
+
         print("---Analysis finished. Neurons_df saved.---")
 
         # # Fit gaussian blob to neuronal activity
@@ -219,7 +226,7 @@ def main(
         #     niter=5,
         #     min_sigma=0.25,
         # )
-                
+
         # to_do = [
         #     ("gaussian_2d", None, 1),
         #     ("gaussian_2d", "even", 1),
@@ -234,7 +241,7 @@ def main(
         #     name = f"{session_name}_{model}"
         #     if trials is not None:
         #         name += "_crossval"
-        #     name += f"_k{k_folds}"  
+        #     name += f"_k{k_folds}"
         #     print(f"Fitting {model}")
         #     out = pipeline_utils.load_and_fit(
         #         project,
@@ -260,7 +267,7 @@ def main(
         #     job_dependency=job_dependency,
         #     scripts_name=f"{session_name}_merge_fit_dataframes",
         # )
-        
+
         # print("---Analysis finished. Neurons_df saved.---")
 
         # # Plot basic plots

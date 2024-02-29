@@ -19,6 +19,7 @@ print = partial(print, flush=True)
 
 CONDA_ENV = "2p_analysis_cottage2"
 
+
 def create_neurons_ds(
     session_name, flexilims_session=None, project=None, conflicts="skip"
 ):
@@ -50,7 +51,12 @@ def create_neurons_ds(
 
 
 def sbatch_session(
-    project, session_name, pipeline_filename, conflicts, photodiode_protocol, use_slurm=False
+    project,
+    session_name,
+    pipeline_filename,
+    conflicts,
+    photodiode_protocol,
+    use_slurm=False,
 ):
     """Start sbatch script to run analysis_pipeline on a single session.
 
@@ -140,7 +146,8 @@ def load_session(
 
 
 @slurm_it(
-    conda_env=CONDA_ENV, slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8}
+    conda_env=CONDA_ENV,
+    slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8},
 )
 def load_and_fit(
     project,
@@ -152,7 +159,7 @@ def load_and_fit(
     param_range,
     niter,
     min_sigma,
-    k_folds=1
+    k_folds=1,
 ):
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -226,10 +233,10 @@ def merge_fit_dataframes(project, session_name):
 @slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "9:00:00"})
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
-    
+
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
-    
+
     (
         neurons_ds,
         neurons_df,
@@ -238,19 +245,19 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         frames_all,
         imaging_df_all,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
-    
+
     kwargs = {
         "RS_OF_matrix_log_range": {
-                    "rs_bin_log_min": 0,
-                    "rs_bin_log_max": 2.5,
-                    "rs_bin_num": 6,
-                    "of_bin_log_min": -1.5,
-                    "of_bin_log_max": 3.5,
-                    "of_bin_num": 11,
-                    "log_base": 10,
-                }
+            "rs_bin_log_min": 0,
+            "rs_bin_log_max": 2.5,
+            "rs_bin_num": 6,
+            "of_bin_log_min": -1.5,
+            "of_bin_log_max": 3.5,
+            "of_bin_num": 11,
+            "log_base": 10,
+        }
     }
-    
+
     basic_vis_plots.basic_vis_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
     )
@@ -270,7 +277,7 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             trials_df=trials_df_all,
             depth_list=depth_list,
             frames=frames_all,
-            is_closedloop = is_closedloop,
+            is_closedloop=is_closedloop,
             save_dir=neurons_ds.path_full.parent,
             fontsize_dict={"title": 10, "tick": 10, "label": 10},
         )

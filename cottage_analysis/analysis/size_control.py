@@ -44,7 +44,7 @@ def format_imaging_df(recording, imaging_df, original_size=0.087):
 
 def generate_trials_df(recording, imaging_df):
     trials_df = spheres.generate_trials_df(recording, imaging_df)
-    
+
     imaging_df["stim"] = np.nan
     imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
     imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
@@ -55,10 +55,10 @@ def generate_trials_df(recording, imaging_df):
         (imaging_df_simple["stim"] == 1)
     ].imaging_frame.values
     trials_df["size"] = pd.Series(imaging_df.loc[start_volume_stim]["size"].values)
-    
+
     return trials_df
-    
-    
+
+
 # def generate_trials_df(recording, imaging_df):
 #     """Generate a DataFrame that contains information for each trial.
 
@@ -315,7 +315,7 @@ def find_best_size(
     frame_rate=15,
 ):
     """Find the size with max mean response for each neuron.
-    
+
     Args:
         trials_df (pd.DataFrame): trials dataframe.
         neurons_df (pd.DataFrame): neurons dataframe.
@@ -330,30 +330,32 @@ def find_best_size(
     trials_df = trials_df[trials_df.closed_loop == is_closedloop]
     trials_df = get_physical_size(trials_df, use_cols=["size", "depth"], k=1)
     size_list = np.sort(trials_df["physical_size"].unique())
-    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(trials_df=trials_df,
-                                                  rs_thr=rs_thr, 
-                                                  rs_thr_max=rs_thr_max, 
-                                                  still_only=still_only, 
-                                                  still_time=still_time, 
-                                                  frame_rate=frame_rate, 
-                                                  closed_loop=is_closedloop, 
-                                                  param="size")
+    mean_dff_arr = find_depth_neurons.average_dff_for_all_trials(
+        trials_df=trials_df,
+        rs_thr=rs_thr,
+        rs_thr_max=rs_thr_max,
+        still_only=still_only,
+        still_time=still_time,
+        frame_rate=frame_rate,
+        closed_loop=is_closedloop,
+        param="size",
+    )
     for roi in np.arange(len(neurons_df)):
         neurons_df.loc[roi, "best_size"] = size_list[
             np.argmax(np.nanmean(mean_dff_arr[:, :, roi], axis=1))
         ]
-        
+
     return neurons_df, neurons_ds
-    
-    
+
+
 def get_physical_size(trials_df, use_cols=["size", "depth"], k=1):
     """Get physical size of the stimulus.
-    
+
     Args:
         trials_df (pd.DataFrame): trials dataframe.
         use_cols (list): list of columns to use. (["size", "depth"])
         k (int, optional): scaling factor. Defaults to 1.
-    
+
     Returns:
         pd.DataFrame: trials dataframe with physical size column.
     """

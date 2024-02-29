@@ -446,16 +446,15 @@ def convert_to_world(gaze_vec, rvec):
     return rotated_gaze_vec
 
 
-
 def gaze_to_azel(gaze_vector, zero_median=False, worled_is_mirrored=False):
     """Transform gaze vectors in world coordinates to Azimuth and Elevation
 
     This assumes that the gaze vector come in the aruco reference frame , with y
     pointing in front of the mouse, x to the right and z up
     Except if `world_is_mirrored` is True, in which case the aruco has been wrongly
-    oriented and y points to the right, x to the left and z up. We therefore need to 
+    oriented and y points to the right, x to the left and z up. We therefore need to
     flip the x and y coordinates and reverse them both.
-    
+
 
     Args:
         gaze_vector (numpy.array): N x 3 array of gaze
@@ -468,10 +467,10 @@ def gaze_to_azel(gaze_vector, zero_median=False, worled_is_mirrored=False):
         elevation (numpy.array): len(N) array of elevation in radians
     """
     if worled_is_mirrored:
-        print('Mirrored world')
+        print("Mirrored world")
         gaze_vector[:, :2] *= -1
         gaze_vector = gaze_vector[:, [1, 0, 2]]
-    
+
     azimuth = np.arctan2(gaze_vector[:, 1], gaze_vector[:, 0])
     elevation = np.arctan2(
         gaze_vector[:, 2], np.sqrt(np.sum(gaze_vector[:, :2] ** 2, axis=1))
