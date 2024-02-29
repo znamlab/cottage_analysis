@@ -88,14 +88,14 @@ def main(
                                                                           test_size=0.2, 
                                                                           random_state=42, 
                                                                           kernel="linear", 
-                                                                          Cs=np.logspace(-3,2,6))
+                                                                          Cs=np.logspace(-3,3,7))
         print(f"Accuracy{sfx}: {acc}")
         decoder_dict[f"accuracy{sfx}"] = acc
         decoder_dict[f"conmat{sfx}"] = conmat
         decoder_dict[f"best_C{sfx}"] = best_params["C"]
     
     # Save decoder results
-    with open(neurons_ds.path_full.parent/"decoder_results2.pickle", 'wb') as handle:
+    with open(neurons_ds.path_full.parent/"decoder_results.pickle", 'wb') as handle:
         pickle.dump(decoder_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
     print("Results saved.")
         
@@ -103,9 +103,9 @@ def main(
     plt.figure()
     for i, sfx in enumerate(["_closedloop", "_openloop"]):
         plt.subplot(1,2,i+1)
-        depth_decoder_plots.plot_confusion_matrix(decoder_dict[f"conmat{sfx}"], decoder_dict[f"accuracy{sfx}"], normalize=True, fontsize_dict={"text": 12, "xlabel": 10, "ylabel": 10})
-    os.makedirs(neurons_ds.path_full.parent/"plots"/"depth_decoder_new", exist_ok=True)
-    plt.savefig(neurons_ds.path_full.parent/"plots"/"depth_decoder_new"/"confusion_matrix.png", dpi=300)
+        depth_decoder_plots.plot_confusion_matrix(decoder_dict[f"conmat{sfx}"], decoder_dict[f"accuracy{sfx}"], normalize=True, fontsize_dict={"text": 10, "label": 10, "title": 10})
+    os.makedirs(neurons_ds.path_full.parent/"plots"/"depth_decoder", exist_ok=True)
+    plt.savefig(neurons_ds.path_full.parent/"plots"/"depth_decoder"/"confusion_matrix.png", dpi=300)
     print("Confusion matrix plotted.")
         
 if __name__ == "__main__":
