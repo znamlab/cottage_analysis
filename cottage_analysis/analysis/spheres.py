@@ -345,7 +345,7 @@ def generate_trials_df(recording, imaging_df):
     imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
     imaging_df_simple = imaging_df[
         (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
-    ]
+    ].copy()
     imaging_df_simple.depth = np.round(imaging_df_simple.depth, 2)
 
     # Find frame or volume of imaging_df for trial start and stop
