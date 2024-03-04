@@ -16,6 +16,7 @@ def load_onix(
     project=None,
     flexilims_session=None,
     cut_if_not_multiple=False,
+    ignore_wrong_timestamps=False,
 ):
     """Main function calling all the subfunctions
 
@@ -41,7 +42,9 @@ def load_onix(
     out = dict()
     # Load onix AI/DI
     breakout_data = load_breakout(
-        onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+        onix_ds.path_full,
+        cut_if_not_multiple=cut_if_not_multiple,
+        ignore_wrong_timestamps=ignore_wrong_timestamps,
     )
     out["breakout_data"] = breakout_data
     try:
@@ -151,7 +154,11 @@ def load_ts4231(path_to_folder, timestamp=None):
 
 
 def load_breakout(
-    path_to_folder, timestamp=None, num_ai_chan=None, cut_if_not_multiple=False
+    path_to_folder,
+    timestamp=None,
+    num_ai_chan=None,
+    cut_if_not_multiple=False,
+    ignore_wrong_timestamps=False,
 ):
     """Load data from the breakout board, ie AI and DI
 
@@ -164,11 +171,16 @@ def load_breakout(
         cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
             of the number of channels if False, will load only if the data is a multiple
             of the number of channels. Default False.
+        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
+            files with the prefix without looking at timestamps, if False, will raise an
+            error if multiple timestamps are found. Default False.
 
     Returns:
         data dict: a dictionary of memmap
     """
-    breakout_files = _find_files(path_to_folder, timestamp, "breakout")
+    breakout_files = _find_files(
+        path_to_folder, timestamp, "breakout", ignore_wrong_timestamps
+    )
     output = dict()
 
     # first I need to find aio-channels to count the number of channels
@@ -367,13 +379,16 @@ def convert_ephys(
         print("done", flush=True)
 
 
-def _find_files(folder, timestamp, prefix):
+def _find_files(folder, timestamp, prefix, ignore_wrong_timestamps=False):
     """Inner function to return list of files with filter_name and timestamp
 
     Args:
         folder(str or Path): path to the folder containing data
         timestamp (str or None): timestamp used in save name
         prefix (str): prefix filter
+        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
+            files with the prefix without looking at timestamps, if False, will raise an
+            error if multiple timestamps are found. Default False.
 
     Returns:
         file_list (list): list of valid files
@@ -386,6 +401,8 @@ def _find_files(folder, timestamp, prefix):
     if not len(valid_files):
         raise IOError("Could not find any %s file in %s" % (prefix.upper(), folder))
     if timestamp is None:
+        if ignore_wrong_timestamps:
+            return valid_files
         timestamp = "_".join(valid_files[0].stem.split("_")[1:])
         if not all([e.stem.endswith(timestamp) for e in valid_files]):
             raise IOError(
