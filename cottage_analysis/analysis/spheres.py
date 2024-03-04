@@ -292,9 +292,11 @@ def format_imaging_df(recording, imaging_df):
         imaging_df["closed_loop"] = 0
     else:
         imaging_df["closed_loop"] = 1
-    imaging_df.RS = imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+    imaging_df["RS"] = (
+        imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+    )
     # average RS eye for each imaging volume
-    imaging_df.RS_eye = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
+    imaging_df["RS_eye"] = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
     # depth for each imaging volume
     imaging_df[imaging_df["depth"] == -9999].depth = np.nan
     imaging_df.depth = imaging_df.depth / 100  # convert cm to m
@@ -877,9 +879,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
-                -np.identity(m.shape[1])
-            )
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)
