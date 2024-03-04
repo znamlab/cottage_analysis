@@ -334,6 +334,8 @@ def generate_trials_df(recording, imaging_df):
             "OF_stim",  # optic flow speed = RS/depth, rad/s
             "dff_stim",
             "dff_blank",
+            "mouse_z_harp_stim",
+            "mouse_z_harp_blank",
         ]
     )
 
@@ -397,15 +399,11 @@ def generate_trials_df(recording, imaging_df):
     trials_df.imaging_stim_stop = pd.Series(stop_volume_stim)
     trials_df.imaging_blank_start = pd.Series(start_volume_blank)
     trials_df.imaging_blank_stop = pd.Series(stop_volume_blank)
-
-    if np.isnan(
-        trials_df.imaging_blank_stop.iloc[-1]
-    ):  # If the blank stop of last trial is beyond the number of imaging frames
+    # If the blank stop of last trial is beyond the number of imaging frames
+    if np.isnan(trials_df.imaging_blank_stop.iloc[-1]):
         trials_df.imaging_blank_stop.iloc[-1] = len(imaging_df) - 1
-
-    mask = trials_df.imaging_stim_start == trials_df.imaging_blank_stop.shift(
-        1
-    )  # Get rid of the overlap of imaging frame no. between different trials
+    # Get rid of the overlap of imaging frame no. between different trials
+    mask = trials_df.imaging_stim_start == trials_df.imaging_blank_stop.shift(1)
     trials_df.loc[mask, "imaging_stim_start"] += 1
 
     # Assign protocol to trials_df
@@ -415,34 +413,42 @@ def generate_trials_df(recording, imaging_df):
         trials_df.closed_loop = 1
 
     # Assign RS array from imaging_df back to trials_df
+    trials_df.mouse_z_harp_stim = trials_df.apply(
+        lambda x: imaging_df.mouse_z_harp.loc[
+            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
+        ].values,
+        axis=1,
+    )
+    trials_df.mouse_z_harp_blank = trials_df.apply(
+        lambda x: imaging_df.mouse_z_harp.loc[
+            int(x.imaging_blank_start) : int(x.imaging_blank_stop)
+        ].values,
+        axis=1,
+    )
     trials_df.RS_stim = trials_df.apply(
         lambda x: imaging_df.RS.loc[
             int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
-
     trials_df.RS_blank = trials_df.apply(
         lambda x: imaging_df.RS.loc[
             int(x.imaging_blank_start) : int(x.imaging_blank_stop)
         ].values,
         axis=1,
     )
-
     trials_df.RS_eye_stim = trials_df.apply(
         lambda x: imaging_df.RS_eye.loc[
             int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
-
     trials_df.OF_stim = trials_df.apply(
         lambda x: imaging_df.OF.loc[
             int(x.imaging_stim_start) : int(x.imaging_stim_stop)
         ].values,
         axis=1,
     )
-
     # Assign dffs array to trials_df
     trials_df.dff_stim = trials_df.apply(
         lambda x: np.stack(
@@ -871,9 +877,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[
-                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
-            ] = -np.identity(m.shape[1])
+            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
+                -np.identity(m.shape[1])
+            )
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)
