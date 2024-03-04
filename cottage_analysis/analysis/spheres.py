@@ -297,8 +297,6 @@ def format_imaging_df(recording, imaging_df):
     )
     # average RS eye for each imaging volume
     imaging_df["RS_eye"] = imaging_df.eye_z.diff() / imaging_df.monitor_harptime.diff()
-    # depth for each imaging volume
-    imaging_df[imaging_df["depth"] == -9999].depth = np.nan
     imaging_df.depth = imaging_df.depth / 100  # convert cm to m
     # OF for each imaging volume
     imaging_df["OF"] = imaging_df.RS_eye / imaging_df.depth
