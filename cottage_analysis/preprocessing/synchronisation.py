@@ -439,7 +439,7 @@ def generate_imaging_df(
     # add a column for the harptime at end the imaging volume
     imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
     # set the last value of imaging_harptime_end to the last value of imaging_harptime + median frame period
-    imaging_df["imaging_harptime_end"].iloc[-1] = (
+    imaging_df.at[imaging_df.index[-1], "imaging_harptime_end"] = (
         imaging_df["imaging_harptime"].iloc[-1]
         + imaging_df["imaging_harptime"].diff().median()
     )
