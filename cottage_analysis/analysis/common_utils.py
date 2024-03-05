@@ -87,7 +87,13 @@ def iterate_fit(
     return popt_best, rsq_best
 
 
-def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0.05):
+def get_confidence_interval(
+    arr=(),
+    mean_arr=(),
+    sem_arr=(),
+    axis=1,
+    sig_level=0.05,
+):
     """Get confidence interval of an input array.
 
     Args:
@@ -95,7 +101,7 @@ def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0
         mean_arr (np.ndarray, optional): mean array, if the original array is not provided.
         sem_arr (np.ndarray, optional): SEM array, if the original array is not provided.
         sig_level (float, optional): Significant level. Default 0.05.
-
+        method (str): Method to calculate confidence interval, "normal" or "bootstrap". Default "normal".
     Returns:
         CI_low (np.1darray): lower bound of confidence interval.
         CI_high (np.1darray): upper bound of confidence interval.
@@ -113,6 +119,29 @@ def get_confidence_interval(arr=[], mean_arr=[], sem_arr=[], axis=1, sig_level=0
         print("Error: you need to input either [arr] or [mean_arr and sem_arr]")
         CI_low = []
         CI_high = []
+    return CI_low, CI_high
+
+
+def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000):
+    """Calculate confidence interval using bootstrap method.
+
+    Args:
+        arr (np.ndarray): 2d array, for example ndepths x ntrials to calculate confidence interval across trials.
+        sig_level (float): Significant level.
+        n_bootstraps (int): Number of bootstraps.
+
+    Returns:
+        CI_low (np.1darray): lower bound of confidence interval.
+        CI_high (np.1darray): upper bound of confidence interval.
+    """
+    ndepths, ntrials = arr.shape
+    bootstrapped_means = np.zeros((n_bootstraps, ndepths))
+    for i in range(n_bootstraps):
+        for idepth in range(ndepths):
+            resampled = arr[idepth, np.random.randint(0, ntrials, ntrials)]
+            bootstrapped_means[i, idepth] = np.nanmean(resampled)
+    CI_low = np.percentile(bootstrapped_means, 100 * sig_level / 2, axis=0)
+    CI_high = np.percentile(bootstrapped_means, 100 * (1 - sig_level / 2), axis=0)
     return CI_low, CI_high
 
 
