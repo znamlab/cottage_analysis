@@ -340,6 +340,7 @@ def generate_trials_df(recording, imaging_df):
             "dff_blank_pre",
             "mouse_z_harp_stim",
             "mouse_z_harp_blank",
+            "mouse_z_harp_blank_pre",
         ]
     )
 
@@ -419,72 +420,28 @@ def generate_trials_df(recording, imaging_df):
     else:
         trials_df.closed_loop = 1
 
-    # Assign RS array from imaging_df back to trials_df
-    trials_df.mouse_z_harp_stim = trials_df.apply(
-        lambda x: imaging_df.mouse_z_harp.loc[
-            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
-        ].values,
-        axis=1,
-    )
-    trials_df.mouse_z_harp_blank = trials_df.apply(
-        lambda x: imaging_df.mouse_z_harp.loc[
-            int(x.imaging_blank_start) : int(x.imaging_blank_stop)
-        ].values,
-        axis=1,
-    )
-    trials_df.RS_stim = trials_df.apply(
-        lambda x: imaging_df.RS.loc[
-            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
-        ].values,
-        axis=1,
-    )
-    trials_df.RS_blank = trials_df.apply(
-        lambda x: imaging_df.RS.loc[
-            int(x.imaging_blank_start) : int(x.imaging_blank_stop)
-        ].values,
-        axis=1,
-    )
-    trials_df.RS_eye_stim = trials_df.apply(
-        lambda x: imaging_df.RS_eye.loc[
-            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
-        ].values,
-        axis=1,
-    )
-    trials_df.OF_stim = trials_df.apply(
-        lambda x: imaging_df.OF.loc[
-            int(x.imaging_stim_start) : int(x.imaging_stim_stop)
-        ].values,
-        axis=1,
-    )
-    # Assign dffs array to trials_df
-    trials_df.dff_stim = trials_df.apply(
-        lambda x: np.stack(
-            imaging_df.dffs.loc[int(x.imaging_stim_start) : int(x.imaging_stim_stop)]
-        ).squeeze(),
-        axis=1,
-    )
-    # nvolumes x ncells
-    trials_df.dff_blank = trials_df.apply(
-        lambda x: np.stack(
-            imaging_df.dffs.loc[int(x.imaging_blank_start) : int(x.imaging_blank_stop)]
-        ).squeeze(),
-        axis=1,
-    )
-    trials_df.dff_blank_pre = trials_df.apply(
-        lambda x: np.stack(
-            imaging_df.dffs.loc[
-                int(x.imaging_blank_pre_start) : int(x.imaging_blank_pre_stop)
-            ]
-        ).squeeze(),
-        axis=1,
-    )
-    trials_df.RS_blank_pre = trials_df.apply(
-        lambda x: imaging_df.RS.loc[
-            int(x.imaging_blank_pre_start) : int(x.imaging_blank_pre_stop)
-        ].values,
-        axis=1,
-    )
-    # nvolumes x ncells
+    def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
+        trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+            lambda x: imaging_df[column_name]
+            .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
+            .values,
+            axis=1,
+        )
+        return trials_df
+
+    columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
+    for epoch in ["stim", "blank", "blank_pre"]:
+        for column in columns_to_assign:
+            if column != "OF" or column != "RS_eye" or epoch == "stim":
+                trials_df = assign_values_to_df(trials_df, imaging_df, column, epoch)
+        trials_df[f"dff_{epoch}"] = trials_df.apply(
+            lambda x: np.stack(
+                imaging_df.dffs.loc[
+                    int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])
+                ]
+            ).squeeze(),
+            axis=1,
+        )
 
     # Rename
     trials_df = trials_df.drop(columns=["imaging_blank_start"])
