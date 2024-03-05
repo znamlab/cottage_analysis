@@ -328,12 +328,16 @@ def generate_trials_df(recording, imaging_df):
             "imaging_stim_stop",
             "imaging_blank_start",
             "imaging_blank_stop",
+            "imaging_blank_pre_start",
+            "imaging_blank_pre_stop",
             "RS_stim",  # actual running speed, m/s
             "RS_blank",
+            "RS_blank_pre",
             "RS_eye_stim",  # virtual running speed, m/s
             "OF_stim",  # optic flow speed = RS/depth, rad/s
             "dff_stim",
             "dff_blank",
+            "dff_blank_pre",
             "mouse_z_harp_stim",
             "mouse_z_harp_blank",
         ]
@@ -377,7 +381,8 @@ def generate_trials_df(recording, imaging_df):
             (np.abs(imaging_df.imaging_harptime - last_blank_stop_time)).idxmin(),
         )
     stop_volume_stim = start_volume_blank - 1
-
+    start_volume_blank_pre = np.append(0, start_volume_blank[:-1])
+    stop_volume_blank_pre = start_volume_stim - 1
     # Assign trial no, depth, start/stop time, start/stop imaging volume to trials_df
     # harptime are imaging trigger harp time
     trials_df.trial_no = np.arange(len(start_volume_stim))
@@ -399,6 +404,8 @@ def generate_trials_df(recording, imaging_df):
     trials_df.imaging_stim_stop = pd.Series(stop_volume_stim)
     trials_df.imaging_blank_start = pd.Series(start_volume_blank)
     trials_df.imaging_blank_stop = pd.Series(stop_volume_blank)
+    trials_df.imaging_blank_pre_start = pd.Series(start_volume_blank_pre)
+    trials_df.imaging_blank_pre_stop = pd.Series(stop_volume_blank_pre)
     # If the blank stop of last trial is beyond the number of imaging frames
     if np.isnan(trials_df.imaging_blank_stop.iloc[-1]):
         trials_df.imaging_blank_stop.iloc[-1] = len(imaging_df) - 1
@@ -457,11 +464,24 @@ def generate_trials_df(recording, imaging_df):
         axis=1,
     )
     # nvolumes x ncells
-
     trials_df.dff_blank = trials_df.apply(
         lambda x: np.stack(
             imaging_df.dffs.loc[int(x.imaging_blank_start) : int(x.imaging_blank_stop)]
         ).squeeze(),
+        axis=1,
+    )
+    trials_df.dff_blank_pre = trials_df.apply(
+        lambda x: np.stack(
+            imaging_df.dffs.loc[
+                int(x.imaging_blank_pre_start) : int(x.imaging_blank_pre_stop)
+            ]
+        ).squeeze(),
+        axis=1,
+    )
+    trials_df.RS_blank_pre = trials_df.apply(
+        lambda x: imaging_df.RS.loc[
+            int(x.imaging_blank_pre_start) : int(x.imaging_blank_pre_stop)
+        ].values,
         axis=1,
     )
     # nvolumes x ncells
@@ -877,9 +897,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[
-                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
-            ] = -np.identity(m.shape[1])
+            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
+                -np.identity(m.shape[1])
+            )
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)
