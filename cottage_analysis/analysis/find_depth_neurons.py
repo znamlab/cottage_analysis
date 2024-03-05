@@ -38,6 +38,63 @@ def find_depth_list(df):
     return depth_list
 
 
+def trial_average_dff(
+    trials_df,
+    rs_thr_min=None,
+    rs_thr_max=None,
+    still_only=False,
+    still_time=0,
+    frame_rate=15,
+    closed_loop=1,
+):
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    depth_list = find_depth_list(trials_df)
+    if still_only:
+        if rs_thr_max is None:
+            print(
+                "ERROR: calculating under not_running condition without rs_thr to determine max speed"
+            )
+        else:  # use not running data, speed < rs_thr_max
+            trials_df["trial_mean_dff"] = trials_df.apply(
+                lambda x: np.nanmean(
+                    x.dff_stim[
+                        common_utils.find_thresh_sequence(
+                            array=x.RS_stim,
+                            threshold_max=rs_thr_max,
+                            length=still_time * frame_rate,
+                            shift=still_time * frame_rate,
+                        ),
+                        :,
+                    ],
+                    axis=0,
+                ),
+                axis=1,
+            ).copy()
+    else:
+        if (rs_thr_min is None) and (rs_thr_max is None):  # no rs_thr, use all data
+            trials_df["trial_mean_dff"] = trials_df.apply(
+                lambda x: np.nanmean(x.dff_stim, axis=0), axis=1
+            ).copy()
+        elif rs_thr_max is None:  # no rs_thr_max, use all data above rs_thr
+            trials_df["trial_mean_dff"] = trials_df.apply(
+                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr_min, :], axis=0), axis=1
+            ).copy()
+        elif rs_thr_min is None:  # no rs_thr, use all data below rs_thr_max
+            trials_df["trial_mean_dff"] = trials_df.apply(
+                lambda x: np.nanmean(x.dff_stim[x.RS_stim < rs_thr_max, :], axis=0),
+                axis=1,
+            ).copy()
+        else:  # use data between rs_thr and rs_thr_max
+            trials_df["trial_mean_dff"] = trials_df.apply(
+                lambda x: np.nanmean(
+                    x.dff_stim[(x.RS_stim > rs_thr_min) & (x.RS_stim < rs_thr_max), :],
+                    axis=0,
+                ),
+                axis=1,
+            ).copy()
+    return trials_df
+
+
 def average_dff_for_all_trials(
     trials_df,
     rs_thr=0.2,
