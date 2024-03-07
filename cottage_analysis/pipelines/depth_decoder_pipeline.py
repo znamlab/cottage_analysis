@@ -84,6 +84,8 @@ def main(
             trials_df_all[trials_df_all.closed_loop == closed_loop],
             flexilims_session=flexilims_session,
             session_name=session_name,
+            closed_loop=closed_loop,
+            trial_average=False,
             rolling_window=0.5,
             frame_rate=15,
             downsample_window=0.5,
