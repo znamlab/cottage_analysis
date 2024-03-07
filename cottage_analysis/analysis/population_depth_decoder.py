@@ -225,7 +225,7 @@ def depth_decoder(
     )
     iscell = np.load(suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True)[
         :, 0
-    ]
+    ].astype('bool')
 
     # process dff and trials_df
     trials_df = downsample_dff(
@@ -246,12 +246,16 @@ def depth_decoder(
     depth_list = np.sort(trials_df.depth.unique())
 
     # train test val split
-
     dff_train, dff_val, dff_test, depth_train, depth_val, depth_test = split_train_test_val(
         trials_df=trials_df, 
         test_size=0.2, 
         random_state=42, 
         trial_average=trial_average)
+    
+    # only select cells
+    dff_train = dff_train[:, iscell]
+    dff_val = dff_val[:, iscell]
+    dff_test = dff_test[:, iscell]
 
     acc, conmat, best_params = fit_svm_classifier(
         X_train=dff_train,
