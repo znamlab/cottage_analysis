@@ -202,8 +202,8 @@ def main(
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
 
-        # # Update neurons_ds on flexilims
-        # neurons_ds.update_flexilims(mode="update")
+        # Update neurons_ds on flexilims
+        neurons_ds.update_flexilims(mode="update")
 
         # Merge fit dataframes
         out = pipeline_utils.merge_fit_dataframes(
