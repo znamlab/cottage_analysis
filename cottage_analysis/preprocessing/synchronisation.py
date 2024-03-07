@@ -306,6 +306,17 @@ def generate_vs_df(
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
     frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
 
+    if monitor_frames_df[merge_on].dtype != frame_log_z[merge_on].dtype:
+        # print a warning if the merge_on column is not the same type in both dataframes
+        warnings.warn(
+            f"WARNING: merge_on column {merge_on} is not the same type in both "
+            + f"dataframes. monitor_frame_df is {monitor_frames_df[merge_on].dtype} and"
+            + f"frame_log_z is {frame_log_z[merge_on].dtype}. Converting to int64."
+        )
+        # convert both to int64
+        monitor_frames_df[merge_on] = monitor_frames_df[merge_on].astype("int64")
+        frame_log_z[merge_on] = frame_log_z[merge_on].astype("int64")
+
     vs_df = pd.merge_asof(
         left=monitor_frames_df[["closest_frame", "onset_time"]],
         right=frame_log_z,
