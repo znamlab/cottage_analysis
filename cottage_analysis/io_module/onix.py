@@ -49,17 +49,23 @@ def load_onix(
     out["breakout_data"] = breakout_data
     try:
         out["rhd2164_data"] = load_rhd2164(
-            onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+            onix_ds.path_full,
+            cut_if_not_multiple=cut_if_not_multiple,
+            ignore_wrong_timestamps=ignore_wrong_timestamps,
         )
     except IOError:
         print("Could not load RHD2164 data")
     try:
-        out["ts4131_data"] = load_ts4231(onix_ds.path_full)
+        out["ts4131_data"] = load_ts4231(
+            onix_ds.path_full, ignore_wrong_timestamps=ignore_wrong_timestamps
+        )
     except IOError:
         print("Could not load TS4131 data")
     try:
         out["bno055_data"] = load_bno055(
-            onix_ds.path_full, cut_if_not_multiple=cut_if_not_multiple
+            onix_ds.path_full,
+            cut_if_not_multiple=cut_if_not_multiple,
+            ignore_wrong_timestamps=ignore_wrong_timestamps,
         )
     except IOError:
         print("Could not load BNO055 data")
@@ -73,6 +79,7 @@ def load_rhd2164(
     num_chans=64,
     num_aux_chan=6,
     cut_if_not_multiple=False,
+    ignore_wrong_timestamps=False,
 ):
     """Load all files related to rhd2164, ie ephys
 
@@ -84,12 +91,20 @@ def load_rhd2164(
         cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
             of the number of channels. if False, will load only if the data is a
             multiple of the number of channels. Default False.
+        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
+            files with the prefix without looking at timestamps, if False, will raise an
+            error if multiple timestamps are found. Default False.
 
     Returns:
         data dict: a dictionary of memmap
     """
     num_chan_dict = dict(ephys=num_chans, clock=1, aux=num_aux_chan, hubsynccounter=1)
-    ephys_files = _find_files(path_to_folder, timestamp, "rhd2164")
+    ephys_files = _find_files(
+        path_to_folder,
+        timestamp,
+        "rhd2164",
+        ignore_wrong_timestamps=ignore_wrong_timestamps,
+    )
 
     output = dict()
     for ephys_file in ephys_files:
@@ -126,18 +141,26 @@ def reorder_array(ephys_data):
     return ephys_data[MAPPING]
 
 
-def load_ts4231(path_to_folder, timestamp=None):
+def load_ts4231(path_to_folder, timestamp=None, ignore_wrong_timestamps=False):
     """Load data from the lighthouse system
 
     Args:
         path_to_folder (str or Path): path to the folder containing data
         timestamp (str or None): timestamp used in save name
+        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
+            files with the prefix without looking at timestamps, if False, will raise an
+            error if multiple timestamps are found. Default False.
 
     Returns:
         ts_out (dict): a dictionary of dataframe with one element per photodiode
     """
 
-    ts_files = _find_files(path_to_folder, timestamp, "ts4231")
+    ts_files = _find_files(
+        path_to_folder,
+        timestamp,
+        "ts4231",
+        ignore_wrong_timestamps=ignore_wrong_timestamps,
+    )
     ts_out = dict()
     for photodiode in ts_files:
         try:
@@ -240,11 +263,22 @@ def load_bno055(
     num_chans_linear_accel=3,
     num_chans_quaternion=4,
     cut_if_not_multiple=False,
+    ignore_wrong_timestamps=False,
 ):
     """Loads the IMU data in a memmap dictionary
     Args:
         path_to_folder (str or Path): the full path to the folder which contains the IMU output.
         timestamp (str or None): timestamp used in save name
+        num_chans_euler (int): number of channels for the euler angles (default 3)
+        num_chans_gravity (int): number of channels for the gravity vector (default 3)
+        num_chans_linear_accel (int): number of channels for the linear acceleration (default 3)
+        num_chans_quaternion (int): number of channels for the quaternion (default 4)
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels if False, will load only if the data is a multiple
+            of the number of channels. Default False.
+        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
+            files with the prefix without looking at timestamps, if False, will raise an
+            error if multiple timestamps are found. Default False.
 
     Returns:
         bno_out: a dictionary of memmap
@@ -257,7 +291,12 @@ def load_bno055(
         quaternion=num_chans_quaternion,
     )
 
-    bno_files = _find_files(path_to_folder, timestamp, "bno055")
+    bno_files = _find_files(
+        path_to_folder,
+        timestamp,
+        "bno055",
+        ignore_wrong_timestamps=ignore_wrong_timestamps,
+    )
     output = dict()
     for bno_file in bno_files:
         what = bno_file.stem.split("_")[0][len("bno055-") :]
