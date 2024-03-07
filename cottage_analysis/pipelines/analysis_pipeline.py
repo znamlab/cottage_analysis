@@ -217,71 +217,71 @@ def main(
 
         print("---Analysis finished. Neurons_df saved.---")
 
-        # # Fit gaussian blob to neuronal activity
-        # print("---Start fitting 2D gaussian blob...---")
-        # outputs = []
-        # common_params = dict(
-        #     rs_thr=0.01,
-        #     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
-        #     niter=5,
-        #     min_sigma=0.25,
-        # )
+        # Fit gaussian blob to neuronal activity
+        print("---Start fitting 2D gaussian blob...---")
+        outputs = []
+        common_params = dict(
+            rs_thr=0.01,
+            param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
+            niter=5,
+            min_sigma=0.25,
+        )
 
-        # to_do = [
-        #     ("gaussian_2d", None, 1),
-        #     ("gaussian_2d", "even", 1),
-        #     ("gaussian_additive", None, 1),
-        #     ("gaussian_OF", None, 1),
-        #     ("gaussian_2d", None, 5),
-        #     ("gaussian_additive", None, 5),
-        #     ("gaussian_OF", None, 5),
-        # ]
+        to_do = [
+            ("gaussian_2d", None, 1),
+            ("gaussian_2d", "even", 1),
+            ("gaussian_additive", None, 1),
+            ("gaussian_OF", None, 1),
+            ("gaussian_2d", None, 5),
+            ("gaussian_additive", None, 5),
+            ("gaussian_OF", None, 5),
+        ]
 
-        # for model, trials, k_folds in to_do:
-        #     name = f"{session_name}_{model}"
-        #     if trials is not None:
-        #         name += "_crossval"
-        #     name += f"_k{k_folds}"
-        #     print(f"Fitting {model}")
-        #     out = pipeline_utils.load_and_fit(
-        #         project,
-        #         session_name,
-        #         photodiode_protocol,
-        #         model=model,
-        #         choose_trials=trials,
-        #         use_slurm=use_slurm,
-        #         slurm_folder=slurm_folder,
-        #         scripts_name=name,
-        #         k_folds=k_folds,
-        #         **common_params,
-        #     )
-        #     outputs.append(out)
+        for model, trials, k_folds in to_do:
+            name = f"{session_name}_{model}"
+            if trials is not None:
+                name += "_crossval"
+            name += f"_k{k_folds}"
+            print(f"Fitting {model}")
+            out = pipeline_utils.load_and_fit(
+                project,
+                session_name,
+                photodiode_protocol,
+                model=model,
+                choose_trials=trials,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                scripts_name=name,
+                k_folds=k_folds,
+                **common_params,
+            )
+            outputs.append(out)
 
-        # # Merge fit dataframes
-        # job_dependency = outputs if use_slurm else None
-        # out = pipeline_utils.merge_fit_dataframes(
-        #     project,
-        #     session_name,
-        #     use_slurm=use_slurm,
-        #     slurm_folder=slurm_folder,
-        #     job_dependency=job_dependency,
-        #     scripts_name=f"{session_name}_merge_fit_dataframes",
-        # )
+        # Merge fit dataframes
+        job_dependency = outputs if use_slurm else None
+        out = pipeline_utils.merge_fit_dataframes(
+            project,
+            session_name,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_merge_fit_dataframes",
+        )
 
-        # print("---Analysis finished. Neurons_df saved.---")
+        print("---Analysis finished. Neurons_df saved.---")
 
-        # # Plot basic plots
-        # print("---Start basic vis plotting...---")
-        # pipeline_utils.run_basic_plots(
-        #     project,
-        #     session_name,
-        #     photodiode_protocol,
-        #     use_slurm=use_slurm,
-        #     slurm_folder=slurm_folder,
-        #     job_dependency=job_dependency,
-        #     scripts_name=f"{session_name}_basic_vis_plots",
-        # )
-        # print("---Plotting finished. ---")
+        # Plot basic plots
+        print("---Start basic vis plotting...---")
+        pipeline_utils.run_basic_plots(
+            project,
+            session_name,
+            photodiode_protocol,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_basic_vis_plots",
+        )
+        print("---Plotting finished. ---")
 
 
 if __name__ == "__main__":
