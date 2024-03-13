@@ -166,7 +166,8 @@ def fit_svm_classifier(
 
 def split_train_test_val(trials_df, test_size=0.2, random_state=42, trial_average=False):
     depth_list = np.sort(trials_df.depth.unique())
-    trials_df = trials_df[:-(len(trials_df)%len(depth_list))] 
+    if len(trials_df)%len(depth_list) != 0:
+        trials_df = trials_df[:-(len(trials_df)%len(depth_list))] 
     if trial_average:
         dff_col = "trial_mean_dff"
         depth_col = "depth_label"
