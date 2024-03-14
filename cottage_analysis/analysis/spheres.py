@@ -1,5 +1,5 @@
 from functools import partial
-
+from warnings import warn
 import flexiznam as flz
 import numpy as np
 import pandas as pd
@@ -25,7 +25,8 @@ from cottage_analysis.preprocessing import synchronisation
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
-    """Find frame numbers that are valid (not gray period, or not before or after the imaging frames) and used for regenerating sphere stimuli.
+    """Find frame numbers that are valid (not gray period, or not before or after the 
+    imaging frames) and used for regenerating sphere stimuli.
 
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated
@@ -365,6 +366,13 @@ def generate_trials_df(recording, imaging_df):
     start_volume_blank = imaging_df_simple[
         (imaging_df_simple["stim"] == 0)
     ].imaging_frame.values
+    if start_volume_blank[0] < start_volume_stim[0]:
+        print('Warning: blank starts before stimulus starts! Double check!')
+        start_volume_blank = start_volume_blank[1:]
+        assert start_volume_blank[0] > start_volume_stim[0], (
+            "Warning: 2 blank starts before stimulus starts! Double check!"
+        )
+
     if len(start_volume_stim) != len(
         start_volume_blank
     ):  # if trial start and blank numbers are different
@@ -575,7 +583,7 @@ def sync_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
-            imaging_df = synchronisation.generate_spike_rate_df(
+            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
                 harp_recording=harp_recording,
@@ -696,7 +704,7 @@ def regenerate_frames_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
-            imaging_df = synchronisation.generate_spike_rate_df(
+            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
                 harp_recording=harp_recording,
@@ -829,7 +837,9 @@ def fit_3d_rfs(
     # get the depth of the first row for each trial
     depths_by_trial = imaging_df.groupby("trial_idx").first().depth
     # convert to categorical codes
-    depths_by_trial.update(pd.Categorical(depths_by_trial).codes)
+    categorical =pd.Categorical(depths_by_trial).codes
+    depths_by_trial.update(pd.Series(categorical, index=depths_by_trial.index))
+    depths_by_trial = depths_by_trial.astype(categorical.dtype)
     # convert index to int
     depths_by_trial.index = depths_by_trial.index.astype(int)
 
