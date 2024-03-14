@@ -143,8 +143,13 @@ def regenerate_frames(
 
     # now process the valid frames
     log_ends = param_logger[time_column].searchsorted(frame_times)
+    nsphere_per_frame = np.zeros(len(frame_indices), dtype=int)
     for frame_index in tqdm(frame_indices):
+        # find the trial in which the frame is
         corridor = trials_df.loc[int(trial_index[frame_index])]
+        # load the logger from trial start until the time of the frame. This is the list
+        # of all the spheres as they appear. Some/most of the spheres might already be 
+        # far behind the mouse.
         logger = param_logger.iloc[
             corridor.param_log_start : np.max(
                 [log_ends[frame_index], corridor.param_log_start + 1]
@@ -154,8 +159,7 @@ def regenerate_frames(
         sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
         )
-
-        this_frame = draw_spheres(
+        this_frame, n_on_screen = draw_spheres(
             sphere_x=sphere_coordinates[:, 0],
             sphere_y=sphere_coordinates[:, 1],
             sphere_z=sphere_coordinates[:, 2],
@@ -165,9 +169,11 @@ def regenerate_frames(
             azimuth_limits=np.array(azimuth_limits, dtype=float),
             elevation_limits=np.array(elevation_limits, dtype=float),
         )
+        nsphere_per_frame[frame_index] = n_on_screen
         if this_frame is None:
             this_frame = np.zeros((out_shape[1], out_shape[2]))
-            print(f"Warning: failed to reconstruct frame {frame_index}")
+            print(f"Warning: failed to reconstruct frame {frame_index}" + 
+                  f" ({n_on_screen} spheres on screen)")
         output[frame_index] = this_frame
 
     return output
@@ -220,7 +226,7 @@ def draw_spheres(
         (elevation > elevation_limits[0]) & (elevation < elevation_limits[1])
     )
     if not np.any(in_screen):
-        return
+        return None, 0
 
     # convert `in_screen` spheres in pixel space
     az_on_screen = (az_compas[in_screen] - azimuth_limits[0]) / resolution
@@ -233,7 +239,7 @@ def draw_spheres(
     ok = (xx - az_on_screen) ** 2 + (yy - el_on_screen) ** 2 - size**2
     ok = ok <= 0
     # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
-    return np.any(ok, axis=1).reshape((ele_n, azi_n))
+    return np.any(ok, axis=1).reshape((ele_n, azi_n)), np.sum(in_screen)
 
 
 def cartesian_to_spherical(x, y, z):
