@@ -128,17 +128,17 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
-    # If the imaging frame is after the last found monitor frame, use the time for the
-    # last imaging frame time that's before the last found monitor frame
-    if len(np.where(frame_times > mouse_pos_time[-1])[0]) > 0:
+    # If the imaging frame is after the last found monitor frame, we cannot find the 
+    # position of the mouse for that frame. We will assume that the frame is gray
+    # and use the last found position for the searchsorted to avoid crashing.
+    delayed_frame = np.where(frame_times > mouse_pos_time[-1])[0]
+    if len(delayed_frame) > 0:
         print(
-            f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} "
-            "imaging frames are after the last found monitor frame. Using the time for "
-            "the last imaging frame time that's before the last found monitor frame."
+            f"WARNING: {len(delayed_frame)} imaging frames are after the last found " +
+            "monitor frame.\nWe will assume that they are gray."
         )
-    frame_times[np.where(frame_times > mouse_pos_time[-1])[0]] = frame_times[
-        np.where(frame_times <= mouse_pos_time[-1])[0][-1]
-    ]
+        frame_indices = frame_indices[:np.searchsorted(frame_indices, delayed_frame[0])]
+        frame_times[delayed_frame] = frame_times[delayed_frame[0]-1]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
