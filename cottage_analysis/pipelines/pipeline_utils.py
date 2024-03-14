@@ -57,6 +57,7 @@ def sbatch_session(
     conflicts,
     photodiode_protocol,
     use_slurm=False,
+    **kwargs,
 ):
     """Start sbatch script to run analysis_pipeline on a single session.
 
@@ -73,6 +74,8 @@ def sbatch_session(
     log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
+    for key, value in kwargs.items():
+        args+=f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
 
