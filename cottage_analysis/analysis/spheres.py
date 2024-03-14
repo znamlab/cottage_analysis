@@ -25,7 +25,7 @@ from cottage_analysis.preprocessing import synchronisation
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
-    """Find frame numbers that are valid (not gray period, or not before or after the 
+    """Find frame numbers that are valid (not gray period, or not before or after the
     imaging frames) and used for regenerating sphere stimuli.
 
     Args:
@@ -128,17 +128,19 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
-    # If the imaging frame is after the last found monitor frame, we cannot find the 
+    # If the imaging frame is after the last found monitor frame, we cannot find the
     # position of the mouse for that frame. We will assume that the frame is gray
     # and use the last found position for the searchsorted to avoid crashing.
     delayed_frame = np.where(frame_times > mouse_pos_time[-1])[0]
     if len(delayed_frame) > 0:
         print(
-            f"WARNING: {len(delayed_frame)} imaging frames are after the last found " +
-            "monitor frame.\nWe will assume that they are gray."
+            f"WARNING: {len(delayed_frame)} imaging frames are after the last found "
+            + "monitor frame.\nWe will assume that they are gray."
         )
-        frame_indices = frame_indices[:np.searchsorted(frame_indices, delayed_frame[0])]
-        frame_times[delayed_frame] = frame_times[delayed_frame[0]-1]
+        frame_indices = frame_indices[
+            : np.searchsorted(frame_indices, delayed_frame[0])
+        ]
+        frame_times[delayed_frame] = frame_times[delayed_frame[0] - 1]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
@@ -147,8 +149,8 @@ def regenerate_frames(
     for frame_index in tqdm(frame_indices):
         # find the trial in which the frame is
         corridor = trials_df.loc[int(trial_index[frame_index])]
-        # load the logger from trial start until the time of the frame. This is the list
-        # of all the spheres as they appear. Some/most of the spheres might already be 
+        # load the logger from trial start until the time of the frame. This is the list
+        # of all the spheres as they appear. Some/most of the spheres might already be
         # far behind the mouse.
         logger = param_logger.iloc[
             corridor.param_log_start : np.max(
@@ -172,8 +174,10 @@ def regenerate_frames(
         nsphere_per_frame[frame_index] = n_on_screen
         if this_frame is None:
             this_frame = np.zeros((out_shape[1], out_shape[2]))
-            print(f"Warning: failed to reconstruct frame {frame_index}" + 
-                  f" ({n_on_screen} spheres on screen)")
+            print(
+                f"Warning: failed to reconstruct frame {frame_index}"
+                + f" ({n_on_screen} spheres on screen)"
+            )
         output[frame_index] = this_frame
 
     return output
@@ -373,11 +377,11 @@ def generate_trials_df(recording, imaging_df):
         (imaging_df_simple["stim"] == 0)
     ].imaging_frame.values
     if start_volume_blank[0] < start_volume_stim[0]:
-        print('Warning: blank starts before stimulus starts! Double check!')
+        print("Warning: blank starts before stimulus starts! Double check!")
         start_volume_blank = start_volume_blank[1:]
-        assert start_volume_blank[0] > start_volume_stim[0], (
-            "Warning: 2 blank starts before stimulus starts! Double check!"
-        )
+        assert (
+            start_volume_blank[0] > start_volume_stim[0]
+        ), "Warning: 2 blank starts before stimulus starts! Double check!"
 
     if len(start_volume_stim) != len(
         start_volume_blank
@@ -489,18 +493,20 @@ def search_param_log_trials(
         harp_recording=harp_recording,
     )
 
-    # find trial index from param_log
-    param_log['stim'] = np.nan
-    param_log.loc[param_log.Radius.notnull(), 'stim'] = 1
-    param_log.loc[param_log.Radius < 0, 'stim'] = 0
-    p_log_simple = param_log[(param_log['stim'].diff() != 0) & (param_log['stim']).notnull()]
+    # find trial index from param_log
+    param_log["stim"] = np.nan
+    param_log.loc[param_log.Radius.notnull(), "stim"] = 1
+    param_log.loc[param_log.Radius < 0, "stim"] = 0
+    p_log_simple = param_log[
+        (param_log["stim"].diff() != 0) & (param_log["stim"]).notnull()
+    ]
     # find the line of param_log at which trials start and stop
-    param_log_start = p_log_simple[(p_log_simple['stim'] == 1)].index
-    param_log_stop = p_log_simple[(p_log_simple['stim'] == 0)].index
+    param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
+    param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
 
-    assert len(param_log_start) == len(trials_df), (
-        "Number of trials in trials_df and param_log are different!"
-    )
+    assert len(param_log_start) == len(
+        trials_df
+    ), "Number of trials in trials_df and param_log are different!"
 
     # trial index for each row of param log
     trials_df["param_log_start"] = param_log_start
@@ -843,7 +849,7 @@ def fit_3d_rfs(
     # get the depth of the first row for each trial
     depths_by_trial = imaging_df.groupby("trial_idx").first().depth
     # convert to categorical codes
-    categorical =pd.Categorical(depths_by_trial).codes
+    categorical = pd.Categorical(depths_by_trial).codes
     depths_by_trial.update(pd.Series(categorical, index=depths_by_trial.index))
     depths_by_trial = depths_by_trial.astype(categorical.dtype)
     # convert index to int
@@ -873,9 +879,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
-                -np.identity(m.shape[1])
-            )
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)
