@@ -79,6 +79,9 @@ def regenerate_frames(
 ):
     """Regenerate frames of sphere stimulus
 
+    `frame_times` is usually the imaging frame time, not the monitor frame time.
+
+
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated.
         trials_df (pd.DataFrame): Dataframe contains information for each trial.
@@ -472,22 +475,22 @@ def search_param_log_trials(
         harp_recording=harp_recording,
     )
 
-    # trial index for each row of param log
-    start_idx = (
-        trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
-    )
-    start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
-    start_idx = pd.Series(start_idx)
-    start_idx = start_idx[start_idx.diff() != 0].index.values
-    trials_df["param_log_start"] = start_idx
+    # find trial index from param_log
+    param_log['stim'] = np.nan
+    param_log.loc[param_log.Radius.notnull(), 'stim'] = 1
+    param_log.loc[param_log.Radius < 0, 'stim'] = 0
+    p_log_simple = param_log[(param_log['stim'].diff() != 0) & (param_log['stim']).notnull()]
+    # find the line of param_log at which trials start and stop
+    param_log_start = p_log_simple[(p_log_simple['stim'] == 1)].index
+    param_log_stop = p_log_simple[(p_log_simple['stim'] == 0)].index
 
-    stop_idx = trials_df.imaging_harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
-    stop_idx = pd.Series(stop_idx)
-    stop_idx = stop_idx[stop_idx.diff() != 0].index.values
-    if stop_idx[0] == 0:
-        stop_idx = stop_idx[1:]
-    stop_idx = stop_idx[: len(start_idx)]
-    trials_df["param_log_stop"] = stop_idx
+    assert len(param_log_start) == len(trials_df), (
+        "Number of trials in trials_df and param_log are different!"
+    )
+
+    # trial index for each row of param log
+    trials_df["param_log_start"] = param_log_start
+    trials_df["param_log_stop"] = param_log_stop
 
     return trials_df
 
