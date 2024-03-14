@@ -1,5 +1,5 @@
 from functools import partial
-
+from warnings import warn
 import flexiznam as flz
 import numpy as np
 import pandas as pd
@@ -26,7 +26,8 @@ from cottage_analysis.preprocessing import synchronisation
 
 
 def find_valid_frames(frame_times, trials_df, verbose=True):
-    """Find frame numbers that are valid (not gray period, or not before or after the imaging frames) and used for regenerating sphere stimuli.
+    """Find frame numbers that are valid (not gray period, or not before or after the
+    imaging frames) and used for regenerating sphere stimuli.
 
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated
@@ -80,6 +81,9 @@ def regenerate_frames(
 ):
     """Regenerate frames of sphere stimulus
 
+    `frame_times` is usually the imaging frame time, not the monitor frame time.
+
+
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated.
         trials_df (pd.DataFrame): Dataframe contains information for each trial.
@@ -125,34 +129,42 @@ def regenerate_frames(
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
     frame_indices = find_valid_frames(frame_times, trials_df, verbose=verbose)
-    # If the imaging frame is after the last found monitor frame, use the time for the
-    # last imaging frame time that's before the last found monitor frame
-    if len(np.where(frame_times > mouse_pos_time[-1])[0]) > 0:
+    # If the imaging frame is after the last found monitor frame, we cannot find the
+    # position of the mouse for that frame. We will assume that the frame is gray
+    # and use the last found position for the searchsorted to avoid crashing.
+    delayed_frame = np.where(frame_times > mouse_pos_time[-1])[0]
+    if len(delayed_frame) > 0:
         print(
-            f"WARNING: {len(np.where(frame_times > mouse_pos_time[-1])[0])} "
-            "imaging frames are after the last found monitor frame. Using the time for "
-            "the last imaging frame time that's before the last found monitor frame."
+            f"WARNING: {len(delayed_frame)} imaging frames are after the last found "
+            + "monitor frame.\nWe will assume that they are gray."
         )
-    frame_times[np.where(frame_times > mouse_pos_time[-1])[0]] = frame_times[
-        np.where(frame_times <= mouse_pos_time[-1])[0][-1]
-    ]
+        frame_indices = frame_indices[
+            : np.searchsorted(frame_indices, delayed_frame[0])
+        ]
+        frame_times[delayed_frame] = frame_times[delayed_frame[0] - 1]
     mouse_position = mouse_pos_cm[mouse_pos_time.searchsorted(frame_times)]
 
     # now process the valid frames
     log_ends = param_logger[time_column].searchsorted(frame_times)
+    nsphere_per_frame = np.zeros(len(frame_indices), dtype=int)
     for frame_index in tqdm(frame_indices):
+        # find the trial in which the frame is
         corridor = trials_df.loc[int(trial_index[frame_index])]
+        # load the logger from trial start until the time of the frame. This is the list
+        # of all the spheres as they appear. Some/most of the spheres might already be
+        # far behind the mouse.
         logger = param_logger.iloc[
             corridor.param_log_start : np.max(
                 [log_ends[frame_index], corridor.param_log_start + 1]
             )
         ]
+        # remove the spheres that are behind the mouse
+        logger = logger[logger.Radius > 0]
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
         sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
         )
-
-        this_frame = draw_spheres(
+        this_frame, n_on_screen = draw_spheres(
             sphere_x=sphere_coordinates[:, 0],
             sphere_y=sphere_coordinates[:, 1],
             sphere_z=sphere_coordinates[:, 2],
@@ -162,9 +174,13 @@ def regenerate_frames(
             azimuth_limits=np.array(azimuth_limits, dtype=float),
             elevation_limits=np.array(elevation_limits, dtype=float),
         )
+        nsphere_per_frame[frame_index] = n_on_screen
         if this_frame is None:
             this_frame = np.zeros((out_shape[1], out_shape[2]))
-            print(f"Warning: failed to reconstruct frame {frame_index}")
+            print(
+                f"Warning: failed to reconstruct frame {frame_index}"
+                + f" ({n_on_screen} spheres on screen)"
+            )
         output[frame_index] = this_frame
 
     return output
@@ -217,7 +233,7 @@ def draw_spheres(
         (elevation > elevation_limits[0]) & (elevation < elevation_limits[1])
     )
     if not np.any(in_screen):
-        return
+        return None, 0
 
     # convert `in_screen` spheres in pixel space
     az_on_screen = (az_compas[in_screen] - azimuth_limits[0]) / resolution
@@ -230,7 +246,7 @@ def draw_spheres(
     ok = (xx - az_on_screen) ** 2 + (yy - el_on_screen) ** 2 - size**2
     ok = ok <= 0
     # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
-    return np.any(ok, axis=1).reshape((ele_n, azi_n))
+    return np.any(ok, axis=1).reshape((ele_n, azi_n)), np.sum(in_screen)
 
 
 def cartesian_to_spherical(x, y, z):
@@ -363,6 +379,13 @@ def generate_trials_df(recording, imaging_df):
     start_volume_blank = imaging_df_simple[
         (imaging_df_simple["stim"] == 0)
     ].imaging_frame.values
+    if start_volume_blank[0] < start_volume_stim[0]:
+        print("Warning: blank starts before stimulus starts! Double check!")
+        start_volume_blank = start_volume_blank[1:]
+        assert (
+            start_volume_blank[0] > start_volume_stim[0]
+        ), "Warning: 2 blank starts before stimulus starts! Double check!"
+
     if len(start_volume_stim) != len(
         start_volume_blank
     ):  # if trial start and blank numbers are different
@@ -473,22 +496,24 @@ def search_param_log_trials(
         harp_recording=harp_recording,
     )
 
-    # trial index for each row of param log
-    start_idx = (
-        trials_df.imaging_harptime_stim_start.searchsorted(param_log.HarpTime) - 1
-    )
-    start_idx = np.clip(start_idx, 0, len(trials_df) - 1)
-    start_idx = pd.Series(start_idx)
-    start_idx = start_idx[start_idx.diff() != 0].index.values
-    trials_df["param_log_start"] = start_idx
+    # find trial index from param_log
+    param_log["stim"] = np.nan
+    param_log.loc[param_log.Radius.notnull(), "stim"] = 1
+    param_log.loc[param_log.Radius < 0, "stim"] = 0
+    p_log_simple = param_log[
+        (param_log["stim"].diff() != 0) & (param_log["stim"]).notnull()
+    ]
+    # find the line of param_log at which trials start and stop
+    param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
+    param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
 
-    stop_idx = trials_df.imaging_harptime_stim_stop.searchsorted(param_log.HarpTime) - 1
-    stop_idx = pd.Series(stop_idx)
-    stop_idx = stop_idx[stop_idx.diff() != 0].index.values
-    if stop_idx[0] == 0:
-        stop_idx = stop_idx[1:]
-    stop_idx = stop_idx[: len(start_idx)]
-    trials_df["param_log_stop"] = stop_idx
+    assert len(param_log_start) == len(
+        trials_df
+    ), "Number of trials in trials_df and param_log are different!"
+
+    # trial index for each row of param log
+    trials_df["param_log_start"] = param_log_start
+    trials_df["param_log_stop"] = param_log_stop
 
     return trials_df
 
@@ -573,7 +598,7 @@ def sync_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
-            imaging_df = synchronisation.generate_spike_rate_df(
+            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
                 harp_recording=harp_recording,
@@ -694,7 +719,7 @@ def regenerate_frames_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
-            imaging_df = synchronisation.generate_spike_rate_df(
+            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
                 harp_recording=harp_recording,
@@ -827,7 +852,9 @@ def fit_3d_rfs(
     # get the depth of the first row for each trial
     depths_by_trial = imaging_df.groupby("trial_idx").first().depth
     # convert to categorical codes
-    depths_by_trial.update(pd.Categorical(depths_by_trial).codes)
+    categorical = pd.Categorical(depths_by_trial).codes
+    depths_by_trial.update(pd.Series(categorical, index=depths_by_trial.index))
+    depths_by_trial = depths_by_trial.astype(categorical.dtype)
     # convert index to int
     depths_by_trial.index = depths_by_trial.index.astype(int)
 
@@ -855,9 +882,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
-                -np.identity(m.shape[1])
-            )
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)

@@ -64,7 +64,8 @@ def get_smoothed_spike_rate(
         conflicts (str, optional): how to deal with conflicts. Defaults to 'skip'.
 
     Returns:
-        dict: spike rate for each unit
+        np.ndarray: spike rate for each unit
+        list: unit ids
     """
     spks = np.zeros((len(bins) - 1, len(units)))
 
@@ -83,7 +84,8 @@ def get_smoothed_spike_rate(
         else:
             loaded_spks = {"bins": bins, "exp_sd": exp_sd}
 
-    for iu, unit in enumerate(units.keys()):
+    unit_ids = list(sorted(units.keys()))
+    for iu, unit in enumerate(unit_ids):
         spk = units[unit]
         valid_spk = spk[(spk > bins[0]) & (spk < bins[-1])]
         if exp_sd is not None:
@@ -110,4 +112,4 @@ def get_smoothed_spike_rate(
     if (exp_sd is not None) and (save_folder is not None) and resave:
         print(f"Saving spike rate to {rate_file}...")
         np.savez(rate_file, **loaded_spks)
-    return spks
+    return spks, unit_ids
