@@ -7,6 +7,7 @@ from scipy.optimize import curve_fit
 from scipy.stats import mode, zscore
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from tqdm import tqdm
+import gc
 
 from cottage_analysis.analysis.fit_gaussian_blob import (
     Gabor3DRFParams,
@@ -959,12 +960,14 @@ def fit_3d_rfs_hyperparam_tuning(
         best_reg_depths (np.array): array of best reg_depth for each ROI
 
     """
-
-    all_coef = []
-    all_r2s = []
-    hyperparams = []
+    depth_list = imaging_df.depth.dropna().unique()
+    depth_list = np.sort(depth_list[depth_list>0])
+    all_coef = np.zeros((len(reg_xys)*len(reg_depths), k_folds, frames.shape[1]*frames.shape[2]*len(depth_list)+1, imaging_df.loc[0, "dffs"].shape[1]))
+    all_r2s = np.zeros((len(reg_xys)*len(reg_depths), imaging_df.loc[0, "dffs"].shape[1], 2))
+    hyperparams = np.zeros((len(reg_xys)*len(reg_depths), 2))
     good_neuron_percs = np.zeros((len(reg_xys), len(reg_depths)))
     nrois = imaging_df.loc[0, "dffs"].shape[1]
+    idx=0
     for i, reg_xy in enumerate(reg_xys):
         for j, reg_depth in enumerate(reg_depths):
             print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
@@ -978,10 +981,15 @@ def fit_3d_rfs_hyperparam_tuning(
                 k_folds=k_folds,
                 validation=validation,
             )
+            gc.collect()
             good_neuron_percs[i, j] = np.mean(r2[:, 1] > r2_threshold)
-            all_coef.append(np.stack(coef))
-            all_r2s.append(r2)
-            hyperparams.append([reg_xy, reg_depth])
+            all_coef[idx] = np.stack(coef)
+            all_r2s[idx] = r2
+            hyperparams[idx] = [reg_xy, reg_depth]
+            # all_coef.append(np.stack(coef))
+            # all_r2s.append(r2)
+            # hyperparams.append([reg_xy, reg_depth])
+            idx+=1
     if not tune_separately:
         max_idx = np.argmax(good_neuron_percs)
         best_reg_xy, best_reg_depth = hyperparams[max_idx]
@@ -1073,6 +1081,7 @@ def fit_3d_rfs_ipsi(
             choose_rois=best_reg_neurons,
             validation=validation,
         )
+        gc.collect()
         coef[:, :, best_reg_neurons] = np.stack(coef_temp)
         r2[best_reg_neurons, :] = r2_temp
     return coef, r2
