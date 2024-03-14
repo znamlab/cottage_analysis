@@ -249,8 +249,8 @@ def depth_decoder(
     # train test val split
     dff_train, dff_val, dff_test, depth_train, depth_val, depth_test = split_train_test_val(
         trials_df=trials_df, 
-        test_size=0.2, 
-        random_state=42, 
+        test_size=test_size, 
+        random_state=random_state, 
         trial_average=trial_average)
     
     # only select cells
