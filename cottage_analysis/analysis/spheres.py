@@ -157,6 +157,8 @@ def regenerate_frames(
                 [log_ends[frame_index], corridor.param_log_start + 1]
             )
         ]
+        # remove the spheres that are behind the mouse
+        logger = logger[logger.Radius > 0]
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
         sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
