@@ -569,7 +569,9 @@ def generate_spike_rate_df(
     else:
         ks_data, units = out
     if unit_list is not None:
+        print(f"Filtering {len(units)} units to {unit_list}")
         units = {k: v for k, v in units.items() if k in unit_list}
+        print(f"Filtered to {len(units)} units")
 
     # Express spikes in harptime
     harp_message, harp_ds = load_harpmessage(
@@ -640,13 +642,15 @@ def generate_spike_rate_df(
     )
 
     # get the spike rate for each units
-    spks = get_smoothed_spike_rate(
+    spks, unit_ids = get_smoothed_spike_rate(
         units_harp, bins, exp_sd=exp_sd, save_folder=spike_ds.path_full
     )
-
+    # convert spks to list of arrays
     imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
-    return imaging_df
+    imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
+    
+    return imaging_df, unit_ids
 
 
 def fill_missing_imaging_volumes(df, nan_col="RS"):

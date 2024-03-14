@@ -36,6 +36,7 @@ def main(
     unit_list=None,
     rs_thr=0.0002,
     do_rf=True,
+    do_rs_of=False,
 ):
     """
     Main function to analyze a session.
@@ -59,6 +60,17 @@ def main(
         rate_bin=rate_bin,
         unit_list=unit_list,
     )
+    neu_attr = dict(    conflicts=conflicts,
+        photodiode_protocol=photodiode_protocol,
+        sync_kwargs=sync_kwargs,
+        use_onix=use_onix,
+        return_multiunit=return_multiunit,
+        harp_is_in_recording=harp_is_in_recording,
+        exp_sd=exp_sd,
+        rate_bin=rate_bin,
+        unit_list=unit_list,
+        rs_thr=rs_thr,
+        do_rf=do_rf)
     flexilims_session = flz.get_flexilims_session(project)
 
     neurons_ds = pipeline_utils.create_neurons_ds(
@@ -183,13 +195,11 @@ def main(
             min_sigma=0.5,
             k_folds=5,
         )
-        if do_rf:
+        if do_rs_of:
             # Fit gaussian blob to neuronal activity
             print("---Start fitting 2D gaussian blob...---")
             neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
                 trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
                 model="gaussian_2d",
                 choose_trials=None,
                 rs_thr=rs_thr,
@@ -206,8 +216,6 @@ def main(
             # Fit gaussian blob cross validation for closed_loop only
             neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
                 trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
                 model="gaussian_2d",
                 choose_trials="even",
                 closedloop_only=True,
@@ -228,8 +236,6 @@ def main(
             print("---Start fitting additive RS-OF model...---")
             neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
                 trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
                 model="gaussian_additive",
                 choose_trials=None,
                 rs_thr=rs_thr,
@@ -249,8 +255,6 @@ def main(
             print("---Start fitting OF-only model...---")
             neurons_df, neurons_ds = fit_gaussian_blob.fit_rs_of_tuning(
                 trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
                 model="gaussian_OF",
                 choose_trials=None,
                 rs_thr=rs_thr,
@@ -265,7 +269,8 @@ def main(
             )
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
-
+        if do_rf:
+            sfx = "_closedloop"
             # Regenerate sphere stimuli
             print("---RF analysis...---")
             print("Generating sphere stimuli...")
@@ -285,7 +290,7 @@ def main(
                 ephys_kwargs=ephys_kwargs,
             )
 
-            print("Fitting RF...")
+            print(f"Fitting RF{sfx}...")
             (
                 coef,
                 r2,
@@ -294,8 +299,8 @@ def main(
             ) = spheres.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
                 frames_all[:, :, int(frames_all.shape[2] // 2) :],
-                reg_xys=[10, 20, 40, 80, 160, 320, 640],
-                reg_depths=[10, 20, 40, 80, 160, 320, 640],
+                reg_xys=np.geomspace(2.5, 10240, 13),
+                reg_depths=np.geomspace(2.5, 10240, 13),
                 shift_stim=2,
                 use_col="dffs",
                 k_folds=5,
@@ -309,24 +314,44 @@ def main(
                 frames_all[:, :, : int(frames_all.shape[2] // 2)],
                 best_reg_xys,
                 best_reg_depths,
-                shift_stims=2,
+                shift_stim=2,
                 use_col="dffs",
                 k_folds=5,
                 validation=False,
             )
 
-            for col in ["rf_coef", "rf_rsq", "rf_coef_ipsi", "rf_rsq_ipsi"]:
+            for col in [
+                f"rf_coef{sfx}",
+                f"rf_rsq{sfx}",
+                f"rf_coef_ipsi{sfx}",
+                f"rf_rsq_ipsi{sfx}",
+            ]:
                 neurons_df[col] = [[np.nan]] * len(neurons_df)
 
             for i, _ in neurons_df.iterrows():
-                neurons_df.at[i, "rf_coef"] = coef[:, :, i]
-                neurons_df.at[i, "rf_coef_ipsi"] = coef_ipsi[:, :, i]
-                neurons_df.at[i, "rf_rsq"] = r2[i, :]
-                neurons_df.at[i, "rf_rsq_ipsi"] = r2_ipsi[i, :]
+                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i]
+                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i]
+                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :]
+                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :]
+                neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
+                neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
 
+            # # Update neurons_ds on flexilims
+            # neurons_ds.update_flexilims(mode="update")
+
+            # Merge fit dataframes
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=0,
+                slurm_folder=None,
+                job_dependency=None,
+                scripts_name=f"{session_name}_merge_fit_dataframes",
+            )
+            neurons_ds.extra_attributes.update(neu_attr)
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
             print("---Analysis finished. Neurons_df saved.---")
@@ -354,7 +379,7 @@ def main(
         # Plot all ROI RFs
         print("Plotting RFs...")
         depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-        coef = np.stack(neurons_df["rf_coef"], axis=2)
+        coef = np.stack(neurons_df["rf_coef_closedloop"], axis=2)
         sta_plots.basic_vis_sta_session(
             coef=coef,
             neurons_df=neurons_df,
@@ -373,28 +398,31 @@ if __name__ == "__main__":
         harp_is_in_recording=False,
         return_multiunit=True,
         exp_sd=None,
-        rate_bin=50e-3,
+        rate_bin=100e-3,
         rs_thr=0.0001,
         conflicts="overwrite",
+        do_rs_of=False,
+        do_rf=True
         # unit_list=[12, 14, 16],
     )
 
     sess_old = dict(
         session_name="BRAC6692.4a_S20220831",
         harp_is_in_recording=True,
-        return_multiunit=False,
+        return_multiunit=True,
         exp_sd=150e-3,
         rate_bin=100e-3,
-        rs_thr=0.001,
-        conflicts="overwrite",
+        rs_thr=0.0001,
+        conflicts="skip",
         # unit_list=[23, 62, 63, 73, 117, 206, 242, 258, 270, 282],
-        unit_list=[63, 73, 117],
-        do_rf=False,
+        unit_list=[98, 63, 232],
+        do_rf=True,
+        do_rs_of=False,
     )
     main(
         project="blota_onix_pilote",
         sync_kwargs=dict(frame_detection_height=0.05, detect_only=False),
         use_onix=False,
-        **sess_new,
+        **sess_old,
         # unit_list=[0, 14],
     )
