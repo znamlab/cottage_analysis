@@ -498,8 +498,12 @@ def search_param_log_trials(
 
     # find trial index from param_log
     param_log["stim"] = np.nan
-    param_log.loc[param_log.Radius.notnull(), "stim"] = 1
-    param_log.loc[param_log.Radius < 0, "stim"] = 0
+    if "Radius" in param_log.columns:
+        param_log.loc[param_log.Radius.notnull(), "stim"] = 1
+        param_log.loc[param_log.Radius < 0, "stim"] = 0
+    elif "Depth" in param_log.columns:
+        param_log.loc[param_log.Depth.notnull(), "stim"] = 1
+        param_log.loc[param_log.Depth < 0, "stim"] = 0
     p_log_simple = param_log[
         (param_log["stim"].diff() != 0) & (param_log["stim"]).notnull()
     ]
@@ -507,13 +511,9 @@ def search_param_log_trials(
     param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
     param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
 
-    assert len(param_log_start) == len(
-        trials_df
-    ), "Number of trials in trials_df and param_log are different!"
-
     # trial index for each row of param log
-    trials_df["param_log_start"] = param_log_start
-    trials_df["param_log_stop"] = param_log_stop
+    trials_df["param_log_start"] = param_log_start[:len(trials_df)]
+    trials_df["param_log_stop"] = param_log_stop[:len(trials_df)]
 
     return trials_df
 
