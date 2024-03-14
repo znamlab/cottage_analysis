@@ -67,7 +67,7 @@ def iterate_fit(
             func,
             X,
             y,
-            maxfev=100000,
+            maxfev=1000000, #100000
             bounds=(
                 lower_bounds,
                 upper_bounds,
@@ -122,7 +122,7 @@ def get_confidence_interval(
     return CI_low, CI_high
 
 
-def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000):
+def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000, func=np.nanmean):
     """Calculate confidence interval using bootstrap method.
 
     Args:
@@ -139,7 +139,7 @@ def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000):
     for i in range(n_bootstraps):
         for idepth in range(ndepths):
             resampled = arr[idepth, np.random.randint(0, ntrials, ntrials)]
-            bootstrapped_means[i, idepth] = np.nanmean(resampled)
+            bootstrapped_means[i, idepth] = func(resampled)
     CI_low = np.percentile(bootstrapped_means, 100 * sig_level / 2, axis=0)
     CI_high = np.percentile(bootstrapped_means, 100 * (1 - sig_level / 2), axis=0)
     return CI_low, CI_high
