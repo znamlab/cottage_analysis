@@ -146,7 +146,6 @@ def regenerate_frames(
 
     # now process the valid frames
     log_ends = param_logger[time_column].searchsorted(frame_times)
-    nsphere_per_frame = np.zeros(len(frame_indices), dtype=int)
     for frame_index in tqdm(frame_indices):
         # find the trial in which the frame is
         corridor = trials_df.loc[int(trial_index[frame_index])]
@@ -174,7 +173,6 @@ def regenerate_frames(
             azimuth_limits=np.array(azimuth_limits, dtype=float),
             elevation_limits=np.array(elevation_limits, dtype=float),
         )
-        nsphere_per_frame[frame_index] = n_on_screen
         if this_frame is None:
             this_frame = np.zeros((out_shape[1], out_shape[2]))
             print(
