@@ -222,10 +222,13 @@ def merge_fit_dataframes(project, session_name):
         for col in df.columns:
             if col == "roi":
                 continue
-            assert (
-                col not in neurons_df.columns
-            ), f"Column {col} already present in neurons_df"
-            neurons_df[col] = df[col]
+            if col in neurons_df.columns:
+                print(f"WARNING: Skipping column {col} - already present in neurons_df")
+            # assert (
+            #     col not in neurons_df.columns
+            # ), f"Column {col} already present in neurons_df"
+            else:
+                neurons_df[col] = df[col]
 
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full)

@@ -22,7 +22,7 @@ from cottage_analysis.pipelines import pipeline_utils
 
 
 def main(
-    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False, run_rf=True, run_rsof_fit=True, run_plot=True,
+    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False, run_depth_fit=True, run_rf=True, run_rsof_fit=True, run_plot=True,
 ):
     """
     Main function to analyze a session.
@@ -33,6 +33,7 @@ def main(
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
         use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        run_depth_fit(bool): whether to run the depth fit. Default True.
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
         run_plot(bool): whether to run the plot. Default True.
@@ -76,61 +77,64 @@ def main(
             return_volumes=True,
         )
 
-        # Find depth neurons and fit preferred depth
-        print("---Start finding depth neurons...---")
-        print("Find depth neurons...")
-        neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
-            trials_df=trials_df_all,
-            neurons_ds=neurons_ds,
-            rs_thr=0.2,
-            alpha=0.05,
-        )
+        if run_depth_fit:
+            # Find depth neurons and fit preferred depth
+            print("---Start finding depth neurons...---")
+            print("Find depth neurons...")
+            neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
+                trials_df=trials_df_all,
+                neurons_ds=neurons_ds,
+                rs_thr=0.2,
+                alpha=0.05,
+            )
 
-        print("Fit preferred depth...")
-        # Find preferred depth of closed loop with all data
-        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-            trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
-            closed_loop=1,
-            choose_trials=None,
-            depth_min=0.02,
-            depth_max=20,
-            niter=10,
-            min_sigma=0.5,
-            k_folds=1,
-        )
+            print("Fit preferred depth...")
+            # Find preferred depth of closed loop with all data
+            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                trials_df=trials_df_all,
+                neurons_df=neurons_df,
+                neurons_ds=neurons_ds,
+                closed_loop=1,
+                choose_trials=None,
+                depth_min=0.02,
+                depth_max=20,
+                niter=10,
+                min_sigma=0.5,
+                k_folds=1,
+            )
 
-        # Find preferred depth of closed loop with half the data for plotting purposes
-        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-            trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
-            closed_loop=1,
-            choose_trials="odd",
-            depth_min=0.02,
-            depth_max=20,
-            niter=10,
-            min_sigma=0.5,
-            k_folds=1,
-        )
+            # Find preferred depth of closed loop with half the data for plotting purposes
+            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                trials_df=trials_df_all,
+                neurons_df=neurons_df,
+                neurons_ds=neurons_ds,
+                closed_loop=1,
+                choose_trials="odd",
+                depth_min=0.02,
+                depth_max=20,
+                niter=10,
+                min_sigma=0.5,
+                k_folds=1,
+            )
 
-        # Find r-squared of k-fold cross validation
-        neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-            trials_df=trials_df_all,
-            neurons_df=neurons_df,
-            neurons_ds=neurons_ds,
-            closed_loop=1,
-            choose_trials=None,
-            depth_min=0.02,
-            depth_max=20,
-            niter=10,
-            min_sigma=0.5,
-            k_folds=5,
-        )
+            # Find r-squared of k-fold cross validation
+            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                trials_df=trials_df_all,
+                neurons_df=neurons_df,
+                neurons_ds=neurons_ds,
+                closed_loop=1,
+                choose_trials=None,
+                depth_min=0.02,
+                depth_max=20,
+                niter=10,
+                min_sigma=0.5,
+                k_folds=5,
+            )
 
-        # Save neurons_df
-        neurons_df.to_pickle(neurons_ds.path_full)
+            # Save neurons_df
+            neurons_df.to_pickle(neurons_ds.path_full)
+            # Update neurons_ds on flexilims
+            neurons_ds.update_flexilims(mode="update")
 
         # Regenerate sphere stimuli
         if run_rf:
@@ -203,8 +207,8 @@ def main(
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
 
-        # Update neurons_ds on flexilims
-        neurons_ds.update_flexilims(mode="update")
+            # Update neurons_ds on flexilims
+            neurons_ds.update_flexilims(mode="update")
 
         # Fit gaussian blob to neuronal activity
         if run_rsof_fit:
@@ -218,14 +222,18 @@ def main(
             )
 
             to_do = [
-                ("gaussian_2d", None, 1),
-                ("gaussian_2d", "even", 1),
-                ("gaussian_additive", None, 1),
-                ("gaussian_OF", None, 1),
-                ("gaussian_2d", None, 5),
-                ("gaussian_additive", None, 5),
-                ("gaussian_OF", None, 5),
+                ("gaussian_ratio", None, 1),
+                ("gaussian_ratio", None, 5),
             ]
+            # to_do = [
+            #     ("gaussian_2d", None, 1),
+            #     ("gaussian_2d", "even", 1),
+            #     ("gaussian_additive", None, 1),
+            #     ("gaussian_OF", None, 1),
+            #     ("gaussian_2d", None, 5),
+            #     ("gaussian_additive", None, 5),
+            #     ("gaussian_OF", None, 5),
+            # ]
 
             for model, trials, k_folds in to_do:
                 name = f"{session_name}_{model}"
@@ -275,8 +283,8 @@ def main(
             print("---Analysis finished. Neurons_df saved.---")
 
         # Plot basic plots
-        print("---Start basic vis plotting...---")
         if run_plot:
+            print("---Start basic vis plotting...---")
             if run_rsof_fit:
                 job_dependency = outputs if use_slurm else None
             else:
