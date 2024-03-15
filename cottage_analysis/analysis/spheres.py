@@ -134,10 +134,11 @@ def regenerate_frames(
     # and use the last found position for the searchsorted to avoid crashing.
     delayed_frame = np.where(frame_times > mouse_pos_time[-1])[0]
     if len(delayed_frame) > 0:
-        print(
-            f"WARNING: {len(delayed_frame)} imaging frames are after the last found "
-            + "monitor frame.\nWe will assume that they are gray."
-        )
+        if verbose:
+            print(
+                f"WARNING: {len(delayed_frame)} imaging frames are after the last found "
+                + "monitor frame.\nWe will assume that they are gray."
+            )
         frame_indices = frame_indices[
             : np.searchsorted(frame_indices, delayed_frame[0])
         ]
@@ -175,10 +176,17 @@ def regenerate_frames(
         )
         if this_frame is None:
             this_frame = np.zeros((out_shape[1], out_shape[2]))
-            print(
-                f"Warning: failed to reconstruct frame {frame_index}"
-                + f" ({n_on_screen} spheres on screen)"
-            )
+            if verbose:
+                # Some frames are not reconstructed. This is likely due to the fact that
+                # that the trial just started and sphere had not time to appear. We will
+                # complain only if at least 10ms have passed since the start of the trial.
+                trial_start = corridor.imaging_harptime_stim_start
+                t2start = frame_times[frame_index] - trial_start
+                if (n_on_screen == 0) and (t2start > 0.01):
+                    print(
+                        f"Warning: failed to reconstruct frame {frame_index}"
+                        + f" ({n_on_screen} spheres on screen, {t2start:.3f}s after trial start)"
+                    )
         output[frame_index] = this_frame
 
     return output
