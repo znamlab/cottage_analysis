@@ -2,10 +2,42 @@ import numpy as np
 import scipy
 import pandas as pd
 from scipy.optimize import curve_fit
-import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import find_depth_neurons
-from pathlib import Path
+
+
+def bootstrap_sample(df, columns):
+    """Hierarchically resample a dataframe for bootstrap.
+    The resampling is done in a hierarchical manner, where the first column is resampled,
+    then the second column is resampled for each value of the first column, and so on.
+    After the last column, the indices are resampled for each combination of the previous columns.
+
+    Args:
+        df: dataframe
+        columns: list of columns to resample
+
+    Returns:
+        resampled_values: indices of resampled rows
+
+    """
+    for i in range(len(columns) + 1):
+        if i == 0:
+            values = df[columns[i]].unique()
+            resampled_values = np.random.choice(values, size=values.shape)
+        else:
+            all_values = []
+            for prev_col in resampled_values:
+                if i == len(columns):
+                    values = df[df[columns[i - 1]] == prev_col].index.values
+                else:
+                    values = df[df[columns[i - 1]] == prev_col][columns[i]].unique()
+                all_values.append(
+                    np.random.choice(
+                        values,
+                        size=values.shape,
+                    )
+                )
+            resampled_values = np.concatenate(all_values)
+    return resampled_values
 
 
 def calculate_r_squared(y, y_hat):
@@ -67,7 +99,7 @@ def iterate_fit(
             func,
             X,
             y,
-            maxfev=1000000, #100000
+            maxfev=1000000,  # 100000
             bounds=(
                 lower_bounds,
                 upper_bounds,
