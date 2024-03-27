@@ -577,7 +577,8 @@ def sync_all_recordings(
         flexilims_session=flexilims_session,
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
-    recordings = recordings[recordings["exclude_reason"].isna()]
+    if "exclude_reason" in recordings.columns:
+        recordings = recordings[recordings["exclude_reason"].isna()]
 
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
