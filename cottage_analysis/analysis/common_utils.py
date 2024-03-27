@@ -99,7 +99,7 @@ def iterate_fit(
             func,
             X,
             y,
-            maxfev=1000000,  # 100000
+            maxfev=100000,  # 100000
             bounds=(
                 lower_bounds,
                 upper_bounds,
