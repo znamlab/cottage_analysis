@@ -150,7 +150,8 @@ def load_session(
 
 @slurm_it(
     conda_env=CONDA_ENV,
-    slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8},
+    slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8, "partition": "ncpu"},
+    print_job_id=True,
 )
 def load_and_fit(
     project,
@@ -192,13 +193,14 @@ def load_and_fit(
     return fit_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "2:00:00"})
-def merge_fit_dataframes(project, session_name):
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "2:00:00", "partition": "ncpu"})
+def merge_fit_dataframes(project, session_name, conflicts="skip"):
     """Merge fit dataframe from all fits
 
     Args:
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
+        conflicts (str, optional): how to handle conflicts. Defaults to "skip".
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
@@ -223,10 +225,11 @@ def merge_fit_dataframes(project, session_name):
             if col == "roi":
                 continue
             if col in neurons_df.columns:
-                print(f"WARNING: Skipping column {col} - already present in neurons_df")
-            # assert (
-            #     col not in neurons_df.columns
-            # ), f"Column {col} already present in neurons_df"
+                if conflicts == "skip":
+                    print(f"WARNING: Skipping column {col} - already present in neurons_df")
+                elif conflicts == "overwrite":
+                    neurons_df[col] = df[col]
+                    print(f"WARNING: Overwriting column {col}")
             else:
                 neurons_df[col] = df[col]
 

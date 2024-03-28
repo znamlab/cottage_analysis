@@ -222,18 +222,16 @@ def main(
             )
 
             to_do = [
+                ("gaussian_2d", None, 1),
+                ("gaussian_2d", "even", 1),
+                ("gaussian_additive", None, 1),
+                ("gaussian_OF", None, 1),
+                ("gaussian_2d", None, 5),
+                ("gaussian_additive", None, 5),
+                ("gaussian_OF", None, 5),
                 ("gaussian_ratio", None, 1),
                 ("gaussian_ratio", None, 5),
             ]
-            # to_do = [
-            #     ("gaussian_2d", None, 1),
-            #     ("gaussian_2d", "even", 1),
-            #     ("gaussian_additive", None, 1),
-            #     ("gaussian_OF", None, 1),
-            #     ("gaussian_2d", None, 5),
-            #     ("gaussian_additive", None, 5),
-            #     ("gaussian_OF", None, 5),
-            # ]
 
             for model, trials, k_folds in to_do:
                 name = f"{session_name}_{model}"
@@ -265,6 +263,7 @@ def main(
                 slurm_folder=slurm_folder,
                 job_dependency=job_dependency,
                 scripts_name=f"{session_name}_merge_fit_dataframes",
+                conflicts=conflicts,
             )
 
             print("---Analysis finished. Neurons_df saved.---")
