@@ -167,18 +167,13 @@ def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000, func=np.nanmean):
         CI_high (np.1darray): upper bound of confidence interval.
     """
     if arr.ndim == 1:
-        ntrials = len(arr)
-        bootstrapped_means = np.zeros(n_bootstraps)
-        for i in range(n_bootstraps):
-            resampled = arr[np.random.randint(0, ntrials, ntrials)]
-            bootstrapped_means[i] = func(resampled)
-    if arr.ndim == 2:
-        ndepths, ntrials = arr.shape
-        bootstrapped_means = np.zeros((n_bootstraps, ndepths))
-        for i in range(n_bootstraps):
-            for idepth in range(ndepths):
-                resampled = arr[idepth, np.random.randint(0, ntrials, ntrials)]
-                bootstrapped_means[i, idepth] = func(resampled)
+        arr = arr[np.newaxis, :]
+    ndepths, ntrials = arr.shape
+    bootstrapped_means = np.zeros((n_bootstraps, ndepths))
+    for i in range(n_bootstraps):
+        for idepth in range(ndepths):
+            resampled = arr[idepth, np.random.randint(0, ntrials, ntrials)]
+            bootstrapped_means[i, idepth] = func(resampled)
     CI_low = np.percentile(bootstrapped_means, 100 * sig_level / 2, axis=0)
     CI_high = np.percentile(bootstrapped_means, 100 * (1 - sig_level / 2), axis=0)
     return CI_low, CI_high
