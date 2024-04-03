@@ -5,9 +5,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import scipy
-from cottage_analysis.plotting import plotting_utils, grating_plots
+from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.analysis import (
     find_depth_neurons,
     common_utils,
@@ -96,7 +95,9 @@ def get_depth_color(depth, depth_list, cmap=cm.cool.reversed(), log=True):
 
     Returns:
         rgba_color: tuple of 3 with RGB color values.
+
     """
+    depth_list = [i for i in depth_list if isinstance(i, float)]
     if log:
         norm = mpl.colors.Normalize(
             vmin=np.log(min(depth_list)), vmax=np.log(max(depth_list))
@@ -1064,7 +1065,6 @@ def plot_RS_OF_fitted_tuning(
         "log_base": 10,
     },
 ):
-
     """
     Plot the fitted tuning of a neuron.
     """
