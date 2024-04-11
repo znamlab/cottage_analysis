@@ -239,7 +239,7 @@ def merge_fit_dataframes(project, session_name, conflicts="skip"):
     return neurons_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "9:00:00"})
+@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "9:00:00", "partition": "ncpu"})
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
 
