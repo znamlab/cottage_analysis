@@ -8,15 +8,10 @@ import flexiznam as flz
 
 from sklearn.model_selection import StratifiedKFold
 
-from cottage_analysis.analysis import common_utils, size_control
+from cottage_analysis.analysis import common_utils, size_control, fit_gaussian_blob
 from functools import partial
 
 print = partial(print, flush=True)
-
-
-def gaussian_func(x, a, x0, log_sigma, b, min_sigma):
-    sigma = np.exp(log_sigma) + min_sigma
-    return (a * np.exp(-((x - x0) ** 2)) / (2 * sigma**2)) + b
 
 
 def find_depth_list(df):
@@ -395,14 +390,14 @@ def fit_preferred_depth(
         )
 
     if param == "depth":
-        lower_bounds = [0, np.log(depth_min), 0, -np.inf]
+        lower_bounds = [-np.inf, np.log(depth_min), -np.inf, -np.inf]
         upper_bounds = [np.inf, np.log(depth_max), np.inf, np.inf]
     elif param == "size":
-        lower_bounds = [0, np.log(size_list_expand[0]), 0, -np.inf]
+        lower_bounds = [-np.inf, np.log(size_list_expand[0]), -np.inf, -np.inf]
         upper_bounds = [np.inf, np.log(size_list_expand[-1]), np.inf, np.inf]
 
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
-    gaussian_func_ = partial(gaussian_func, min_sigma=min_sigma)
+    gaussian_func_ = partial(fit_gaussian_blob.gaussian_1d, min_sigma=min_sigma)
     if k_folds == 1:
         # Create empty columns for fitting results
         neurons_df[f"preferred_{param}{protocol_sfx}{sfx}"] = np.nan
