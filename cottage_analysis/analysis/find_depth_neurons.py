@@ -295,9 +295,9 @@ def fit_preferred_depth(
         def p0_func():
             return np.concatenate(
                 (
-                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
                     np.atleast_1d(np.log(neurons_df.loc[roi, "best_depth"])),
-                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
                     np.random.normal(size=1),
                 )
             ).flatten()
@@ -321,9 +321,9 @@ def fit_preferred_depth(
         def p0_func():
             return np.concatenate(
                 (
-                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
                     np.atleast_1d(np.log(neurons_df.loc[roi, "best_size"])),
-                    np.exp(np.random.normal(size=1)),
+                    np.random.normal(size=1),
                     np.random.normal(size=1),
                 )
             ).flatten()
