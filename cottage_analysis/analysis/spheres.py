@@ -159,7 +159,12 @@ def regenerate_frames(
             )
         ]
         # remove the spheres that are behind the mouse
-        logger = logger[logger.Radius > 0]
+        if "Radius" in logger.columns:
+            logger = logger[logger.Radius > 0]
+        elif "Depth" in logger.columns:
+            logger = logger[logger.Depth > 0]
+        else:
+            raise ValueError("Neither Radius nor Depth in param_logger columns")
         sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
         sphere_coordinates[:, 2] = (
             sphere_coordinates[:, 2] - mouse_position[frame_index]
