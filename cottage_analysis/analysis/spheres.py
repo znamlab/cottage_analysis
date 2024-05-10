@@ -347,6 +347,7 @@ def generate_trials_df(recording, imaging_df):
         columns=[
             "trial_no",
             "depth",
+            "recording_name",
             "closed_loop",
             "imaging_harptime_stim_start",
             "imaging_harptime_stim_stop",
@@ -371,7 +372,7 @@ def generate_trials_df(recording, imaging_df):
             "mouse_z_harp_blank_pre",
         ]
     )
-
+    
     # Find the change of depth
     imaging_df["stim"] = np.nan
     imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
@@ -386,10 +387,10 @@ def generate_trials_df(recording, imaging_df):
     blank_time = 10
     start_volume_stim = imaging_df_simple[
         (imaging_df_simple["stim"] == 1)
-    ].imaging_frame.values
+    ].imaging_volume.values
     start_volume_blank = imaging_df_simple[
         (imaging_df_simple["stim"] == 0)
-    ].imaging_frame.values
+    ].imaging_volume.values
     if start_volume_blank[0] < start_volume_stim[0]:
         print("Warning: blank starts before stimulus starts! Double check!")
         start_volume_blank = start_volume_blank[1:]
@@ -477,7 +478,9 @@ def generate_trials_df(recording, imaging_df):
             ).squeeze(),
             axis=1,
         )
-
+        
+    # Add recording name 
+    trials_df.recording_name = recording.genealogy[-1]
     # Rename
     trials_df = trials_df.drop(columns=["imaging_blank_start"])
 
