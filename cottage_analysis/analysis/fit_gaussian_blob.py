@@ -457,8 +457,10 @@ def initial_fit_conditions(
                 y0=np.random.uniform(
                     np.log(param_range["of_min"]), np.log(param_range["of_max"])
                 ),
-                log_sigma_x2=np.random.normal(),
-                log_sigma_y2=np.random.normal(),
+                # log_sigma_x2=np.random.normal(),
+                # log_sigma_y2=np.random.normal(),
+                log_sigma_x2=np.random.normal(5,5),
+                log_sigma_y2=np.random.normal(5,5),
                 offset=np.random.normal(),
             )
 

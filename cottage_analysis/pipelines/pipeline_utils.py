@@ -150,7 +150,7 @@ def load_session(
 
 @slurm_it(
     conda_env=CONDA_ENV,
-    slurm_options={"mem": "32G", "time": "47:00:00", "cpus-per-task": 8, "partition": "ncpu"},
+    slurm_options={"mem": "32G", "time": "23:00:00", "cpus-per-task": 8, "partition": "ncpu"},
     print_job_id=True,
 )
 def load_and_fit(
@@ -164,13 +164,17 @@ def load_and_fit(
     niter,
     min_sigma,
     k_folds=1,
+    closedloop_trials=[],
+    openloop_trials=[],
+    special_sfx="",
 ):
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-
     (neurons_ds, neurons_df, vs_df_all, trials_df_all,) = load_session(
         project, session_name, photodiode_protocol, regenerate_frames=False
     )
-
+    if (len(closedloop_trials)>0) and (len(openloop_trials)>0):
+        trials_df_all = pd.concat([trials_df_all.iloc[openloop_trials], trials_df_all.iloc[closedloop_trials]], ignore_index=True)
+        
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=trials_df_all,
@@ -188,13 +192,18 @@ def load_and_fit(
     if choose_trials is not None:
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
-    target = neurons_ds.path_full.with_name(f"fit_rs_of_tuning_{suffix}.pickle")
+    target = neurons_ds.path_full.with_name(f"fit_rs_of_tuning_{suffix}{special_sfx}.pickle")
     fit_df.to_pickle(target)
     return fit_df
 
 
 @slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "2:00:00", "partition": "ncpu"})
-def merge_fit_dataframes(project, session_name, conflicts="skip"):
+def merge_fit_dataframes(project, session_name, conflicts="skip",
+                         prefix="fit_rs_of_tuning_", 
+                         suffix="",
+                         column_suffix=None,
+                         filetype=".pickle",
+                         target_filename="neurons_df.pickle"):
     """Merge fit dataframe from all fits
 
     Args:
@@ -214,27 +223,32 @@ def merge_fit_dataframes(project, session_name, conflicts="skip"):
 
     # load the main neurons_df
     neurons_df = pd.read_pickle(neurons_ds.path_full)
-    to_remove = []
+    # to_remove = []
 
-    for df in neurons_ds.path_full.parent.glob("fit_rs_of_tuning_*.pickle"):
-        print(f"Merging {df}...")
-        to_remove.append(df)
-        df = pd.read_pickle(df)
+    search_str = f"{prefix}*{suffix}{filetype}"
+    for df_name in neurons_ds.path_full.parent.glob(search_str):
+        print(f"Merging {df_name}...")
+        # to_remove.append(df_name)
+        df = pd.read_pickle(df_name)
         assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
         for col in df.columns:
             if col == "roi":
                 continue
-            if col in neurons_df.columns:
+            if column_suffix is not None:
+                new_col = col + str(df_name.stem)[column_suffix:]
+            else:
+                new_col = col
+            if new_col in neurons_df.columns:
                 if conflicts == "skip":
                     print(f"WARNING: Skipping column {col} - already present in neurons_df")
                 elif conflicts == "overwrite":
-                    neurons_df[col] = df[col]
+                    neurons_df[new_col] = df[col]
                     print(f"WARNING: Overwriting column {col}")
             else:
-                neurons_df[col] = df[col]
+                neurons_df[new_col] = df[col]
 
     # save the new neurons_df
-    neurons_df.to_pickle(neurons_ds.path_full)
+    neurons_df.to_pickle(neurons_ds.path_full.parent/target_filename)
     print("All dataframes merged. Neurons_df saved.")
     return neurons_df
 
