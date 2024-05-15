@@ -1,16 +1,9 @@
-import os
 import numpy as np
-import pandas as pd
 import defopt
-import matplotlib.pyplot as plt
-from pathlib import Path
-import pickle
-from tqdm import tqdm
 
 import flexiznam as flz
 from cottage_analysis.analysis import (
     find_depth_neurons,
-    common_utils,
     size_control,
 )
 from cottage_analysis.plotting import basic_vis_plots

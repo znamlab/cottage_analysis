@@ -1,19 +1,10 @@
-import os
 import numpy as np
 import pandas as pd
-import defopt
-import matplotlib.pyplot as plt
-from pathlib import Path
-import pickle
-from tqdm import tqdm
-
 import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
     fit_gaussian_blob,
-    common_utils,
 )
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
@@ -60,7 +51,8 @@ def main(
         rate_bin=rate_bin,
         unit_list=unit_list,
     )
-    neu_attr = dict(    conflicts=conflicts,
+    neu_attr = dict(
+        conflicts=conflicts,
         photodiode_protocol=photodiode_protocol,
         sync_kwargs=sync_kwargs,
         use_onix=use_onix,
@@ -70,7 +62,8 @@ def main(
         rate_bin=rate_bin,
         unit_list=unit_list,
         rs_thr=rs_thr,
-        do_rf=do_rf)
+        do_rf=do_rf,
+    )
     flexilims_session = flz.get_flexilims_session(project)
 
     neurons_ds = pipeline_utils.create_neurons_ds(
@@ -402,7 +395,7 @@ if __name__ == "__main__":
         rs_thr=0.0001,
         conflicts="overwrite",
         do_rs_of=False,
-        do_rf=True
+        do_rf=True,
         # unit_list=[12, 14, 16],
     )
 

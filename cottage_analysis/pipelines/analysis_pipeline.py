@@ -1,28 +1,26 @@
 import os
 import numpy as np
-import pandas as pd
 import defopt
-import matplotlib.pyplot as plt
 from pathlib import Path
-import pickle
-from tqdm import tqdm
 import warnings
-
 import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
-    fit_gaussian_blob,
-    common_utils,
 )
-from cottage_analysis.plotting import basic_vis_plots, sta_plots
-
 from cottage_analysis.pipelines import pipeline_utils
 
 
 def main(
-    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False, run_depth_fit=True, run_rf=True, run_rsof_fit=True, run_plot=True,
+    project,
+    session_name,
+    conflicts="skip",
+    photodiode_protocol=5,
+    use_slurm=False,
+    run_depth_fit=True,
+    run_rf=True,
+    run_rsof_fit=True,
+    run_plot=True,
 ):
     """
     Main function to analyze a session.
@@ -216,7 +214,12 @@ def main(
             outputs = []
             common_params = dict(
                 rs_thr=0.01,
-                param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
+                param_range={
+                    "rs_min": 0.005,
+                    "rs_max": 5,
+                    "of_min": 0.03,
+                    "of_max": 3000,
+                },
                 niter=5,
                 min_sigma=0.25,
             )
@@ -253,7 +256,7 @@ def main(
                 )
                 outputs.append(out)
                 print("---RS OF fit finished. Neurons_df saved.---")
-                
+
             # Merge fit dataframes
             job_dependency = outputs if use_slurm else None
             out = pipeline_utils.merge_fit_dataframes(
@@ -301,5 +304,5 @@ def main(
 
 
 if __name__ == "__main__":
-    
+
     defopt.run(main)
