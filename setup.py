@@ -23,6 +23,6 @@ setup(
         "numba",
         "numba_progress",
         "scikit-image",
-        "depopt",
+        "defopt",
     ],
 )
