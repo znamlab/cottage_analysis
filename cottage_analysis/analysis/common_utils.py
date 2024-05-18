@@ -179,7 +179,7 @@ def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000, func=np.nanmean):
     return CI_low, CI_high
 
 
-def choose_trials_subset(trials_df, choose_trials):
+def choose_trials_subset(trials_df, choose_trials, sfx=""):
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     trial_number = len(trials_df) // len(depth_list)
 
@@ -196,6 +196,7 @@ def choose_trials_subset(trials_df, choose_trials):
                 trials_df_depth = trials_df_depth.iloc[::2, :]
                 trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
             choose_trial_nums = np.arange(trial_number)[::2]
+            sfx = "_crossval"
         if choose_trials == "even":  # fit even trials
             trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
             # choose even trials from trials_df
@@ -204,6 +205,7 @@ def choose_trials_subset(trials_df, choose_trials):
                 trials_df_depth = trials_df_depth.iloc[1::2, :]
                 trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
             choose_trial_nums = np.arange(trial_number)[1::2]
+            sfx = "_crossval"
         if choose_trials is not None and isinstance(
             choose_trials, list
         ):  # if choose_trials is a given list
@@ -215,7 +217,7 @@ def choose_trials_subset(trials_df, choose_trials):
                     [trials_df_chosen, trials_df_depth], ignore_index=True
                 )
             choose_trial_nums = choose_trials
-        sfx = "_crossval"
+            sfx = sfx
 
     return trials_df_chosen, choose_trial_nums, sfx
 

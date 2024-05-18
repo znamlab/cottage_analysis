@@ -80,6 +80,7 @@ def main(
         # ("gaussian_ratio", None, 5),
     ]
     
+    # Find the trial number where openloop trials are before closedloop trials
     arr = trials_df_all["closed_loop"].values
     zeros, ones = openloop.find_zeros_before_ones(arr)
     if len(zeros) == 0:
@@ -96,19 +97,19 @@ def main(
                 new_name = name + f"_openclosed{i}"
                 openloop_trials = openloop_trials.tolist()
                 closedloop_trials = closedloop_trials.tolist()
+                choose_trials = openloop_trials + closedloop_trials # only choose the trials with openloop before closedloop for the fit
                 out = pipeline_utils.load_and_fit(
                     project,
                     session_name,
                     photodiode_protocol,
                     model=model,
-                    choose_trials=trials,
+                    choose_trials=choose_trials,
+                    trials_sfx="",
                     use_slurm=use_slurm,
                     slurm_folder=slurm_folder,
                     scripts_name=new_name,
                     k_folds=k_folds,
-                    closedloop_trials=closedloop_trials,
-                    openloop_trials=openloop_trials,
-                    special_sfx=f"_openclosed{i}",
+                    file_special_sfx=f"_openclosed{i}",
                     **common_params,
                 )
                 outputs.append(out)

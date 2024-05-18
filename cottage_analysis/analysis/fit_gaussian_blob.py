@@ -552,6 +552,7 @@ def fit_rs_of_tuning(
     trials_df,
     model="gaussian_2d",
     choose_trials=None,
+    trial_sfx="",
     rs_thr=0.01,
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
     niter=5,
@@ -602,7 +603,7 @@ def fit_rs_of_tuning(
         trials_df_protocol = trials_df[trials_df.closed_loop == is_closedloop]
         # choose certain subsets of trials
         trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
-            trials_df_protocol, choose_trials
+            trials_df_protocol, choose_trials, sfx=trial_sfx,
         )
 
         # give class labels to each depth

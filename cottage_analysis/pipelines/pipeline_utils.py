@@ -165,10 +165,28 @@ def load_and_fit(
     niter,
     min_sigma,
     k_folds=1,
-    closedloop_trials=[],
-    openloop_trials=[],
-    special_sfx="",
+    trial_sfx="",
+    file_special_sfx="",
 ):
+    '''Load and fit a model to a session.
+
+    Args:
+        project (str): project name.
+        session_name (str): session name. {Mouse}_{Session}.
+        photodiode_protocol (str): photodiode protocol.
+        model (str): model name for the fit.
+        choose_trials (str or list): trials to be chosen for the fit.
+        rs_thr (float): rs threshold.
+        param_range (dict): parameter range for the fit.
+        niter (int): number of iterations.
+        min_sigma (float): minimum sigma.
+        k_folds (int, optional): number of k-folds. Defaults to 1.
+        trial_sfx (str, optional): trial suffix. Defaults to "". Example: "_crossval".
+        file_special_sfx (str, optional): file special suffix. Defaults to "". Example: "_openclosed0".
+
+    Returns:
+        pd.DataFrame: result dataframe for the fit.
+    '''
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     (
         neurons_ds,
@@ -178,20 +196,13 @@ def load_and_fit(
     ) = load_session(
         project, session_name, photodiode_protocol, regenerate_frames=False
     )
-    if (len(closedloop_trials) > 0) and (len(openloop_trials) > 0):
-        trials_df_all = pd.concat(
-            [
-                trials_df_all.iloc[openloop_trials],
-                trials_df_all.iloc[closedloop_trials],
-            ],
-            ignore_index=True,
-        )
 
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=trials_df_all,
         model=model,
         choose_trials=choose_trials,
+        trial_sfx=trial_sfx,
         rs_thr=rs_thr,
         param_range=param_range,
         niter=niter,
@@ -205,7 +216,7 @@ def load_and_fit(
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
     target = neurons_ds.path_full.with_name(
-        f"fit_rs_of_tuning_{suffix}{special_sfx}.pickle"
+        f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
     )
     fit_df.to_pickle(target)
     return fit_df
@@ -231,6 +242,11 @@ def merge_fit_dataframes(
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
         conflicts (str, optional): how to handle conflicts. Defaults to "skip".
+        prefix (str, optional): prefix of the files to merge. Defaults to "fit_rs_of_tuning_".
+        suffix (str, optional): suffix of the files to merge. Defaults to ""
+        column_suffix (int, optional): digits for the source filename, which becomes the special suffix to append to each column name of the dataframe to be merged. Defaults to None.
+        filetype (str, optional): filetype of the files to merge. Defaults to ".pickle".
+        target_filename (str, optional): target filename. Defaults to "neurons_df.pickle".
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
