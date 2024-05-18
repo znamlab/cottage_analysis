@@ -1,23 +1,17 @@
 import os
 import numpy as np
-import pandas as pd
 import defopt
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pickle
-from tqdm import tqdm
 import warnings
 
 import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis import (
     spheres,
-    find_depth_neurons,
-    fit_gaussian_blob,
-    common_utils,
     population_depth_decoder,
 )
-from cottage_analysis.plotting import basic_vis_plots, sta_plots, depth_decoder_plots
+from cottage_analysis.plotting import depth_decoder_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 

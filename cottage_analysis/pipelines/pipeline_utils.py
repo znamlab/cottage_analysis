@@ -1,17 +1,13 @@
 import subprocess
 import shlex
-import scipy
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from tqdm import tqdm
 from functools import partial
 import warnings
 from pandas.errors import SettingWithCopyWarning
-
 import flexiznam as flz
 from znamutils import slurm_it
-
 from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neurons
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
@@ -75,7 +71,7 @@ def sbatch_session(
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
     for key, value in kwargs.items():
-        args+=f",{key.upper()}={int(value)}"
+        args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
 
@@ -150,7 +146,12 @@ def load_session(
 
 @slurm_it(
     conda_env=CONDA_ENV,
-    slurm_options={"mem": "32G", "time": "23:00:00", "cpus-per-task": 8, "partition": "ncpu"},
+    slurm_options={
+        "mem": "32G",
+        "time": "23:00:00",
+        "cpus-per-task": 8,
+        "partition": "ncpu",
+    },
     print_job_id=True,
 )
 def load_and_fit(
@@ -169,12 +170,23 @@ def load_and_fit(
     special_sfx="",
 ):
     warnings.filterwarnings("ignore", category=DeprecationWarning)
-    (neurons_ds, neurons_df, vs_df_all, trials_df_all,) = load_session(
+    (
+        neurons_ds,
+        _,
+        _,
+        trials_df_all,
+    ) = load_session(
         project, session_name, photodiode_protocol, regenerate_frames=False
     )
-    if (len(closedloop_trials)>0) and (len(openloop_trials)>0):
-        trials_df_all = pd.concat([trials_df_all.iloc[openloop_trials], trials_df_all.iloc[closedloop_trials]], ignore_index=True)
-        
+    if (len(closedloop_trials) > 0) and (len(openloop_trials) > 0):
+        trials_df_all = pd.concat(
+            [
+                trials_df_all.iloc[openloop_trials],
+                trials_df_all.iloc[closedloop_trials],
+            ],
+            ignore_index=True,
+        )
+
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=trials_df_all,
@@ -192,18 +204,27 @@ def load_and_fit(
     if choose_trials is not None:
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
-    target = neurons_ds.path_full.with_name(f"fit_rs_of_tuning_{suffix}{special_sfx}.pickle")
+    target = neurons_ds.path_full.with_name(
+        f"fit_rs_of_tuning_{suffix}{special_sfx}.pickle"
+    )
     fit_df.to_pickle(target)
     return fit_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "2:00:00", "partition": "ncpu"})
-def merge_fit_dataframes(project, session_name, conflicts="skip",
-                         prefix="fit_rs_of_tuning_", 
-                         suffix="",
-                         column_suffix=None,
-                         filetype=".pickle",
-                         target_filename="neurons_df.pickle"):
+@slurm_it(
+    conda_env=CONDA_ENV,
+    slurm_options={"mem": "16G", "time": "2:00:00", "partition": "ncpu"},
+)
+def merge_fit_dataframes(
+    project,
+    session_name,
+    conflicts="skip",
+    prefix="fit_rs_of_tuning_",
+    suffix="",
+    column_suffix=None,
+    filetype=".pickle",
+    target_filename="neurons_df.pickle",
+):
     """Merge fit dataframe from all fits
 
     Args:
@@ -240,7 +261,9 @@ def merge_fit_dataframes(project, session_name, conflicts="skip",
                 new_col = col
             if new_col in neurons_df.columns:
                 if conflicts == "skip":
-                    print(f"WARNING: Skipping column {col} - already present in neurons_df")
+                    print(
+                        f"WARNING: Skipping column {col} - already present in neurons_df"
+                    )
                 elif conflicts == "overwrite":
                     neurons_df[new_col] = df[col]
                     print(f"WARNING: Overwriting column {col}")
@@ -248,12 +271,15 @@ def merge_fit_dataframes(project, session_name, conflicts="skip",
                 neurons_df[new_col] = df[col]
 
     # save the new neurons_df
-    neurons_df.to_pickle(neurons_ds.path_full.parent/target_filename)
+    neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
     print("All dataframes merged. Neurons_df saved.")
     return neurons_df
 
 
-@slurm_it(conda_env=CONDA_ENV, slurm_options={"mem": "16G", "time": "9:00:00", "partition": "ncpu"})
+@slurm_it(
+    conda_env=CONDA_ENV,
+    slurm_options={"mem": "16G", "time": "9:00:00", "partition": "ncpu"},
+)
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
 
@@ -263,10 +289,10 @@ def run_basic_plots(project, session_name, photodiode_protocol):
     (
         neurons_ds,
         neurons_df,
-        vs_df_all,
+        _,
         trials_df_all,
         frames_all,
-        imaging_df_all,
+        _,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
 
     kwargs = {

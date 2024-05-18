@@ -1,5 +1,4 @@
 import warnings
-import shutil
 import numpy as np
 import pandas as pd
 import scipy.signal
@@ -649,7 +648,7 @@ def generate_spike_rate_df(
     imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
-    
+
     return imaging_df, unit_ids
 
 

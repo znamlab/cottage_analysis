@@ -4,7 +4,6 @@ print = functools.partial(print, flush=True)
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import matplotlib
 
 matplotlib.rcParams["pdf.fonttype"] = 42
@@ -12,12 +11,8 @@ import defopt
 import pickle
 
 import flexiznam as flz
-from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.analysis import spheres, sta, find_depth_neurons
+from cottage_analysis.analysis import spheres, find_depth_neurons
 from cottage_analysis.plotting import (
-    basic_vis_plots,
-    grating_plots,
-    plotting_utils,
     sta_plots,
 )
 from cottage_analysis.pipelines import pipeline_utils

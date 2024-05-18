@@ -1,10 +1,9 @@
 from functools import partial
-from warnings import warn
 import flexiznam as flz
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
-from scipy.stats import mode, zscore
+from scipy.stats import zscore
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from tqdm import tqdm
 import gc
@@ -19,7 +18,6 @@ from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.visstim import get_param_log
 
 print = partial(print, flush=True)
-from scipy.stats import mode
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from cottage_analysis.preprocessing import synchronisation
@@ -372,7 +370,7 @@ def generate_trials_df(recording, imaging_df):
             "mouse_z_harp_blank_pre",
         ]
     )
-    
+
     # Find the change of depth
     imaging_df["stim"] = np.nan
     imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
@@ -478,8 +476,8 @@ def generate_trials_df(recording, imaging_df):
             ).squeeze(),
             axis=1,
         )
-        
-    # Add recording name 
+
+    # Add recording name
     trials_df.recording_name = recording.genealogy[-1]
     # Rename
     trials_df = trials_df.drop(columns=["imaging_blank_start"])
@@ -526,8 +524,8 @@ def search_param_log_trials(
     param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
 
     # trial index for each row of param log
-    trials_df["param_log_start"] = param_log_start[:len(trials_df)]
-    trials_df["param_log_stop"] = param_log_stop[:len(trials_df)]
+    trials_df["param_log_start"] = param_log_start[: len(trials_df)]
+    trials_df["param_log_stop"] = param_log_stop[: len(trials_df)]
 
     return trials_df
 
@@ -898,9 +896,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[
-                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
-            ] = -np.identity(m.shape[1])
+            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
+                -np.identity(m.shape[1])
+            )
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)
@@ -1004,13 +1002,22 @@ def fit_3d_rfs_hyperparam_tuning(
 
     """
     depth_list = imaging_df.depth.dropna().unique()
-    depth_list = np.sort(depth_list[depth_list>0])
-    all_coef = np.zeros((len(reg_xys)*len(reg_depths), k_folds, frames.shape[1]*frames.shape[2]*len(depth_list)+1, imaging_df.loc[0, "dffs"].shape[1]))
-    all_r2s = np.zeros((len(reg_xys)*len(reg_depths), imaging_df.loc[0, "dffs"].shape[1], 2))
-    hyperparams = np.zeros((len(reg_xys)*len(reg_depths), 2))
+    depth_list = np.sort(depth_list[depth_list > 0])
+    all_coef = np.zeros(
+        (
+            len(reg_xys) * len(reg_depths),
+            k_folds,
+            frames.shape[1] * frames.shape[2] * len(depth_list) + 1,
+            imaging_df.loc[0, "dffs"].shape[1],
+        )
+    )
+    all_r2s = np.zeros(
+        (len(reg_xys) * len(reg_depths), imaging_df.loc[0, "dffs"].shape[1], 2)
+    )
+    hyperparams = np.zeros((len(reg_xys) * len(reg_depths), 2))
     good_neuron_percs = np.zeros((len(reg_xys), len(reg_depths)))
     nrois = imaging_df.loc[0, "dffs"].shape[1]
-    idx=0
+    idx = 0
     for i, reg_xy in enumerate(reg_xys):
         for j, reg_depth in enumerate(reg_depths):
             print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
@@ -1032,7 +1039,7 @@ def fit_3d_rfs_hyperparam_tuning(
             # all_coef.append(np.stack(coef))
             # all_r2s.append(r2)
             # hyperparams.append([reg_xy, reg_depth])
-            idx+=1
+            idx += 1
     if not tune_separately:
         max_idx = np.argmax(good_neuron_percs)
         best_reg_xy, best_reg_depth = hyperparams[max_idx]
