@@ -599,12 +599,19 @@ def fit_rs_of_tuning(
             f"Process protocol {protocol_sfx}/{len(trials_df.closed_loop.unique())}..."
         )
 
-        # choose only closed loop or open loop trials
-        trials_df_protocol = trials_df[trials_df.closed_loop == is_closedloop]
-        # choose certain subsets of trials
-        trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
-            trials_df_protocol, choose_trials, sfx=trial_sfx,
-        )
+        if choose_trials is not None and isinstance(
+            choose_trials, list
+        ): # choose a list of trials from all trials (including openloop and closed loop)
+            trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
+                trials_df, choose_trials, sfx=trial_sfx,
+            )
+            # choose only closed loop or open loop trials
+            trials_df_fit = trials_df_fit[trials_df_fit.closed_loop == is_closedloop]
+        else: # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol
+            trials_df_fit = trials_df[trials_df.closed_loop == is_closedloop]
+            trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
+                trials_df, choose_trials, sfx=trial_sfx,
+            )
 
         # give class labels to each depth
         trials_df_fit = depth_class_labels(trials_df_fit)

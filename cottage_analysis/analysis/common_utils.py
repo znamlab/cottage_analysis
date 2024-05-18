@@ -209,13 +209,7 @@ def choose_trials_subset(trials_df, choose_trials, sfx=""):
         if choose_trials is not None and isinstance(
             choose_trials, list
         ):  # if choose_trials is a given list
-            trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
-            for depth in depth_list:
-                trials_df_depth = trials_df[trials_df.depth == depth]
-                trials_df_depth = trials_df_depth.iloc[choose_trials, :]
-                trials_df_chosen = pd.concat(
-                    [trials_df_chosen, trials_df_depth], ignore_index=True
-                )
+            trials_df_chosen = trials_df.iloc[choose_trials]
             choose_trial_nums = choose_trials
             sfx = sfx
 
