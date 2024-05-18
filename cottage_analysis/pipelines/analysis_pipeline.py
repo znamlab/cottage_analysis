@@ -135,6 +135,7 @@ def main(
             neurons_df.to_pickle(neurons_ds.path_full)
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
+            print("Depth tuning fitting finished. Neurons_df saved.")
 
         # Regenerate sphere stimuli
         if run_rf:
@@ -209,6 +210,7 @@ def main(
 
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
+            print("RF fitting finished. Neurons_df saved.")
 
         # Fit gaussian blob to neuronal activity
         if run_rsof_fit:
