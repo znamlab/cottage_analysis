@@ -104,7 +104,7 @@ def main(
                     photodiode_protocol,
                     model=model,
                     choose_trials=choose_trials,
-                    trials_sfx="",
+                    trial_sfx="",
                     use_slurm=use_slurm,
                     slurm_folder=slurm_folder,
                     scripts_name=new_name,
