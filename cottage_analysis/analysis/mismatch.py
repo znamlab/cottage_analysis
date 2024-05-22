@@ -2,10 +2,9 @@ from functools import partial
 import flexiznam as flz
 import numpy as np
 import pandas as pd
-from scipy.stats import zscore
-from sklearn.model_selection import StratifiedKFold, train_test_split
+import random
+import matplotlib.pyplot as plt
 from tqdm import tqdm
-import gc
 
 
 print = partial(print, flush=True)
@@ -358,6 +357,17 @@ def get_relevant_recordings(
 
     return recording, harp_recording, onix_rec
 
+def plot_mismatch_raster(closed_loop):
+    
+    closed_loop = find_mismatch(closed_loop)
+    closed_loop, indices =  create_mismatch_window(closed_loop, window_start = 5, window_end = 20)
+    neurons, neurons_df = build_neurons_df(closed_loop)
+    misperneuron = build_mismatches_per_neuron_list(neurons, neurons_df, window_start = 5, window_end = 20)
+    mismatch_raster = raster(neurons, misperneuron, window_start = 5, window_end = 20)
+    rand_raster = make_rand_raster(closed_loop, n_events = 200, window_end = 10)
+    sorted_mismatch_raster = modulation_sort_raster(rand_raster, mismatch_raster)
+    plot_raster(sorted_mismatch_raster)
+
 def find_mismatch(closed_loop):
 
     #Find how running speed and displayed speed  change
@@ -375,19 +385,19 @@ def find_mismatch(closed_loop):
 
     return closed_loop
 
-def create_mismatch_window(closed_loop, start_window = 5, end_window= 10):
+def create_mismatch_window(closed_loop, window_start = 5, window_end= 10, event= "mismatch"):
     '''
     Forms a mask in the region of the recording used to analyse mismatch responses. 
-    The mask goes from start_window to end_window, in frames. Needs input from find_mismatch. 
+    The mask goes from window_start to window_end, in frames. Needs input from find_mismatch. 
     '''
 
     # Create a new column initialized to 0
     closed_loop['range_indicator'] = 0
 
     #Make a diff to look at starting frames
-    closed_loop["start_mismatch"]=np.zeros(len(closed_loop["mismatch"]))
+    closed_loop["start_mismatch"]=np.zeros(len(closed_loop[event]))
 
-    closed_loop.loc[1:,"start_mismatch"] = np.diff(closed_loop["mismatch"])
+    closed_loop.loc[1:,"start_mismatch"] = np.diff(closed_loop[event])
 
     # Find indices where 'indicator' is 1
     indices = closed_loop.index[closed_loop['start_mismatch'] == 1].tolist()
@@ -395,17 +405,16 @@ def create_mismatch_window(closed_loop, start_window = 5, end_window= 10):
 
     # Set range_indicator to 1 for 5 rows before and after each index where 'indicator' is 1
     for idx in indices:
-        start = max(idx - start_window, 0)
-        end = min(idx + end_window, len(closed_loop['mismatch']) - 1)
+        start = max(idx - window_start, 0)
+        end = min(idx + window_end, len(closed_loop[event]) - 1)
         #print((start,  end))
         closed_loop.loc[start:end, 'range_indicator'] = 1
     
-    return closed_loop
+    return closed_loop, indices
 
 def build_neurons_df(closed_loop):
     '''
     Makes a dataframe with the mask for responses. 
-    IN PROGRESS, NOTEBOOK VERSION IS SLOW. 
     '''
     # Create the initial DataFrame with range_indicator
     neurons_df = pd.DataFrame({"range_indicator": closed_loop["range_indicator"].copy()})
@@ -416,7 +425,7 @@ def build_neurons_df(closed_loop):
     # Create a DataFrame for the neurons data
     neuron_data = pd.DataFrame(
         {f"neuron{neuron}": [closed_loop["dffs"][i][0][neuron] for i in range(len(closed_loop["mismatch"]))]
-        for neuron in range(neurons)}
+        for neuron in tqdm(range(neurons))}
     )
 
     # Concatenate the range_indicator and neuron data
@@ -424,46 +433,67 @@ def build_neurons_df(closed_loop):
 
     return neurons, neurons_df
 
-def build_mismatches_per_neuron_list(neurons, neurons_df):
+def build_mismatches_per_neuron_list(neurons, neurons_df, window_start  =  5, window_end  =  10, indices = None):
 
     mismatches_per_neuron = list(np.zeros(neurons))
+
+    window = window_start+window_end
 
     neurons_df["start_mismatch"]=np.zeros(len(neurons_df["range_indicator"]))
 
     neurons_df.loc[1:,"start_mismatch"] = np.diff(neurons_df["range_indicator"])
 
-    n_mismatches  =  len(neurons_df["start_mismatch"][neurons_df["start_mismatch"]==1])
+    if indices  is None:
+        n_mismatches = len(neurons_df["start_mismatch"][neurons_df["start_mismatch"]==1])
+    else:
+        n_mismatches =  len(indices)
 
     print(f"# mismatches: {n_mismatches}")
 
     for i in range(neurons):
-        mismatches_per_neuron[i] = np.zeros((n_mismatches, 15))
+        mismatches_per_neuron[i] = np.zeros((n_mismatches, window))
 
     # Initialize variables to track the start and end of intervals
     in_interval = False
     start_idx = None
 
-    # Iterate through the DataFrame to identify intervals
-    idx_mismatch = -1
-    for idx, row in neurons_df.iterrows():
-        if row['range_indicator'] == 1 and not in_interval:
-            # Start of a new interval
-            start_idx = idx
-            in_interval = True
-            idx_mismatch += 1
-            print(f"This is mismatch {idx_mismatch}")
-        elif row['range_indicator'] == 0 and in_interval:
-            # End of the current interval
-            end_idx = idx-1
+    if indices is None:
+        # Iterate through the DataFrame to identify intervals
+        idx_mismatch = -1
+        print(f"Building {n_mismatches} mismatches per neuron")
+        for idx, row in tqdm(neurons_df.iterrows()):
+            if row['range_indicator'] == 1 and not in_interval:
+                # Start of a new interval
+                start_idx = idx
+                in_interval = True
+                idx_mismatch += 1
+                #print(f"This is mismatch {idx_mismatch}")
+            elif row['range_indicator'] == 0 and in_interval:
+                # End of the current interval
+                end_idx = idx-1
+                for neuron in range(neurons):
+                    mismatches_per_neuron[neuron][idx_mismatch, :] = neurons_df[f"neuron{neuron}"][start_idx:end_idx]
+                in_interval = False
+                #print(f"start and end idx: {(start_idx, end_idx)}")
+
+    else:
+        print(f"Building {n_mismatches} mismatches per neuron")
+        nframes = len(neurons_df)
+        for idx_mismatch, idx in tqdm(enumerate(indices)):
+            start_idx = max(0, idx-window_start)
+            end_idx = min((nframes-1), idx+window_end)
             for neuron in range(neurons):
                 mismatches_per_neuron[neuron][idx_mismatch, :] = neurons_df[f"neuron{neuron}"][start_idx:end_idx]
-            in_interval = False
-            print(f"start and end idx: {(start_idx, end_idx)}")
+            #print(f"start and end idx: {(start_idx, end_idx)}")
 
     return mismatches_per_neuron
 
-def raster(neurons, mismatches_per_neuron, n_neurons = 100):
-    mismatch_raster = np.zeros((neurons, 15))
+def raster(neurons, mismatches_per_neuron, n_neurons = 100, window_start = 5, window_end= 10):
+    
+    window =  window_start+window_end
+
+    #initialise
+    mismatch_raster = np.zeros((neurons, window))
 
     for i in range(neurons):
         mismatch_raster[i, :] = np.mean(mismatches_per_neuron[i], axis = 0)
@@ -471,32 +501,75 @@ def raster(neurons, mismatches_per_neuron, n_neurons = 100):
     #print(mismatch_raster.shape)
 
     # Calculate differences for each row
-    differences = np.apply_along_axis(calculate_difference, 1, mismatch_raster)
+    #differences = np.apply_along_axis(calculate_difference, 1, mismatch_raster)
     #print(differences[0:10])
 
-    # Get the sorted indices based on the differences (larger differences first)
-    sorted_indices = np.argsort(-differences)
-    #print(sorted_indices[0:10])
+    return mismatch_raster
 
-    # Sort the array based on the calculated differences
-    sorted_mismatch_raster = mismatch_raster[sorted_indices]
+def plot_partial_raster(mismatch_raster, n_neurons=100, window_start = 5, window_end= 10):
 
     start = 0
-    end = 100
+    end = n_neurons
 
     fig = plt.figure(figsize=(30,10),facecolor='w') 
     ax = fig.add_subplot(111)
-    im = ax.imshow(sorted_mismatch_raster[0:100])
-
-
+    im = ax.imshow(mismatch_raster[start:end])
 
     ax.set_title(f"Raster plot of first {end} neurons aligned to mismatch")
     ax.set_xlabel("Frames")
     ax.set_ylabel("Neurons")
     fig.colorbar(im, label  =  "dff")
-    ax.axvline(5, color = "grey")
+    ax.axvline(window_start, color = "grey")
+    plt.show()
 
-def calculate_difference(row):
-    first_5_sum = np.sum(row[0:5])
-    last_5_sum = np.sum(row[6:11])
+def plot_raster(mismatch_raster, vmin= 2, vmax =  -0.5):
+
+    fig = plt.figure(figsize=(30, 10), facecolor='w')
+    ax = fig.add_subplot(111)
+    im = ax.imshow(mismatch_raster, cmap='coolwarm', vmin=vmin, vmax=vmax, aspect =  "auto")
+
+    ax.set_title(f"Raster plot of neurons aligned to mismatch")
+    ax.set_xlabel("Frames")
+    ax.set_ylabel("Neurons")
+    fig.colorbar(im, label="dff")
+    ax.axvline(5, color="grey")
+    plt.show()
+
+def modulation_sort_raster(rand_raster, mismatch_raster):
+    rand_avg = np.mean(rand_raster, axis = 1)
+    mismatch_avg = np.mean(mismatch_raster[:, 8:17], axis = 1)
+    modulation_raster = mismatch_avg-rand_avg
+    sorted_indices = np.argsort(-modulation_raster)
+    #print(sorted_indices[0:10])
+
+    # Sort the array based on the calculated differences
+    sorted_mismatch_raster = mismatch_raster[sorted_indices]
+
+    return sorted_mismatch_raster
+
+def make_rand_raster(closed_loop, n_events = 100, window_end = 5):
+
+    closed_loop = attach_randevents_to_recording(closed_loop, n_events=n_events)
+    rand_rec, indices = create_mismatch_window(closed_loop, window_start = 0, window_end = window_end, event  = "randevents")
+    neurons, rand_neurodf = build_neurons_df(rand_rec)
+    rand_misperneuron = build_mismatches_per_neuron_list(neurons, rand_neurodf, window_start = 0, window_end = window_end, indices = indices)
+    rand_raster = raster(neurons, rand_misperneuron, window_start = 0, window_end= window_end)
+    
+    return rand_raster
+
+def calculate_difference(row, window_start = 5, window_end  = 10):
+    window =  window_start+window_end
+    first_5_sum = np.sum(row[0:window_start])
+    last_5_sum = np.sum(row[window_start+1:window-window_start])
     return last_5_sum-first_5_sum
+
+def generate_random_events(n_frames, n_events = 100):
+    return [random.randint(0, n_frames-1) for _ in range(n_events)]
+
+def attach_randevents_to_recording(closed_loop, n_events = 100):
+    n_frames = len(closed_loop)
+    events = generate_random_events(n_frames, n_events)
+    closed_loop["randevents"] = 0
+    closed_loop.loc[events, "randevents"] = 1
+
+    return closed_loop
