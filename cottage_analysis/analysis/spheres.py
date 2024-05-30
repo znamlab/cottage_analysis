@@ -631,7 +631,7 @@ def sync_all_recordings(
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
         )
-
+        trials_df["recording"] = recording_name
         if i == 0:
             vs_df_all = vs_df
             trials_df_all = trials_df

@@ -21,6 +21,7 @@ def main(
     run_rf=True,
     run_rsof_fit=True,
     run_plot=True,
+    run_rsof_fit_separate_recordings=False,
 ):
     """
     Main function to analyze a session.
@@ -35,6 +36,7 @@ def main(
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
         run_plot(bool): whether to run the plot. Default True.
+        run_rsof_fit_separate_recordings(bool): whether to run the rsof fit separately for each recording. Default False.
     """
     print(
         f"------------------------------- \n \
@@ -244,32 +246,67 @@ def main(
                     name += "_crossval"
                 name += f"_k{k_folds}"
                 print(f"Fitting {model}")
-                out = pipeline_utils.load_and_fit(
-                    project,
-                    session_name,
-                    photodiode_protocol,
-                    model=model,
-                    choose_trials=trials,
-                    use_slurm=use_slurm,
-                    slurm_folder=slurm_folder,
-                    scripts_name=name,
-                    k_folds=k_folds,
-                    **common_params,
-                )
-                outputs.append(out)
+                if run_rsof_fit_separate_recordings:
+                    for i, recording in enumerate(trials_df_all["recording"].unique()):
+                        choose_trials = trials_df_all[trials_df_all.recording == recording].index.tolist()
+                        new_name = name + f"_recording_{recording}"
+                        out = pipeline_utils.load_and_fit(
+                            project,
+                            session_name,
+                            photodiode_protocol,
+                            model=model,
+                            choose_trials=choose_trials,
+                            use_slurm=use_slurm,
+                            slurm_folder=slurm_folder,
+                            scripts_name=new_name,
+                            k_folds=k_folds,
+                            file_special_sfx=f"_recording_{recording}",
+                            **common_params,
+                        )
+                        outputs.append(out)
+                else:
+                    out = pipeline_utils.load_and_fit(
+                        project,
+                        session_name,
+                        photodiode_protocol,
+                        model=model,
+                        choose_trials=trials,
+                        use_slurm=use_slurm,
+                        slurm_folder=slurm_folder,
+                        scripts_name=name,
+                        k_folds=k_folds,
+                        **common_params,
+                    )
+                    outputs.append(out)
                 print("---RS OF fit finished. Neurons_df saved.---")
 
             # Merge fit dataframes
             job_dependency = outputs if use_slurm else None
-            out = pipeline_utils.merge_fit_dataframes(
-                project,
-                session_name,
-                use_slurm=use_slurm,
-                slurm_folder=slurm_folder,
-                job_dependency=job_dependency,
-                scripts_name=f"{session_name}_merge_fit_dataframes",
-                conflicts=conflicts,
-            )
+            if run_rsof_fit_separate_recordings:
+                out = pipeline_utils.merge_fit_dataframes(
+                    project,
+                    session_name,
+                    use_slurm=use_slurm,
+                    slurm_folder=slurm_folder,
+                    job_dependency=job_dependency,
+                    scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
+                    conflicts=conflicts,
+                    prefix="fit_rs_of_tuning_gaussian_2d_k1_recording",
+                    suffix="",
+                    column_suffix=-2,
+                    filetype=".pickle",
+                    target_filename="neurons_df_separate_recordings.pickle",
+                        )
+            else:
+                out = pipeline_utils.merge_fit_dataframes(
+                    project,
+                    session_name,
+                    use_slurm=use_slurm,
+                    slurm_folder=slurm_folder,
+                    job_dependency=job_dependency,
+                    scripts_name=f"{session_name}_merge_fit_dataframes",
+                    conflicts=conflicts,
+                )
 
             print("---Analysis finished. Neurons_df saved.---")
 

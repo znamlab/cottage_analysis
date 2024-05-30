@@ -272,7 +272,7 @@ def merge_fit_dataframes(
             if col == "roi":
                 continue
             if column_suffix is not None:
-                new_col = col + str(df_name.stem)[column_suffix:]
+                new_col = col + '_'.join(str(df_name.stem).split('_')[column_suffix:])
             else:
                 new_col = col
             if new_col in neurons_df.columns:
