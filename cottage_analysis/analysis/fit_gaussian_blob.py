@@ -137,13 +137,14 @@ def gaussian_OF(
 ):
     (rs, of) = xy_tuple
     x = of
-    g = gaussian_1d(x,
-                    log_amplitude,
-                    x0,
-                    log_sigma_x2,
-                    offset,
-                    min_sigma,
-                )
+    g = gaussian_1d(
+        x,
+        log_amplitude,
+        x0,
+        log_sigma_x2,
+        offset,
+        min_sigma,
+    )
     return g
 
 
@@ -156,14 +157,15 @@ def gaussian_ratio(
     min_sigma,
 ):
     (rs, of) = xy_tuple
-    x = rs - of # ratio of logged rs/of
-    g = gaussian_1d(x,
-                    log_amplitude,
-                    x0,
-                    log_sigma_x2,
-                    offset,
-                    min_sigma,
-                )
+    x = rs - of  # ratio of logged rs/of
+    g = gaussian_1d(
+        x,
+        log_amplitude,
+        x0,
+        log_sigma_x2,
+        offset,
+        min_sigma,
+    )
     return g
 
 
@@ -386,7 +388,7 @@ def grating_tuning(
 
 
 def initial_fit_conditions(
-    model, 
+    model,
     param_range={"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000},
 ):
     # Set bounds for gaussian fit params
@@ -459,8 +461,8 @@ def initial_fit_conditions(
                 ),
                 # log_sigma_x2=np.random.normal(),
                 # log_sigma_y2=np.random.normal(),
-                log_sigma_x2=np.random.normal(5,5),
-                log_sigma_y2=np.random.normal(5,5),
+                log_sigma_x2=np.random.normal(5, 5),
+                log_sigma_y2=np.random.normal(5, 5),
                 offset=np.random.normal(),
             )
 
@@ -488,18 +490,18 @@ def initial_fit_conditions(
                 log_sigma_x2=np.random.normal(),
                 offset=np.random.normal(),
             )
-            
+
     elif model == "gaussian_ratio":
         model_sfx = "_gratio"
         lower_bounds = Gaussian1DParams(
             log_amplitude=-np.inf,
-            x0=np.log(param_range["rs_min"]/param_range["of_max"]),
+            x0=np.log(param_range["rs_min"] / param_range["of_max"]),
             log_sigma_x2=-np.inf,
             offset=-np.inf,
         )
         upper_bounds = Gaussian1DParams(
             log_amplitude=np.inf,
-            x0=np.log(param_range["rs_max"]/param_range["of_min"]),
+            x0=np.log(param_range["rs_max"] / param_range["of_min"]),
             log_sigma_x2=np.inf,
             offset=np.inf,
         )
@@ -508,45 +510,44 @@ def initial_fit_conditions(
             return Gaussian1DParams(
                 log_amplitude=np.random.normal(),
                 x0=np.random.uniform(
-                    np.log(param_range["rs_min"]/param_range["of_max"]),
-                    np.log(param_range["rs_max"]/param_range["of_min"]),
+                    np.log(param_range["rs_min"] / param_range["of_max"]),
+                    np.log(param_range["rs_max"] / param_range["of_min"]),
                 ),
                 log_sigma_x2=np.random.normal(),
                 offset=np.random.normal(),
             )
-            
+
     return model_sfx, lower_bounds, upper_bounds, p0_func
 
 
 def depth_class_labels(trials_df):
-        '''Give class labels to each depth'''
-        
-        # expand the depth list to one more log distance at both ends
-        depth_list = find_depth_neurons.find_depth_list(trials_df)
-        log_depth_list = np.log(depth_list)
-        log_depth_list = np.append(
-            log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
-        )
-        log_depth_list = np.insert(
-            log_depth_list,
-            0,
-            (log_depth_list[0] - log_depth_list[1] + log_depth_list[0]),
-        )
-        depth_list_expand = np.exp(log_depth_list)
-        
-        # find the corresponding depth label according to depth bins for each trial
-        bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
-        trials_df["depth_label"] = pd.cut(
-            trials_df["depth"], bins=bins, labels=np.arange(len(depth_list))
-        )
-        
-        # copy depth label as many times as the number of frames in each trial
-        trials_df["depth_labels"] = [
-            [x] * len(y)
-            for x, y in zip(trials_df["depth_label"], trials_df["RS_stim"])
-        ]
-        return trials_df
-   
+    """Give class labels to each depth"""
+
+    # expand the depth list to one more log distance at both ends
+    depth_list = find_depth_neurons.find_depth_list(trials_df)
+    log_depth_list = np.log(depth_list)
+    log_depth_list = np.append(
+        log_depth_list, (log_depth_list[-1] + log_depth_list[1] - log_depth_list[0])
+    )
+    log_depth_list = np.insert(
+        log_depth_list,
+        0,
+        (log_depth_list[0] - log_depth_list[1] + log_depth_list[0]),
+    )
+    depth_list_expand = np.exp(log_depth_list)
+
+    # find the corresponding depth label according to depth bins for each trial
+    bins = (depth_list_expand[1:] + depth_list_expand[:-1]) / 2
+    trials_df["depth_label"] = pd.cut(
+        trials_df["depth"], bins=bins, labels=np.arange(len(depth_list))
+    )
+
+    # copy depth label as many times as the number of frames in each trial
+    trials_df["depth_labels"] = [
+        [x] * len(y) for x, y in zip(trials_df["depth_label"], trials_df["RS_stim"])
+    ]
+    return trials_df
+
 
 def fit_rs_of_tuning(
     trials_df,
@@ -560,16 +561,18 @@ def fit_rs_of_tuning(
     random_state=42,
 ):
     def process_rs_of_for_fit(trials_df, trial_list=[], rs_thr=0.01):
-        # take a subset of trials
-        trials_df_part = trials_df.iloc[trial_list] if len(trial_list)>0 else trials_df
-        
-        # take the rs, of, dff, depth_labels from those trials
+        # take a subset of trials
+        trials_df_part = (
+            trials_df.iloc[trial_list] if len(trial_list) > 0 else trials_df
+        )
+
+        # take the rs, of, dff, depth_labels from those trials
         rs = np.concatenate(trials_df_part["RS_stim"].values)
         rs_eye = np.concatenate(trials_df_part["RS_eye_stim"].values)
         of = np.concatenate(trials_df_part["OF_stim"].values)
         dff = np.concatenate(trials_df_part["dff_stim"].values, axis=0)
         depth_labels = np.concatenate(trials_df_part["depth_labels"].values)
-        
+
         # choose frames that are above a certain running speed threshold
         running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of))
         rs = np.log(rs[running])
@@ -577,12 +580,14 @@ def fit_rs_of_tuning(
         of = np.log(np.degrees(of[running]))  # fit using of in deg
         dff = dff[running, :]
         depth_labels = depth_labels[running]
-        
+
         return rs, rs_eye, of, dff, depth_labels
 
-
     # Set bounds for gaussian fit params
-    model_sfx, lower_bounds, upper_bounds, p0_func = initial_fit_conditions(model=model, param_range=param_range,)
+    model_sfx, lower_bounds, upper_bounds, p0_func = initial_fit_conditions(
+        model=model,
+        param_range=param_range,
+    )
 
     # initialize neurons_df with columns for ROI number
     neurons_df_temp = pd.DataFrame(
@@ -612,18 +617,22 @@ def fit_rs_of_tuning(
 
         # initialize a model function
         model_func_ = partial(globals()[model], min_sigma=min_sigma)
-        
+
         rs_types = ["", "_actual", "_virtual"]
         # if k_folds = 1, fit for all data
-        if k_folds == 1: 
-            # process data for fitting (rs, rs_eye, of are all logged)
-            rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(trials_df_fit, trial_list=[], rs_thr=rs_thr)
+        if k_folds == 1:
+            # process data for fitting (rs, rs_eye, of are all logged)
+            rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(
+                trials_df_fit, trial_list=[], rs_thr=rs_thr
+            )
 
-            # loop between actual and virtual running speeds
-            rs_arrays = [rs] if ((is_closedloop) or model == "gaussian_OF") else [rs, rs_eye] # only use virtual running speed if it's openloop and fits for models other than gaussian_OF
-    
+            # loop between actual and virtual running speeds
+            rs_arrays = (
+                [rs] if ((is_closedloop) or model == "gaussian_OF") else [rs, rs_eye]
+            )  # only use virtual running speed if it's openloop and fits for models other than gaussian_OF
+
             for i_rs, rs_to_use in enumerate(rs_arrays):
-                rs_type = rs_types[0] if len(rs_arrays) == 1 else rs_types[i_rs+1]    
+                rs_type = rs_types[0] if len(rs_arrays) == 1 else rs_types[i_rs + 1]
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
 
                 # initialize columns to save
@@ -653,73 +662,114 @@ def fit_rs_of_tuning(
                     # Assign values to neurons_df_temp
                     if (model == "gaussian_additive") or (model == "gaussian_2d"):
                         neurons_df_temp.at[
-                            roi, f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                            roi,
+                            f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = np.exp(popt[1])
-                        
+
                         neurons_df_temp.at[
-                            roi, f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                            roi,
+                            f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = np.radians(
-                            np.exp(popt[2]))  # rad/s
-                        
+                            np.exp(popt[2])
+                        )  # rad/s
+
                     elif model == "gaussian_OF":
                         neurons_df_temp.at[
-                            roi, f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                        ] = np.radians(np.exp(popt[1]))   # rad/s
-                        
+                            roi,
+                            f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.radians(
+                            np.exp(popt[1])
+                        )  # rad/s
+
                     elif model == "gaussian_ratio":
                         neurons_df_temp.at[
-                            roi, f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                        ] = np.degrees(np.exp(popt[1]))  # m/deg --> m/deg * deg/rad = m/rad 
-                    
+                            roi,
+                            f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.degrees(
+                            np.exp(popt[1])
+                        )  # m/deg --> m/deg * deg/rad = m/rad
+
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                     ] = popt  # !! calculated with RS in m and OF in degrees/s
                     neurons_df_temp.at[
                         roi, f"rsof_rsq_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                     ] = rsq
-                    
+
                     dff_pred = model_func_((rs_to_use, of), *popt)
                     rval, pval = spearmanr(dff[:, roi], dff_pred)
                     neurons_df_temp.at[
-                        roi, f"rsof_spearmanr_rval_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                        roi,
+                        f"rsof_spearmanr_rval_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                     ] = rval
                     neurons_df_temp.at[
-                        roi, f"rsof_spearmanr_pval_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                        roi,
+                        f"rsof_spearmanr_pval_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                     ] = pval
-                    
 
         # If k_folds > 1, fit for each fold, then get a test rsq for each neuron
         if k_folds > 1:
             print("Fit with cross-validation...")
-            # train/test split based on trials 
+            # train/test split based on trials
             stratified_kfold = StratifiedKFold(
-                n_splits=k_folds, shuffle=True, random_state=random_state,
-                )
-    
+                n_splits=k_folds,
+                shuffle=True,
+                random_state=random_state,
+            )
+
             # make a list of arrays for all folds
             data_all = {
-                "train": {"rs": [], "rs_eye": [], "of": [], "dff": [], "depth_labels": []},
-                "test": {"rs": [], "rs_eye": [], "of": [], "dff": [], "depth_labels": []}
+                "train": {
+                    "rs": [],
+                    "rs_eye": [],
+                    "of": [],
+                    "dff": [],
+                    "depth_labels": [],
+                },
+                "test": {
+                    "rs": [],
+                    "rs_eye": [],
+                    "of": [],
+                    "dff": [],
+                    "depth_labels": [],
+                },
             }
             for fold, (train_index, test_index) in enumerate(
-                stratified_kfold.split(np.repeat(1,len(depth_label)), depth_label)
+                stratified_kfold.split(np.repeat(1, len(depth_label)), depth_label)
             ):
-                for data_type, data_idx in [("train", train_index), ("test", test_index)]:
-                    rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(trials_df_fit, trial_list=data_idx, rs_thr=rs_thr)
+                for data_type, data_idx in [
+                    ("train", train_index),
+                    ("test", test_index),
+                ]:
+                    rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(
+                        trials_df_fit, trial_list=data_idx, rs_thr=rs_thr
+                    )
                     data_all[data_type]["rs"].append(rs)
                     data_all[data_type]["rs_eye"].append(rs_eye)
                     data_all[data_type]["of"].append(of)
                     data_all[data_type]["dff"].append(dff)
                     data_all[data_type]["depth_labels"].append(depth_labels)
-                
-            # take actual or virtual running speeds
-            rs_arrays_train = [data_all["train"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["train"]["rs"], data_all["train"]["rs_eye"]]
-            rs_arrays_test = [data_all["test"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["test"]["rs"], data_all["test"]["rs_eye"]]
 
-            for i_rs, (rs_to_use_train_all, rs_to_use_test_all) in enumerate(zip(rs_arrays_train, rs_arrays_test)):
-                rs_type = rs_types[0] if len(rs_arrays_train) == 1 else rs_types[i_rs+1]  
+            # take actual or virtual running speeds
+            rs_arrays_train = (
+                [data_all["train"]["rs"]]
+                if ((is_closedloop) or model == "gaussian_OF")
+                else [data_all["train"]["rs"], data_all["train"]["rs_eye"]]
+            )
+            rs_arrays_test = (
+                [data_all["test"]["rs"]]
+                if ((is_closedloop) or model == "gaussian_OF")
+                else [data_all["test"]["rs"], data_all["test"]["rs_eye"]]
+            )
+
+            for i_rs, (rs_to_use_train_all, rs_to_use_test_all) in enumerate(
+                zip(rs_arrays_train, rs_arrays_test)
+            ):
+                rs_type = (
+                    rs_types[0] if len(rs_arrays_train) == 1 else rs_types[i_rs + 1]
+                )
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
-                
+
                 # initialize columns to save with nan
                 for param in ["rsq", "spearmanr_rval", "spearmanr_pval"]:
                     neurons_df_temp[
@@ -730,28 +780,43 @@ def fit_rs_of_tuning(
                 ] = [[[np.nan]]] * len(neurons_df_temp)
                 neurons_df_temp[
                     f"rsof_minSigma_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                ] = min_sigma   
-                neurons_df_temp[f"rsof_randomState_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"] = random_state
-                neurons_df_temp[f"rsof_kFolds_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"] = k_folds
+                ] = min_sigma
+                neurons_df_temp[
+                    f"rsof_randomState_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                ] = random_state
+                neurons_df_temp[
+                    f"rsof_kFolds_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                ] = k_folds
                 if choose_trials is not None:
                     neurons_df_temp[
                         f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                    ] = choose_trials   
-                
+                    ] = choose_trials
+
                 # Loop through each roi
                 for roi in tqdm(range(dff.shape[1])):
                     # loop through the folds
-                    dff_pred_all, rsq_train, rval_train, pval_train, popt_train = [], [], [], [], []
-                    
+                    dff_pred_all, rsq_train, rval_train, pval_train, popt_train = (
+                        [],
+                        [],
+                        [],
+                        [],
+                        [],
+                    )
+
                     # Loop through each fold of cross validation
-                    for rs_to_use_train, rs_to_use_test, of_train, of_test, dff_train, in zip(
+                    for (
+                        rs_to_use_train,
+                        rs_to_use_test,
+                        of_train,
+                        of_test,
+                        dff_train,
+                    ) in zip(
                         rs_to_use_train_all,
                         rs_to_use_test_all,
                         data_all["train"]["of"],
                         data_all["test"]["of"],
                         data_all["train"]["dff"],
-                        ): 
-
+                    ):
                         popt, rsq = common_utils.iterate_fit(
                             model_func_,
                             (rs_to_use_train, of_train),
@@ -763,7 +828,7 @@ def fit_rs_of_tuning(
                         )
                         dff_pred = model_func_((rs_to_use_test, of_test), *popt)
                         dff_pred_all.append(dff_pred)
-                        
+
                         # calculate r-square for train set
                         dff_pred_train = model_func_((rs_to_use_train, of_train), *popt)
                         rval, pval = spearmanr(dff_train[:, roi], dff_pred_train)
@@ -771,31 +836,40 @@ def fit_rs_of_tuning(
                         rval_train.append(rval)
                         pval_train.append(pval)
                         popt_train.append(popt)
-                        
+
                     rsq = common_utils.calculate_r_squared(
-                        np.concatenate(data_all["test"]["dff"])[:, roi], np.concatenate(dff_pred_all)
+                        np.concatenate(data_all["test"]["dff"])[:, roi],
+                        np.concatenate(dff_pred_all),
                     )
                     rval, pval = spearmanr(
-                        np.concatenate(data_all["test"]["dff"])[:, roi], np.concatenate(dff_pred_all)
+                        np.concatenate(data_all["test"]["dff"])[:, roi],
+                        np.concatenate(dff_pred_all),
                     )
-                    
+
                     # Save values to neurons_df_temp
-                    for param, value in zip(["train_rsq",
-                                             "train_popt", 
-                                             "train_spearmanr_rval",
-                                             "train_spearmanr_pval",
-                                             "test_rsq",
-                                             "test_spearmanr_rval",
-                                             "test_spearmanr_pval"],
-                                            [rsq_train,
-                                             popt_train,
-                                             rval_train,
-                                             pval_train,
-                                             rsq,
-                                             rval,
-                                             pval]):
+                    for param, value in zip(
+                        [
+                            "train_rsq",
+                            "train_popt",
+                            "train_spearmanr_rval",
+                            "train_spearmanr_pval",
+                            "test_rsq",
+                            "test_spearmanr_rval",
+                            "test_spearmanr_pval",
+                        ],
+                        [
+                            rsq_train,
+                            popt_train,
+                            rval_train,
+                            pval_train,
+                            rsq,
+                            rval,
+                            pval,
+                        ],
+                    ):
                         neurons_df_temp.at[
-                            roi, f"rsof_{param}_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                            roi,
+                            f"rsof_{param}_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = value
 
     return neurons_df_temp

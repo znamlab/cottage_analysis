@@ -8,8 +8,8 @@ frame1 = [[a1.1, a1.2, a1.3, a1.4],  and frame2 = [[b1.1, b1.2, b1.3, b1.4],
 would be saved on disk as:
 data = [a1.1, a2.1, a3.1, a1.2, a2.2, a3.2, [...], a3.4, b1.1, b2.1, b3.1, [...], b2.4, b3.4]
 
-We want to read this data (either in C or F order) and reshape it so that the pixel information across frames is 
-contiguous. 
+We want to read this data (either in C or F order) and reshape it so that the pixel information across frames is
+contiguous.
 How do we do that?
 
 """

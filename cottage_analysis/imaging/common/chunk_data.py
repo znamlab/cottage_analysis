@@ -5,7 +5,7 @@ Created on Sat May 15 21:30:19 2021
 
 @author: hey2
 
-Chunk data 
+Chunk data
 
 """
 

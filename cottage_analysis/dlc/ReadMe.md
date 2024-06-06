@@ -11,7 +11,7 @@ The nodes have been updated for CUDA 11. Also, it seems better to have an enviro
 New install:
 
 ```
-ml cuDNN/8.4.1.50-CUDA-11.7.0 
+ml cuDNN/8.4.1.50-CUDA-11.7.0
 conda create -n dlc_nogui -c conda-forge python=3.8
 conda activate dlc_nogui
 ```
@@ -19,7 +19,7 @@ conda activate dlc_nogui
 With the `ml` I should have all I need, but tensorflow was throwing lots of library warnings, so I also install the conda version.
 
 ```
-conda install -c conda-forge cudnn=8.4.1.50 cudatoolkit=11.7.0 
+conda install -c conda-forge cudnn=8.4.1.50 cudatoolkit=11.7.0
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/dlc_nogui/lib/
 ```
 
@@ -31,7 +31,7 @@ conda install pip ipython nb_conda jupyter ffmpeg
 pip install deeplabcut
 ```
 
-Run `test_tf_install.py` to check that the GPU is detected as expected. See `slurm_train_dlc.sh` for example slurm with 
+Run `test_tf_install.py` to check that the GPU is detected as expected. See `slurm_train_dlc.sh` for example slurm with
 `ml` and `export`.
 
 ### Camp version
@@ -64,10 +64,10 @@ ml CUDA/10.0.130 cuDNN/7.5.0.56-CUDA-10.0.130 Anaconda3 Tigervnc fluxbox FFmpeg
 vncstart
 ```
 
-Connect to tigervpn and 
+Connect to tigervpn and
 
 ```
-fluxbox & 
+fluxbox &
 cd ~/home/users/blota/code/DeepLabCut/
 conda activate DLC
 python -m deeplabcut
