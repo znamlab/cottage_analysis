@@ -193,7 +193,7 @@ def generate_vs_df(
     photodiode_protocol=5,
     flexilims_session=None,
     project=None,
-    protocol_base = "SpheresPermTubeReward",
+    protocol_base="SpheresPermTubeReward",
     harp_recording=None,
     onix_recording=None,
     conflicts="skip",
@@ -271,34 +271,42 @@ def generate_vs_df(
         if protocol_base == "KellerTube":
             # Define the columns to extract from the frame_log dataframe
             columns_to_extract = ["FrameIndex", "HarpTime", "MouseZ"]
-            
+
             # Check which mismatch column exists and add it to the columns to extract
             if "MismatchMouseZ" in frame_log.columns:
                 columns_to_extract.append("MismatchMouseZ")
             elif "MismatchEyeZ" in frame_log.columns:
                 columns_to_extract.append("MismatchEyeZ")
             else:
-                raise KeyError("Neither 'MismatchMouseZ' nor 'MismatchEyeZ' found in frame_log columns")
-            
+                raise KeyError(
+                    "Neither 'MismatchMouseZ' nor 'MismatchEyeZ' found in frame_log columns"
+                )
+
+            # Check if EyeZ exists in frame_log columns and add it if protocol_base is KellerTube
+            if "EyeZ" in frame_log.columns:
+                columns_to_extract.append("EyeZ")
+
             # Extract the necessary columns
             frame_log_z = frame_log[columns_to_extract].copy()
-            
+
             # Rename the columns accordingly
             rename_dict = {
                 "FrameIndex": "closest_frame",
                 "HarpTime": "harptime_framelog",
-                "MouseZ": "mouse_z"
+                "MouseZ": "mouse_z",
             }
-            
+
             if "MismatchMouseZ" in frame_log.columns:
                 rename_dict["MismatchMouseZ"] = "mismatch_mouse_z"
             elif "MismatchEyeZ" in frame_log.columns:
                 rename_dict["MismatchEyeZ"] = "mismatch_mouse_z"
-            
+
+            if "EyeZ" in frame_log.columns:
+                rename_dict["EyeZ"] = "eye_z"
+
             frame_log_z.rename(columns=rename_dict, inplace=True)
 
         else:
-            
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
             frame_log_z.rename(
                 columns={
@@ -336,7 +344,11 @@ def generate_vs_df(
 
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
     if protocol_base == "KellerTube":
-        frame_log_z.mismatch_mouse_z = frame_log_z.mismatch_mouse_z / 100  # convert cm to m
+        frame_log_z.mismatch_mouse_z = (
+            frame_log_z.mismatch_mouse_z / 100
+        )  # convert cm to m
+        if "eye_z" in frame_log_z.columns:
+            frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
     else:
         frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
 
@@ -360,12 +372,15 @@ def generate_vs_df(
     )
     print(vs_df)
 
-    #The keller stimulus has no paramLog
-    if protocol_base ==  "KellerTube":
+    # The keller stimulus has no paramLog
+    if protocol_base == "KellerTube":
         # Rename
         vs_df.rename(
-        columns={"closest_frame": "monitor_frame", "onset_time": "monitor_harptime"},
-        inplace=True,
+            columns={
+                "closest_frame": "monitor_frame",
+                "onset_time": "monitor_harptime",
+            },
+            inplace=True,
         )
         vs_df.drop(
             columns=[
@@ -378,7 +393,7 @@ def generate_vs_df(
             errors="ignore",
             inplace=True,
         )
-    else: #Stimuli that are not KellerTube do have a ParamLog
+    else:  # Stimuli that are not KellerTube do have a ParamLog
         # Align paramLog with vs_df
         param_log = get_param_log(
             flexilims_session=flexilims_session,
@@ -415,7 +430,10 @@ def generate_vs_df(
             )
         # Rename
         vs_df.rename(
-            columns={"closest_frame": "monitor_frame", "onset_time": "monitor_harptime"},
+            columns={
+                "closest_frame": "monitor_frame",
+                "onset_time": "monitor_harptime",
+            },
             inplace=True,
         )
         vs_df.drop(

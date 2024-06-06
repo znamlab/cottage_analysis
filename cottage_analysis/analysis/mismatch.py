@@ -3,14 +3,70 @@ import flexiznam as flz
 import numpy as np
 import pandas as pd
 import random
+from scipy.stats import zscore, mannwhitneyu
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
 print = partial(print, flush=True)
-from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from cottage_analysis.preprocessing import synchronisation
+
+PROJECT = "663214d08993fd0b6e6b5f1d"
+PROTOCOL = "KellerTube"
+MESSAGES = "harpmessage.bin"
+
+
+def analyse_session(session, flexilims_session=None):
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session, flexilims_session=flexilims_session
+    )
+
+    vs_df_all, imaging_df_all, recordings = sync_all_recordings(
+        session_name=session,
+        flexilims_session=flexilims_session,
+        project=PROJECT,
+        filter_datasets={"anatomical_only": 3},
+        recording_type="two_photon",
+        protocol_base=PROTOCOL,
+        photodiode_protocol=5,
+        return_volumes=True,
+    )
+
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value="two_photon",
+        flexilims_session=flexilims_session,
+    )
+
+    recordings = recordings[recordings.name.str.contains(PROTOCOL)]
+
+    for i, recname in enumerate(recordings.name):
+        recording = flz.get_entity(
+            datatype="recording",
+            name=recname,
+            flexilims_session=flexilims_session,
+        )
+
+        # Add playback attribute
+        is_playback = determine_if_playback(recording, flexilims_session)
+
+        print(
+            "###########################################################################"
+        )
+        print(f"Analysing recording {recording.name}")
+        print(
+            "###########################################################################"
+        )
+
+        closed_loop = imaging_df_all[i]
+
+        analyse_recording(closed_loop, recording, flexilims_session)
 
 
 def format_imaging_df(recording, imaging_df):
@@ -358,9 +414,22 @@ def get_relevant_recordings(
     return recording, harp_recording, onix_rec
 
 
-def plot_mismatch_raster(closed_loop):
-    closed_loop = find_mismatch(closed_loop)
-    closed_loop, indices = create_mismatch_window(
+def analyse_recording(
+    closed_loop, recording, flexilims_session, null_mode="trial_structure", save=True
+):
+    """
+    Main entry point for the quick analysis pipeline. null_mode
+    determineshow to  calculate the null distribution to establish size
+    or significance of mismatch responses: do you randomly sample all
+    the trial or do you take into account that the mismatches only happen
+    at some points during the trial.
+    """
+
+    is_playback = determine_if_playback(recording, flexilims_session)
+
+    print("Estimating mismatch distribution")
+    closed_loop = find_mismatch(closed_loop, is_playback)
+    closed_loop, idxs = create_mismatch_window(
         closed_loop, window_start=5, window_end=20
     )
     neurons, neurons_df = build_neurons_df(closed_loop)
@@ -368,15 +437,77 @@ def plot_mismatch_raster(closed_loop):
         neurons, neurons_df, window_start=5, window_end=20
     )
     mismatch_raster = raster(neurons, misperneuron, window_start=5, window_end=20)
-    rand_raster = make_rand_raster(closed_loop, n_events=200, window_end=10)
-    sorted_mismatch_raster = modulation_sort_raster(rand_raster, mismatch_raster)
-    plot_raster(sorted_mismatch_raster)
+
+    if null_mode == "trial_structure":
+        closed_loop = find_trials(closed_loop)
+        closed_loop = define_window_for_mismatch(closed_loop)
+        indices = generate_plausible_mismatch_indices(closed_loop)
+    else:
+        indices = None
+
+    print("Estimating null distribution")
+    rand_raster, rand_misperneuron = make_rand_raster(
+        closed_loop, n_events=200, window_end=10, indices=indices
+    )
+    sorted_mismatch_raster, modulation_raster = modulation_sort_raster(
+        rand_raster, mismatch_raster
+    )
+    sorted_p = calculate_significance(
+        misperneuron, rand_misperneuron, modulation_raster
+    )
+
+    print("Plotting")
+    rasterfig, rasterax = plot_raster(sorted_mismatch_raster)
+    rasterfig, rasterax, rasterax2 = plot_significance(rasterfig, rasterax, sorted_p)
+    plt.show()
+    popfig, popax = plot_pop_response(sorted_mismatch_raster)
+    plt.show()
+    if not is_playback:
+        sync_loop, trialfig, trialax = check_trials(
+            flexilims_session, recording, closed_loop
+        )
+        plt.show()
+
+    print("Saving...")
+
+    if save:
+        ## save stuff
+
+        processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
+        path = processed / recording.path
+
+        # getting unsorted significance of modulation
+        p = calculate_significance(misperneuron, rand_misperneuron)
+
+        # save dataframe
+        mismatch_df = {"modulation_size": modulation_raster, "p_value": p}
+        mismatch_df = pd.DataFrame(mismatch_df)
+        mismatch_df.to_pickle(str(path / "mismatch_df.pkl"))
+
+        # save mismatch_raster
+        np.save(str(path / "mismatch_raster.npy"), mismatch_raster)
+
+        # save figures
+        rasterfig.savefig(str(path / "raster"))
+        popfig.savefig(str(path / "population"))
+        if not is_playback:
+            trialfig.savefig(str(path / "trials"))
 
 
-def find_mismatch(closed_loop):
+def find_mismatch(closed_loop, is_playback):
+    """
+    A mismatch is the coupling between running speed andopotic flow changing suddently
+    We use that fact to find them in the data. This function adds  diffs  for mouse_z
+    and mismatch_mouse_z, calculates the  ratio and thresholds it to generate a mismatch
+    column in the closed_loop df.
+    """
     # Find how running speed and displayed speed  change
-    closed_loop["mousez_dif"] = np.zeros(len(closed_loop["mouse_z"]))
-    closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["mouse_z"])
+    if is_playback:
+        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["eye_z"]))
+        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["eye_z"])
+    else:
+        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["mouse_z"]))
+        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["mouse_z"])
 
     # Locate points where they decouple
     closed_loop["mismz_dif"] = np.zeros(len(closed_loop["mouse_z"]))
@@ -422,9 +553,10 @@ def create_mismatch_window(
     return closed_loop, indices
 
 
-def build_neurons_df(closed_loop):
+def build_neurons_df(closed_loop, do_zscore=True):
     """
-    Makes a dataframe with the mask for responses.
+    Makes a dataframe of timepoints x dffs. Can save the dffs as a z-score
+    by default.
     """
     # Create the initial DataFrame with range_indicator
     neurons_df = pd.DataFrame(
@@ -445,6 +577,12 @@ def build_neurons_df(closed_loop):
         }
     )
 
+    if do_zscore:
+        neuron_array = zscore(neuron_data.to_numpy())
+        print("Z-scoring the dataframe")
+        for i in tqdm(range(neurons)):
+            neuron_data[f"neuron{i}"] = neuron_array[:, i]
+
     # Concatenate the range_indicator and neuron data
     neurons_df = pd.concat([neurons_df, neuron_data], axis=1)
 
@@ -454,6 +592,11 @@ def build_neurons_df(closed_loop):
 def build_mismatches_per_neuron_list(
     neurons, neurons_df, window_start=5, window_end=10, indices=None
 ):
+    """
+    Builds a  really useful object: a listof the responses of all neurons
+    around a time window to a particular event.
+    """
+
     mismatches_per_neuron = list(np.zeros(neurons))
 
     window = window_start + window_end
@@ -506,10 +649,13 @@ def build_mismatches_per_neuron_list(
             start_idx = max(0, idx - window_start)
             end_idx = min((nframes - 1), idx + window_end)
             for neuron in range(neurons):
-                mismatches_per_neuron[neuron][idx_mismatch, :] = neurons_df[
-                    f"neuron{neuron}"
-                ][start_idx:end_idx]
-            # print(f"start and end idx: {(start_idx, end_idx)}")
+                # You need to make sure the window always has the right size.
+                slice_data = neurons_df[f"neuron{neuron}"][start_idx:end_idx].values
+                if len(slice_data) < window:
+                    slice_data = np.pad(
+                        slice_data, (0, window - len(slice_data)), "constant"
+                    )
+                mismatches_per_neuron[neuron][idx_mismatch, :] = slice_data
 
     return mismatches_per_neuron
 
@@ -517,6 +663,9 @@ def build_mismatches_per_neuron_list(
 def raster(
     neurons, mismatches_per_neuron, n_neurons=100, window_start=5, window_end=10
 ):
+    """
+    Generates a raster array aligned to  an  event.
+    """
     window = window_start + window_end
 
     # initialise
@@ -535,6 +684,9 @@ def raster(
 
 
 def plot_partial_raster(mismatch_raster, n_neurons=100, window_start=5, window_end=10):
+    """
+    Plots a raster in  which you can  see the first n neurons.
+    """
     start = 0
     end = n_neurons
 
@@ -550,22 +702,67 @@ def plot_partial_raster(mismatch_raster, n_neurons=100, window_start=5, window_e
     plt.show()
 
 
-def plot_raster(mismatch_raster, vmin=2, vmax=-0.5):
+def plot_raster(mismatch_raster, vmin=-1, vmax=1, do_zscore=True):
+    """
+    Plots a raster  of mismatch  responses with useful  defaults.
+    """
     fig = plt.figure(figsize=(30, 10), facecolor="w")
-    ax = fig.add_subplot(111)
+    ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])  # Adjust these values as needed
     im = ax.imshow(
         mismatch_raster, cmap="coolwarm", vmin=vmin, vmax=vmax, aspect="auto"
     )
 
-    ax.set_title(f"Raster plot of neurons aligned to mismatch")
-    ax.set_xlabel("Frames")
-    ax.set_ylabel("Neurons")
-    fig.colorbar(im, label="dff")
+    ax.set_title(f"Raster plot of neurons aligned to mismatch", size=30)
+    ax.set_xlabel("Frames", size=25)
+    ax.set_ylabel("Neurons", size=25)
+    cbar = fig.colorbar(im, ax=ax, orientation="vertical")
+    cbar.ax.tick_params(labelsize=14)  # Change the colorbar tick labels size
+
+    if do_zscore:
+        # Optionally set colorbar label with custom size
+        cbar.set_label("Z-score", fontsize=25)
+    else:
+        cbar.set_label("Dff", fontsize=25)
     ax.axvline(5, color="grey")
-    plt.show()
+
+    return fig, ax
+
+
+def plot_pop_response(sorted_mismatch_raster, how_many=None):
+    fig, ax = plt.subplots()
+
+    ax.plot(np.mean(sorted_mismatch_raster, axis=0), label="Total")
+
+    if how_many is None:
+        how_many = int(0.1 * len(sorted_mismatch_raster))
+
+    ax.plot(
+        np.mean(sorted_mismatch_raster[:how_many, :], axis=0), label=f"First {how_many}"
+    )
+    ax.plot(
+        np.mean(sorted_mismatch_raster[-how_many:, :], axis=0),
+        label=f"Bottom {how_many}",
+    )
+
+    ax.set_title("Population response")
+    ax.set_ylabel("Z-score")
+    ax.set_xlabel("Frames")
+    ax.axvline(5, color="red", alpha=0.3, label="Mismatch onset")
+    ax.axvline(15, color="green", alpha=0.3, label="End of response window")
+    ax.axhline(0, color="green", alpha=0.3)
+
+    ax.legend()
+
+    return fig, ax
 
 
 def modulation_sort_raster(rand_raster, mismatch_raster):
+    """
+    Using a raster of neurons aligned to randomly triggered events,
+    sorts neurons based on how different is their response to mismatch
+    compared  to their response to  random events. This is the Attinger, 2017
+    way to asess mismatch modulation.
+    """
     rand_avg = np.mean(rand_raster, axis=1)
     mismatch_avg = np.mean(mismatch_raster[:, 8:17], axis=1)
     modulation_raster = mismatch_avg - rand_avg
@@ -575,11 +772,17 @@ def modulation_sort_raster(rand_raster, mismatch_raster):
     # Sort the array based on the calculated differences
     sorted_mismatch_raster = mismatch_raster[sorted_indices]
 
-    return sorted_mismatch_raster
+    return sorted_mismatch_raster, modulation_raster
 
 
-def make_rand_raster(closed_loop, n_events=100, window_end=5):
-    closed_loop = attach_randevents_to_recording(closed_loop, n_events=n_events)
+def make_rand_raster(closed_loop, n_events=100, window_end=5, indices=None):
+    """
+    Builds an  object like mismatch_raster, buut for neurons aligned to
+    randomly triggered events.
+    """
+    closed_loop = attach_randevents_to_recording(
+        closed_loop, indices, n_events=n_events
+    )
     rand_rec, indices = create_mismatch_window(
         closed_loop, window_start=0, window_end=window_end, event="randevents"
     )
@@ -591,7 +794,78 @@ def make_rand_raster(closed_loop, n_events=100, window_end=5):
         neurons, rand_misperneuron, window_start=0, window_end=window_end
     )
 
-    return rand_raster
+    return rand_raster, rand_misperneuron
+
+
+def find_trials(closed_loop):
+    """
+    Calculate, based on corridor length and ITI, where
+    there should be trial boundaries. Useful for  estimating  trial structure where
+    it was not saved. Checks on check_trials. Assumes 6m-2s
+    """
+
+    # Add a new column for the trial indicator
+    closed_loop["trial_indicator"] = 0
+
+    # Define the thresholds
+    distance_threshold = 6  # six meters
+    time_threshold = 2  # 3
+
+    # Initialize variables for trial tracking
+    start_distance = 0
+    current_trial = 1
+    n_rows = len(closed_loop)
+    print(f"Finding trials for {n_rows} rows")
+    i = 0
+
+    while i < n_rows:
+        current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
+        # Assign trial indicator for the next six meters
+        while i < n_rows and current_distance <= distance_threshold:
+            closed_loop.loc[i, "trial_indicator"] = current_trial
+            i += 1
+            if i < n_rows:
+                current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
+
+        # Calculate the ending harptime for the current trial
+        if i < n_rows:
+            end_harptime = closed_loop.loc[i - 1, "mouse_z_harptime"]
+
+        # Assign 0 for the next three seconds
+        while (
+            i < n_rows
+            and closed_loop.loc[i, "mouse_z_harptime"] <= end_harptime + time_threshold
+        ):
+            closed_loop.loc[i, "trial_indicator"] = 0
+            i += 1
+
+        # Move to the next trial
+        current_trial += 1
+        if i < n_rows:
+            start_distance = closed_loop["mouse_z"].iloc[i]
+
+    return closed_loop
+
+
+def check_trials(flexilims_session, recording, closed_loop):
+    """
+    Checks the trial structure inferred by find_trials against what was saved
+    in MismatchDebug. We use 6m-ITI parceling to delimit the trace into trials.
+    Now, we have trials. Are they good? We expect the old mismatch window to
+    end a consistent little bit before the trial ends.
+
+    Out:
+        sync_loop : closed_loop df with the added IsMismatch column.
+        fig, ax :  for looking closely at the verification plot.
+    """
+
+    MismatchDebug = get_mismatch_debug_file(flexilims_session, recording)
+
+    sync_loop = synchronize_dataframes(closed_loop, MismatchDebug)
+
+    fig, ax = plot_synchronized_data(closed_loop, sync_loop)
+
+    return sync_loop, fig, ax
 
 
 def calculate_difference(row, window_start=5, window_end=10):
@@ -601,14 +875,222 @@ def calculate_difference(row, window_start=5, window_end=10):
     return last_5_sum - first_5_sum
 
 
-def generate_random_events(n_frames, n_events=100):
-    return [random.randint(0, n_frames - 1) for _ in range(n_events)]
+def generate_random_events(n_frames, n_events=100, indices=None):
+    if indices is None:
+        values = [random.randint(0, n_frames - 1) for _ in range(n_events)]
+    else:
+        values = np.random.choice(indices, size=n_events)
+
+    return values
 
 
-def attach_randevents_to_recording(closed_loop, n_events=100):
+def attach_randevents_to_recording(closed_loop, indices, n_events=100):
     n_frames = len(closed_loop)
-    events = generate_random_events(n_frames, n_events)
+    events = generate_random_events(n_frames, n_events, indices)
     closed_loop["randevents"] = 0
     closed_loop.loc[events, "randevents"] = 1
 
     return closed_loop
+
+
+def get_mismatch_debug_file(flexilims_session, recording):
+    raw = flz.get_data_root("raw", flexilims_session=flexilims_session)
+
+    ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+    )
+
+    filename = ds.csv_files["DebugMismatchDis"]
+
+    MismatchDebug = pd.read_csv(raw / recording.path / filename)
+
+    return MismatchDebug
+
+
+def synchronize_dataframes(df_a, df_b):
+    df_a["IsMismatch"] = 0
+
+    print("Iterating over {len(df_a)} rows for synchronization")
+
+    for i, (idx, row) in tqdm(enumerate(df_a.iterrows())):
+        value_a = row["mismatch_mouse_z"] * 100
+
+        # Find the row in df_b where the value in 'variable1' is closest to value_a
+        closest_row = df_b.iloc[(df_b["MismatchDistance"] - value_a).abs().argmin()]
+        # print((closest_row["MismatchDistance"], value_a))
+
+        # Combine the rows
+        df_a["IsMismatch"][i] = closest_row["IsMismatch"]
+
+    return df_a
+
+
+def plot_synchronized_data(closed_loop, sync_loop, start=0, end=-1):
+    fig, ax = plt.subplots(figsize=(40, 10))  # Very large figure
+
+    ax.plot(
+        closed_loop["mouse_z"][start:end],
+        closed_loop["trial_indicator"][start:end],
+        label="Trial indicator",
+    )
+    ax.plot(
+        closed_loop["mouse_z"][start:end],
+        closed_loop["mismatch"][start:end] * 30,
+        label="Mismatch",
+    )
+    ax.plot(
+        closed_loop["mouse_z"][start:end],
+        sync_loop["IsMismatch"][start:end] * 30,
+        label="Old mismatch window",
+    )
+
+    ax.legend()
+    ax.set_xlabel("Mouse Z")
+    ax.set_ylabel("Values")
+    ax.set_title("Synchronized Data Plot")
+
+    return fig, ax
+
+
+def generate_plausible_mismatch_indices(closed_loop):
+    """
+    After define_window_for_mismatch, find the indices to choose
+    the mismatch null distribution.
+    Out:
+
+        indices(list of int):  all  the possible indices where there
+        could have been a mismatch given trial structure.
+    """
+    mis_closed_loop = closed_loop[closed_loop["mismatch_window"]]
+    indices = mis_closed_loop.index.tolist()
+    return indices
+
+
+def define_window_for_mismatch(closed_loop, corridor_length=6):
+    """
+    Mismatches appear randomly drawn from a uniform distribution
+    that is way bigger than the window of positions in which they
+    can be displayed. The overlap between the two is  p(mismatch).
+
+    No mismatches can be displayed in the first third of the
+    corridor, or in the last 5/6. We aggregate all those indices,
+    and then sample from the list of indices to generate the null
+    distribution.
+
+    This defines the mismatch window. Needs the trial_indicator column
+
+    Out:
+        closed_loop(df),  but with a column called mismatch_window (bool)
+        which is true where there could have been a
+    """
+
+    # Add a new column for the trial indicator
+    closed_loop["mismatch_window"] = False
+    closed_loop["in_trial"] = np.where(closed_loop["trial_indicator"] > 0, True, False)
+
+    # Define the thresholds
+    beggining_threshold = corridor_length * (1 / 3)
+    end_threshold = corridor_length * (5 / 6)
+
+    # Initialize variables for trial tracking
+    start_distance = 0
+    n_rows = len(closed_loop)
+    print(n_rows)
+    i = 0
+
+    while i < n_rows:
+        current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
+        in_trial = closed_loop["in_trial"].iloc[i]
+
+        if (
+            closed_loop["in_trial"].iloc[i] == 1
+            and closed_loop["in_trial"].iloc[i - 1] == 0
+        ):
+            start_distance = closed_loop["mouse_z"].iloc[i]
+
+        # Assign mismatch window indicator
+        while (
+            i < n_rows
+            and current_distance >= beggining_threshold
+            and current_distance < end_threshold
+        ):
+            in_trial = closed_loop["in_trial"].iloc[i]
+
+            if in_trial:
+                closed_loop.loc[i, "mismatch_window"] = True
+            i += 1
+            if i < n_rows:
+                current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
+
+        i += 1
+
+    return closed_loop
+
+
+def calculate_significance(misperneuron, rand_misperneuron, modulation_raster=None):
+    """
+    Calculates,  for each neuron, whether  it's significanttly modulated  by
+    It compares the distribution of mean responses to mismatches and random  events, and
+    applies a Mann-Whitney test to see if  they are drawn from the same distr. It outputs
+    the p-values of all the comparisons, either sortedby response size (providing a modulation_raster)
+    or with the order in neurons_df (leting modulation_raster default to None).
+    """
+
+    neuron_p = np.zeros(len(misperneuron))
+
+    for neuron in tqdm(range(len(misperneuron))):
+        mis_responses = misperneuron[neuron][:, 5:15]  # keep the rersponse part
+        rand_responses = rand_misperneuron[neuron]
+
+        mis_mean = np.mean(mis_responses, axis=1)
+        rand_mean = np.mean(rand_responses, axis=1)
+        p = mannwhitneyu(mis_mean, rand_mean)
+        neuron_p[neuron] = p.pvalue
+
+    if modulation_raster is not None:
+        sorted_indices = np.argsort(-modulation_raster)
+        sorted_p = neuron_p[sorted_indices]
+
+        return sorted_p
+
+    else:
+        return neuron_p
+
+
+def plot_significance(fig, ax, sorted_p, alpha=0.05):
+    # Prepare for plotting,  threshold  p-values
+    plot_sorted_p = np.where(sorted_p < alpha, 1, 0)
+    plot_sorted_p = plot_sorted_p[np.newaxis, :]
+
+    # Edit raster plot to add  significance.
+    ax2 = fig.add_axes(
+        [0.06, 0.1, 0.03, 0.8], sharey=ax
+    )  # Adjust these values as needed
+    ax2.imshow(plot_sorted_p.T, aspect="auto", cmap="binary")
+    ax.yaxis.set_visible(False)
+    ax2.xaxis.set_visible(False)
+    ax2.set_ylabel("Neurons", size=25)
+
+    return fig, ax, ax2
+
+
+def determine_if_playback(recording, flexilims_session):
+    ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+    )
+    attributes = ds.extra_attributes
+    if "playback" in recording.name:
+        attributes["playback"] = True
+    else:
+        attributes["playback"] = False
+
+    ds.extra_attributes = attributes
+    ds.update_flexilims(mode="overwrite")
+
+    return attributes["playback"]
