@@ -520,6 +520,16 @@ def find_mismatch(closed_loop, is_playback):
 
     closed_loop.drop(columns={"mismz_dif", "mousez_dif"})
 
+    # Filter noise:
+    print("Filtering blips")
+    for i in tqdm(range(1, len(closed_loop))):  # can't happen in the first  value
+        if (
+            closed_loop["mismatch"][i] == 1
+            and closed_loop["mismatch"][i - 1] == 0
+            and closed_loop["mismatch"][i + 1] == 0
+        ):
+            closed_loop["mismatch"][i] = 0
+
     return closed_loop
 
 
@@ -819,6 +829,8 @@ def find_trials(closed_loop):
     i = 0
 
     while i < n_rows:
+        while np.isnan(closed_loop["mouse_z"].iloc[i]):
+            i += 1
         current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
         # Assign trial indicator for the next six meters
         while i < n_rows and current_distance <= distance_threshold:
