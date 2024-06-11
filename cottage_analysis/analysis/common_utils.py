@@ -222,8 +222,10 @@ def find_thresh_sequence(
     shift,
     threshold_min=None,
     threshold_max=None,
+    mode="all",
 ):
-    """Find a sequance within an array where the values are below a threshold for a certain length.
+    """Find a sequance within an array where before the indices, either the values are all within a range for a certain length, or the average of the previous values are within a range.
+       For example, if shift = length = 15, the index indicates the current frame and the previous 14 frames are within a certain range.
 
     Args:
         array (np.1darray): array to be searched
@@ -231,28 +233,43 @@ def find_thresh_sequence(
         shift (int): length of shift to the right (positive) or left (negative); positive shift = the sequence is in the past
         threshold_min (float, optional): min threshold. Defaults to None.
         threshold_max (float, optional): max threshold. Defaults to None.
+        mode (str, optional): "all" or "average". Defaults to "all". All: all values in the previous sequence are within the threshold. Average: the average of the values in the previous sequence is within the threshold.
 
     Returns:
         _type_: _description_
     """
-    # shift an array by the shift amount
+    assert mode in ["all", "average"], "mode must be either 'all' or 'average'"
     if (threshold_min is None) and (threshold_max is None):
         print("WARNING: No threshold is given. Full array is returned.")
         indices = np.arange(len(array))
     else:
-        if threshold_min is None:
-            mask = array < threshold_max
-        elif threshold_max is None:
-            mask = array > threshold_min
-        else:
-            mask = (array > threshold_min) & (array < threshold_max)
-        conv = np.convolve(mask, np.ones(length, dtype=int), "valid")
-        indices = np.where(conv >= length)[0]
-        indices = indices + int(shift) - 1
+        if mode == "all":
+            # shift an array by the shift amount
+            if threshold_min is None:
+                mask = array < threshold_max
+            elif threshold_max is None:
+                mask = array > threshold_min
+            else:
+                mask = (array > threshold_min) & (array < threshold_max)
+            conv = np.convolve(mask, np.ones(length, dtype=int), "valid")
+            indices = np.where(conv >= length)[0]
+            indices = indices + int(shift) - 1
 
-        # Get rid of the indices that's larger than the length of the array
-        indices = indices[indices < len(array)]
+            # Get rid of the indices that's larger than the length of the array
+            indices = indices[indices < len(array)]
+        elif mode == "average":
+            # Calculate the rolling average according to the (length-1) frames before and current frame
+            rolling_avg = pd.Series(array).rolling(length).mean()
 
+            # Find indices where the rolling average within the range
+            if threshold_min is None:
+                mask = rolling_avg < threshold_max
+            elif threshold_max is None:
+                mask = rolling_avg > threshold_min
+            else:
+                mask = (rolling_avg > threshold_min) & (rolling_avg < threshold_max)
+            indices = np.where(mask==1)[0] - int(length) + int(shift)
+        
         return indices
 
 
