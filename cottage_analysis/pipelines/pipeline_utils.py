@@ -212,7 +212,7 @@ def load_and_fit(
     # save fit_df
     # create name from model and choose_trials
     suffix = f"{model}"
-    if choose_trials is not None:
+    if isinstance(choose_trials, str):
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
     target = neurons_ds.path_full.with_name(
@@ -232,6 +232,8 @@ def merge_fit_dataframes(
     conflicts="skip",
     prefix="fit_rs_of_tuning_",
     suffix="",
+    exclude_keywords=["recording","openclosed"], 
+    include_keywords=[],
     column_suffix=None,
     filetype=".pickle",
     target_filename="neurons_df.pickle",
@@ -260,19 +262,32 @@ def merge_fit_dataframes(
 
     # load the main neurons_df
     neurons_df = pd.read_pickle(neurons_ds.path_full)
-    # to_remove = []
 
     search_str = f"{prefix}*{suffix}{filetype}"
+    merge_df_names = []
     for df_name in neurons_ds.path_full.parent.glob(search_str):
+        if exclude_keywords: 
+            # if the name contains any keywords that needs to be excluded
+            if any([keyword in str(df_name) for keyword in exclude_keywords]):
+                print(f"Exclude files {df_name}")
+            # if the name does not contain any keywords that needs to be included
+            elif include_keywords:
+                if not any([keyword in str(df_name) for keyword in include_keywords]):
+                    print(f"Exclude files {df_name}")
+                else:
+                    merge_df_names.append(df_name)
+        else:
+            merge_df_names.append(df_name)
+        
+    for df_name in merge_df_names:
         print(f"Merging {df_name}...")
-        # to_remove.append(df_name)
         df = pd.read_pickle(df_name)
         assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
         for col in df.columns:
             if col == "roi":
                 continue
             if column_suffix is not None:
-                new_col = col + '_'.join(str(df_name.stem).split('_')[column_suffix:])
+                new_col = col + '_' + '_'.join(str(df_name.stem).split('_')[column_suffix:])
             else:
                 new_col = col
             if new_col in neurons_df.columns:
@@ -294,7 +309,7 @@ def merge_fit_dataframes(
 
 @slurm_it(
     conda_env=CONDA_ENV,
-    slurm_options={"mem": "16G", "time": "9:00:00", "partition": "ncpu"},
+    slurm_options={"mem": "16G", "time": "6:00:00", "partition": "ncpu"},
 )
 def run_basic_plots(project, session_name, photodiode_protocol):
     """Run basic plots on a session."""
