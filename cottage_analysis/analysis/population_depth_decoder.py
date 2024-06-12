@@ -143,7 +143,6 @@ def svm_classifier_hyperparam_tuning(
     best_params = {"C": Cs[0], "gamma": gammas[0]}
     if kernel == "linear":
         for C in Cs:
-            print(f"Fitting C{C}...")
             clf = SVC(C=C, kernel=kernel)
             clf.fit(X_train, y_train)
             y_pred = clf.predict(X_val)
@@ -157,7 +156,6 @@ def svm_classifier_hyperparam_tuning(
     else:
         for C in Cs:
             for gamma in gammas:
-                print(f"Fitting C{C}, gamma{gamma}...")
                 clf = SVC(C=C, gamma=gamma, kernel=kernel)
                 clf.fit(X_train, y_train)
                 y_pred = clf.predict(X_val)
@@ -191,9 +189,9 @@ def test_svm_classifier(
     y_pred = clf.predict(X_test)
 
     return clf, y_pred
-    
 
-def depth_decoder(
+
+def preprocess_data(    
     trials_df,
     flexilims_session,
     session_name,
@@ -204,10 +202,7 @@ def depth_decoder(
     downsample_window=0.5,
     random_state=42,
     kernel="linear",
-    Cs=[0.1, 1, 10],
-    gammas=[1, 0.1, 0.01],
-    k_folds=5,
-):
+    k_folds=5,):
     # set test_size:
     if k_folds == 1:
         test_size = 0.2
@@ -247,6 +242,45 @@ def depth_decoder(
         closed_loop=closed_loop,
     )
     depth_list = np.sort(trials_df.depth.unique())
+        
+    # split train test val (test 0.2, val 0.2, train 0.6)
+    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all = split_train_test_val(
+        trials_df=trials_df, 
+        k_folds=k_folds,
+        random_state=random_state, 
+        trial_average=trial_average)
+    
+    return dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, iscell, depth_list
+
+
+def depth_decoder(
+    trials_df,
+    flexilims_session,
+    session_name,
+    closed_loop=1,
+    trial_average=False,
+    rolling_window=0.5,
+    frame_rate=15,
+    downsample_window=0.5,
+    random_state=42,
+    kernel="linear",
+    Cs=[0.1, 1, 10],
+    gammas=[1, 0.1, 0.01],
+    k_folds=5,
+):
+    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, iscell, depth_list = preprocess_data(
+        trials_df=trials_df,
+        flexilims_session=flexilims_session,
+        session_name=session_name,
+        closed_loop=closed_loop,
+        trial_average=trial_average,
+        rolling_window=rolling_window,
+        frame_rate=frame_rate,
+        downsample_window=downsample_window,
+        random_state=random_state,
+        kernel=kernel,
+        k_folds=k_folds,
+    )
 
     # loop through each fold
     y_preds_all = []
@@ -260,15 +294,9 @@ def depth_decoder(
             "C": [],
             "gamma": [],
         }
-        
-    # split train test val (test 0.2, val 0.2, train 0.6)
-    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all = split_train_test_val(
-        trials_df=trials_df, 
-        k_folds=k_folds,
-        random_state=random_state, 
-        trial_average=trial_average)
     
     for i in range(k_folds):
+        print(f"Fitting fold {i+1}...")
         # only select current fold and cells
         dff_train = dff_train_all[i][:, iscell]
         dff_val = dff_val_all[i][:, iscell]
