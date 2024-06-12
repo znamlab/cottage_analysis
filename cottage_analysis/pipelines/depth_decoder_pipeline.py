@@ -52,6 +52,16 @@ def main(
         project=project,
         conflicts=conflicts,
     )
+    suite2p_datasets = flz.get_datasets(
+        origin_name=session_name,
+        dataset_type="suite2p_rois",
+        project_id=project,
+        flexilims_session=flexilims_session,
+        return_dataseries=False,
+        filter_datasets={"anatomical_only": 3},
+    )
+    suite2p_dataset = suite2p_datasets[0]
+    frame_rate = suite2p_dataset.extra_attributes["fs"]
 
     # Synchronisation
     print("---Start synchronisation...---")
@@ -68,7 +78,7 @@ def main(
 
     # Run depth decoder
     decoder_dict = {}
-    for closed_loop in [0, 1]:
+    for closed_loop in np.sort(trials_df_all.closed_loop.unique()):
         if closed_loop:
             sfx = "_closedloop"
         else:
@@ -81,12 +91,12 @@ def main(
             closed_loop=closed_loop,
             trial_average=False,
             rolling_window=0.5,
-            frame_rate=15,
+            frame_rate=frame_rate,
             downsample_window=0.5,
-            test_size=0.2,
             random_state=42,
             kernel="linear",
             Cs=np.logspace(-3, 3, 7),
+            k_folds=5,
         )
         print(f"Accuracy{sfx}: {acc}")
         decoder_dict[f"accuracy{sfx}"] = acc
