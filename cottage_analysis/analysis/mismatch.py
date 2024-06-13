@@ -3,7 +3,7 @@ import flexiznam as flz
 import numpy as np
 import pandas as pd
 import random
-from scipy.stats import zscore, mannwhitneyu
+from scipy.stats import zscore, mannwhitneyu, pearsonr
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -419,16 +419,19 @@ def analyse_recording(
 ):
     """
     Main entry point for the quick analysis pipeline. null_mode
-    determineshow to  calculate the null distribution to establish size
+    determines how to  calculate the null distribution to establish size
     or significance of mismatch responses: do you randomly sample all
     the trial or do you take into account that the mismatches only happen
     at some points during the trial.
     """
 
     is_playback = determine_if_playback(recording, flexilims_session)
+    is_multimismatch = determine_if_multimismatch(recording, flexilims_session)
 
     print("Estimating mismatch distribution")
-    closed_loop = find_mismatch(closed_loop, is_playback)
+    closed_loop = find_mismatch(
+        closed_loop, is_playback, recording, flexilims_session, is_multimismatch
+    )
     closed_loop, idxs = create_mismatch_window(
         closed_loop, window_start=5, window_end=20
     )
@@ -496,23 +499,14 @@ def analyse_recording(
 
 def find_mismatch(closed_loop, is_playback):
     """
-    A mismatch is the coupling between running speed andopotic flow changing suddently
+    A mismatch is the coupling between running speed and optic flow changing suddently
     We use that fact to find them in the data. This function adds  diffs  for mouse_z
     and mismatch_mouse_z, calculates the  ratio and thresholds it to generate a mismatch
     column in the closed_loop df.
     """
-    # Find how running speed and displayed speed  change
-    if is_playback:
-        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["eye_z"]))
-        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["eye_z"])
-    else:
-        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["mouse_z"]))
-        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["mouse_z"])
 
-    # Locate points where they decouple
-    closed_loop["mismz_dif"] = np.zeros(len(closed_loop["mouse_z"]))
-    closed_loop.loc[1:, "mismz_dif"] = np.diff(closed_loop["mismatch_mouse_z"])
-    closed_loop["mism_ratio"] = closed_loop["mousez_dif"] / closed_loop["mismz_dif"]
+    closed_loop = mismatch_ratio(closed_loop, is_playback)
+
     closed_loop["mismatch"] = (
         (closed_loop["mism_ratio"] > 1.2) | (closed_loop["mism_ratio"] < -1000)
     ).astype(int)
@@ -529,6 +523,23 @@ def find_mismatch(closed_loop, is_playback):
             and closed_loop["mismatch"][i + 1] == 0
         ):
             closed_loop["mismatch"][i] = 0
+
+    return closed_loop
+
+
+def mismatch_ratio(closed_loop, is_playback):
+    # Find how running speed and displayed speed change
+    if is_playback:
+        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["eye_z"]))
+        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["eye_z"])
+    else:
+        closed_loop["mousez_dif"] = np.zeros(len(closed_loop["mouse_z"]))
+        closed_loop.loc[1:, "mousez_dif"] = np.diff(closed_loop["mouse_z"])
+
+    # Locate points where they decouple
+    closed_loop["mismz_dif"] = np.zeros(len(closed_loop["mouse_z"]))
+    closed_loop.loc[1:, "mismz_dif"] = np.diff(closed_loop["mismatch_mouse_z"])
+    closed_loop["mism_ratio"] = closed_loop["mousez_dif"] / closed_loop["mismz_dif"]
 
     return closed_loop
 
@@ -719,7 +730,12 @@ def plot_raster(mismatch_raster, vmin=-1, vmax=1, do_zscore=True):
     fig = plt.figure(figsize=(30, 10), facecolor="w")
     ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])  # Adjust these values as needed
     im = ax.imshow(
-        mismatch_raster, cmap="coolwarm", vmin=vmin, vmax=vmax, aspect="auto"
+        mismatch_raster,
+        cmap="coolwarm",
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+        interpolation="nearest",
     )
 
     ax.set_title(f"Raster plot of neurons aligned to mismatch", size=30)
@@ -925,7 +941,7 @@ def get_mismatch_debug_file(flexilims_session, recording):
 def synchronize_dataframes(df_a, df_b):
     df_a["IsMismatch"] = 0
 
-    print("Iterating over {len(df_a)} rows for synchronization")
+    print(f"Iterating over {len(df_a)} rows for synchronization")
 
     for i, (idx, row) in tqdm(enumerate(df_a.iterrows())):
         value_a = row["mismatch_mouse_z"] * 100
@@ -971,12 +987,14 @@ def generate_plausible_mismatch_indices(closed_loop):
     """
     After define_window_for_mismatch, find the indices to choose
     the mismatch null distribution.
+
     Out:
 
         indices(list of int):  all  the possible indices where there
         could have been a mismatch given trial structure.
     """
     mis_closed_loop = closed_loop[closed_loop["mismatch_window"]]
+    mis_closed_loop = closed_loop[closed_loop["range_indicator"] == 0]
     indices = mis_closed_loop.index.tolist()
     return indices
 
@@ -1032,7 +1050,9 @@ def define_window_for_mismatch(closed_loop, corridor_length=6):
             in_trial = closed_loop["in_trial"].iloc[i]
 
             if in_trial:
-                closed_loop.loc[i, "mismatch_window"] = True
+                closed_loop.loc[i : i + 7, "mismatch_window"] = True
+                # Because mismatches can happen at the last moment of the window, we
+                # add room for one more mismatch.
             i += 1
             if i < n_rows:
                 current_distance = closed_loop["mouse_z"].iloc[i] - start_distance
@@ -1106,3 +1126,659 @@ def determine_if_playback(recording, flexilims_session):
     ds.update_flexilims(mode="overwrite")
 
     return attributes["playback"]
+
+
+############
+
+### DEPTH ANALYSIS
+
+############
+# This containns code for joining the mismatch with the depth analysis
+
+
+def build_depth_df(session, index=0, flexilims_session=None):
+    """
+    Finds the adequate files for a particular session, then joins mismatch information
+    with depth information.
+
+    Args:
+        session: the experimental session name
+        index: which recording within the session is used (we don't duplicate neurons). Defaults
+        to the first
+        flexilims_session:
+
+    Out:
+        depth_df
+
+    """
+
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session, flexilims_session=flexilims_session
+    )
+
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value="two_photon",
+        flexilims_session=flexilims_session,
+    )
+
+    recordings = recordings[recordings.name.str.contains(PROTOCOL)]
+    i = index
+    recname = recordings.name[i]
+
+    recording = flz.get_entity(
+        datatype="recording",
+        name=recname,
+        flexilims_session=flexilims_session,
+    )
+
+    processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
+    yiran_path = processed / exp_session.path / "neurons_df.pickle"
+    yiran_df = pd.read_pickle(yiran_path)
+
+    mismatch_path = processed / recording.path / "mismatch_df.pkl"
+    mismatch_df = pd.read_pickle(mismatch_path)
+
+    depth_df = {
+        "preferred_depth_closedloop": yiran_df["preferred_depth_closedloop"],
+        "depth_tuning_test_spearmanr_pval_closedloop": yiran_df[
+            "depth_tuning_test_spearmanr_pval_closedloop"
+        ],
+        "depth_tuning_test_spearmanr_rval_closedloop": yiran_df[
+            "depth_tuning_test_spearmanr_rval_closedloop"
+        ],
+        "mis_modulation_size": mismatch_df["modulation_size"],
+        "mis_p_value": mismatch_df["p_value"],
+    }
+
+    depth_df = pd.DataFrame(depth_df)
+
+    return depth_df
+
+
+def process_depth_df(depth_df, threshold=0.05):
+    """
+    Keeps only the neurons that are significantly modulated by depth and mismatch. Also splits
+    mismatch cells into positive and negative populations.
+    """
+    sig_depth_df = depth_df[
+        depth_df["depth_tuning_test_spearmanr_pval_closedloop"] < threshold
+    ]
+    sig_depth_df = sig_depth_df[
+        sig_depth_df["depth_tuning_test_spearmanr_rval_closedloop"] > 0
+    ]
+    sig_depth_df = sig_depth_df[sig_depth_df["mis_p_value"] < threshold]
+
+    positive_mismatch = sig_depth_df[sig_depth_df["mis_modulation_size"] > 0]
+    negative_mismatch = sig_depth_df[sig_depth_df["mis_modulation_size"] < 0]
+
+    return sig_depth_df, positive_mismatch, negative_mismatch
+
+
+def plot_correlation_with_fit(sig_depth_df):
+    """
+    Calculates the Pearson correlation and produces a line of best fit in a depth x mismatch
+    plot.
+    """
+
+    log_sig_preferred_depth = np.log10(sig_depth_df["preferred_depth_closedloop"])
+
+    fig, ax = plt.subplots(facecolor="white")
+
+    # Scatter plot
+    ax.scatter(log_sig_preferred_depth, sig_depth_df["mis_modulation_size"], marker=".")
+    ax.set_ylabel("Mismatch Modulation")
+    ax.set_xlabel("Log Preferred Depth")
+
+    # Calculate correlation
+    corr_coef, p_value = pearsonr(
+        log_sig_preferred_depth, sig_depth_df["mis_modulation_size"]
+    )
+
+    # Linear fit
+    fit = np.polyfit(log_sig_preferred_depth, sig_depth_df["mis_modulation_size"], 1)
+    fit_fn = np.poly1d(fit)
+
+    # Plot the best fit line
+    ax.plot(
+        log_sig_preferred_depth,
+        fit_fn(log_sig_preferred_depth),
+        color="red",
+        label=f"Best fit line: y={fit[0]:.2f}x + {fit[1]:.2f}",
+    )
+
+    # Display correlation coefficient
+    ax.set_title(f"Correlation: {corr_coef:.2f} (p-value: {p_value:.2e})")
+    ax.legend()
+
+    return fig, ax
+
+
+def plot_differential_histograms(positive_mismatch, negative_mismatch):
+    """
+    Plots the distribution of depth preferences foor positive and negative mismatch cells. Tests
+    that the two histograms are drawn from different distributions with a Mann-Whitney U.
+    """
+
+    fig, ax = plt.subplots(1, 2, sharex=True, facecolor="white")
+    ax[0].hist(np.log10(positive_mismatch["preferred_depth_closedloop"]), bins=100)
+    ax[0].set_title(f"Positive mismatch, n={len(positive_mismatch)}")
+    ax[0].set_xlim((-2, 2))
+    ax[0].axvline(
+        np.median(np.log10(positive_mismatch["preferred_depth_closedloop"])),
+        color="red",
+    )
+
+    ax[1].hist(np.log10(negative_mismatch["preferred_depth_closedloop"]), bins=100)
+    ax[1].set_title(f"Negative mismatch,  n={len(negative_mismatch)}")
+    ax[1].set_xlim((-2, 2))
+    ax[1].axvline(
+        np.median(np.log10(negative_mismatch["preferred_depth_closedloop"])),
+        color="red",
+    )
+
+    ax[1].set_xlabel("log pref depth")
+    ax[0].set_xlabel("log pref depth")
+    ax[0].set_ylabel("Count")
+
+    p = mannwhitneyu(
+        np.log10(positive_mismatch["preferred_depth_closedloop"]),
+        np.log10(negative_mismatch["preferred_depth_closedloop"]),
+    )
+    fig.suptitle(f"M-W U: p = {p.pvalue:.2e}")
+    print(p)
+
+    return fig, ax
+
+
+###########
+## MULTIGAIN
+###########
+
+# This contains code for analysing the particularities of the multigain case
+
+
+def analyse_multimismatch(
+    closed_loop, recording, is_playback=False, flexilims_session=None
+):
+    findfig, findax, closed_loop, gains_df = find_multimismatch(
+        closed_loop, recording, is_playback, flexilims_session
+    )
+
+    closed_loop, idxs = create_mismatch_window(
+        closed_loop, window_start=5, window_end=20
+    )
+    neurons, neurons_df = build_neurons_df(closed_loop)
+
+    misperneuron = build_mismatches_per_neuron_list(
+        neurons, neurons_df, window_start=5, window_end=20
+    )
+
+    tt_misperneuron = break_into_trial_types(misperneuron, gains_df)
+
+    null = build_null_dist_per_trial_type(closed_loop)
+
+    tt_raster, tt_rand_raster, tt_rand_misperneuron = make_tt_rasters(
+        tt_misperneuron, null, neurons, closed_loop
+    )
+
+    tt_sorted_mismatch_raster, tt_modulation_raster = make_tt_sorted_raster(
+        tt_rand_raster, tt_raster
+    )
+
+    tt_sorted_p = calculate_tt_significance(
+        tt_misperneuron, tt_rand_misperneuron, tt_modulation_raster
+    )
+
+    fig, axes = plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p)
+
+    return tt_sorted_mismatch_raster, tt_sorted_p
+
+
+def find_multimismatch(
+    closed_loop, recording, is_playback=False, flexilims_session=None
+):
+    """
+    Main entry point for the fascinating job of finding multimismatch events,
+    which requires a different pipeline. It is called by find_mismatch. The trace it works with
+    is the ratio of the increases in running speed and optic flow. It is filtered for
+    one-frame noise, and then approximated to the closest gain out of the four possible.
+    """
+
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    closed_loop = mismatch_ratio(closed_loop, is_playback)
+
+    ##Filter the gain  of optic flow
+
+    # Filter out NaNs. Assume same value
+    closed_loop["mism_ratio_filled"] = closed_loop["mism_ratio"].fillna(method="ffill")
+
+    # List of target values
+    target_values = [1, 0.25, 4]
+
+    # Apply the function to the series
+    print("Filling NaNs")
+    filtered_series = closed_loop["mism_ratio_filled"].apply(
+        lambda x: find_closest_value(x, target_values)
+    )
+
+    # filter blips
+    print("Filtering blips")
+    closed_loop["filtered_mism_ratio"] = filtered_series
+    for i in range(1, len(closed_loop) - 1):
+        if (
+            closed_loop["filtered_mism_ratio"][i]
+            != closed_loop["filtered_mism_ratio"][i - 1]
+        ) and (
+            closed_loop["filtered_mism_ratio"][i]
+            != closed_loop["filtered_mism_ratio"][i + 1]
+        ):
+            closed_loop["filtered_mism_ratio"][i] = closed_loop["filtered_mism_ratio"][
+                i - 1
+            ]
+
+    # build trial structure
+    print("Processing trial structure")
+    sync_loop = find_trials_from_log(closed_loop, flexilims_session, recording)
+
+    # Put it back on the same df
+    closed_loop["trial_indicator"] = sync_loop["in_trial"]
+    closed_loop["estimated_mismatch"] = sync_loop["mismatch"]
+    closed_loop["trial_start"] = sync_loop["trial_start"]
+    closed_loop = define_window_for_mismatch(closed_loop)
+
+    # Use mismatch window to find mismatches and note gain
+    print("Finding mismatches")
+    closed_loop, gains_df = find_multimismatches_in_window(closed_loop)
+
+    # check
+    print("Plotting")
+    fig, ax = check_multimismatch(closed_loop)
+
+    return fig, ax, closed_loop, gains_df
+
+
+def check_multimismatch(closed_loop, beg=0, end=-1):
+    """
+    Plots reconstructed mismatches and trial structure as a sanity check.
+    """
+
+    # Create a figure and axis
+    fig, ax = plt.subplots(figsize=(14, 8))
+
+    # Plot the data
+    ax.plot(
+        closed_loop["mouse_z"][beg:end],
+        closed_loop["filtered_mism_ratio"][beg:end],
+        label="Filtered",
+        alpha=0.5,
+    )
+    ax.plot(
+        closed_loop["mouse_z"][beg:end],
+        closed_loop["mism_ratio"][beg:end],
+        label="Unfiltered",
+        alpha=0.5,
+    )
+    ax.plot(
+        closed_loop["mouse_z"][beg:end],
+        closed_loop["mismatch"][beg:end],
+        label="Mismatch",
+        alpha=0.5,
+    )
+    # ax.plot(closed_loop["mouse_z"][beg:end], sync_loop["IsMismatch"][beg:end], label="IsMismatch", alpha=0.5)
+    ax.plot(
+        closed_loop["mouse_z"][beg:end],
+        closed_loop["in_trial"][beg:end],
+        label="In Trial",
+        alpha=0.5,
+    )
+    ax.plot(
+        closed_loop["mouse_z"][beg:end],
+        closed_loop["mismatch_window"][beg:end],
+        label="Mismatch window",
+        alpha=0.5,
+    )
+
+    # Add legend
+    ax.legend()
+
+    # Set title and labels
+    ax.set_title("Trial from index {} to {}".format(beg, end))
+    ax.set_xlabel("Mouse position")
+    ax.set_ylabel("Values")
+
+    # Set white background
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    return fig, ax
+
+
+def find_multimismatches_in_window(closed_loop):
+    """
+    Finds mismatches taking advantage of the fact that they are all the changes in OF/RS coupling
+    that happen within the window where mismatches are possible. Notes gain before-during.
+    """
+
+    closed_loop["mismatch"] = 0
+    closed_loop["start_gain"] = 0
+    closed_loop["end_gain"] = 0
+    closed_loop["filtered_mism_diff"] = 0
+    closed_loop["filtered_mism_diff"][1:] = abs(
+        np.diff(closed_loop["filtered_mism_ratio"])
+    )
+    mismatch_starters = []
+    mismatch_ends = []
+
+    mismatch = False
+    for i in range(1, len(closed_loop) - 1):
+        if closed_loop["mismatch_window"][i] == True:
+            prevent_double_tick = False  # If the first case  is true, it edits, then the second is true, prevent that!
+            if closed_loop["filtered_mism_diff"][i] > 0 and mismatch:
+                mismatch = False
+                prevent_double_tick = True
+            if (
+                closed_loop["filtered_mism_diff"][i] > 0
+                and not mismatch
+                and not prevent_double_tick
+            ):
+                mismatch = True
+                start_idx = i
+                mismatch_starters.append(
+                    closed_loop["filtered_mism_ratio"][start_idx - 1]
+                )
+                mismatch_ends.append(closed_loop["filtered_mism_ratio"][i + 1])
+
+            if mismatch:
+                closed_loop["mismatch"][i] = 1
+                closed_loop["start_gain"][i] = closed_loop["filtered_mism_ratio"][
+                    start_idx - 1
+                ]
+                closed_loop["end_gain"][i] = closed_loop["filtered_mism_ratio"][i]
+
+    gains_df = {"start": mismatch_starters, "end": mismatch_ends}
+    gains_df = pd.DataFrame(gains_df)
+
+    return closed_loop, gains_df
+
+
+def find_trials_from_log(closed_loop, flexilims_session, recording):
+    """
+    Second way to reconstruct trials. When you have an is_mismatch log for  every trial, you
+    use the ending to estimate every trial. This assumes that the  trials are 6m long, that there
+    are no mismatches from 0 to 2/3, and from 5/6 to the  end.
+    """
+
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    MismatchDebug = get_mismatch_debug_file(flexilims_session, recording)
+
+    sync_loop = synchronize_dataframes(closed_loop, MismatchDebug)
+
+    sync_loop["mismatch"] = 0
+    sync_loop["trial_end"] = 0
+    sync_loop["trial_start"] = 0
+    sync_loop["in_trial"] = 0
+
+    # We always start in-trial, but out of scanimage, so build first trial
+    start_index = 0
+    trial_end = 6
+    closest_row = sync_loop.iloc[(sync_loop["mouse_z"] - trial_end).abs().argmin()]
+    end_index = closest_row.name
+    sync_loop.loc[start_index:end_index, "in_trial"] = 1
+    sync_loop.at[start_index, "trial_start"] = 1
+    sync_loop.at[end_index, "trial_end"] = 1
+
+    for i in range(1, len(sync_loop) - 1):
+        if (sync_loop["IsMismatch"][i - 1] == False) and (
+            sync_loop["IsMismatch"][i + 1] == True
+        ):
+            sync_loop.loc[i - 3 : i, "mismatch"] = 1
+        if (sync_loop["IsMismatch"][i - 1] == True) and (
+            sync_loop["IsMismatch"][i + 1] == False
+        ):
+            sync_loop.at[i, "trial_end"] = 1
+            trial_start = sync_loop["mouse_z"][i] - ((5 / 6) * 6)
+            trial_end = sync_loop["mouse_z"][i] + ((1 / 6) * 6)
+            closest_row = sync_loop.iloc[
+                (sync_loop["mouse_z"] - trial_start).abs().argmin()
+            ]
+            start_index = closest_row.name
+            sync_loop.at[start_index, "trial_start"] = 1
+            closest_row = sync_loop.iloc[
+                (sync_loop["mouse_z"] - trial_end).abs().argmin()
+            ]
+            end_index = closest_row.name
+            sync_loop.loc[start_index:end_index, "in_trial"] = 1
+
+    return sync_loop
+
+
+def break_into_trial_types(misperneuron, gains_df):
+    tt_misperneuron = {"htm": [], "htl": [], "mtl": [], "mth": [], "ltm": [], "lth": []}
+
+    # Dictionary to hold the indexes for each trial type
+    tt_indices = {"htm": [], "htl": [], "mtl": [], "mth": [], "ltm": [], "lth": []}
+
+    # Identifying indexes for each trial type
+    tt_indices["htm"] = gains_df[
+        (gains_df["start"] == 4) & (gains_df["end"] == 1)
+    ].index.tolist()
+    tt_indices["htl"] = gains_df[
+        (gains_df["start"] == 4) & (gains_df["end"] == 0.25)
+    ].index.tolist()
+    tt_indices["mtl"] = gains_df[
+        (gains_df["start"] == 1) & (gains_df["end"] == 0.25)
+    ].index.tolist()
+    tt_indices["mth"] = gains_df[
+        (gains_df["start"] == 1) & (gains_df["end"] == 4)
+    ].index.tolist()
+    tt_indices["ltm"] = gains_df[
+        (gains_df["start"] == 0.25) & (gains_df["end"] == 1)
+    ].index.tolist()
+    tt_indices["lth"] = gains_df[
+        (gains_df["start"] == 0.25) & (gains_df["end"] == 4)
+    ].index.tolist()
+
+    # Mapping misperneuron values to tt_misperneuron based on tt_indices
+    # HERE IS THE BUG
+    for trial_type in tt_misperneuron.keys():
+        tt_misperneuron[trial_type] = list(np.zeros(len(misperneuron)))
+        for neuron in range(len(misperneuron)):
+            tt_misperneuron[trial_type][neuron] = misperneuron[neuron][
+                tt_indices[trial_type]
+            ]
+
+    return tt_misperneuron
+
+
+def build_null_dist_per_trial_type(closed_loop):
+    # Gain values
+    tt_gains = {
+        "h": 4,
+        "m": 1,
+        "l": 0.25,
+    }
+    tt_null = {"htm": [], "htl": [], "mtl": [], "mth": [], "ltm": [], "lth": []}
+    # New dictionary to store filtered DataFrames
+    null = {}
+
+    for gain in tt_gains.keys():
+        # Filter for moments with the correct gain
+        trials = closed_loop[
+            (closed_loop["filtered_mism_ratio"] == tt_gains[gain])
+            & (closed_loop["range_indicator"] == 0)
+        ]
+        null[gain] = trials.index.tolist()
+
+    for gain in null.keys():
+        plt.figure()
+        plt.title(f"Filtered Trials for Gain {gain}")
+        plt.plot(null[gain], closed_loop["filtered_mism_ratio"][null[gain]], ".")
+        plt.xlabel("Index")
+        plt.ylabel("Filtered Mism Ratio")
+        plt.show()
+
+        tt_null = {
+            "htm": null["h"],
+            "htl": null["h"],
+            "mtl": null["m"],
+            "mth": null["m"],
+            "ltm": null["l"],
+            "lth": null["l"],
+        }
+
+    return tt_null
+
+
+def make_tt_rasters(tt_misperneuron, null, neurons, closed_loop):
+    tt_raster = {}
+    tt_rand_raster = {}
+    tt_rand_misperneuron = {}
+
+    for gain in tt_misperneuron.keys():
+        print(f"Calculating rasters for {gain}")
+        tt_raster[gain] = raster(
+            neurons, tt_misperneuron[gain], window_start=5, window_end=20
+        )
+        tt_rand_raster[gain], tt_rand_misperneuron[gain] = make_rand_raster(
+            closed_loop, n_events=200, window_end=10, indices=null[gain]
+        )
+
+    return tt_raster, tt_rand_raster, tt_rand_misperneuron
+
+
+def make_tt_sorted_raster(tt_rand_raster, tt_raster, sort="all"):
+    tt_sorted_mismatch_raster = {}
+    tt_modulation_raster = {}
+
+    if sort == "all":
+        for gain in tt_raster.keys():
+            (
+                tt_sorted_mismatch_raster[gain],
+                tt_modulation_raster[gain],
+            ) = modulation_sort_raster(tt_rand_raster[gain], tt_raster[gain])
+    else:
+        for gain in tt_raster.keys():
+            rand_raster, mismatch_raster = tt_rand_raster[gain], tt_raster[gain]
+            rand_avg = np.mean(rand_raster, axis=1)
+            mismatch_avg = np.mean(mismatch_raster[:, 8:17], axis=1)
+            modulation_raster = mismatch_avg - rand_avg
+            tt_modulation_raster[gain] = modulation_raster
+
+        modulation_raster = tt_modulation_raster[sort]
+
+        for gain in tt_raster.keys():
+            mismatch_raster = tt_raster[gain]
+            sorted_indices = np.argsort(-modulation_raster)
+
+            # Sort the array based on the calculated differences
+            sorted_mismatch_raster = mismatch_raster[sorted_indices]
+
+            tt_sorted_mismatch_raster[gain] = sorted_mismatch_raster
+
+    return tt_sorted_mismatch_raster, tt_modulation_raster
+
+
+def calculate_tt_significance(
+    tt_misperneuron, tt_rand_misperneuron, tt_modulation_raster, sort="all"
+):
+    tt_sorted_p = {}
+
+    if sort == "all":
+        for gain in tt_misperneuron.keys():
+            tt_sorted_p[gain] = calculate_significance(
+                tt_misperneuron[gain],
+                tt_rand_misperneuron[gain],
+                tt_modulation_raster[gain],
+            )
+    else:
+        for gain in tt_misperneuron.keys():
+            tt_sorted_p[gain] = calculate_significance(
+                tt_misperneuron[gain],
+                tt_rand_misperneuron[gain],
+                tt_modulation_raster[sort],
+            )
+
+    return tt_sorted_p
+
+
+def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p):
+    """
+    Plots a 3x3 grid of raster plots for different gain combinations.
+    """
+    fig, axes = plt.subplots(3, 3, figsize=(30, 30), facecolor="w")
+    fig.subplots_adjust(hspace=0.4, wspace=0.4)
+
+    gain_labels = ["high", "medium", "low"]
+    gain_indices = ["h", "m", "l"]
+
+    for i, gain_start in enumerate(gain_indices):
+        for j, gain_end in enumerate(gain_indices):
+            gain_combo = f"{gain_start}t{gain_end}"
+            ax = axes[i, j]
+
+            if gain_combo in tt_sorted_mismatch_raster:
+                raster_data = tt_sorted_mismatch_raster[gain_combo]
+                im = ax.imshow(
+                    raster_data,
+                    cmap="coolwarm",
+                    vmin=-1,
+                    vmax=1,
+                    aspect="auto",
+                    interpolation="nearest",
+                )
+                ax.set_title(
+                    f"Raster plot: {gain_labels[i]} start, {gain_labels[j]} end",
+                    size=20,
+                )
+                ax.set_xlabel("Frames", size=15)
+                cbar = fig.colorbar(im, ax=ax, orientation="vertical")
+                cbar.ax.tick_params(labelsize=14)
+                cbar.set_label("Z-score" if True else "Dff", fontsize=15)
+                ax.axvline(5, color="grey")
+
+                # Plot significance
+                plot_sorted_p = np.where(tt_sorted_p[gain_combo] < 0.05, 1, 0)
+                plot_sorted_p = plot_sorted_p[np.newaxis, :]
+                ax2 = fig.add_axes(
+                    [0.08 + j * 0.285, 0.12 + (2 - i) * 0.28, 0.03, 0.2], sharey=ax
+                )
+                ax2.imshow(plot_sorted_p.T, aspect="auto", cmap="binary")
+                ax2.xaxis.set_visible(False)
+                ax2.set_ylabel("Neurons", size=15)
+            else:
+                ax.axis("off")
+
+    return fig, axes
+
+
+def find_closest_value(value, target_values):
+    return min(target_values, key=lambda x: abs(x - value))
+
+
+def determine_if_multimismatch(recording, flexilims_session):
+    ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording.name,
+        dataset_type="harp",
+        allow_multiple=False,
+    )
+    attributes = ds.extra_attributes
+    if "multigain" in recording.name:
+        attributes["multigain"] = True
+    else:
+        attributes["multigain"] = False
+
+    ds.extra_attributes = attributes
+    ds.update_flexilims(mode="overwrite")
+
+    return attributes["multigain"]
