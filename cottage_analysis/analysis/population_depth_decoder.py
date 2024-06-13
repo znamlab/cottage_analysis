@@ -25,21 +25,33 @@ from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
 
 
-def rolling_average_2d(arr, window, axis=0):
-    # calculate rolling average along an axis for 2d array
-    return (
-        pd.DataFrame(arr).rolling(window=window, axis=axis, min_periods=1).mean().values
-    )
+def rolling_average(arr, window, axis=0):
+    # calculate rolling average along an axis
+    if arr.ndim == 1:
+        return (
+            pd.Series(arr).rolling(window=window, min_periods=1).mean().values
+        )
+    else:
+        return (
+            pd.DataFrame(arr).rolling(window=window, axis=axis, min_periods=1).mean().values
+        )
 
 
-def downsample_2d(arr, factor, mode="average"):
-    # downsample 2d array by factor along axis 0
+def downsample(arr, factor, mode="average"):
+    # downsample 1d or 2d array by factor along axis 0
     end = int(factor * int(arr.shape[0] / factor))
+    
     if mode == "average":
-        arr_crop = arr[:end, :].reshape(-1, factor, arr.shape[1])
-        arr_mean = np.mean(arr_crop, axis=1).reshape(-1, arr.shape[1])
+        if arr.ndim == 1:
+            arr_crop = arr[:end].reshape(-1, factor)
+            arr_mean = np.mean(arr_crop, axis=1)
+        elif arr.ndim == 2:
+            arr_crop = arr[:end, :].reshape(-1, factor, arr.shape[1])
+            arr_mean = np.mean(arr_crop, axis=1).reshape(-1, arr.shape[1])
+        else:
+            raise ValueError("Array must be 1D or 2D")
     elif mode == "skip":
-        arr_mean = arr[::factor, :]
+        arr_mean = arr[::factor]
     return arr_mean
 
 
@@ -50,10 +62,18 @@ def downsample_dff(
     downsample_window=0.5,
 ):
     trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
-        lambda x: rolling_average_2d(x, window=int(rolling_window * frame_rate), axis=0)
+        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
+    )
+    trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
+        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
     )
     trials_df["dff_stim_downsample"] = trials_df["dff_stim_rolling"].apply(
-        lambda x: downsample_2d(
+        lambda x: downsample(
+            x, factor=int(downsample_window * frame_rate), mode="average"
+        )
+    )
+    trials_df["RS_stim_downsample"] = trials_df["RS_stim_rolling"].apply(
+        lambda x: downsample(
             x, factor=int(downsample_window * frame_rate), mode="average"
         )
     )
@@ -367,3 +387,26 @@ def depth_decoder(
     conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
         
     return acc, conmat, best_params_all, y_test_all, y_preds_all, trials_df
+
+
+def find_acc_speed_bins(trials_df, speed_bins, y_test, y_preds, continuous_still=True, still_thr=0.05, still_time=1, frame_rate=15):
+    acc_speed_bins = []
+    conmat_speed_bins = []
+    rs_arr = np.hstack(trials_df["RS_stim_downsample"])
+    if continuous_still:
+        idx =  common_utils.find_thresh_sequence(
+                            array=rs_arr,
+                            threshold_max=still_thr,
+                            length=int(still_time * frame_rate),
+                            shift=int(still_time * frame_rate),
+                        )
+        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
+        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+    for i in range(len(speed_bins)-1):
+        idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i+1])
+        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
+        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        print(f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: 
+              {accuracy_score(y_test[idx], y_preds[idx])}")
+    return acc_speed_bins, conmat_speed_bins
