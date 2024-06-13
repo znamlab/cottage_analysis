@@ -72,6 +72,7 @@ def downsample_dff(
 
 
 def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=False):
+    # train test val split based on trials
     depth_list = np.sort(trials_df.depth.unique())
     if len(trials_df)%len(depth_list) != 0:
         trials_df = trials_df[:-(len(trials_df)%len(depth_list))] 
@@ -81,6 +82,18 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
     else:
         dff_col = "dff_stim_downsample"
         depth_col = "depth_labels"
+        
+    # get the indices of each number in dff_col
+    # if trial_average is True, it's np.arange(nframes) for each row
+    # if trial_average is False, it's the trial number for each row
+    trials_df["frame_num"] = trials_df.apply(
+        lambda x: x[dff_col].shape[0], axis=1
+    ).astype("int")
+    trials_df["frame_num_prev_trials"] = trials_df["frame_num"].shift(1).fillna(0).cumsum().astype("int")
+    trials_df["frame_indices"] = trials_df.apply(
+        lambda x: (np.arange(x["frame_num"])+x["frame_num_prev_trials"]).astype("int"), axis=1
+    )
+    
     # train test val split
     depth_label = np.hstack(trials_df["depth_label"].values)
 
@@ -93,6 +106,7 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
         sss = StratifiedKFold(n_splits=k_folds, random_state=random_state, shuffle=True)
         
     # Train test split
+    test_frame_indices = []
     test_index_all = []
     train_index_temp_all = []
     for fold, (train_index_temp, test_index) in enumerate(sss.split(np.arange(len(depth_label)), depth_label)):
@@ -103,7 +117,9 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
         depth_test_all.append(depth_test) 
         test_index_all.append(test_index)
         train_index_temp_all.append(train_index_temp)
-
+        test_frame_indices.append(np.hstack(trials_df.iloc[test_index]["frame_indices"].values))
+        assert(len(test_frame_indices[fold]) == dff_test.shape[0]), "ERROR: Test indices do not match."
+        
     # Train val split
     train_index_all, val_index_all = [], []
     for fold, (train_index, val_index) in enumerate(sss.split(np.arange(len(depth_label_train)), depth_label_train)):
@@ -125,7 +141,7 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
         all = np.sort(np.hstack([train_index_all[i], test_index_all[i], val_index_all[i]]))
         assert(len(np.unique(all)) == len(trials_df)), "ERROR: There are repetitions in the train, val, test sets."
         
-    return dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all
+    return trials_df, dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, test_frame_indices, dff_col, depth_col
 
 
 def svm_classifier_hyperparam_tuning(
@@ -172,6 +188,8 @@ def svm_classifier_hyperparam_tuning(
 def test_svm_classifier(
     X_train,
     y_train,
+    X_val,
+    y_val,
     X_test,
     y_test,
     class_labels,
@@ -183,7 +201,9 @@ def test_svm_classifier(
         clf = SVC(C=best_params["C"], kernel=kernel)
     else:
         clf = SVC(C=best_params["C"], gamma=best_params["gamma"], kernel=kernel)
-    clf.fit(X_train, y_train)
+    X_train_val = np.vstack([X_train, X_val])
+    y_train_val = np.hstack([y_train, y_val])
+    clf.fit(X_train_val, y_train_val)
 
     # Test on the test set
     y_pred = clf.predict(X_test)
@@ -208,9 +228,6 @@ def preprocess_data(
         test_size = 0.2
     else:
         test_size = 1/k_folds
-        
-    # choose closedloop or openloop
-    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     
     # add iscell
     suite2p_ds = flz.get_datasets(
@@ -244,13 +261,13 @@ def preprocess_data(
     depth_list = np.sort(trials_df.depth.unique())
         
     # split train test val (test 0.2, val 0.2, train 0.6)
-    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all = split_train_test_val(
+    trials_df, dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, test_frame_indices, dff_col, depth_col = split_train_test_val(
         trials_df=trials_df, 
         k_folds=k_folds,
         random_state=random_state, 
         trial_average=trial_average)
     
-    return dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, iscell, depth_list
+    return (trials_df, (dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all), (iscell, depth_list), (test_frame_indices, dff_col, depth_col))
 
 
 def depth_decoder(
@@ -268,7 +285,17 @@ def depth_decoder(
     gammas=[1, 0.1, 0.01],
     k_folds=5,
 ):
-    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, iscell, depth_list = preprocess_data(
+            
+    # choose closedloop or openloop
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    
+    # prepare data
+    (
+        trials_df,
+        (dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all),
+        (iscell, depth_list), 
+        (test_frame_indices, dff_col, depth_col)
+     ) = preprocess_data(
         trials_df=trials_df,
         flexilims_session=flexilims_session,
         session_name=session_name,
@@ -283,8 +310,9 @@ def depth_decoder(
     )
 
     # loop through each fold
-    y_preds_all = []
-    y_test_all = []
+    y_test_all = np.hstack(trials_df[depth_col])
+    y_preds_all = np.zeros_like(y_test_all)
+    
     if kernel == "linear":
         best_params_all = {
             "C": [],
@@ -320,25 +348,22 @@ def depth_decoder(
         if kernel != "linear":
             best_params_all["gamma"].append(best_params["gamma"])
         
-        # train and test on the current fold
+        # train and test on the current fold (train on combined train and val data)
         clf, y_pred = test_svm_classifier(
             X_train=dff_train,
             y_train=depth_train,
+            X_val=dff_val,
+            y_val=depth_val,
             X_test=dff_test,
             y_test=depth_test,
             class_labels=np.arange(len(depth_list)),
             kernel=kernel,
             best_params=best_params,
         )
-        y_preds_all.append(y_pred)
-        y_test_all.append(depth_test)
-        
-    # flatten y test and pred from all folds
-    y_preds_all = np.hstack(y_preds_all)
-    y_test_all = np.hstack(y_test_all)
+        y_preds_all[test_frame_indices[i]] = y_pred
     
-    # calculate the accuracy on all test data
-    acc = accuracy_score(y_test_all, y_preds_all)
+    # calculate the accuracy on all test data   
+    acc= accuracy_score(y_test_all, y_preds_all)
     conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
         
-    return acc, conmat, best_params_all
+    return acc, conmat, best_params_all, y_test_all, y_preds_all
