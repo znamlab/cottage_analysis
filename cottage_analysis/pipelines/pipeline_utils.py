@@ -160,7 +160,7 @@ def load_session(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "23:00:00",
+        "time": "24:00:00",
         "cpus-per-task": 8,
         "partition": "ncpu",
     },
@@ -294,10 +294,13 @@ def merge_fit_dataframes(
             # if the name contains any keywords that needs to be excluded
             if any([keyword in str(df_name) for keyword in exclude_keywords]):
                 print(f"Exclude files {df_name}")
-            # if the name does not contain all keywords that needs to be included, exclude it
-            elif include_keywords:
-                if not all([keyword in str(df_name) for keyword in include_keywords]):
-                    print(f"Exclude files {df_name}")
+            else: # name doesn't contain anything that needs to be excluded
+                if include_keywords:
+                    # if name doesn't contain all the things that need to be included
+                    if not all([keyword in str(df_name) for keyword in include_keywords]):
+                        print(f"Exclude files {df_name}")
+                    else:
+                        merge_df_names.append(df_name)
                 else:
                     merge_df_names.append(df_name)
         else:
