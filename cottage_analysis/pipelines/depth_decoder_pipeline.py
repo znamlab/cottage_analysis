@@ -84,7 +84,7 @@ def main(
         else:
             sfx = "_openloop"
         print(f"---Start depth decoder for closed loop {closed_loop}...---")
-        acc, conmat, best_params, y_test_all, y_preds_all = population_depth_decoder.depth_decoder(
+        acc, conmat, best_params, y_test_all, y_preds_all, trials_df = population_depth_decoder.depth_decoder(
             trials_df_all[trials_df_all.closed_loop == closed_loop],
             flexilims_session=flexilims_session,
             session_name=session_name,

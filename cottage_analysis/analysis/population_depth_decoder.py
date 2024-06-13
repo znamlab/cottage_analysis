@@ -366,4 +366,4 @@ def depth_decoder(
     acc= accuracy_score(y_test_all, y_preds_all)
     conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
         
-    return acc, conmat, best_params_all, y_test_all, y_preds_all
+    return acc, conmat, best_params_all, y_test_all, y_preds_all, trials_df
