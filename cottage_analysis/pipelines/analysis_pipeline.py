@@ -1,5 +1,7 @@
 import os
+import time
 import numpy as np
+import pandas as pd
 import defopt
 from pathlib import Path
 import warnings
@@ -21,7 +23,6 @@ def main(
     run_rf=True,
     run_rsof_fit=True,
     run_plot=True,
-    run_rsof_fit_separate_recordings=False,
 ):
     """
     Main function to analyze a session.
@@ -36,7 +37,6 @@ def main(
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
         run_plot(bool): whether to run the plot. Default True.
-        run_rsof_fit_separate_recordings(bool): whether to run the rsof fit separately for each recording. Default False.
     """
     print(
         f"------------------------------- \n \
@@ -64,6 +64,22 @@ def main(
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
     else:
+        # read finished time
+        if os.path.exists(neurons_ds.path_full.parent / "finished.pickle"):
+            finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+            for key, item in zip(["run_depth_fit", "run_rf", "run_rsof_fit", "run_plot"], 
+                                 [run_depth_fit, run_rf, run_rsof_fit, run_plot]):
+                finished[key] = item
+        else:
+            finished = {
+                "run_depth_fit": run_depth_fit,
+                "run_rf": run_rf,
+                "run_rsof_fit": run_rsof_fit,
+                "run_plot": run_plot,
+            }
+            finished = pd.DataFrame(finished, index=[0])
+        finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+        
         # Synchronisation
         print("---Start synchronisation...---")
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
@@ -76,8 +92,41 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )
+        
+        # Add trial number to flexilims
+        trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
+        trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
+        ndepths = len(trials_df_all["depth"].unique())
+        flz.update_entity(
+            "session",
+            name=session_name,
+            mode="update",
+            attributes={"closedloop_trials": trial_no_closedloop,
+                        "openloop_trials": trial_no_openloop,
+                        "ndepths": ndepths},
+            flexilims_session=flexilims_session,
+        )
+        
+        suite2p_datasets = flz.get_datasets(
+            origin_name=session_name,
+            dataset_type="suite2p_rois",
+            project_id=project,
+            flexilims_session=flexilims_session,
+            return_dataseries=False,
+            filter_datasets={"anatomical_only": 3},
+        )
+        suite2p_dataset = suite2p_datasets[0]
+        frame_rate = suite2p_dataset.extra_attributes["fs"]
 
         if run_depth_fit:
+            finished = pipeline_utils.save_finish_time(finished, col="depth_fit_started")
+            depth_fit_params = {
+                "depth_min": 0.02,
+                "depth_max": 20,
+                "niter": 10,
+                "min_sigma": 0.5,
+            }
+            
             # Find depth neurons and fit preferred depth
             print("---Start finding depth neurons...---")
             print("Find depth neurons...")
@@ -89,50 +138,80 @@ def main(
             )
 
             print("Fit preferred depth...")
-            # Find preferred depth of closed loop with all data
-            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-                trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
-                closed_loop=1,
-                choose_trials=None,
-                depth_min=0.02,
-                depth_max=20,
-                niter=10,
-                min_sigma=0.5,
-                k_folds=1,
-            )
+            # Find preferred depth for all data & running (current frame > 5cm/s) & not-running (previous 14+current frame < 5cm/s)
+            for rs_thr, rs_thr_max, still_only, still_time, special_sfx in zip(
+                [None, 0.05, None],
+                [None, None, 0.05],
+                [False, False, True],
+                [0, 0, 1],
+                ["", "_running", "_notrunning"],
+            ):
+                print(f"Fit preferred depth{special_sfx}...")
+                # Find preferred depth of closed loop with all trials
+                neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                    trials_df=trials_df_all,
+                    neurons_df=neurons_df,
+                    neurons_ds=neurons_ds,
+                    closed_loop=1,
+                    choose_trials=None,
+                    rs_thr=rs_thr,
+                    rs_thr_max=rs_thr_max,
+                    still_only=still_only,
+                    still_time=still_time,
+                    frame_rate=frame_rate,
+                    depth_min=depth_fit_params["depth_min"],
+                    depth_max=depth_fit_params["depth_max"],
+                    niter=depth_fit_params["niter"],
+                    min_sigma=depth_fit_params["min_sigma"],
+                    k_folds=1,
+                    special_sfx=special_sfx,
+                )
 
-            # Find preferred depth of closed loop with half the data for plotting purposes
-            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-                trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
-                closed_loop=1,
-                choose_trials="odd",
-                depth_min=0.02,
-                depth_max=20,
-                niter=10,
-                min_sigma=0.5,
-                k_folds=1,
-            )
+                # Find preferred depth of closed loop with half the data for plotting purposes
+                neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                    trials_df=trials_df_all,
+                    neurons_df=neurons_df,
+                    neurons_ds=neurons_ds,
+                    closed_loop=1,
+                    choose_trials="odd",
+                    rs_thr=rs_thr,
+                    rs_thr_max=rs_thr_max,
+                    still_only=still_only,
+                    still_time=still_time,
+                    frame_rate=frame_rate,
+                    depth_min=depth_fit_params["depth_min"],
+                    depth_max=depth_fit_params["depth_max"],
+                    niter=depth_fit_params["niter"],
+                    min_sigma=depth_fit_params["min_sigma"],
+                    k_folds=1,
+                    special_sfx=special_sfx,
+                )
 
-            # Find r-squared of k-fold cross validation
-            neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
-                trials_df=trials_df_all,
-                neurons_df=neurons_df,
-                neurons_ds=neurons_ds,
-                closed_loop=1,
-                choose_trials=None,
-                depth_min=0.02,
-                depth_max=20,
-                niter=10,
-                min_sigma=0.5,
-                k_folds=5,
-            )
+                # Find r-squared of k-fold cross validation
+                neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
+                    trials_df=trials_df_all,
+                    neurons_df=neurons_df,
+                    neurons_ds=neurons_ds,
+                    closed_loop=1,
+                    choose_trials=None,
+                    rs_thr=rs_thr,
+                    rs_thr_max=rs_thr_max,
+                    still_only=still_only,
+                    still_time=still_time,
+                    frame_rate=frame_rate,
+                    depth_min=depth_fit_params["depth_min"],
+                    depth_max=depth_fit_params["depth_max"],
+                    niter=depth_fit_params["niter"],
+                    min_sigma=depth_fit_params["min_sigma"],
+                    k_folds=5,
+                    special_sfx=special_sfx,
+                )
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
+            finished = pipeline_utils.save_finish_time(finished, col="depth_fit_finished")
+            finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+         
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
             print("Depth tuning fitting finished. Neurons_df saved.")
@@ -140,6 +219,7 @@ def main(
         # Regenerate sphere stimuli
         if run_rf:
             print("---RF analysis...---")
+            finished = pipeline_utils.save_finish_time(finished, col="rf_started")
             print("Generating sphere stimuli...")
             for is_closedloop in trials_df_all["closed_loop"].unique():
                 if is_closedloop:
@@ -189,6 +269,8 @@ def main(
                     validation=False,
                 )
 
+                if not run_depth_fit:
+                    neurons_df = pd.read_pickle(neurons_ds.path_full)
                 for col in [
                     f"rf_coef{sfx}",
                     f"rf_rsq{sfx}",
@@ -207,6 +289,8 @@ def main(
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
+            finished = pipeline_utils.save_finish_time(finished, col="rf_finished")
+            finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
@@ -224,7 +308,7 @@ def main(
                     "of_min": 0.03,
                     "of_max": 3000,
                 },
-                niter=5,
+                niter=10,
                 min_sigma=0.25,
             )
 
@@ -245,11 +329,38 @@ def main(
                 if trials is not None:
                     name += "_crossval"
                 name += f"_k{k_folds}"
-                print(f"Fitting {model}")
-                if run_rsof_fit_separate_recordings:
-                    for i, recording in enumerate(trials_df_all["recording"].unique()):
+                print(f"Fitting {model}...")
+                out = pipeline_utils.load_and_fit(
+                    project,
+                    session_name,
+                    photodiode_protocol,
+                    model=model,
+                    choose_trials=trials,
+                    use_slurm=use_slurm,
+                    slurm_folder=slurm_folder,
+                    scripts_name=name,
+                    k_folds=k_folds,
+                    **common_params,
+                )
+                outputs.append(out)  
+                
+                to_do_separate_recordings = [
+                    ("gaussian_2d", None, 1),
+                    ("gaussian_2d", None, 5),
+                ]
+                for model, trials, k_folds in to_do_separate_recordings:
+                    name = f"{session_name}_{model}"
+                    if trials is not None:
+                        name += "_crossval"
+                    name += f"_k{k_folds}"
+                    print(f"Fitting {model} for individual recordings...") 
+                    for i, recording in enumerate(np.sort(trials_df_all["recording"].unique())):
                         choose_trials = trials_df_all[trials_df_all.recording == recording].index.tolist()
                         new_name = name + f"_recording_{recording}"
+                        if "Playback" in recording:
+                            recording_type = "openloop"
+                        else:
+                            recording_type = "closedloop"
                         out = pipeline_utils.load_and_fit(
                             project,
                             session_name,
@@ -260,57 +371,52 @@ def main(
                             slurm_folder=slurm_folder,
                             scripts_name=new_name,
                             k_folds=k_folds,
-                            file_special_sfx=f"_recording_{recording}",
+                            file_special_sfx=f"_recording_{'_'.join(recording.split('_')[-2:])}_{recording_type}_{i}",
                             **common_params,
                         )
                         outputs.append(out)
-                else:
-                    out = pipeline_utils.load_and_fit(
-                        project,
-                        session_name,
-                        photodiode_protocol,
-                        model=model,
-                        choose_trials=trials,
-                        use_slurm=use_slurm,
-                        slurm_folder=slurm_folder,
-                        scripts_name=name,
-                        k_folds=k_folds,
-                        **common_params,
-                    )
-                    outputs.append(out)
                 print("---RS OF fit finished. Neurons_df saved.---")
 
             # Merge fit dataframes
             job_dependency = outputs if use_slurm else None
-            if run_rsof_fit_separate_recordings:
-                out = pipeline_utils.merge_fit_dataframes(
-                    project,
-                    session_name,
-                    use_slurm=use_slurm,
-                    slurm_folder=slurm_folder,
-                    job_dependency=job_dependency,
-                    scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
-                    conflicts=conflicts,
-                    prefix="fit_rs_of_tuning_gaussian_2d_k1_recording",
-                    suffix="",
-                    column_suffix=-2,
-                    filetype=".pickle",
-                    target_filename="neurons_df_separate_recordings.pickle",
-                        )
-            else:
-                out = pipeline_utils.merge_fit_dataframes(
-                    project,
-                    session_name,
-                    use_slurm=use_slurm,
-                    slurm_folder=slurm_folder,
-                    job_dependency=job_dependency,
-                    scripts_name=f"{session_name}_merge_fit_dataframes",
-                    conflicts=conflicts,
-                )
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                job_dependency=job_dependency,
+                scripts_name=f"{session_name}_merge_fit_dataframes",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_",
+                suffix="",
+                exclude_keywords=["recording","openclosed"], 
+                include_keywords=[],
+                target_column_suffix=None,
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
+            
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                job_dependency=job_dependency,
+                scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_",
+                suffix="",
+                exclude_keywords=["openclosed"], 
+                include_keywords=["recording","loop"],
+                target_column_suffix=-2,
+                target_column_prefix="_recording",
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
 
             print("---Analysis finished. Neurons_df saved.---")
 
-        if run_rf and not run_rsof_fit:
+        if (run_depth_fit or run_rf) and not run_rsof_fit:
             # Merge fit dataframes
             out = pipeline_utils.merge_fit_dataframes(
                 project,
@@ -319,6 +425,30 @@ def main(
                 slurm_folder=slurm_folder,
                 job_dependency=None,
                 scripts_name=f"{session_name}_merge_fit_dataframes",
+                prefix="fit_rs_of_tuning_",
+                suffix="",
+                exclude_keywords=["recording","openclosed"], 
+                include_keywords=[],
+                target_column_suffix=None,
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=0,
+                slurm_folder=slurm_folder,
+                job_dependency=None,
+                scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_",
+                suffix="",
+                exclude_keywords=["openclosed"], 
+                include_keywords=["recording","loop"],
+                target_column_suffix=-2,
+                target_column_prefix="_recording",
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
             )
 
             print("---Analysis finished. Neurons_df saved.---")
@@ -340,7 +470,7 @@ def main(
                 scripts_name=f"{session_name}_basic_vis_plots",
             )
             print("---Plotting finished. ---")
-
+            
 
 if __name__ == "__main__":
 

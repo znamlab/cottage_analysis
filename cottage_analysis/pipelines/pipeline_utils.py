@@ -1,5 +1,7 @@
 import subprocess
 import shlex
+import time
+import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -14,6 +16,16 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 print = partial(print, flush=True)
 
 CONDA_ENV = "2p_analysis_cottage2"
+
+
+def get_current_time():
+    return time.strftime("%Y%m%d"), time.strftime("%H%M%S")
+
+
+def save_finish_time(finished, col):
+    finished[f"{col}_day"] = get_current_time()[0]
+    finished[f"{col}_time"] = get_current_time()[1]
+    return finished
 
 
 def create_neurons_ds(
@@ -197,6 +209,15 @@ def load_and_fit(
         project, session_name, photodiode_protocol, regenerate_frames=False
     )
 
+    # create name from model and choose_trials
+    suffix = f"{model}"
+    if isinstance(choose_trials, str):
+        suffix = suffix + f"_crossval"
+    suffix = suffix + f"_k{k_folds}"
+    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_started")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=trials_df_all,
@@ -210,15 +231,14 @@ def load_and_fit(
         k_folds=k_folds,
     )
     # save fit_df
-    # create name from model and choose_trials
-    suffix = f"{model}"
-    if isinstance(choose_trials, str):
-        suffix = suffix + f"_crossval"
-    suffix = suffix + f"_k{k_folds}"
     target = neurons_ds.path_full.with_name(
         f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
     )
     fit_df.to_pickle(target)
+    
+    # save timestamp to finished.pickle
+    finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_finished")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     return fit_df
 
 
@@ -234,7 +254,8 @@ def merge_fit_dataframes(
     suffix="",
     exclude_keywords=["recording","openclosed"], 
     include_keywords=[],
-    column_suffix=None,
+    target_column_suffix=None,
+    target_column_prefix="", #"_recording"
     filetype=".pickle",
     target_filename="neurons_df.pickle",
 ):
@@ -252,16 +273,19 @@ def merge_fit_dataframes(
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
-
+    
     neurons_ds = create_neurons_ds(
         session_name=session_name,
         flexilims_session=flexilims_session,
         project=project,
         conflicts="skip",
     )
-
     # load the main neurons_df
     neurons_df = pd.read_pickle(neurons_ds.path_full)
+
+    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_started")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
     search_str = f"{prefix}*{suffix}{filetype}"
     merge_df_names = []
@@ -270,9 +294,9 @@ def merge_fit_dataframes(
             # if the name contains any keywords that needs to be excluded
             if any([keyword in str(df_name) for keyword in exclude_keywords]):
                 print(f"Exclude files {df_name}")
-            # if the name does not contain any keywords that needs to be included
+            # if the name does not contain all keywords that needs to be included, exclude it
             elif include_keywords:
-                if not any([keyword in str(df_name) for keyword in include_keywords]):
+                if not all([keyword in str(df_name) for keyword in include_keywords]):
                     print(f"Exclude files {df_name}")
                 else:
                     merge_df_names.append(df_name)
@@ -286,8 +310,8 @@ def merge_fit_dataframes(
         for col in df.columns:
             if col == "roi":
                 continue
-            if column_suffix is not None:
-                new_col = col + '_' + '_'.join(str(df_name.stem).split('_')[column_suffix:])
+            if target_column_suffix is not None:
+                new_col = col + target_column_prefix + '_' + '_'.join(str(df_name.stem).split('_')[target_column_suffix:])
             else:
                 new_col = col
             if new_col in neurons_df.columns:
@@ -304,6 +328,10 @@ def merge_fit_dataframes(
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
     print("All dataframes merged. Neurons_df saved.")
+    
+    # save timestamp to finished.pickle
+    finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_finished")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     return neurons_df
 
 
@@ -325,6 +353,9 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         frames_all,
         _,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
+    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    finished = save_finish_time(finished, f"plot_basicvis_started")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
     kwargs = {
         "RS_OF_matrix_log_range": {
@@ -341,9 +372,16 @@ def run_basic_plots(project, session_name, photodiode_protocol):
     basic_vis_plots.basic_vis_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
     )
+    
+    # save timestamp to finished.pickle
+    finished = save_finish_time(finished, f"plot_basicvis_finished")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
     # Plot all ROI RFs
     print("Plotting RFs...")
+    finished = save_finish_time(finished, f"plot_rf_started")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
         if is_closedloop:
@@ -361,3 +399,7 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             save_dir=neurons_ds.path_full.parent,
             fontsize_dict={"title": 10, "tick": 10, "label": 10},
         )
+        
+    # save timestamp to finished.pickle
+    finished = save_finish_time(finished, f"plot_rf_started")
+    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
