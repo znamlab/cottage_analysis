@@ -42,7 +42,7 @@ def main(
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,
-        "speed_bins": np.linspace(0, 2, 11),
+        "speed_bins": np.array([0.05, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2]),
     }
     
     if use_slurm:
@@ -89,6 +89,12 @@ def main(
 
     # Run depth decoder
     decoder_dict = {}
+    assert len(trials_df_all.closed_loop.unique()) in [1, 2]
+    if len(trials_df_all.closed_loop.unique()) == 1:
+        print("This is a closed-loop only session")
+    elif len(trials_df_all.closed_loop.unique()) == 2:
+        print("This is a session with open loop")
+        
     for closed_loop in np.sort(trials_df_all.closed_loop.unique()):
         if closed_loop:
             sfx = "_closedloop"
@@ -156,27 +162,40 @@ def main(
         dpi=300,
     )
     print("Confusion matrix plotted.")
-    
-    plt.figure()
+        
+    plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
     for i, sfx in enumerate(["_closedloop", "_openloop"]):
         for ispeed, speed_bin in enumerate(params["speed_bins"]):
-            plt.subplot2grid((len(params["speed_bins"]), 2), ispeed, i)
             if ispeed == 0:
                 title_sfx = "still"
             else:
-                title_sfx = f"speed {params["speed_bins"][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
-            depth_decoder_plots.plot_confusion_matrix(
-                decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
-                decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
-                normalize=True,
-                fontsize_dict={"text": 10, "label": 10, "title": 10},
-                title_sfx=title_sfx,
-            )
+                title_sfx = f"speed {params['speed_bins'][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
+            if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
+                plt.subplot2grid((len(params["speed_bins"])+1, 2), (ispeed, i))
+                depth_decoder_plots.plot_confusion_matrix(
+                    decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
+                    decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
+                    normalize=True,
+                    fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
+                    title_sfx=title_sfx,
+                )
+        for speed_bin in [params["speed_bins"][-1]]:
+            if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
+                title_sfx = f"speed > {speed_bin:.1f} m/s"
+                plt.subplot2grid((len(params["speed_bins"])+1, 2), (len(params["speed_bins"]), i))
+                depth_decoder_plots.plot_confusion_matrix(
+                    decoder_dict[f"conmat_speed_bins{sfx}"][-1],
+                    decoder_dict[f"acc_speed_bins{sfx}"][-1],
+                    normalize=True,
+                    fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
+                    title_sfx=title_sfx,
+                )
+    plt.tight_layout()
     plt.savefig(
         neurons_ds.path_full.parent
         / "plots"
         / "depth_decoder"
-        / "confusion_matrix_speed_bins.png",
+        / f"confusion_matrix_speed_bins.png",
         dpi=300,
     )
     print("Confusion matrix for different speed bins plotted.")
