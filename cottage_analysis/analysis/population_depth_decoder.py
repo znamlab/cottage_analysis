@@ -407,6 +407,10 @@ def find_acc_speed_bins(trials_df, speed_bins, y_test, y_preds, continuous_still
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i+1])
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
         conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
-        print(f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: 
-              {accuracy_score(y_test[idx], y_preds[idx])}")
+        print(f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+    for speed_bin in [speed_bins[-1]]: # speed that's larger than the max boundary of speed_bins
+        idx = rs_arr >= speed_bin
+        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
+        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        print(f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
     return acc_speed_bins, conmat_speed_bins
