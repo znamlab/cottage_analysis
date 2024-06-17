@@ -145,7 +145,11 @@ def main(
     # Plot confusion matrix
     print("Plotting confusion matrices...")
     plt.figure()
-    for i, sfx in enumerate(["_closedloop", "_openloop"]):
+    for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
+        if closed_loop:
+            sfx = "_closedloop"
+        else:
+            sfx = "_openloop"
         plt.subplot(1, 2, i + 1)
         depth_decoder_plots.plot_confusion_matrix(
             decoder_dict[f"conmat{sfx}"],
@@ -164,7 +168,11 @@ def main(
     print("Confusion matrix plotted.")
         
     plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
-    for i, sfx in enumerate(["_closedloop", "_openloop"]):
+    for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
+        if closed_loop:
+            sfx = "_closedloop"
+        else:
+            sfx = "_openloop"
         for ispeed, speed_bin in enumerate(params["speed_bins"]):
             if ispeed == 0:
                 title_sfx = "still"
