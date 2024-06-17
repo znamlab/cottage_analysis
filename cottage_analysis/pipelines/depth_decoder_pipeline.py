@@ -151,7 +151,7 @@ def main(
             decoder_dict[f"conmat{sfx}"],
             decoder_dict[f"accuracy{sfx}"],
             normalize=True,
-            fontsize_dict={"text": 10, "label": 10, "title": 10},
+            fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
         )
     os.makedirs(neurons_ds.path_full.parent / "plots" / "depth_decoder", exist_ok=True)
     plt.savefig(
