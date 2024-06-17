@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import random
 from scipy.stats import zscore, mannwhitneyu, pearsonr
+from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
 
 print = partial(print, flush=True)
 
@@ -18,6 +18,9 @@ MESSAGES = "harpmessage.bin"
 
 
 def analyse_session(session, flexilims_session=None):
+    """
+    Entry point for anything non-multigain
+    """
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
 
@@ -429,9 +432,7 @@ def analyse_recording(
     is_multimismatch = determine_if_multimismatch(recording, flexilims_session)
 
     print("Estimating mismatch distribution")
-    closed_loop = find_mismatch(
-        closed_loop, is_playback, recording, flexilims_session, is_multimismatch
-    )
+    closed_loop = find_mismatch(closed_loop, is_playback)
     closed_loop, idxs = create_mismatch_window(
         closed_loop, window_start=5, window_end=20
     )
@@ -1563,6 +1564,11 @@ def find_trials_from_log(closed_loop, flexilims_session, recording):
 
 
 def break_into_trial_types(misperneuron, gains_df):
+    """
+    We split misperneuron, which is a list of mismatches per neuron, into different trial
+    types. For that, we use gains_df, which holds the begginning and end gains of all
+    found mismatches.
+    """
     tt_misperneuron = {"htm": [], "htl": [], "mtl": [], "mth": [], "ltm": [], "lth": []}
 
     # Dictionary to hold the indexes for each trial type
@@ -1589,7 +1595,6 @@ def break_into_trial_types(misperneuron, gains_df):
     ].index.tolist()
 
     # Mapping misperneuron values to tt_misperneuron based on tt_indices
-    # HERE IS THE BUG
     for trial_type in tt_misperneuron.keys():
         tt_misperneuron[trial_type] = list(np.zeros(len(misperneuron)))
         for neuron in range(len(misperneuron)):
@@ -1601,6 +1606,11 @@ def break_into_trial_types(misperneuron, gains_df):
 
 
 def build_null_dist_per_trial_type(closed_loop):
+    """
+    We use the code  for the  normal mismatch to find a set of null events in the
+    region of  the trials (same starting gain)  where a mismatch could have happened
+    but did not.
+    """
     # Gain values
     tt_gains = {
         "h": 4,
@@ -1640,6 +1650,14 @@ def build_null_dist_per_trial_type(closed_loop):
 
 
 def make_tt_rasters(tt_misperneuron, null, neurons, closed_loop):
+    """
+    We use previous code tu turn tt_misperneuron into a raster for each trial type. We
+    also use this, like before, as an entry point to generate the null distribution, whihch
+    is akin to tt_misperneuron but holds responses to random events.
+
+    A raster here is just an array that holds, for every neuron, their average response
+    to a mismatch event.
+    """
     tt_raster = {}
     tt_rand_raster = {}
     tt_rand_misperneuron = {}
@@ -1657,6 +1675,12 @@ def make_tt_rasters(tt_misperneuron, null, neurons, closed_loop):
 
 
 def make_tt_sorted_raster(tt_rand_raster, tt_raster, sort="all"):
+    """
+    This function sorts rasters based on the size of their responses. It can sort them
+    normally or it can use value of a previous trial type. This is to show how much the
+    neuronal populations that are responsive to each trial type overlap. If you write htl
+    in sort, you will sort all rasters according to the response in htl
+    """
     tt_sorted_mismatch_raster = {}
     tt_modulation_raster = {}
 
@@ -1691,6 +1715,10 @@ def make_tt_sorted_raster(tt_rand_raster, tt_raster, sort="all"):
 def calculate_tt_significance(
     tt_misperneuron, tt_rand_misperneuron, tt_modulation_raster, sort="all"
 ):
+    """
+    Calculates the significance of the modulation using the null distribution like in the
+    case of the simple mismatch.
+    """
     tt_sorted_p = {}
 
     if sort == "all":
@@ -1711,15 +1739,23 @@ def calculate_tt_significance(
     return tt_sorted_p
 
 
-def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p):
+def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p, vmin=-2, vmax=2):
     """
     Plots a 3x3 grid of raster plots for different gain combinations.
     """
-    fig, axes = plt.subplots(3, 3, figsize=(30, 30), facecolor="w")
-    fig.subplots_adjust(hspace=0.4, wspace=0.4)
+    fig, axes = plt.subplots(3, 3, figsize=(40, 40), facecolor="w")
+    fig.subplots_adjust(hspace=0.32, wspace=0.5)
 
     gain_labels = ["high", "medium", "low"]
     gain_indices = ["h", "m", "l"]
+
+    # Add column labels
+    for ax, col_label in zip(axes[0], gain_labels):
+        ax.set_title(f"End: {col_label}", size=60)
+
+    # Add row labels
+    for ax, row_label in zip(axes[:, 0], gain_labels):
+        ax.set_ylabel(f"Start: {row_label}", size=60, rotation=90, labelpad=200)
 
     for i, gain_start in enumerate(gain_indices):
         for j, gain_end in enumerate(gain_indices):
@@ -1731,15 +1767,12 @@ def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p):
                 im = ax.imshow(
                     raster_data,
                     cmap="coolwarm",
-                    vmin=-1,
-                    vmax=1,
+                    vmin=vmin,
+                    vmax=vmax,
                     aspect="auto",
                     interpolation="nearest",
                 )
-                ax.set_title(
-                    f"Raster plot: {gain_labels[i]} start, {gain_labels[j]} end",
-                    size=20,
-                )
+
                 ax.set_xlabel("Frames", size=15)
                 cbar = fig.colorbar(im, ax=ax, orientation="vertical")
                 cbar.ax.tick_params(labelsize=14)
@@ -1755,8 +1788,6 @@ def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p):
                 ax2.imshow(plot_sorted_p.T, aspect="auto", cmap="binary")
                 ax2.xaxis.set_visible(False)
                 ax2.set_ylabel("Neurons", size=15)
-            else:
-                ax.axis("off")
 
     return fig, axes
 
@@ -1782,3 +1813,242 @@ def determine_if_multimismatch(recording, flexilims_session):
     ds.update_flexilims(mode="overwrite")
 
     return attributes["multigain"]
+
+
+################
+# INDIVIDUAL MULTIGAIN PLOTTING
+###################
+
+
+def make_matrix_list(tt_misperneuron):
+    by_neur_modulation = {}
+
+    for tt in tqdm(tt_misperneuron.keys()):
+        by_neur_modulation[tt] = np.zeros(len(tt_misperneuron[tt]))
+        for neuron in range(len(tt_misperneuron[tt])):
+            by_neur_modulation[tt][neuron] = np.mean(tt_misperneuron[tt][neuron])
+
+    by_neur_modulation = pd.DataFrame(by_neur_modulation)
+    matrix_list = list(np.zeros(len(by_neur_modulation)))
+    for neuron in range(len(by_neur_modulation)):
+        matrix_list[neuron] = activity_matrix(by_neur_modulation.iloc[neuron, :])
+
+    return matrix_list
+
+
+def activity_matrix(a):
+    activity_matrix = [
+        [0, a["htm"], a["htl"]],
+        [a["mth"], 0, a["mtl"]],
+        [a["lth"], a["ltm"], 0],
+    ]
+    return np.array(activity_matrix)
+
+
+def plot_trace_matrix(neuron, tt_misperneuron, tt_rand_misperneuron):
+    trial_plots = {
+        "htm": (0, 1),
+        "htl": (0, 2),
+        "mtl": (1, 0),
+        "mth": (1, 2),
+        "ltm": (2, 1),
+        "lth": (2, 0),
+    }
+    null_plots = {"high": (0, 0), "medium": (1, 1), "low": (2, 2)}
+    null_tts = {  # Use the null distribution for real trialtypes
+        "high": "htl",
+        "medium": "mtl",
+        "low": "lth",
+    }
+    fig, ax = plt.subplots(3, 3, facecolor="w", figsize=(10, 10))
+
+    size = 14
+
+    for axis, col_label in zip(ax[0], null_tts.keys()):
+        axis.set_title(f"End: {col_label}", size=size)
+
+    for axis, row_label in zip(ax[:, 0], null_tts.keys()):
+        axis.set_ylabel(f"Start: {row_label}", size=size)
+
+    fig.suptitle(f"Neuron {neuron}", size=size * 1.2)
+
+    for tt in trial_plots.keys():
+        for event in tt_misperneuron[tt][neuron]:
+            ax[trial_plots[tt]].plot(event, alpha=0.5, color="red")
+            ax[trial_plots[tt]].axvline(5, color="blue")
+            ax[trial_plots[tt]].set_ylim((-3, 4))
+            # ax[trial_plots[tt]].set_xticks([])  # Remove x-axis tick marks
+            # ax[trial_plots[tt]].set_yticks([])  # Remove y-axis tick marks
+
+    for tt in null_plots.keys():
+        for event in tt_rand_misperneuron[null_tts[tt]][neuron]:
+            ax[null_plots[tt]].plot(event, alpha=0.2, color="grey")
+            ax[null_plots[tt]].axvline(5, color="blue")
+            ax[null_plots[tt]].set_ylim((-3, 4))
+            # ax[null_plots[tt]].set_xticks([])  # Remove x-axis tick marks
+            # ax[null_plots[tt]].set_yticks([])  # Remove y-axis tick marks
+
+    return fig, ax
+
+
+def plot_matrix_grid(matrix_list, side=10, vmin=-1, vmax=1):
+    """
+    Plots a 3x3 grid of raster plots for different gain combinations.
+    """
+    data = matrix_list[0 : (side**2)]
+    print(len(data))
+    fig, axes = plt.subplots(10, 10, figsize=(40, 40), facecolor="w")
+
+    for i in range(10):
+        for j in range(10):
+            ax = axes[i, j]
+            if len(data) > ((i * side) + j):
+                im = ax.imshow(
+                    data[(i * side) + j],
+                    cmap="coolwarm",
+                    vmin=vmin,
+                    vmax=vmax,
+                    aspect="auto",
+                    interpolation="nearest",
+                )
+
+                cbar = fig.colorbar(im, ax=ax, orientation="vertical")
+                cbar.ax.tick_params(labelsize=0)
+                cbar.set_label("Z-score" if True else "Dff", fontsize=15)
+
+                # Set title for each subplot
+                ax.set_title(f"Matrix {(i*side)+j}", fontsize=10)
+
+            # Remove ticks and labels
+            ax.set_xticks([])  # Remove x-axis tick marks
+            ax.set_yticks([])  # Remove y-axis tick marks
+
+    # Adjust layout to make room for colorbar and titles
+    plt.tight_layout()
+    return fig, axes
+
+
+def plot_trace_matrix(neuron, tt_misperneuron, tt_rand_misperneuron):
+    trial_plots = {
+        "htm": (0, 1),
+        "htl": (0, 2),
+        "mtl": (1, 0),
+        "mth": (1, 2),
+        "ltm": (2, 1),
+        "lth": (2, 0),
+    }
+    null_plots = {"high": (0, 0), "medium": (1, 1), "low": (2, 2)}
+    null_tts = {  # Use the null distribution for real trialtypes
+        "high": "htl",
+        "medium": "mtl",
+        "low": "lth",
+    }
+    fig, ax = plt.subplots(3, 3, facecolor="w", figsize=(10, 10))
+
+    size = 14
+
+    for axis, col_label in zip(ax[0], null_tts.keys()):
+        axis.set_title(f"End: {col_label}", size=size)
+
+    for axis, row_label in zip(ax[:, 0], null_tts.keys()):
+        axis.set_ylabel(f"Start: {row_label}", size=size)
+
+    fig.suptitle(f"Neuron {neuron}", size=size * 1.2)
+
+    for tt in trial_plots.keys():
+        for event in tt_misperneuron[tt][neuron]:
+            ax[trial_plots[tt]].plot(event, alpha=0.5, color="red")
+            ax[trial_plots[tt]].axvline(5, color="blue")
+            ax[trial_plots[tt]].set_ylim((-3, 4))
+            # ax[trial_plots[tt]].set_xticks([])  # Remove x-axis tick marks
+            # ax[trial_plots[tt]].set_yticks([])  # Remove y-axis tick marks
+
+    for tt in null_plots.keys():
+        for event in tt_rand_misperneuron[null_tts[tt]][neuron]:
+            ax[null_plots[tt]].plot(event, alpha=0.2, color="grey")
+            ax[null_plots[tt]].axvline(5, color="blue")
+            ax[null_plots[tt]].set_ylim((-3, 4))
+            # ax[null_plots[tt]].set_xticks([])  # Remove x-axis tick marks
+            # ax[null_plots[tt]].set_yticks([])  # Remove y-axis tick marks
+
+    return fig, ax
+
+
+################
+# MODEL TO EXPLAIN MATRICES
+###################
+
+# Priors to explain the response of each cell. Predictions for the value of z-score(dff)
+
+pos_mismatch = [[0, 0.5, 1], [0, 0, 0.5], [0, 0, 0]]
+
+neg_mismatch = [[0, 0, 0], [0.5, 0, 0], [1, 0.5, 0]]
+
+near = [[0, 0.5, 0], [1, 0, 0], [1, 0.5, 0]]
+
+mid = [[0, 1, 0.5], [0.5, 0, 0.5], [0.5, 1, 0]]
+
+far = [[0, 0.5, 1], [0, 0, 1], [0, 0.5, 0]]
+
+basis_matrices = [pos_mismatch, neg_mismatch, near, mid, far]
+
+basis_labels = ["pos_mismatch", "neg_mismatch", "near", "mid", "far"]
+
+
+def fit_models(matrix_list, basis_matrices, basis_labels):
+    model_df = {"matrix": matrix_list}
+
+    model_df = pd.DataFrame(model_df)
+
+    for hyp in basis_labels:
+        model_df[hyp] = 0
+        model_df[f"coeff_{hyp}"] = 0
+
+    # Reshape the basis matrices into vectors and stack them to form a feature matrix
+    features = np.stack([np.array(m).ravel() for m in basis_matrices]).T
+
+    # Prepare to collect coefficients
+    coefficients = []
+
+    # Linear regression model
+    model = LinearRegression()
+
+    # Fit model for each target matrix
+    for neuron, target in tqdm(enumerate(matrix_list)):
+        target_vector = target.ravel()
+        model.fit(features, target_vector)
+        coefficients.append(model.coef_)
+        for idx, hyp in enumerate(basis_labels):
+            model_df.at[neuron, f"coeff_{hyp}"] = coefficients[idx]
+
+    # calculate coefficients of partial determination
+    for neuron, target in tqdm(enumerate(matrix_list)):
+        target_vector = target.ravel()
+        cpds = calculate_cpd(features, target_vector)
+
+        for idx, hyp in enumerate(basis_labels):
+            model_df.at[neuron, hyp] = cpds[idx]
+
+    return model_df
+
+
+def calculate_cpd(features, target_vector):
+    # Full model
+    model_full = LinearRegression().fit(features, target_vector)
+    r_squared_full = model_full.score(features, target_vector)
+
+    cpds = []
+    n_predictors = features.shape[1]
+
+    # Reduced models
+    for i in range(n_predictors):
+        # Select all features except the one at index i
+        features_reduced = np.delete(features, i, axis=1)
+        model_reduced = LinearRegression().fit(features_reduced, target_vector)
+        r_squared_reduced = model_reduced.score(features_reduced, target_vector)
+
+        # Calculate CPD
+        cpd = (r_squared_full - r_squared_reduced) / (r_squared_full)
+        cpds.append(cpd)
+
+    return cpds
