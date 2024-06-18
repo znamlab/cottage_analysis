@@ -143,6 +143,14 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
     # Train val split
     train_index_all, val_index_all = [], []
     for fold, (train_index, val_index) in enumerate(sss.split(np.arange(len(depth_label_train)), depth_label_train)):
+        if train_index.max() == len(train_index_temp_all[fold]):
+            train_index = train_index[:-1]
+            print(f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
+                  Train index max is equal to the length of the training set. Removing the last index.")
+        if val_index.max() == len(train_index_temp_all[fold]):
+            val_index = val_index[:-1]
+            print(f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
+                  Validation index max is equal to the length of the training set. Removing the last index.")
         train_index = train_index_temp_all[fold][train_index]
         val_index = train_index_temp_all[fold][val_index]
         dff_train = np.vstack(trials_df.iloc[train_index][dff_col].values)
