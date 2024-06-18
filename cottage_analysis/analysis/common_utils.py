@@ -179,7 +179,7 @@ def get_bootstrap_ci(arr, sig_level=0.05, n_bootstraps=1000, func=np.nanmean):
     return CI_low, CI_high
 
 
-def choose_trials_subset(trials_df, choose_trials, sfx=""):
+def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     trial_number = len(trials_df) // len(depth_list)
 
@@ -209,9 +209,18 @@ def choose_trials_subset(trials_df, choose_trials, sfx=""):
         if choose_trials is not None and isinstance(
             choose_trials, list
         ):  # if choose_trials is a given list
-            trials_df_chosen = trials_df.iloc[choose_trials]
+            if by_depth:
+                trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
+                for depth in depth_list:
+                    trials_df_depth = trials_df[trials_df.depth == depth]
+                    trials_df_depth = trials_df_depth.iloc[choose_trials]
+                    trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
+                    sfx=sfx
+            else:
+                trials_df_chosen = trials_df.iloc[choose_trials]
+                choose_trial_nums = choose_trials
+                sfx = sfx
             choose_trial_nums = choose_trials
-            sfx = sfx
 
     return trials_df_chosen, choose_trial_nums, sfx
 
