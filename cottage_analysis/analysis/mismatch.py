@@ -2,7 +2,10 @@ from functools import partial
 import flexiznam as flz
 import numpy as np
 import pandas as pd
+import pickle
+import seaborn as sns
 import random
+from pathlib import Path
 from scipy.stats import zscore, mannwhitneyu, pearsonr
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
@@ -69,7 +72,10 @@ def analyse_session(session, flexilims_session=None):
 
         closed_loop = imaging_df_all[i]
 
+        print(">>>>>>>>>>>>>>> Z-SCORE ANALYSIS <<<<<<<<<<<<<<<<<<<<")
         analyse_recording(closed_loop, recording, flexilims_session)
+        print(">>>>>>>>>>>>>>> DFF ANALYSIS <<<<<<<<<<<<<<<<<<<<")
+        analyse_recording(closed_loop, recording, flexilims_session, do_zscore=False)
 
 
 def format_imaging_df(recording, imaging_df):
@@ -418,7 +424,12 @@ def get_relevant_recordings(
 
 
 def analyse_recording(
-    closed_loop, recording, flexilims_session, null_mode="trial_structure", save=True
+    closed_loop,
+    recording,
+    flexilims_session,
+    null_mode="trial_structure",
+    do_zscore=True,
+    save=True,
 ):
     """
     Main entry point for the quick analysis pipeline. null_mode
@@ -426,6 +437,11 @@ def analyse_recording(
     or significance of mismatch responses: do you randomly sample all
     the trial or do you take into account that the mismatches only happen
     at some points during the trial.
+
+    The do_zscore option implements an analysis  that looks like the one  in
+    Attinger et. al, 2017: substracts the value of the pre-mismatch window
+    for both null events and mismatches, and then uses those traces for plotting,
+    saving and calculatingg significance w the dff.
     """
 
     is_playback = determine_if_playback(recording, flexilims_session)
@@ -436,11 +452,13 @@ def analyse_recording(
     closed_loop, idxs = create_mismatch_window(
         closed_loop, window_start=5, window_end=20
     )
-    neurons, neurons_df = build_neurons_df(closed_loop)
+    neurons, neurons_df = build_neurons_df(closed_loop, do_zscore=do_zscore)
     misperneuron = build_mismatches_per_neuron_list(
         neurons, neurons_df, window_start=5, window_end=20
     )
-    mismatch_raster = raster(neurons, misperneuron, window_start=5, window_end=20)
+    mismatch_raster = raster(
+        neurons, misperneuron, window_start=5, window_end=20, do_zscore=do_zscore
+    )
 
     if null_mode == "trial_structure":
         closed_loop = find_trials(closed_loop)
@@ -451,20 +469,30 @@ def analyse_recording(
 
     print("Estimating null distribution")
     rand_raster, rand_misperneuron = make_rand_raster(
-        closed_loop, n_events=200, window_end=10, indices=indices
+        closed_loop,
+        n_events=100,
+        window_start=5,
+        window_end=10,
+        indices=indices,
+        do_zscore=do_zscore,
     )
     sorted_mismatch_raster, modulation_raster = modulation_sort_raster(
-        rand_raster, mismatch_raster
+        rand_raster, mismatch_raster, window_start=5
     )
     sorted_p = calculate_significance(
         misperneuron, rand_misperneuron, modulation_raster
     )
 
     print("Plotting")
-    rasterfig, rasterax = plot_raster(sorted_mismatch_raster)
+    if do_zscore:
+        rasterfig, rasterax = plot_raster(sorted_mismatch_raster)
+    else:
+        rasterfig, rasterax = plot_raster(
+            sorted_mismatch_raster, vmin=-0.35, vmax=0.35, do_zscore=do_zscore
+        )
     rasterfig, rasterax, rasterax2 = plot_significance(rasterfig, rasterax, sorted_p)
     plt.show()
-    popfig, popax = plot_pop_response(sorted_mismatch_raster)
+    popfig, popax = plot_pop_response(sorted_mismatch_raster, do_zscore=do_zscore)
     plt.show()
     if not is_playback:
         sync_loop, trialfig, trialax = check_trials(
@@ -480,6 +508,11 @@ def analyse_recording(
         processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
         path = processed / recording.path
 
+        if do_zscore:
+            naming = ""
+        else:
+            naming = "_dff"
+
         # getting unsorted significance of modulation
         p = calculate_significance(misperneuron, rand_misperneuron)
 
@@ -489,11 +522,11 @@ def analyse_recording(
         mismatch_df.to_pickle(str(path / "mismatch_df.pkl"))
 
         # save mismatch_raster
-        np.save(str(path / "mismatch_raster.npy"), mismatch_raster)
+        np.save(str(path / f"mismatch_raster{naming}.npy"), mismatch_raster)
 
         # save figures
-        rasterfig.savefig(str(path / "raster"))
-        popfig.savefig(str(path / "population"))
+        rasterfig.savefig(str(path / f"raster{naming}"))
+        popfig.savefig(str(path / f"population{naming}"))
         if not is_playback:
             trialfig.savefig(str(path / "trials"))
 
@@ -546,7 +579,7 @@ def mismatch_ratio(closed_loop, is_playback):
 
 
 def create_mismatch_window(
-    closed_loop, window_start=5, window_end=10, event="mismatch"
+    closed_loop, window_start=5, window_end=20, event="mismatch"
 ):
     """
     Forms a mask in the region of the recording used to analyse mismatch responses.
@@ -612,10 +645,10 @@ def build_neurons_df(closed_loop, do_zscore=True):
 
 
 def build_mismatches_per_neuron_list(
-    neurons, neurons_df, window_start=5, window_end=10, indices=None
+    neurons, neurons_df, window_start=5, window_end=20, indices=None
 ):
     """
-    Builds a  really useful object: a listof the responses of all neurons
+    Builds a  really useful object: a list of the responses of all neurons
     around a time window to a particular event.
     """
 
@@ -683,7 +716,12 @@ def build_mismatches_per_neuron_list(
 
 
 def raster(
-    neurons, mismatches_per_neuron, n_neurons=100, window_start=5, window_end=10
+    neurons,
+    mismatches_per_neuron,
+    n_neurons=100,
+    window_start=5,
+    window_end=9,
+    do_zscore=True,
 ):
     """
     Generates a raster array aligned to  an  event.
@@ -701,6 +739,9 @@ def raster(
     # Calculate differences for each row
     # differences = np.apply_along_axis(calculate_difference, 1, mismatch_raster)
     # print(differences[0:10])
+
+    if not do_zscore:
+        mismatch_raster -= np.mean(mismatch_raster[:, 0:5], axis=1, keepdims=True)
 
     return mismatch_raster
 
@@ -732,7 +773,7 @@ def plot_raster(mismatch_raster, vmin=-1, vmax=1, do_zscore=True):
     ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])  # Adjust these values as needed
     im = ax.imshow(
         mismatch_raster,
-        cmap="coolwarm",
+        cmap="bwr",
         vmin=vmin,
         vmax=vmax,
         aspect="auto",
@@ -755,7 +796,7 @@ def plot_raster(mismatch_raster, vmin=-1, vmax=1, do_zscore=True):
     return fig, ax
 
 
-def plot_pop_response(sorted_mismatch_raster, how_many=None):
+def plot_pop_response(sorted_mismatch_raster, how_many=None, do_zscore=True):
     fig, ax = plt.subplots()
 
     ax.plot(np.mean(sorted_mismatch_raster, axis=0), label="Total")
@@ -772,10 +813,13 @@ def plot_pop_response(sorted_mismatch_raster, how_many=None):
     )
 
     ax.set_title("Population response")
-    ax.set_ylabel("Z-score")
+    if do_zscore:
+        ax.set_ylabel("Z-score")
+    else:
+        ax.set_ylabel("Dff")
     ax.set_xlabel("Frames")
     ax.axvline(5, color="red", alpha=0.3, label="Mismatch onset")
-    ax.axvline(15, color="green", alpha=0.3, label="End of response window")
+    ax.axvline(9, color="green", alpha=0.3, label="End of response window")
     ax.axhline(0, color="green", alpha=0.3)
 
     ax.legend()
@@ -783,17 +827,23 @@ def plot_pop_response(sorted_mismatch_raster, how_many=None):
     return fig, ax
 
 
-def modulation_sort_raster(rand_raster, mismatch_raster):
+def modulation_sort_raster(
+    rand_raster, mismatch_raster, window_start=5, sort="diff_to_null"
+):
     """
     Using a raster of neurons aligned to randomly triggered events,
     sorts neurons based on how different is their response to mismatch
     compared  to their response to  random events. This is the Attinger, 2017
     way to asess mismatch modulation.
     """
-    rand_avg = np.mean(rand_raster, axis=1)
-    mismatch_avg = np.mean(mismatch_raster[:, 8:17], axis=1)
+    rand_avg = np.mean(rand_raster[:, window_start:-1], axis=1)
+    mismatch_avg = np.mean(mismatch_raster[:, 5:9], axis=1)
     modulation_raster = mismatch_avg - rand_avg
-    sorted_indices = np.argsort(-modulation_raster)
+    if sort == "diff_to_null":
+        sorted_indices = np.argsort(-modulation_raster)
+    if sort == "response_in_mismatch":
+        sorted_indices = np.argsort(-mismatch_avg)
+
     # print(sorted_indices[0:10])
 
     # Sort the array based on the calculated differences
@@ -802,7 +852,14 @@ def modulation_sort_raster(rand_raster, mismatch_raster):
     return sorted_mismatch_raster, modulation_raster
 
 
-def make_rand_raster(closed_loop, n_events=100, window_end=5, indices=None):
+def make_rand_raster(
+    closed_loop,
+    n_events=100,
+    window_start=5,
+    window_end=10,
+    indices=None,
+    do_zscore=True,
+):
     """
     Builds an  object like mismatch_raster, buut for neurons aligned to
     randomly triggered events.
@@ -811,14 +868,25 @@ def make_rand_raster(closed_loop, n_events=100, window_end=5, indices=None):
         closed_loop, indices, n_events=n_events
     )
     rand_rec, indices = create_mismatch_window(
-        closed_loop, window_start=0, window_end=window_end, event="randevents"
+        closed_loop,
+        window_start=window_start,
+        window_end=window_end,
+        event="randevents",
     )
-    neurons, rand_neurodf = build_neurons_df(rand_rec)
+    neurons, rand_neurodf = build_neurons_df(rand_rec, do_zscore=do_zscore)
     rand_misperneuron = build_mismatches_per_neuron_list(
-        neurons, rand_neurodf, window_start=0, window_end=window_end, indices=indices
+        neurons,
+        rand_neurodf,
+        window_start=window_start,
+        window_end=window_end,
+        indices=indices,
     )
     rand_raster = raster(
-        neurons, rand_misperneuron, window_start=0, window_end=window_end
+        neurons,
+        rand_misperneuron,
+        window_start=window_start,
+        window_end=window_end,
+        do_zscore=do_zscore,
     )
 
     return rand_raster, rand_misperneuron
@@ -1075,7 +1143,7 @@ def calculate_significance(misperneuron, rand_misperneuron, modulation_raster=No
     neuron_p = np.zeros(len(misperneuron))
 
     for neuron in tqdm(range(len(misperneuron))):
-        mis_responses = misperneuron[neuron][:, 5:15]  # keep the rersponse part
+        mis_responses = misperneuron[neuron][:, 5:9]  # keep the rersponse part
         rand_responses = rand_misperneuron[neuron]
 
         mis_mean = np.mean(mis_responses, axis=1)
@@ -1129,6 +1197,7 @@ def determine_if_playback(recording, flexilims_session):
     return attributes["playback"]
 
 
+# region depth
 ############
 
 ### DEPTH ANALYSIS
@@ -1202,6 +1271,40 @@ def build_depth_df(session, index=0, flexilims_session=None):
     return depth_df
 
 
+def read_mismatch_df(session, index, flexilims_session=None):
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    exp_session = flz.get_entity(
+        datatype="session", name=session, flexilims_session=flexilims_session
+    )
+
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value="two_photon",
+        flexilims_session=flexilims_session,
+    )
+
+    recordings = recordings[recordings.name.str.contains(PROTOCOL)]
+    i = index
+    recname = recordings.name[i]
+
+    recording = flz.get_entity(
+        datatype="recording",
+        name=recname,
+        flexilims_session=flexilims_session,
+    )
+
+    processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
+
+    mismatch_path = processed / recording.path / "mismatch_df.pkl"
+    mismatch_df = pd.read_pickle(mismatch_path)
+
+    return mismatch_df
+
+
 def process_depth_df(depth_df, threshold=0.05):
     """
     Keeps only the neurons that are significantly modulated by depth and mismatch. Also splits
@@ -1221,7 +1324,7 @@ def process_depth_df(depth_df, threshold=0.05):
     return sig_depth_df, positive_mismatch, negative_mismatch
 
 
-def plot_correlation_with_fit(sig_depth_df):
+def plot_correlation_with_fit(sig_depth_df, all_points=False):
     """
     Calculates the Pearson correlation and produces a line of best fit in a depth x mismatch
     plot.
@@ -1232,9 +1335,47 @@ def plot_correlation_with_fit(sig_depth_df):
     fig, ax = plt.subplots(facecolor="white")
 
     # Scatter plot
-    ax.scatter(log_sig_preferred_depth, sig_depth_df["mis_modulation_size"], marker=".")
-    ax.set_ylabel("Mismatch Modulation")
-    ax.set_xlabel("Log Preferred Depth")
+    if all_points:
+        color_filter = (
+            (sig_depth_df["depth_tuning_test_spearmanr_pval_closedloop"] < 0.05)
+            & (sig_depth_df["depth_tuning_test_spearmanr_rval_closedloop"] > 0)
+            & (sig_depth_df["mis_p_value"] < 0.05)
+        )
+
+        # Filter indices for colors
+        indices_blue = np.where(color_filter)[0]
+        indices_gray = np.where(~color_filter)[0]
+
+        # Plot blue points for condition met
+        ax.scatter(
+            log_sig_preferred_depth[indices_blue],
+            sig_depth_df["mis_modulation_size"].iloc[indices_blue],
+            marker=".",
+            alpha=0.2,
+            color="blue",
+            label="Significant tuning",
+        )
+
+        # Plot gray points for condition not met
+        ax.scatter(
+            log_sig_preferred_depth[indices_gray],
+            sig_depth_df["mis_modulation_size"].iloc[indices_gray],
+            marker=".",
+            alpha=0.2,
+            color="gray",
+            label="Non significant tuning",
+        )
+        ax.set_ylabel("Mismatch Modulation")
+        ax.set_xlabel("Log Preferred Depth")
+    else:
+        ax.scatter(
+            log_sig_preferred_depth,
+            sig_depth_df["mis_modulation_size"],
+            marker=".",
+            alpha=0.2,
+        )
+        ax.set_ylabel("Mismatch Modulation")
+        ax.set_xlabel("Log Preferred Depth")
 
     # Calculate correlation
     corr_coef, p_value = pearsonr(
@@ -1297,6 +1438,58 @@ def plot_differential_histograms(positive_mismatch, negative_mismatch):
     return fig, ax
 
 
+def plot_differential_kdes(positive_mismatch, negative_mismatch):
+    """
+    Plots the kernel density estimation of depth preferences for positive and negative mismatch cells.
+    Tests that the two distributions are drawn from different distributions with a Mann-Whitney U test.
+    """
+
+    # Prepare data
+    positive_depths = np.log10(positive_mismatch["preferred_depth_closedloop"])
+    negative_depths = np.log10(negative_mismatch["preferred_depth_closedloop"])
+
+    # Create figure and axes
+    fig, ax = plt.subplots(1, 1, sharex=True, facecolor="white", figsize=(7, 5))
+
+    # Plot KDE for positive mismatch
+    sns.kdeplot(
+        positive_depths, ax=ax, fill=True, color="blue", label="Positive mismatch"
+    )
+    ax.set_title(f"n={len(positive_mismatch)+len(negative_mismatch)}")
+    ax.set_xlim((-2, 2))
+    ax.axvline(
+        np.median(positive_depths),
+        color="red",
+        linestyle="--",
+        label=f"Positive median (n={len(positive_mismatch)})",
+    )
+
+    # Plot KDE for negative mismatch
+    sns.kdeplot(
+        negative_depths, ax=ax, fill=True, color="green", label="Negative mismatch"
+    )
+    ax.axvline(
+        np.median(negative_depths),
+        color="purple",
+        linestyle="--",
+        label=f"Negative median (n={len(negative_mismatch)})",
+    )
+
+    # Labels and titles
+    ax.set_xlabel("Log Pref Depth")
+    ax.set_ylabel("Density")
+    ax.legend()
+
+    # Perform Mann-Whitney U test
+    p = mannwhitneyu(positive_depths, negative_depths)
+    fig.suptitle(f"Mann-Whitney U: p = {p.pvalue:.2e}")
+    print(p)
+
+    return fig, ax
+
+
+# endregion
+# region multigain
 ###########
 ## MULTIGAIN
 ###########
@@ -1372,6 +1565,7 @@ def find_multimismatch(
 
     # filter blips
     print("Filtering blips")
+
     closed_loop["filtered_mism_ratio"] = filtered_series
     for i in range(1, len(closed_loop) - 1):
         if (
@@ -1539,14 +1733,13 @@ def find_trials_from_log(closed_loop, flexilims_session, recording):
     sync_loop.at[end_index, "trial_end"] = 1
 
     for i in range(1, len(sync_loop) - 1):
-        if (sync_loop["IsMismatch"][i - 1] == False) and (
+        if (sync_loop["IsMismatch"][i] == False) and (
             sync_loop["IsMismatch"][i + 1] == True
         ):
             sync_loop.loc[i - 3 : i, "mismatch"] = 1
         if (sync_loop["IsMismatch"][i - 1] == True) and (
-            sync_loop["IsMismatch"][i + 1] == False
+            sync_loop["IsMismatch"][i] == False
         ):
-            sync_loop.at[i, "trial_end"] = 1
             trial_start = sync_loop["mouse_z"][i] - ((5 / 6) * 6)
             trial_end = sync_loop["mouse_z"][i] + ((1 / 6) * 6)
             closest_row = sync_loop.iloc[
@@ -1558,6 +1751,8 @@ def find_trials_from_log(closed_loop, flexilims_session, recording):
                 (sync_loop["mouse_z"] - trial_end).abs().argmin()
             ]
             end_index = closest_row.name
+            sync_loop.at[end_index, "trial_end"] = 1
+
             sync_loop.loc[start_index:end_index, "in_trial"] = 1
 
     return sync_loop
@@ -1649,7 +1844,15 @@ def build_null_dist_per_trial_type(closed_loop):
     return tt_null
 
 
-def make_tt_rasters(tt_misperneuron, null, neurons, closed_loop):
+def make_tt_rasters(
+    tt_misperneuron,
+    null,
+    neurons,
+    closed_loop,
+    read=False,
+    recording=None,
+    flexilims_session=None,
+):
     """
     We use previous code tu turn tt_misperneuron into a raster for each trial type. We
     also use this, like before, as an entry point to generate the null distribution, whihch
@@ -1658,18 +1861,32 @@ def make_tt_rasters(tt_misperneuron, null, neurons, closed_loop):
     A raster here is just an array that holds, for every neuron, their average response
     to a mismatch event.
     """
-    tt_raster = {}
-    tt_rand_raster = {}
-    tt_rand_misperneuron = {}
 
-    for gain in tt_misperneuron.keys():
-        print(f"Calculating rasters for {gain}")
-        tt_raster[gain] = raster(
-            neurons, tt_misperneuron[gain], window_start=5, window_end=20
-        )
-        tt_rand_raster[gain], tt_rand_misperneuron[gain] = make_rand_raster(
-            closed_loop, n_events=200, window_end=10, indices=null[gain]
-        )
+    if read:
+        print("Reading")
+        processed = flz.get_data_root("processed", flexilims_session=flexilims_session)
+        path = processed / recording.path
+
+        # Read dictionaries using pickle
+        with open(path / "tt_raster.pkl", "rb") as f:
+            tt_raster = pickle.load(f)
+        with open(path / "tt_rand_raster.pkl", "rb") as f:
+            tt_rand_raster = pickle.load(f)
+        with open(path / "tt_rand_misperneuron.pkl", "rb") as f:
+            tt_rand_misperneuron = pickle.load(f)
+    else:
+        tt_raster = {}
+        tt_rand_raster = {}
+        tt_rand_misperneuron = {}
+
+        for gain in tt_misperneuron.keys():
+            print(f"Calculating rasters for {gain}")
+            tt_raster[gain] = raster(
+                neurons, tt_misperneuron[gain], window_start=5, window_end=20
+            )
+            tt_rand_raster[gain], tt_rand_misperneuron[gain] = make_rand_raster(
+                closed_loop, n_events=200, window_end=10, indices=null[gain]
+            )
 
     return tt_raster, tt_rand_raster, tt_rand_misperneuron
 
@@ -1694,7 +1911,7 @@ def make_tt_sorted_raster(tt_rand_raster, tt_raster, sort="all"):
         for gain in tt_raster.keys():
             rand_raster, mismatch_raster = tt_rand_raster[gain], tt_raster[gain]
             rand_avg = np.mean(rand_raster, axis=1)
-            mismatch_avg = np.mean(mismatch_raster[:, 8:17], axis=1)
+            mismatch_avg = np.mean(mismatch_raster[:, 5:9], axis=1)
             modulation_raster = mismatch_avg - rand_avg
             tt_modulation_raster[gain] = modulation_raster
 
@@ -1766,17 +1983,17 @@ def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p, vmin=-2, vmax=2):
                 raster_data = tt_sorted_mismatch_raster[gain_combo]
                 im = ax.imshow(
                     raster_data,
-                    cmap="coolwarm",
+                    cmap="bwr",
                     vmin=vmin,
                     vmax=vmax,
                     aspect="auto",
                     interpolation="nearest",
                 )
 
-                ax.set_xlabel("Frames", size=15)
+                ax.set_xlabel("Frames", size=30)
                 cbar = fig.colorbar(im, ax=ax, orientation="vertical")
-                cbar.ax.tick_params(labelsize=14)
-                cbar.set_label("Z-score" if True else "Dff", fontsize=15)
+                cbar.ax.tick_params(labelsize=30)
+                cbar.set_label("Z-score" if True else "Dff", fontsize=30)
                 ax.axvline(5, color="grey")
 
                 # Plot significance
@@ -1787,7 +2004,7 @@ def plot_raster_grid(tt_sorted_mismatch_raster, tt_sorted_p, vmin=-2, vmax=2):
                 )
                 ax2.imshow(plot_sorted_p.T, aspect="auto", cmap="binary")
                 ax2.xaxis.set_visible(False)
-                ax2.set_ylabel("Neurons", size=15)
+                ax2.set_ylabel("Neurons", size=30)
 
     return fig, axes
 
@@ -1815,32 +2032,84 @@ def determine_if_multimismatch(recording, flexilims_session):
     return attributes["multigain"]
 
 
+def save_tt_rasters(
+    tt_raster, tt_rand_raster, tt_rand_misperneuron, recording, flexilims_session=None
+):
+    if flexilims_session is None:
+        flexilims_session = flz.get_flexilims_session(project_id=PROJECT)
+
+    # Access the processed data root
+    processed = Path(
+        flz.get_data_root("processed", flexilims_session=flexilims_session)
+    )
+    # Construct the path using the recording.path
+    path = processed / recording.path
+
+    # Ensure the directory exists
+    path.mkdir(parents=True, exist_ok=True)
+
+    # Save dictionaries using pickle
+    with open(path / "tt_raster.pkl", "wb") as f:
+        pickle.dump(tt_raster, f)
+    with open(path / "tt_rand_raster.pkl", "wb") as f:
+        pickle.dump(tt_rand_raster, f)
+    with open(path / "tt_rand_misperneuron.pkl", "wb") as f:
+        pickle.dump(tt_rand_misperneuron, f)
+
+    print(f"Files saved successfully to {path}")
+
+
 ################
 # INDIVIDUAL MULTIGAIN PLOTTING
 ###################
 
 
-def make_matrix_list(tt_misperneuron):
+def make_matrix_list(tt_misperneuron, tt_rand_misperneuron):
     by_neur_modulation = {}
+    by_neur_rand = {}
+
+    print("Response to mismatch events")
 
     for tt in tqdm(tt_misperneuron.keys()):
         by_neur_modulation[tt] = np.zeros(len(tt_misperneuron[tt]))
         for neuron in range(len(tt_misperneuron[tt])):
-            by_neur_modulation[tt][neuron] = np.mean(tt_misperneuron[tt][neuron])
+            by_neur_modulation[tt][neuron] = np.mean(
+                tt_misperneuron[tt][neuron][:, 5:10]
+            )
+
+    null_tts = {  # Use the null distribution for real trialtypes
+        "high": "htl",
+        "medium": "mtl",
+        "low": "lth",
+    }
+
+    print("Response to null mismatches")
+
+    for tt in tqdm(null_tts.keys()):
+        sample_trial = null_tts[tt]
+        by_neur_rand[tt] = np.zeros(len(tt_rand_misperneuron[sample_trial]))
+        for neuron in range(len(tt_rand_misperneuron[sample_trial])):
+            by_neur_rand[tt][neuron] = np.mean(
+                tt_rand_misperneuron[sample_trial][neuron][:, 0:5]
+            )
 
     by_neur_modulation = pd.DataFrame(by_neur_modulation)
+    by_neur_rand = pd.DataFrame(by_neur_rand)
+
     matrix_list = list(np.zeros(len(by_neur_modulation)))
     for neuron in range(len(by_neur_modulation)):
-        matrix_list[neuron] = activity_matrix(by_neur_modulation.iloc[neuron, :])
+        matrix_list[neuron] = activity_matrix(
+            by_neur_modulation.iloc[neuron, :], by_neur_rand.iloc[neuron, :]
+        )
 
     return matrix_list
 
 
-def activity_matrix(a):
+def activity_matrix(by_neur_modulation, by_neur_rand):
     activity_matrix = [
-        [0, a["htm"], a["htl"]],
-        [a["mth"], 0, a["mtl"]],
-        [a["lth"], a["ltm"], 0],
+        [by_neur_rand["high"], by_neur_modulation["htm"], by_neur_modulation["htl"]],
+        [by_neur_modulation["mth"], by_neur_rand["medium"], by_neur_modulation["mtl"]],
+        [by_neur_modulation["lth"], by_neur_modulation["ltm"], by_neur_rand["low"]],
     ]
     return np.array(activity_matrix)
 
@@ -1905,7 +2174,7 @@ def plot_matrix_grid(matrix_list, side=10, vmin=-1, vmax=1):
             if len(data) > ((i * side) + j):
                 im = ax.imshow(
                     data[(i * side) + j],
-                    cmap="coolwarm",
+                    cmap="bwr",
                     vmin=vmin,
                     vmax=vmax,
                     aspect="auto",
@@ -1914,10 +2183,10 @@ def plot_matrix_grid(matrix_list, side=10, vmin=-1, vmax=1):
 
                 cbar = fig.colorbar(im, ax=ax, orientation="vertical")
                 cbar.ax.tick_params(labelsize=0)
-                cbar.set_label("Z-score" if True else "Dff", fontsize=15)
+                # cbar.set_label("Z-score" if True else "Dff", fontsize=15)
 
                 # Set title for each subplot
-                ax.set_title(f"Matrix {(i*side)+j}", fontsize=10)
+                ax.set_title(f"{(i*side)+j}", fontsize=30)
 
             # Remove ticks and labels
             ax.set_xticks([])  # Remove x-axis tick marks
@@ -1956,17 +2225,21 @@ def plot_trace_matrix(neuron, tt_misperneuron, tt_rand_misperneuron):
     fig.suptitle(f"Neuron {neuron}", size=size * 1.2)
 
     for tt in trial_plots.keys():
+        event_list = []
         for event in tt_misperneuron[tt][neuron]:
-            ax[trial_plots[tt]].plot(event, alpha=0.5, color="red")
+            ax[trial_plots[tt]].plot(event, alpha=0.4, color="orange")
             ax[trial_plots[tt]].axvline(5, color="blue")
             ax[trial_plots[tt]].set_ylim((-3, 4))
+            event_list.append(event)
             # ax[trial_plots[tt]].set_xticks([])  # Remove x-axis tick marks
             # ax[trial_plots[tt]].set_yticks([])  # Remove y-axis tick marks
+        ax[trial_plots[tt]].plot(np.mean(event_list, axis=0), color="cyan")
 
     for tt in null_plots.keys():
-        for event in tt_rand_misperneuron[null_tts[tt]][neuron]:
+        null_trial = null_tts[tt]
+        for event in tt_rand_misperneuron[null_trial][neuron]:
             ax[null_plots[tt]].plot(event, alpha=0.2, color="grey")
-            ax[null_plots[tt]].axvline(5, color="blue")
+            ax[null_plots[tt]].axvline(0, color="blue")
             ax[null_plots[tt]].set_ylim((-3, 4))
             # ax[null_plots[tt]].set_xticks([])  # Remove x-axis tick marks
             # ax[null_plots[tt]].set_yticks([])  # Remove y-axis tick marks
@@ -1984,18 +2257,18 @@ pos_mismatch = [[0, 0.5, 1], [0, 0, 0.5], [0, 0, 0]]
 
 neg_mismatch = [[0, 0, 0], [0.5, 0, 0], [1, 0.5, 0]]
 
-near = [[0, 0.5, 0], [1, 0, 0], [1, 0.5, 0]]
+near = [[1, 0.5, 0], [1, 0.5, 0], [1, 0.5, 0]]
 
-mid = [[0, 1, 0.5], [0.5, 0, 0.5], [0.5, 1, 0]]
+mid = [[0.5, 1, 0.5], [0.5, 1, 0.5], [0.5, 1, 0.5]]
 
-far = [[0, 0.5, 1], [0, 0, 1], [0, 0.5, 0]]
+far = [[0, 0.5, 1], [0, 0.5, 1], [0, 0.5, 1]]
 
 basis_matrices = [pos_mismatch, neg_mismatch, near, mid, far]
 
 basis_labels = ["pos_mismatch", "neg_mismatch", "near", "mid", "far"]
 
 
-def fit_models(matrix_list, basis_matrices, basis_labels):
+def fit_models(matrix_list, basis_matrices=basis_matrices, basis_labels=basis_labels):
     model_df = {"matrix": matrix_list}
 
     model_df = pd.DataFrame(model_df)
@@ -2007,9 +2280,6 @@ def fit_models(matrix_list, basis_matrices, basis_labels):
     # Reshape the basis matrices into vectors and stack them to form a feature matrix
     features = np.stack([np.array(m).ravel() for m in basis_matrices]).T
 
-    # Prepare to collect coefficients
-    coefficients = []
-
     # Linear regression model
     model = LinearRegression()
 
@@ -2017,7 +2287,8 @@ def fit_models(matrix_list, basis_matrices, basis_labels):
     for neuron, target in tqdm(enumerate(matrix_list)):
         target_vector = target.ravel()
         model.fit(features, target_vector)
-        coefficients.append(model.coef_)
+        coefficients = model.coef_
+        model_df.at[neuron, "total"] = model.score(features, target_vector)
         for idx, hyp in enumerate(basis_labels):
             model_df.at[neuron, f"coeff_{hyp}"] = coefficients[idx]
 
