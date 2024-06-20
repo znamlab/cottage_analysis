@@ -16,7 +16,11 @@ from tqdm import tqdm
 import scipy
 import itertools
 
-from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedShuffleSplit
+from sklearn.model_selection import (
+    train_test_split,
+    GridSearchCV,
+    StratifiedShuffleSplit,
+)
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, confusion_matrix
 
@@ -25,39 +29,38 @@ from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
 
 
-def stratified_shuffle_split(X,y, test_size=0.2, random_state=42):
+def stratified_shuffle_split(X, y, test_size=0.2, random_state=42):
     # Ensure the data is in a numpy array for easier indexing
     X = np.array(X)
     y = np.array(y)
-    
+
     # Determine unique classes and their distribution
     classes, y_indices = np.unique(y, return_inverse=True)
     class_counts = np.bincount(y_indices)
-    
+
     # Calculate the number of samples per class in the test set
     test_counts = np.ceil(class_counts * test_size).astype(int)
     train_counts = class_counts - test_counts
-    
+
     # Initialize lists to hold the indices for the split
     train_indices = []
     test_indices = []
-    
+
     # For each class, shuffle and split the data
     for class_index, class_count in enumerate(class_counts):
         class_indices = np.where(y == classes[class_index])[0]
         np.random.shuffle(class_indices)
-        
-        class_test_indices = class_indices[:test_counts[class_index]]
-        class_train_indices = class_indices[test_counts[class_index]:]
-        
+
+        class_test_indices = class_indices[: test_counts[class_index]]
+        class_train_indices = class_indices[test_counts[class_index] :]
+
         train_indices.extend(class_train_indices)
         test_indices.extend(class_test_indices)
 
-    
     # # Shuffle the final indices to mix classes
     # np.random.shuffle(train_indices)
     # np.random.shuffle(test_indices)
-    
+
     return train_indices, test_indices
 
 
@@ -164,10 +167,12 @@ def fit_svm_classifier(
     return acc, conmat, best_params
 
 
-def split_train_test_val(trials_df, test_size=0.2, random_state=42, trial_average=False):
+def split_train_test_val(
+    trials_df, test_size=0.2, random_state=42, trial_average=False
+):
     depth_list = np.sort(trials_df.depth.unique())
-    if len(trials_df)%len(depth_list) != 0:
-        trials_df = trials_df[:-(len(trials_df)%len(depth_list))] 
+    if len(trials_df) % len(depth_list) != 0:
+        trials_df = trials_df[: -(len(trials_df) % len(depth_list))]
     if trial_average:
         dff_col = "trial_mean_dff"
         depth_col = "depth_label"
@@ -178,24 +183,32 @@ def split_train_test_val(trials_df, test_size=0.2, random_state=42, trial_averag
     depth_label = np.hstack(trials_df["depth_label"].values)
 
     # Train test split
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
-    for fold, (train_index_temp, test_index) in enumerate(sss.split(np.arange(len(depth_label)), depth_label)):
+    sss = StratifiedShuffleSplit(
+        n_splits=1, test_size=test_size, random_state=random_state
+    )
+    for fold, (train_index_temp, test_index) in enumerate(
+        sss.split(np.arange(len(depth_label)), depth_label)
+    ):
         depth_label_train = depth_label[train_index_temp]
         dff_test = np.vstack(trials_df.iloc[test_index][dff_col].values)
         depth_test = np.hstack(trials_df.iloc[test_index][depth_col].values)
 
     # Train val split
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=test_size/(1-test_size), random_state=random_state)
-    for fold, (train_index, val_index) in enumerate(sss.split(np.arange(len(depth_label_train)), depth_label_train)):
+    sss = StratifiedShuffleSplit(
+        n_splits=1, test_size=test_size / (1 - test_size), random_state=random_state
+    )
+    for fold, (train_index, val_index) in enumerate(
+        sss.split(np.arange(len(depth_label_train)), depth_label_train)
+    ):
         train_index = train_index_temp[train_index]
         val_index = train_index_temp[val_index]
         dff_train = np.vstack(trials_df.iloc[train_index][dff_col].values)
         dff_val = np.vstack(trials_df.iloc[val_index][dff_col].values)
         depth_train = np.hstack(trials_df.iloc[train_index][depth_col].values)
         depth_val = np.hstack(trials_df.iloc[val_index][depth_col].values)
-        
+
     return dff_train, dff_val, dff_test, depth_train, depth_val, depth_test
-    
+
 
 def depth_decoder(
     trials_df,
@@ -214,7 +227,7 @@ def depth_decoder(
 ):
     # choose closedloop or openloop
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
-    
+
     # add iscell
     suite2p_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
@@ -226,7 +239,7 @@ def depth_decoder(
     )
     iscell = np.load(suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True)[
         :, 0
-    ].astype('bool')
+    ].astype("bool")
 
     # process dff and trials_df
     trials_df = downsample_dff(
@@ -247,12 +260,20 @@ def depth_decoder(
     depth_list = np.sort(trials_df.depth.unique())
 
     # train test val split
-    dff_train, dff_val, dff_test, depth_train, depth_val, depth_test = split_train_test_val(
-        trials_df=trials_df, 
-        test_size=test_size, 
-        random_state=random_state, 
-        trial_average=trial_average)
-    
+    (
+        dff_train,
+        dff_val,
+        dff_test,
+        depth_train,
+        depth_val,
+        depth_test,
+    ) = split_train_test_val(
+        trials_df=trials_df,
+        test_size=test_size,
+        random_state=random_state,
+        trial_average=trial_average,
+    )
+
     # only select cells
     dff_train = dff_train[:, iscell]
     dff_val = dff_val[:, iscell]

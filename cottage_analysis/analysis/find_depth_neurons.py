@@ -72,7 +72,8 @@ def trial_average_dff(
             ).copy()
         elif rs_thr_max is None:  # no rs_thr_max, use all data above rs_thr
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr_min, :], axis=0), axis=1
+                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr_min, :], axis=0),
+                axis=1,
             ).copy()
         elif rs_thr_min is None:  # no rs_thr, use all data below rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
