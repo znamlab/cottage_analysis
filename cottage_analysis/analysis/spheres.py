@@ -658,6 +658,7 @@ def regenerate_frames_all_recordings(
     harp_is_in_recording=True,
     use_onix=False,
     ephys_kwargs=None,
+    do_regenerate_frames=True,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -767,28 +768,34 @@ def regenerate_frames_all_recordings(
             / 0.087
         )
         assert not isinstance(sphere_size, list)
-        frames = regenerate_frames(
-            frame_times=imaging_df.imaging_harptime,
-            trials_df=trials_df,
-            vs_df=vs_df,
-            param_logger=param_log,
-            time_column="HarpTime",
-            resolution=resolution,
-            sphere_size=sphere_size,
-            azimuth_limits=(-120, 120),
-            elevation_limits=(-40, 40),
-            verbose=True,
-            output_datatype="int16",
-            output=None,
-            # flip_x=True,
-        )
-
-        if i == 0:
-            frames_all = frames
-            imaging_df_all = imaging_df
+        if do_regenerate_frames:
+            frames = regenerate_frames(
+                frame_times=imaging_df.imaging_harptime,
+                trials_df=trials_df,
+                vs_df=vs_df,
+                param_logger=param_log,
+                time_column="HarpTime",
+                resolution=resolution,
+                sphere_size=sphere_size,
+                azimuth_limits=(-120, 120),
+                elevation_limits=(-40, 40),
+                verbose=True,
+                output_datatype="int16",
+                output=None,
+                # flip_x=True,
+            )
+            if i == 0:
+                frames_all = frames
+                imaging_df_all = imaging_df
+            else:
+                frames_all = np.concatenate((frames_all, frames), axis=0)
+                imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
         else:
-            frames_all = np.concatenate((frames_all, frames), axis=0)
-            imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
+            frames_all=None
+            if i == 0:
+                imaging_df_all = imaging_df
+            else:
+                imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
     print(f"Finished concatenating regenerated frames and imaging_df")
 
     return frames_all, imaging_df_all
