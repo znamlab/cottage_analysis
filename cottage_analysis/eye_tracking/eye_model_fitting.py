@@ -18,6 +18,7 @@ from cottage_analysis.eye_tracking import eye_io
 from cottage_analysis.eye_tracking import diagnostics
 from cottage_analysis.eye_tracking import utils
 
+raise DeprecationWarning("This code should be moved to wayla")
 
 def fit_ellipses(dlc_res_file, likelihood_threshold=None):
     """Fit an ellipse to DLC set of points
