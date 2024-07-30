@@ -76,14 +76,18 @@ def sbatch_session(
     script_path = str(
         Path(__file__).parent.parent.parent / "sbatch" / pipeline_filename
     )
-
-    log_fname = f"{session_name}_%j.out"
+    
+    if "log_fname" in kwargs.keys():
+        log_fname = f"{session_name}_{kwargs['log_fname']}_%j.out"
+    else:
+        log_fname = f"{session_name}_%j.out"
 
     log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
     for key, value in kwargs.items():
-        args += f",{key.upper()}={int(value)}"
+        if key != "log_fname":
+            args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
 
@@ -160,9 +164,9 @@ def load_session(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "24:00:00",
-        "cpus-per-task": 8,
+        "time": "48:00:00",
         "partition": "ncpu",
+        "cpus-per-task": 8,
     },
     print_job_id=True,
 )
@@ -214,9 +218,9 @@ def load_and_fit(
     if isinstance(choose_trials, str):
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
-    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
-    finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_started")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_started")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
@@ -236,9 +240,9 @@ def load_and_fit(
     )
     fit_df.to_pickle(target)
     
-    # save timestamp to finished.pickle
-    finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_finished")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # # save timestamp to finished.pickle
+    # finished = save_finish_time(finished, f"rsof_fit_{suffix}{file_special_sfx}_finished")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     return fit_df
 
 
@@ -283,9 +287,9 @@ def merge_fit_dataframes(
     # load the main neurons_df
     neurons_df = pd.read_pickle(neurons_ds.path_full)
 
-    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
-    finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_started")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_started")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
     search_str = f"{prefix}*{suffix}{filetype}"
     merge_df_names = []
@@ -332,9 +336,9 @@ def merge_fit_dataframes(
     neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
     print("All dataframes merged. Neurons_df saved.")
     
-    # save timestamp to finished.pickle
-    finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_finished")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # # save timestamp to finished.pickle
+    # finished = save_finish_time(finished, f"merge_dataframes{target_column_prefix}_finished")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     return neurons_df
 
 
@@ -356,9 +360,9 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         frames_all,
         _,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
-    finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
-    finished = save_finish_time(finished, f"plot_basicvis_started")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # finished = save_finish_time(finished, f"plot_basicvis_started")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
     kwargs = {
         "RS_OF_matrix_log_range": {
@@ -376,14 +380,14 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
     )
     
-    # save timestamp to finished.pickle
-    finished = save_finish_time(finished, f"plot_basicvis_finished")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # # save timestamp to finished.pickle
+    # finished = save_finish_time(finished, f"plot_basicvis_finished")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
-    # Plot all ROI RFs
-    print("Plotting RFs...")
-    finished = save_finish_time(finished, f"plot_rf_started")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # # Plot all ROI RFs
+    # print("Plotting RFs...")
+    # finished = save_finish_time(finished, f"plot_rf_started")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
     
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
@@ -403,6 +407,6 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             fontsize_dict={"title": 10, "tick": 10, "label": 10},
         )
         
-    # save timestamp to finished.pickle
-    finished = save_finish_time(finished, f"plot_rf_started")
-    finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+    # # save timestamp to finished.pickle
+    # finished = save_finish_time(finished, f"plot_rf_started")
+    # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
