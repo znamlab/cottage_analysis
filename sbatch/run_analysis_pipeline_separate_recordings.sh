@@ -2,9 +2,9 @@
 #
 #SBATCH --job-name=2p_analysis
 #SBATCH --ntasks=1
-#SBATCH --time=2:00:00
-#SBATCH --cpus-per-task=4
-#SBATCH --mem-per-cpu=4G
+#SBATCH --time=6:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=32G
 #SBATCH --partition=ncpu
 #SBATCH --mail-type=END,FAIL
 
@@ -17,10 +17,5 @@ source activate base
 conda activate 2p_analysis_cottage2
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
-echo Run depth fit ${RUN_DEPTH_FIT}
-echo Run rf fit ${RUN_RF}
-echo Run rs of fit ${RUN_RSOF_FIT}
-echo Run rsof fit separate recordings ${RUN_RSOF_FIT_SEPARATE_RECORDINGS}
-echo Run plot ${RUN_PLOT}
 cd "/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/cottage_analysis/pipelines/"
-python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT}
+python analysis_pipeline_separate_recordings.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM}
