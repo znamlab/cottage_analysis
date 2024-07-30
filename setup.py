@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cottage_analysis",
-    version="v1.0",
+    version="v2.0",
     packages=find_packages(),
     url="https://github.com/znamlab/cottage_analysis",
     license="MIT",
