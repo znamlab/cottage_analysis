@@ -146,6 +146,25 @@ def gaussian_OF(
                 )
     return g
 
+def gaussian_RS(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    log_sigma_x2,
+    offset,
+    min_sigma,
+):
+    (rs, of) = xy_tuple
+    x = rs
+    g = gaussian_1d(x,
+                    log_amplitude,
+                    x0,
+                    log_sigma_x2,
+                    offset,
+                    min_sigma,
+                )
+    return g
+
 
 def gaussian_ratio(
     xy_tuple,
@@ -457,10 +476,8 @@ def initial_fit_conditions(
                 y0=np.random.uniform(
                     np.log(param_range["of_min"]), np.log(param_range["of_max"])
                 ),
-                # log_sigma_x2=np.random.normal(),
-                # log_sigma_y2=np.random.normal(),
-                log_sigma_x2=np.random.normal(5,5),
-                log_sigma_y2=np.random.normal(5,5),
+                log_sigma_x2=np.random.normal(),
+                log_sigma_y2=np.random.normal(),
                 offset=np.random.normal(),
             )
 
@@ -484,6 +501,31 @@ def initial_fit_conditions(
                 log_amplitude=np.random.normal(),
                 x0=np.random.uniform(
                     np.log(param_range["of_min"]), np.log(param_range["of_max"])
+                ),
+                log_sigma_x2=np.random.normal(),
+                offset=np.random.normal(),
+            )
+            
+    elif model == "gaussian_RS":
+        model_sfx = "_grs"
+        lower_bounds = Gaussian1DParams(
+            log_amplitude=-np.inf,
+            x0=np.log(param_range["rs_min"]),
+            log_sigma_x2=-np.inf,
+            offset=-np.inf,
+        )
+        upper_bounds = Gaussian1DParams(
+            log_amplitude=np.inf,
+            x0=np.log(param_range["rs_max"]),
+            log_sigma_x2=np.inf,
+            offset=np.inf,
+        )
+
+        def p0_func():
+            return Gaussian1DParams(
+                log_amplitude=np.random.normal(),
+                x0=np.random.uniform(
+                    np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
                 ),
                 log_sigma_x2=np.random.normal(),
                 offset=np.random.normal(),
@@ -590,27 +632,34 @@ def fit_rs_of_tuning(
         columns=["roi"], data=np.arange(trials_df["dff_stim"].iloc[0].shape[1])
     )
 
+    # Choose trials
+    if choose_trials is not None and isinstance(
+        choose_trials, list
+    ): # choose a list of trials from all trials (including openloop and closed loop)
+        trials_df_select, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
+            trials_df, choose_trials, sfx=trial_sfx,
+        )
+    else: # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol below
+        trials_df_select = trials_df
+    
     # Loop through all protocols (closed loop and open loop)
-    all_protocols = [1] if (k_folds > 1) else trials_df.closed_loop.unique()
+    all_protocols = [1] if (k_folds > 1) else trials_df_select.closed_loop.unique()
     assert len(all_protocols) <= 2, "More than 2 protocols detected!"
     for is_closedloop in all_protocols:
         protocol_sfx = "closedloop" if is_closedloop else "openloop"
         print(
-            f"Process protocol {protocol_sfx}/{len(trials_df.closed_loop.unique())}..."
+            f"Process protocol {protocol_sfx}/{len(trials_df_select.closed_loop.unique())}..."
         )
 
+        trials_df_fit = trials_df_select[trials_df_select.closed_loop == is_closedloop].copy()
         if choose_trials is not None and isinstance(
             choose_trials, list
-        ): # choose a list of trials from all trials (including openloop and closed loop)
-            trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
-                trials_df, choose_trials, sfx=trial_sfx,
-            )
+        ): # a list of trials from all trials have already been chosen
             # choose only closed loop or open loop trials
-            trials_df_fit = trials_df_fit[trials_df_fit.closed_loop == is_closedloop]
+            trials_df_fit = trials_df_fit
         else: # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol
-            trials_df_fit = trials_df[trials_df.closed_loop == is_closedloop]
             trials_df_fit, choose_trial_nums, trial_sfx = common_utils.choose_trials_subset(
-                trials_df, choose_trials, sfx=trial_sfx,
+                trials_df_fit, choose_trials, sfx=trial_sfx,
             )
 
         # give class labels to each depth
@@ -641,10 +690,10 @@ def fit_rs_of_tuning(
                 neurons_df_temp[
                     f"rsof_minSigma_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                 ] = min_sigma
-                if choose_trials is not None:
-                    neurons_df_temp[
-                        f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                    ] = choose_trials
+                # if choose_trials is not None:
+                #     neurons_df_temp[
+                #         f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                #     ] = choose_trials
 
                 # fit for each neuron
                 for roi in tqdm(range(dff.shape[1])):
@@ -673,6 +722,11 @@ def fit_rs_of_tuning(
                         neurons_df_temp.at[
                             roi, f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                         ] = np.radians(np.exp(popt[1]))   # rad/s
+                        
+                    elif model == "gaussian_RS":
+                        neurons_df_temp.at[
+                            roi, f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                        ] = np.exp(popt[1])   # m/s
                         
                     elif model == "gaussian_ratio":
                         neurons_df_temp.at[
@@ -741,10 +795,10 @@ def fit_rs_of_tuning(
                 ] = min_sigma   
                 neurons_df_temp[f"rsof_randomState_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"] = random_state
                 neurons_df_temp[f"rsof_kFolds_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"] = k_folds
-                if choose_trials is not None:
-                    neurons_df_temp[
-                        f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                    ] = choose_trials   
+                # if choose_trials is not None:
+                #     neurons_df_temp[
+                #         f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
+                #     ] = choose_trials   
                 
                 # Loop through each roi
                 for roi in tqdm(range(dff.shape[1])):
