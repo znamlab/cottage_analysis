@@ -128,7 +128,7 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_gaussian_2d_k1_openclosed",
             suffix="",
-            column_suffix=-12,
+            target_column_suffix=-1,
             filetype=".pickle",
             target_filename="neurons_df_openclosed.pickle",
         )
