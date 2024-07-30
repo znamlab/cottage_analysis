@@ -3,7 +3,7 @@ import numpy as np
 import itertools
 
 
-def plot_confusion_matrix(conmat, acc, normalize, fontsize_dict):
+def plot_confusion_matrix(conmat, acc, normalize, fontsize_dict, title_sfx=""):
     # Normalize confusion matrix with true labels
     if normalize:
         conmat = conmat / conmat.sum(axis=1)[:, np.newaxis]
@@ -27,4 +27,6 @@ def plot_confusion_matrix(conmat, acc, normalize, fontsize_dict):
         )
     plt.xlabel("Predicted depth class", fontsize=fontsize_dict["label"])
     plt.ylabel("True depth class", fontsize=fontsize_dict["label"])
-    plt.title(f"Accuracy {acc:.2f}")
+    plt.title(f"Accuracy {acc:.2f} {title_sfx}", fontsize=fontsize_dict["title"])
+    plt.xticks(fontsize=fontsize_dict["tick"])
+    plt.yticks(fontsize=fontsize_dict["tick"])
