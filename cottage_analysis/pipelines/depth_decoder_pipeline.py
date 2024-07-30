@@ -16,7 +16,6 @@ from cottage_analysis.plotting import depth_decoder_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
 ):
@@ -102,7 +101,7 @@ def main(
         else:
             sfx = "_openloop"
         print(f"---Start depth decoder{sfx}...---")
-        acc, conmat, best_params, y_test_all, y_preds_all, trials_df = population_depth_decoder.depth_decoder(
+        out = population_depth_decoder.depth_decoder(
             trials_df_all[trials_df_all.closed_loop == closed_loop],
             flexilims_session=flexilims_session,
             session_name=session_name,
@@ -115,99 +114,97 @@ def main(
             kernel="linear",
             Cs=params["Cs"],
             k_folds=5,
+            use_slurm=use_slurm,
+            neurons_ds=neurons_ds,
+            decoder_dict=decoder_dict,
         )
-        print(f"Accuracy{sfx}: {acc}")
-        decoder_dict[f"accuracy{sfx}"] = acc
-        decoder_dict[f"conmat{sfx}"] = conmat
-        decoder_dict[f"best_C{sfx}"] = best_params["C"]
-        decoder_dict[f"y_test_all{sfx}"] = y_test_all
-        decoder_dict[f"y_preds_all{sfx}"] = y_preds_all
-        decoder_dict[f"trials_df{sfx}"] = trials_df
+        # decoder_dict[f"best_C{sfx}"] = best_params["C"]
+        # decoder_dict["params"] = params
         
-        # Get accuracy for different speed bins
-        print(f"Calculating accuracy for depth decoder at different speed bins{sfx}")
-        acc_speed_bins, conmat_speed_bins = population_depth_decoder.find_acc_speed_bins(trials_df,
-                                                                                         params["speed_bins"],
-                                                                                         y_test=y_test_all, 
-                                                                                         y_preds=y_preds_all, 
-                                                                                         continuous_still=params["continuous_still"], 
-                                                                                         still_thr=params["still_thr"], 
-                                                                                         still_time=params["still_time"],
-                                                                                         frame_rate=frame_rate)
-        decoder_dict[f"acc_speed_bins{sfx}"] = acc_speed_bins
-        decoder_dict[f"conmat_speed_bins{sfx}"] = conmat_speed_bins
-    decoder_dict["params"] = params
+    #     # Get accuracy for different speed bins
+    #     print(f"Calculating accuracy for depth decoder at different speed bins{sfx}")
+    #     acc_speed_bins, conmat_speed_bins = population_depth_decoder.find_acc_speed_bins(trials_df,
+    #                                                                                      params["speed_bins"],
+    #                                                                                      y_test=y_test_all, 
+    #                                                                                      y_preds=y_preds_all, 
+    #                                                                                      continuous_still=params["continuous_still"], 
+    #                                                                                      still_thr=params["still_thr"], 
+    #                                                                                      still_time=params["still_time"],
+    #                                                                                      frame_rate=frame_rate)
+    #     decoder_dict[f"acc_speed_bins{sfx}"] = acc_speed_bins
+    #     decoder_dict[f"conmat_speed_bins{sfx}"] = conmat_speed_bins
+    # decoder_dict["params"] = params
     
-    # Save decoder results
-    with open(neurons_ds.path_full.parent / "decoder_results.pickle", "wb") as handle:
-        pickle.dump(decoder_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Results saved.")
+    # # Save decoder results
+    # with open(neurons_ds.path_full.parent / "decoder_results.pickle", "wb") as handle:
+    #     pickle.dump(decoder_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    # print("Results saved.")
 
-    # Plot confusion matrix
-    print("Plotting confusion matrices...")
-    plt.figure()
-    for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
-        if closed_loop:
-            sfx = "_closedloop"
-        else:
-            sfx = "_openloop"
-        plt.subplot(1, 2, i + 1)
-        depth_decoder_plots.plot_confusion_matrix(
-            decoder_dict[f"conmat{sfx}"],
-            decoder_dict[f"accuracy{sfx}"],
-            normalize=True,
-            fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
-        )
-    os.makedirs(neurons_ds.path_full.parent / "plots" / "depth_decoder", exist_ok=True)
-    plt.savefig(
-        neurons_ds.path_full.parent
-        / "plots"
-        / "depth_decoder"
-        / "confusion_matrix.png",
-        dpi=300,
-    )
-    print("Confusion matrix plotted.")
+    # # Plot confusion matrix
+    # print("Plotting confusion matrices...")
+    # plt.figure()
+    # for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
+    #     if closed_loop:
+    #         sfx = "_closedloop"
+    #     else:
+    #         sfx = "_openloop"
+    #     plt.subplot(1, 2, i + 1)
+    #     depth_decoder_plots.plot_confusion_matrix(
+    #         decoder_dict[f"conmat{sfx}"],
+    #         decoder_dict[f"accuracy{sfx}"],
+    #         normalize=True,
+    #         fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
+    #     )
+    # os.makedirs(neurons_ds.path_full.parent / "plots" / "depth_decoder", exist_ok=True)
+    # plt.savefig(
+    #     neurons_ds.path_full.parent
+    #     / "plots"
+    #     / "depth_decoder"
+    #     / "confusion_matrix.png",
+    #     dpi=300,
+    # )
+    # print("Confusion matrix plotted.")
         
-    plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
-    for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
-        if closed_loop:
-            sfx = "_closedloop"
-        else:
-            sfx = "_openloop"
-        for ispeed, speed_bin in enumerate(params["speed_bins"]):
-            if ispeed == 0:
-                title_sfx = "still"
-            else:
-                title_sfx = f"speed {params['speed_bins'][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
-            if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
-                plt.subplot2grid((len(params["speed_bins"])+1, 2), (ispeed, i))
-                depth_decoder_plots.plot_confusion_matrix(
-                    decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
-                    decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
-                    normalize=True,
-                    fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-                    title_sfx=title_sfx,
-                )
-        for speed_bin in [params["speed_bins"][-1]]:
-            if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
-                title_sfx = f"speed > {speed_bin:.1f} m/s"
-                plt.subplot2grid((len(params["speed_bins"])+1, 2), (len(params["speed_bins"]), i))
-                depth_decoder_plots.plot_confusion_matrix(
-                    decoder_dict[f"conmat_speed_bins{sfx}"][-1],
-                    decoder_dict[f"acc_speed_bins{sfx}"][-1],
-                    normalize=True,
-                    fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-                    title_sfx=title_sfx,
-                )
-    plt.tight_layout()
-    plt.savefig(
-        neurons_ds.path_full.parent
-        / "plots"
-        / "depth_decoder"
-        / f"confusion_matrix_speed_bins.png",
-        dpi=300,
-    )
-    print("Confusion matrix for different speed bins plotted.")
+    # plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
+    # for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
+    #     if closed_loop:
+    #         sfx = "_closedloop"
+    #     else:
+    #         sfx = "_openloop"
+    #     for ispeed, speed_bin in enumerate(params["speed_bins"]):
+    #         if ispeed == 0:
+    #             title_sfx = "still"
+    #         else:
+    #             title_sfx = f"speed {params['speed_bins'][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
+    #         if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
+    #             plt.subplot2grid((len(params["speed_bins"])+1, 2), (ispeed, i))
+    #             depth_decoder_plots.plot_confusion_matrix(
+    #                 decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
+    #                 decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
+    #                 normalize=True,
+    #                 fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
+    #                 title_sfx=title_sfx,
+    #             )
+    #     for speed_bin in [params["speed_bins"][-1]]:
+    #         if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
+    #             title_sfx = f"speed > {speed_bin:.1f} m/s"
+    #             plt.subplot2grid((len(params["speed_bins"])+1, 2), (len(params["speed_bins"]), i))
+    #             depth_decoder_plots.plot_confusion_matrix(
+    #                 decoder_dict[f"conmat_speed_bins{sfx}"][-1],
+    #                 decoder_dict[f"acc_speed_bins{sfx}"][-1],
+    #                 normalize=True,
+    #                 fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
+    #                 title_sfx=title_sfx,
+    #             )
+    # plt.tight_layout()
+    # plt.savefig(
+    #     neurons_ds.path_full.parent
+    #     / "plots"
+    #     / "depth_decoder"
+    #     / f"confusion_matrix_speed_bins.png",
+    #     dpi=300,
+    # )
+    # print("Confusion matrix for different speed bins plotted.")
     
 
 

@@ -64,21 +64,21 @@ def main(
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
     else:
-        # read finished time
-        if os.path.exists(neurons_ds.path_full.parent / "finished.pickle"):
-            finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
-            for key, item in zip(["run_depth_fit", "run_rf", "run_rsof_fit", "run_plot"], 
-                                 [run_depth_fit, run_rf, run_rsof_fit, run_plot]):
-                finished[key] = item
-        else:
-            finished = {
-                "run_depth_fit": run_depth_fit,
-                "run_rf": run_rf,
-                "run_rsof_fit": run_rsof_fit,
-                "run_plot": run_plot,
-            }
-            finished = pd.DataFrame(finished, index=[0])
-        finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+        # # read finished time
+        # if os.path.exists(neurons_ds.path_full.parent / "finished.pickle"):
+        #     finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
+        #     for key, item in zip(["run_depth_fit", "run_rf", "run_rsof_fit", "run_plot"], 
+        #                          [run_depth_fit, run_rf, run_rsof_fit, run_plot]):
+        #         finished[key] = item
+        # else:
+        #     finished = {
+        #         "run_depth_fit": run_depth_fit,
+        #         "run_rf": run_rf,
+        #         "run_rsof_fit": run_rsof_fit,
+        #         "run_plot": run_plot,
+        #     }
+        #     finished = pd.DataFrame(finished, index=[0])
+        # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
         
         # Synchronisation
         print("---Start synchronisation...---")
@@ -119,7 +119,7 @@ def main(
         frame_rate = suite2p_dataset.extra_attributes["fs"]
 
         if run_depth_fit:
-            finished = pipeline_utils.save_finish_time(finished, col="depth_fit_started")
+            # finished = pipeline_utils.save_finish_time(finished, col="depth_fit_started")
             depth_fit_params = {
                 "depth_min": 0.02,
                 "depth_max": 20,
@@ -133,7 +133,7 @@ def main(
             neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
                 trials_df=trials_df_all,
                 neurons_ds=neurons_ds,
-                rs_thr=0.2,
+                rs_thr=None,
                 alpha=0.05,
             )
 
@@ -209,8 +209,8 @@ def main(
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
-            finished = pipeline_utils.save_finish_time(finished, col="depth_fit_finished")
-            finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+            # finished = pipeline_utils.save_finish_time(finished, col="depth_fit_finished")
+            # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
          
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
@@ -219,7 +219,7 @@ def main(
         # Regenerate sphere stimuli
         if run_rf:
             print("---RF analysis...---")
-            finished = pipeline_utils.save_finish_time(finished, col="rf_started")
+            # finished = pipeline_utils.save_finish_time(finished, col="rf_started")
             print("Generating sphere stimuli...")
             for is_closedloop in trials_df_all["closed_loop"].unique():
                 if is_closedloop:
@@ -289,8 +289,8 @@ def main(
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
-            finished = pipeline_utils.save_finish_time(finished, col="rf_finished")
-            finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
+            # finished = pipeline_utils.save_finish_time(finished, col="rf_finished")
+            # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
 
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
@@ -313,15 +313,17 @@ def main(
             )
 
             to_do = [
-                ("gaussian_2d", None, 1),
-                ("gaussian_2d", "even", 1),
-                ("gaussian_additive", None, 1),
-                ("gaussian_OF", None, 1),
-                ("gaussian_2d", None, 5),
-                ("gaussian_additive", None, 5),
-                ("gaussian_OF", None, 5),
-                ("gaussian_ratio", None, 1),
-                ("gaussian_ratio", None, 5),
+                # ("gaussian_2d", None, 1),
+                # ("gaussian_2d", "even", 1),
+                # ("gaussian_additive", None, 1),
+                # ("gaussian_OF", None, 1),
+                # ("gaussian_2d", None, 5),
+                # ("gaussian_additive", None, 5),
+                # ("gaussian_OF", None, 5),
+                # ("gaussian_ratio", None, 1),
+                # ("gaussian_ratio", None, 5),
+                ("gaussian_RS", None, 1),
+                ("gaussian_RS", None, 5),
             ]
 
             for model, trials, k_folds in to_do:
@@ -344,37 +346,36 @@ def main(
                 )
                 outputs.append(out)  
                 
-                to_do_separate_recordings = [
-                    ("gaussian_2d", None, 1),
-                    ("gaussian_2d", None, 5),
-                ]
-                for model, trials, k_folds in to_do_separate_recordings:
-                    name = f"{session_name}_{model}"
-                    if trials is not None:
-                        name += "_crossval"
-                    name += f"_k{k_folds}"
-                    print(f"Fitting {model} for individual recordings...") 
-                    for i, recording in enumerate(np.sort(trials_df_all["recording"].unique())):
-                        choose_trials = trials_df_all[trials_df_all.recording == recording].index.tolist()
-                        new_name = name + f"_recording_{recording}"
-                        if "Playback" in recording:
-                            recording_type = "openloop"
-                        else:
-                            recording_type = "closedloop"
-                        out = pipeline_utils.load_and_fit(
-                            project,
-                            session_name,
-                            photodiode_protocol,
-                            model=model,
-                            choose_trials=choose_trials,
-                            use_slurm=use_slurm,
-                            slurm_folder=slurm_folder,
-                            scripts_name=new_name,
-                            k_folds=k_folds,
-                            file_special_sfx=f"_recording_{'_'.join(recording.split('_')[-2:])}_{recording_type}_{i}",
-                            **common_params,
-                        )
-                        outputs.append(out)
+                # to_do_separate_recordings = [
+                #     ("gaussian_2d", None, 1),
+                # ]
+                # for model, trials, k_folds in to_do_separate_recordings:
+                #     name = f"{session_name}_{model}"
+                #     if trials is not None:
+                #         name += "_crossval"
+                #     name += f"_k{k_folds}"
+                #     print(f"Fitting {model} for individual recordings...") 
+                #     for i, recording in enumerate(np.sort(trials_df_all["recording"].unique())):
+                #         choose_trials = trials_df_all[trials_df_all.recording == recording].index.tolist()
+                #         new_name = name + f"_recording_{recording}"
+                #         if "Playback" in recording:
+                #             recording_type = "openloop"
+                #         else:
+                #             recording_type = "closedloop"
+                #         out = pipeline_utils.load_and_fit(
+                #             project,
+                #             session_name,
+                #             photodiode_protocol,
+                #             model=model,
+                #             choose_trials=choose_trials,
+                #             use_slurm=use_slurm,
+                #             slurm_folder=slurm_folder,
+                #             scripts_name=new_name,
+                #             k_folds=k_folds,
+                #             file_special_sfx=f"_recording_{'_'.join(recording.split('_')[-2:])}_{recording_type}_{i}",
+                #             **common_params,
+                #         )
+                #         outputs.append(out)
                 print("---RS OF fit finished. Neurons_df saved.---")
 
             # Merge fit dataframes
@@ -396,23 +397,24 @@ def main(
                 target_filename="neurons_df.pickle",
             )
             
-            out = pipeline_utils.merge_fit_dataframes(
-                project,
-                session_name,
-                use_slurm=use_slurm,
-                slurm_folder=slurm_folder,
-                job_dependency=job_dependency,
-                scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
-                conflicts=conflicts,
-                prefix="fit_rs_of_tuning_",
-                suffix="",
-                exclude_keywords=["openclosed"], 
-                include_keywords=["recording","loop"],
-                target_column_suffix=-2,
-                target_column_prefix="_recording",
-                filetype=".pickle",
-                target_filename="neurons_df.pickle",
-            )
+            # outputs.append(out) 
+            # out = pipeline_utils.merge_fit_dataframes(
+            #     project,
+            #     session_name,
+            #     use_slurm=use_slurm,
+            #     slurm_folder=slurm_folder,
+            #     job_dependency=job_dependency,
+            #     scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
+            #     conflicts=conflicts,
+            #     prefix="fit_rs_of_tuning_",
+            #     suffix="",
+            #     exclude_keywords=["openclosed"], 
+            #     include_keywords=["recording","loop"],
+            #     target_column_suffix=-2,
+            #     target_column_prefix="_recording",
+            #     filetype=".pickle",
+            #     target_filename="neurons_df.pickle",
+            # )
 
             print("---Analysis finished. Neurons_df saved.---")
 
@@ -425,6 +427,7 @@ def main(
                 slurm_folder=slurm_folder,
                 job_dependency=None,
                 scripts_name=f"{session_name}_merge_fit_dataframes",
+                conflicts=conflicts,
                 prefix="fit_rs_of_tuning_",
                 suffix="",
                 exclude_keywords=["recording","openclosed"], 
@@ -433,23 +436,23 @@ def main(
                 filetype=".pickle",
                 target_filename="neurons_df.pickle",
             )
-            out = pipeline_utils.merge_fit_dataframes(
-                project,
-                session_name,
-                use_slurm=0,
-                slurm_folder=slurm_folder,
-                job_dependency=None,
-                scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
-                conflicts=conflicts,
-                prefix="fit_rs_of_tuning_",
-                suffix="",
-                exclude_keywords=["openclosed"], 
-                include_keywords=["recording","loop"],
-                target_column_suffix=-2,
-                target_column_prefix="_recording",
-                filetype=".pickle",
-                target_filename="neurons_df.pickle",
-            )
+            # out = pipeline_utils.merge_fit_dataframes(
+            #     project,
+            #     session_name,
+            #     use_slurm=0,
+            #     slurm_folder=slurm_folder,
+            #     job_dependency=None,
+            #     scripts_name=f"{session_name}_merge_fit_dataframes_separate_recordings",
+            #     conflicts=conflicts,
+            #     prefix="fit_rs_of_tuning_",
+            #     suffix="",
+            #     exclude_keywords=["openclosed"], 
+            #     include_keywords=["recording","loop"],
+            #     target_column_suffix=-2,
+            #     target_column_prefix="_recording",
+            #     filetype=".pickle",
+            #     target_filename="neurons_df.pickle",
+            # )
 
             print("---Analysis finished. Neurons_df saved.---")
 
