@@ -56,8 +56,8 @@ def trial_average_dff(
                         common_utils.find_thresh_sequence(
                             array=x.RS_stim,
                             threshold_max=rs_thr_max,
-                            length=still_time * frame_rate,
-                            shift=still_time * frame_rate,
+                            length=int(still_time * frame_rate),
+                            shift=int(still_time * frame_rate),
                         ),
                         :,
                     ],
@@ -92,7 +92,9 @@ def trial_average_dff(
 
 def average_dff_for_all_trials(
     trials_df,
-    rs_thr=0.2,
+    use_col="dff_stim",
+    rs_col="RS_stim",
+    rs_thr=None,
     rs_thr_max=None,
     still_only=False,
     still_time=0,
@@ -108,24 +110,24 @@ def average_dff_for_all_trials(
         rs_thr_max (float, optional): max threshold of running speed to be counted into depth tuning analysis. Defaults to None.
         still_only (bool, optional): whether to only use the frames when the mouse is not running. Defaults to False.
         still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
-        frame_rate (int, optional): frame rate of the recording. Defaults to 15.
+        frame_rate (float, optional): frame rate of the recording. Defaults to 15.
     """
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
     depth_list = find_depth_list(trials_df)
     if still_only:
         if rs_thr_max is None:
             print(
-                "ERROR: calculating under not_running condition without rs_thr to determine max speed"
+                "ERROR: calculating under not_running condition without rs_thr_max to determine max speed"
             )
         else:  # use not running data, speed < rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
                 lambda x: np.nanmean(
-                    x.dff_stim[
+                    x[use_col][
                         common_utils.find_thresh_sequence(
-                            array=x.RS_stim,
+                            array=x[rs_col],
                             threshold_max=rs_thr_max,
-                            length=still_time * frame_rate,
-                            shift=still_time * frame_rate,
+                            length=int(still_time * frame_rate),
+                            shift=int(still_time * frame_rate),
                         ),
                         :,
                     ],
@@ -136,21 +138,21 @@ def average_dff_for_all_trials(
     else:
         if (rs_thr is None) and (rs_thr_max is None):  # no rs_thr, use all data
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim, axis=0), axis=1
+                lambda x: np.nanmean(x[use_col], axis=0), axis=1
             )
         elif rs_thr_max is None:  # no rs_thr_max, use all data above rs_thr
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr, :], axis=0), axis=1
+                lambda x: np.nanmean(x[use_col][x[rs_col] > rs_thr, :], axis=0), axis=1
             )
         elif rs_thr is None:  # no rs_thr, use all data below rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[x.RS_stim < rs_thr_max, :], axis=0),
+                lambda x: np.nanmean(x[use_col][x[rs_col] < rs_thr_max, :], axis=0),
                 axis=1,
             )
         else:  # use data between rs_thr and rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
                 lambda x: np.nanmean(
-                    x.dff_stim[(x.RS_stim > rs_thr) & (x.RS_stim < rs_thr_max), :],
+                    x[use_col][(x[rs_col] > rs_thr) & (x[rs_col] < rs_thr_max), :],
                     axis=0,
                 ),
                 axis=1,
@@ -170,7 +172,7 @@ def average_dff_for_all_trials(
         for depth in depth_list:
             trial_mean_dff = np.stack(
                 np.array(grouped_trials.get_group(depth)["trial_mean_dff"].values)
-            )[:trial_no_min, :]
+            )[:trial_no_min]
             mean_dff_arr.append(trial_mean_dff)
         mean_dff_arr = np.stack(mean_dff_arr)
 
@@ -263,11 +265,16 @@ def fit_preferred_depth(
     choose_trials=None,
     depth_min=0.02,
     depth_max=20,
-    rs_thr=0.2,
+    rs_thr=0,
+    rs_thr_max=None,
+    still_only=False,
+    still_time=0,
+    frame_rate=15,
     niter=10,
     min_sigma=0.5,
     k_folds=1,
     param="depth",
+    special_sfx="",
 ):
     """Function to fit depth tuning with gaussian function
 
@@ -280,6 +287,10 @@ def fit_preferred_depth(
         depth_min (float, optional): min boundary of preferred depth in m. Defaults to 0.02.
         depth_max (float, optional): min boundary of preferred depth in m. Defaults to 20.
         rs_thr (float, optional): Running speed threshold for fiting preferred depth in m. Defaults to 0.2.
+        rs_thr_max (float, optional): Running speed threshold for fiting preferred depth in m. Defaults to None.
+        still_only (bool, optional): Whether to only use the frames when the mouse is not running. Defaults to False.
+        still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
+        frame_rate (float, optional): frame rate of the recording. Defaults to 15.
         niter (int, optional): Number of rounds of fitting iterations. Defaults to 10.
         min_sigma (float, optional): min sigma for gaussian fitting. Defaults to 0.5.
         k_folds (int, optional): Number of folds for k-fold cross-validation. Defaults to 1.
@@ -308,11 +319,11 @@ def fit_preferred_depth(
             neurons_df=neurons_df,
             neurons_ds=neurons_ds,
             rs_thr=rs_thr,
-            rs_thr_max=None,
+            rs_thr_max=rs_thr_max,
             is_closedloop=closed_loop,
-            still_only=False,
-            still_time=0,
-            frame_rate=15,
+            still_only=still_only,
+            still_time=still_time,
+            frame_rate=frame_rate,
         )
         trials_df = size_control.get_physical_size(
             trials_df, use_cols=["size", "depth"], k=1
@@ -381,13 +392,16 @@ def fit_preferred_depth(
         X_label = trials_df_fit["size_label"]
         X = trials_df_fit["physical_size"]
 
-    # thresholding running speed
-    if rs_thr is None:
-        Y["trial_mean_dff"] = Y.apply(lambda x: np.nanmean(x.dff_stim, axis=0), axis=1)
-    else:
-        Y["trial_mean_dff"] = Y.apply(
-            lambda x: np.nanmean(x.dff_stim[x.RS_stim >= rs_thr, :], axis=0), axis=1
-        )
+    # if running, take the RS of the current frame; if not-running, take the max RS of the previous still_time period
+    Y = trial_average_dff(
+        trials_df=Y,
+        rs_thr_min=rs_thr,
+        rs_thr_max=rs_thr_max,
+        still_only=still_only,
+        still_time=still_time,
+        frame_rate=frame_rate,
+        closed_loop=closed_loop,
+    )
 
     if param == "depth":
         lower_bounds = [-np.inf, np.log(depth_min), -np.inf, -np.inf]
@@ -400,11 +414,11 @@ def fit_preferred_depth(
     gaussian_func_ = partial(fit_gaussian_blob.gaussian_1d, min_sigma=min_sigma)
     if k_folds == 1:
         # Create empty columns for fitting results
-        neurons_df[f"preferred_{param}{protocol_sfx}{sfx}"] = np.nan
-        neurons_df[f"{param}_tuning_popt{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+        neurons_df[f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = np.nan
+        neurons_df[f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"] = [[np.nan]] * len(
             neurons_df
         )
-        neurons_df[f"{param}_tuning_trials{protocol_sfx}{sfx}"] = [[np.nan]] * len(
+        neurons_df[f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"] = [[np.nan]] * len(
             neurons_df
         )
 
@@ -418,17 +432,17 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}"] = np.exp(
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = np.exp(
                 popt[1]
             )
-            neurons_df.at[roi, f"{param}_tuning_popt{protocol_sfx}{sfx}"] = popt
+            neurons_df.at[roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"] = popt
             neurons_df.at[
-                roi, f"{param}_tuning_trials{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"
             ] = choose_trial_nums
 
     # if k_folds > 1: fit data in nfolds, save rsq for test data as depth_tuning_test_rsq;
     elif k_folds > 1:
-        neurons_df[f"{param}_tuning_test_rsq{protocol_sfx}{sfx}"] = np.nan
+        neurons_df[f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"] = np.nan
         # initialize StratifiedKFold with the number of folds you want
         stratified_kfold = StratifiedKFold(
             n_splits=k_folds, shuffle=True, random_state=42
@@ -467,12 +481,12 @@ def fit_preferred_depth(
             rval, pval = spearmanr(
                 np.concatenate(y_test_all), np.concatenate(y_pred_all)
             )
-            neurons_df.at[roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}"] = rsq
+            neurons_df.at[roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"] = rsq
             neurons_df.at[
-                roi, f"{param}_tuning_test_spearmanr_rval{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_test_spearmanr_rval{protocol_sfx}{sfx}{special_sfx}"
             ] = rval
             neurons_df.at[
-                roi, f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}"
+                roi, f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}{special_sfx}"
             ] = pval
 
     return neurons_df, neurons_ds
