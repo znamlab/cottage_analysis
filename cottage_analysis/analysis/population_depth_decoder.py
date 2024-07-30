@@ -24,6 +24,9 @@ import flexiznam as flz
 from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
 
+from znamutils import slurm_it
+
+CONDA_ENV = "2p_analysis_cottage2"
 
 def rolling_average(arr, window, axis=0):
     # calculate rolling average along an axis
@@ -297,6 +300,156 @@ def preprocess_data(
     
     return (trials_df, (dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all), (iscell, depth_list), (test_frame_indices, dff_col, depth_col))
 
+@slurm_it(
+    conda_env=CONDA_ENV,
+    slurm_options={
+        "mem": "32G",
+        "time": "96:00:00",
+        "partition": "ncpu",
+        "cpus-per-task": 8,
+    },
+    print_job_id=True,
+)
+def fit_each_fold(i, 
+                  decoder_inputs, 
+                  recording_type, 
+                  decoder_inputs_path=None, 
+                  decoder_dict_path=None,):
+    print(f"Fitting fold {i+1}...")
+    # load decoder inputs and results
+    if os.path.exists(decoder_inputs_path):
+        decoder_inputs = pd.read_pickle(decoder_inputs_path)
+    decoder_dict = pd.read_pickle(decoder_dict_path)
+    (
+        trials_df,
+        dff_train_all, 
+        dff_val_all,
+        dff_test_all, 
+        depth_train_all,
+        depth_val_all,
+        depth_test_all,
+        iscell,
+        depth_list,
+        test_frame_indices,
+        dff_col,
+        depth_col,
+        kernel,
+        Cs,
+        gammas,
+        y_test_all,
+    ) = (
+        decoder_inputs["trials_df"],
+        decoder_inputs["dff_train_all"],
+        decoder_inputs["dff_val_all"],
+        decoder_inputs["dff_test_all"],
+        decoder_inputs["depth_train_all"],
+        decoder_inputs["depth_val_all"],
+        decoder_inputs["depth_test_all"],
+        decoder_inputs["iscell"],
+        decoder_inputs["depth_list"],
+        decoder_inputs["test_frame_indices"],
+        decoder_inputs["dff_col"],
+        decoder_inputs["depth_col"],
+        decoder_inputs["kernel"],
+        decoder_inputs["Cs"],
+        decoder_inputs["gammas"],
+        decoder_inputs["y_test_all"],
+    )
+    
+    (
+        best_params_all,
+        # y_test_all,
+        y_preds_all,
+        # trials_df,
+        
+    ) = (
+        decoder_dict[f"best_params_all_{recording_type}"],
+        # decoder_dict[f"y_test_all_{recording_type}"],
+        decoder_dict[f"y_preds_all_{recording_type}"],
+        # decoder_dict[f"trials_df_{recording_type}"],
+    )
+    
+    # only select current fold and cells
+    dff_train = dff_train_all[i][:, iscell]
+    dff_val = dff_val_all[i][:, iscell]
+    dff_test = dff_test_all[i][:, iscell]
+    depth_train = depth_train_all[i]
+    depth_val = depth_val_all[i]
+    depth_test = depth_test_all[i]
+    
+    # get best hyperparameters for this fold
+    best_params = svm_classifier_hyperparam_tuning(
+        X_train=dff_train,
+        y_train=depth_train,
+        X_val=dff_val,
+        y_val=depth_val,
+        class_labels=np.arange(len(depth_list)),
+        kernel=kernel,
+        Cs=Cs,
+        gammas=gammas,
+    )
+    
+    # train and test on the current fold (train on combined train and val data)
+    clf, y_pred = test_svm_classifier(
+        X_train=dff_train,
+        y_train=depth_train,
+        X_val=dff_val,
+        y_val=depth_val,
+        X_test=dff_test,
+        y_test=depth_test,
+        class_labels=np.arange(len(depth_list)),
+        kernel=kernel,
+        best_params=best_params,
+    )
+    
+    decoder_outputs={
+        "y_pred": y_pred,
+        "best_params": best_params,
+    }
+    with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}_fold{i}.pickle", "wb") as f:
+        pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return decoder_dict
+
+
+@slurm_it(
+    conda_env=CONDA_ENV,
+    slurm_options={
+        "mem": "32G",
+        "time": "4:00:00",
+        "partition": "ncpu",
+    },
+    print_job_id=True,
+)
+def calculate_acc_conmat(decoder_dict_path, 
+                         recording_type, 
+                         depth_list, 
+                         decoder_inputs={}, 
+                         decoder_inputs_path=None, 
+                         k_folds=5, 
+                         ):
+    decoder_dict = pd.read_pickle(decoder_dict_path)
+    if os.path.exists(decoder_inputs_path):
+        decoder_inputs = pd.read_pickle(decoder_inputs_path)
+    # concatenate results from all folds
+    for i in range(k_folds):
+        decoder_outputs = pd.read_pickle(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}_fold{i}.pickle")
+        decoder_dict[f"best_params_all_{recording_type}"]["C"].append(decoder_outputs["best_params"]["C"])
+        if decoder_inputs["kernel"] != "linear":
+            decoder_dict[f"best_params_all_{recording_type}"]["gamma"].append(decoder_outputs["best_params"]["gamma"])
+        decoder_dict[f"y_preds_all_{recording_type}"][decoder_inputs["test_frame_indices"][i]] = decoder_outputs["y_pred"]
+    
+    y_test_all = decoder_dict[f"y_test_all_{recording_type}"]
+    y_preds_all = decoder_dict[f"y_preds_all_{recording_type}"]
+    # calculate acc & conmat
+    acc = accuracy_score(y_test_all, y_preds_all)
+    conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
+    decoder_dict[f"accuracy_{recording_type}"] = acc
+    decoder_dict[f"conmat_{recording_type}"] = conmat
+    print(f"Accuracy {recording_type}: {acc}")
+    with open(Path(decoder_dict_path).parent/f"decoder_results.pickle", "wb") as f:
+        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return decoder_dict
+
 
 def depth_decoder(
     trials_df,
@@ -312,8 +465,19 @@ def depth_decoder(
     Cs=[0.1, 1, 10],
     gammas=[1, 0.1, 0.01],
     k_folds=5,
+    use_slurm=False,
+    neurons_ds=None,
+    decoder_dict={},
 ):
-            
+    # set slurm folder
+    if use_slurm:
+        slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
+        slurm_folder.mkdir(exist_ok=True)
+        slurm_folder = Path(slurm_folder / f"{session_name}")
+        slurm_folder.mkdir(exist_ok=True)
+    else:
+        slurm_folder = None
+        
     # choose closedloop or openloop
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
     
@@ -337,9 +501,27 @@ def depth_decoder(
         k_folds=k_folds,
     )
 
-    # loop through each fold
+    # save decoder inputs if use_slurm
     y_test_all = np.hstack(trials_df[depth_col])
     y_preds_all = np.zeros_like(y_test_all)
+    decoder_inputs = {
+        "trials_df": trials_df,
+        "dff_train_all": dff_train_all,
+        "dff_val_all": dff_val_all,
+        "dff_test_all": dff_test_all,
+        "depth_train_all": depth_train_all,
+        "depth_val_all": depth_val_all,
+        "depth_test_all": depth_test_all,
+        "iscell": iscell,
+        "depth_list": depth_list,
+        "test_frame_indices": test_frame_indices,
+        "dff_col": dff_col,
+        "depth_col": depth_col,
+        "kernel": kernel,
+        "Cs": Cs,
+        "gammas": gammas,
+        "y_test_all": y_test_all,
+    }
     
     if kernel == "linear":
         best_params_all = {
@@ -351,50 +533,57 @@ def depth_decoder(
             "gamma": [],
         }
     
-    for i in range(k_folds):
-        print(f"Fitting fold {i+1}...")
-        # only select current fold and cells
-        dff_train = dff_train_all[i][:, iscell]
-        dff_val = dff_val_all[i][:, iscell]
-        dff_test = dff_test_all[i][:, iscell]
-        depth_train = depth_train_all[i]
-        depth_val = depth_val_all[i]
-        depth_test = depth_test_all[i]
+    if closed_loop:
+        recording_type="closedloop"
+    else:
+        recording_type="openloop"
+            
+    if use_slurm:
+        assert neurons_ds is not None, "ERROR: neurons_ds must be provided when use_slurm is True."
+        decoder_inputs_path = neurons_ds.path_full.parent/f"decoder_inputs_{recording_type}.pickle"
+        with open(decoder_inputs_path, "wb") as f:
+            pickle.dump(decoder_inputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        decoder_inputs={} # don't pass the dict on to the slurm job
+    else:
+        decoder_inputs_path=None
         
-        # get best hyperparameters for this fold
-        best_params = svm_classifier_hyperparam_tuning(
-            X_train=dff_train,
-            y_train=depth_train,
-            X_val=dff_val,
-            y_val=depth_val,
-            class_labels=np.arange(len(depth_list)),
-            kernel=kernel,
-            Cs=Cs,
-            gammas=gammas,
-        )
-        best_params_all["C"].append(best_params["C"])
-        if kernel != "linear":
-            best_params_all["gamma"].append(best_params["gamma"])
-        
-        # train and test on the current fold (train on combined train and val data)
-        clf, y_pred = test_svm_classifier(
-            X_train=dff_train,
-            y_train=depth_train,
-            X_val=dff_val,
-            y_val=depth_val,
-            X_test=dff_test,
-            y_test=depth_test,
-            class_labels=np.arange(len(depth_list)),
-            kernel=kernel,
-            best_params=best_params,
-        )
-        y_preds_all[test_frame_indices[i]] = y_pred
+    # save temp decoder results
+    decoder_dict[f"best_params_all_{recording_type}"] = best_params_all
+    decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
+    decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
+    decoder_dict[f"trials_df_{recording_type}"] = trials_df
+    with open(neurons_ds.path_full.parent/f"decoder_results.pickle", "wb") as f:
+        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     
-    # calculate the accuracy on all test data   
-    acc= accuracy_score(y_test_all, y_preds_all)
-    conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
+    # fit each fold
+    outputs=[]
+    for i in range(k_folds):
+        out = fit_each_fold(i, 
+                            decoder_inputs=decoder_inputs, 
+                            decoder_inputs_path=decoder_inputs_path,
+                            decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results.pickle",
+                            recording_type=recording_type,
+                            use_slurm=use_slurm,
+                            slurm_folder=slurm_folder,
+                            scripts_name=f"decoder_{recording_type}_fold{i}",)
+        outputs.append(out)
         
-    return acc, conmat, best_params_all, y_test_all, y_preds_all, trials_df
+    # calculate the accuracy on all test data   
+    job_dependency = outputs if use_slurm else None
+    decoder_dict = calculate_acc_conmat(
+        decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results.pickle",
+        recording_type=recording_type,
+        depth_list=depth_list.tolist(),
+        decoder_inputs=decoder_inputs, 
+        decoder_inputs_path=decoder_inputs_path,
+        k_folds=k_folds,
+        use_slurm=use_slurm,
+        slurm_folder=slurm_folder,
+        scripts_name=f"decoder_{recording_type}_accuracy",
+        job_dependency=job_dependency,
+    )
+        
+    return decoder_dict
 
 
 def find_acc_speed_bins(trials_df, speed_bins, y_test, y_preds, continuous_still=True, still_thr=0.05, still_time=1, frame_rate=15):
