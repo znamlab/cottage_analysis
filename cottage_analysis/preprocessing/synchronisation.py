@@ -287,7 +287,6 @@ def generate_vs_df(
 
         merge_on = "closest_frame"
     else:
-        # TODO account for display lag
         # Assume peak time is the same as onset time, as we don't know about onset time when photodiode quad color is only 2
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
