@@ -215,7 +215,7 @@ def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
                     trials_df_depth = trials_df[trials_df.depth == depth]
                     trials_df_depth = trials_df_depth.iloc[choose_trials]
                     trials_df_chosen = pd.concat([trials_df_chosen, trials_df_depth])
-                    sfx=sfx
+                    sfx = sfx
             else:
                 trials_df_chosen = trials_df.iloc[choose_trials]
                 choose_trial_nums = choose_trials
@@ -277,8 +277,8 @@ def find_thresh_sequence(
                 mask = rolling_avg > threshold_min
             else:
                 mask = (rolling_avg > threshold_min) & (rolling_avg < threshold_max)
-            indices = np.where(mask==1)[0] - int(length) + int(shift)
-        
+            indices = np.where(mask == 1)[0] - int(length) + int(shift)
+
         return indices
 
 
@@ -298,3 +298,24 @@ def fill_missing_elements(arr, fill_n):
         filled_array = arr
 
     return filled_array
+
+
+def ztest_2d(x, mu0=(0, 0)):
+    """2D equivalent of the Z-test using the Mahalanobis distance comparing
+    the mean of the input array to a given mean.
+
+    Args:
+        x (np.ndarray): input array
+        mu0 (tuple, optional): mean to compare to. Defaults to (0, 0).
+
+    Returns:
+        z_values (np.ndarray): z values
+        p_values (np.ndarray): p values
+
+    """
+    mu = (np.mean(x, axis=0) - mu0)[:, np.newaxis]
+    # Mahalanobis distance squared between the mean of the input array and the given mean
+    d2 = (mu.T @ np.linalg.inv(np.cov(x.T)) @ mu)[0, 0]
+    # p-value computed using chi-squared distribution
+    pval = np.exp(-d2 / 2)
+    return pval, d2
