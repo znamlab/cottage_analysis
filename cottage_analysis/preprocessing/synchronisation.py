@@ -33,6 +33,7 @@ def find_monitor_frames(
     onix_recording=None,
     sync_kwargs=None,
     project=None,
+    verbose=True,
 ):
     """Synchronise monitor frame using the find_frames.sync_by_correlation, and save them
     into monitor_frames_df.pickle and monitor_db_dict.pickle.
@@ -51,6 +52,8 @@ def find_monitor_frames(
         sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if
             flexilims_session is None.
+        verbose (bool): if True, print information about the recording. Defaults to 
+            True.
 
     Returns:
         DataFrame: contains information for each monitor frame.
@@ -78,7 +81,8 @@ def find_monitor_frames(
         conflicts=conflicts,
     )
     if monitor_frames_ds.flexilims_status() != "not online" and conflicts == "skip":
-        print("Loading existing monitor frames...")
+        if verbose:
+            print("Loading existing monitor frames...")
         return pd.read_pickle(monitor_frames_ds.path_full)
 
     monitor_frames_ds.path = monitor_frames_ds.path.parent / f"monitor_frames_df.pickle"
@@ -169,7 +173,7 @@ def find_monitor_frames(
             minimum_lag=1.0 / frame_rate,
             do_plot=True,
             save_folder=diagnostics_folder,
-            verbose=True,
+            verbose=verbose,
             ignore_errors=True,
         )
         if sync_kwargs is not None:

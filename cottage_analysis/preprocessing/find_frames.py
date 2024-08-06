@@ -780,8 +780,8 @@ def run_cross_correlation(
         frames_df[f"residuals_{which}"] = residuals[iw]
         frames_df[f"lag_{which}"] = lags[cc.argmax(axis=1)] / pd_sampling
         frames_df[f"peak_corr_{which}"] = cc.max(axis=1)
-        # to find the match between photiodiode and frame log, we want to look at what is
-        # the value of the lag-shifed sequence index in during the real frame.
+        # to find the match between photiodiode and frame log, we want to look at what 
+        # is the value of the lag-shifed sequence index in during the real frame.
         # The sync is made the closest computer frame log time
         time_of_match = (
             frame_log["ideal_switch_times"]
@@ -791,7 +791,7 @@ def run_cross_correlation(
         # we remove the lag to frames_df instead of adding it to frame_log
         time_of_match -= frames_df["lag_%s" % which].values
         # This gives us the time relative to the onset of the real photodiode signal
-        # However, if there is a frame drop, onset is uselss when matching `aft`
+        # However, if there is a frame drop, onset is useless when matching `aft`
         # Furthermore the detected frame is almost centered on the offset of the frame
         # as the signal is filtered strongly. So we have to look a bit before the detect
         # frame to find the actual sequence value that produced the signal.
