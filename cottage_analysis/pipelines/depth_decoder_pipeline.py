@@ -130,7 +130,7 @@ def main(
         job_dependency = outputs if use_slurm else None
         out = population_depth_decoder.find_acc_speed_bins(decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{params['special_sfx']}.pickle",
                                                                                          recording_type=sfx,
-                                                                                         speed_bins=params["speed_bins"],
+                                                                                         speed_bins=params["speed_bins"].tolist(),
                                                                                          continuous_still=params["continuous_still"], 
                                                                                          still_thr=params["still_thr"], 
                                                                                          still_time=params["still_time"],

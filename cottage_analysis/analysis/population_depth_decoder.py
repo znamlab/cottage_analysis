@@ -620,6 +620,7 @@ def find_acc_speed_bins(decoder_dict_path,
                         still_thr=0.05, 
                         still_time=1, 
                         frame_rate=15,):
+    speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
         decoder_dict = pickle.load(f)
     trials_df = decoder_dict[f"trials_df{recording_type}"]
