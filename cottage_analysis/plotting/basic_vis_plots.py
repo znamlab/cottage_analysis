@@ -13,10 +13,7 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     size_control,
 )
-from v1_depth_analysis.v1_manuscript_2023 import closed_loop_rsof
-
-# TODO:
-# 1. plot depth tuning curve with the smoothing tuning method
+from v1_depth_map.figure_utils import closed_loop_rsof
 
 
 def plot_depth_neuron_distribution(
