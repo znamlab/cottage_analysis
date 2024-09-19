@@ -601,6 +601,8 @@ def fit_rs_of_tuning(
     min_sigma=0.25,
     k_folds=1,
     random_state=42,
+    run_closedloop_only=False,
+    run_openloop_only=False,
 ):
     def process_rs_of_for_fit(trials_df, trial_list=[], rs_thr=0.01):
         # take a subset of trials
@@ -643,7 +645,18 @@ def fit_rs_of_tuning(
         trials_df_select = trials_df
     
     # Loop through all protocols (closed loop and open loop)
-    all_protocols = [1] if (k_folds > 1) else trials_df_select.closed_loop.unique()
+    if run_closedloop_only:
+        all_protocols = [1]
+        print("Running closed loop fitting only...")
+    elif run_openloop_only:
+        if 0 in trials_df_select.closed_loop.unique():
+            all_protocols = [0]
+            print("Running open loop fitting only...")
+        else:
+            all_protocols = []
+            print("ERROR:Open loop protocol not found!")
+    else:
+        all_protocols = [1] if (k_folds > 1) else trials_df_select.closed_loop.unique()
     assert len(all_protocols) <= 2, "More than 2 protocols detected!"
     for is_closedloop in all_protocols:
         protocol_sfx = "closedloop" if is_closedloop else "openloop"
@@ -670,17 +683,18 @@ def fit_rs_of_tuning(
         # initialize a model function
         model_func_ = partial(globals()[model], min_sigma=min_sigma)
         
-        rs_types = ["", "_actual", "_virtual"]
+        rs_types_openloop = ["_actual", "_virtual"]
         # if k_folds = 1, fit for all data
         if k_folds == 1: 
             # process data for fitting (rs, rs_eye, of are all logged)
             rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(trials_df_fit, trial_list=[], rs_thr=rs_thr)
 
             # loop between actual and virtual running speeds
-            rs_arrays = [rs] if ((is_closedloop) or model == "gaussian_OF") else [rs, rs_eye] # only use virtual running speed if it's openloop and fits for models other than gaussian_OF
+            # rs_arrays = [rs] if ((is_closedloop) or model == "gaussian_OF") else [rs, rs_eye] # only use virtual running speed if it's openloop and fits for models other than gaussian_OF
+            rs_arrays = [rs] # don't fit with virtual running speed as it's never been used
     
             for i_rs, rs_to_use in enumerate(rs_arrays):
-                rs_type = rs_types[0] if len(rs_arrays) == 1 else rs_types[i_rs+1]    
+                rs_type = "" if is_closedloop else rs_types_openloop[i_rs]    
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
 
                 # initialize columns to save
@@ -752,7 +766,7 @@ def fit_rs_of_tuning(
 
         # If k_folds > 1, fit for each fold, then get a test rsq for each neuron
         if k_folds > 1:
-            print("Fit with cross-validation...")
+            print(f"Fit with {k_folds} fold cross-validation...")
             # train/test split based on trials 
             stratified_kfold = StratifiedKFold(
                 n_splits=k_folds, shuffle=True, random_state=random_state,
@@ -775,11 +789,13 @@ def fit_rs_of_tuning(
                     data_all[data_type]["depth_labels"].append(depth_labels)
                 
             # take actual or virtual running speeds
-            rs_arrays_train = [data_all["train"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["train"]["rs"], data_all["train"]["rs_eye"]]
-            rs_arrays_test = [data_all["test"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["test"]["rs"], data_all["test"]["rs_eye"]]
+            # rs_arrays_train = [data_all["train"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["train"]["rs"], data_all["train"]["rs_eye"]]
+            # rs_arrays_test = [data_all["test"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["test"]["rs"], data_all["test"]["rs_eye"]]
+            rs_arrays_train = [data_all["train"]["rs"]] # don't fit with virtual running speed as it's never been used
+            rs_arrays_test = [data_all["test"]["rs"]] # don't fit with virtual running speed as it's never been used
 
             for i_rs, (rs_to_use_train_all, rs_to_use_test_all) in enumerate(zip(rs_arrays_train, rs_arrays_test)):
-                rs_type = rs_types[0] if len(rs_arrays_train) == 1 else rs_types[i_rs+1]  
+                rs_type = "" if is_closedloop else rs_types_openloop[i_rs] 
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
                 
                 # initialize columns to save with nan
