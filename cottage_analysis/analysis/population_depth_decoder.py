@@ -304,7 +304,7 @@ def preprocess_data(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "96:00:00",
+        "time": "12:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },
@@ -314,11 +314,14 @@ def fit_each_fold(i,
                   decoder_inputs, 
                   recording_type, 
                   decoder_inputs_path=None, 
-                  decoder_dict_path=None,):
+                  decoder_dict_path=None,
+                  special_sfx="",
+                  k_folds=5,):
     print(f"Fitting fold {i+1}...")
     # load decoder inputs and results
-    if os.path.exists(decoder_inputs_path):
-        decoder_inputs = pd.read_pickle(decoder_inputs_path)
+    if decoder_inputs_path is not None:
+        if os.path.exists(decoder_inputs_path):
+            decoder_inputs = pd.read_pickle(decoder_inputs_path)
     decoder_dict = pd.read_pickle(decoder_dict_path)
     (
         trials_df,
@@ -406,7 +409,7 @@ def fit_each_fold(i,
         "y_pred": y_pred,
         "best_params": best_params,
     }
-    with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}_fold{i}.pickle", "wb") as f:
+    with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle", "wb") as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
 
@@ -426,13 +429,15 @@ def calculate_acc_conmat(decoder_dict_path,
                          decoder_inputs={}, 
                          decoder_inputs_path=None, 
                          k_folds=5, 
+                         special_sfx="",
                          ):
     decoder_dict = pd.read_pickle(decoder_dict_path)
-    if os.path.exists(decoder_inputs_path):
-        decoder_inputs = pd.read_pickle(decoder_inputs_path)
+    if decoder_inputs_path is not None:
+        if os.path.exists(decoder_inputs_path):
+            decoder_inputs = pd.read_pickle(decoder_inputs_path)
     # concatenate results from all folds
     for i in range(k_folds):
-        decoder_outputs = pd.read_pickle(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}_fold{i}.pickle")
+        decoder_outputs = pd.read_pickle(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle")
         decoder_dict[f"best_params_all_{recording_type}"]["C"].append(decoder_outputs["best_params"]["C"])
         if decoder_inputs["kernel"] != "linear":
             decoder_dict[f"best_params_all_{recording_type}"]["gamma"].append(decoder_outputs["best_params"]["gamma"])
@@ -446,7 +451,7 @@ def calculate_acc_conmat(decoder_dict_path,
     decoder_dict[f"accuracy_{recording_type}"] = acc
     decoder_dict[f"conmat_{recording_type}"] = conmat
     print(f"Accuracy {recording_type}: {acc}")
-    with open(Path(decoder_dict_path).parent/f"decoder_results.pickle", "wb") as f:
+    with open(Path(decoder_dict_path).parent/f"decoder_results{special_sfx}.pickle", "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
 
@@ -467,8 +472,14 @@ def depth_decoder(
     k_folds=5,
     use_slurm=False,
     neurons_ds=None,
-    decoder_dict={},
+    decoder_dict_path=None,
+    special_sfx="",
 ):
+    if decoder_dict_path is not None:
+        if os.path.exists(decoder_dict_path):
+            decoder_dict = pd.read_pickle(decoder_dict_path)
+        else:
+            decoder_dict = {}
     # set slurm folder
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -540,7 +551,7 @@ def depth_decoder(
             
     if use_slurm:
         assert neurons_ds is not None, "ERROR: neurons_ds must be provided when use_slurm is True."
-        decoder_inputs_path = neurons_ds.path_full.parent/f"decoder_inputs_{recording_type}.pickle"
+        decoder_inputs_path = neurons_ds.path_full.parent/f"decoder_inputs_{recording_type}{special_sfx}.pickle"
         with open(decoder_inputs_path, "wb") as f:
             pickle.dump(decoder_inputs, f, protocol=pickle.HIGHEST_PROTOCOL)
         decoder_inputs={} # don't pass the dict on to the slurm job
@@ -552,7 +563,7 @@ def depth_decoder(
     decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
     decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
     decoder_dict[f"trials_df_{recording_type}"] = trials_df
-    with open(neurons_ds.path_full.parent/f"decoder_results.pickle", "wb") as f:
+    with open(neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle", "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     # fit each fold
@@ -561,32 +572,60 @@ def depth_decoder(
         out = fit_each_fold(i, 
                             decoder_inputs=decoder_inputs, 
                             decoder_inputs_path=decoder_inputs_path,
-                            decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results.pickle",
+                            decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle",
                             recording_type=recording_type,
+                            special_sfx=special_sfx,
+                            k_folds=k_folds,
                             use_slurm=use_slurm,
                             slurm_folder=slurm_folder,
-                            scripts_name=f"decoder_{recording_type}_fold{i}",)
+                            scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}",)
         outputs.append(out)
         
     # calculate the accuracy on all test data   
     job_dependency = outputs if use_slurm else None
     decoder_dict = calculate_acc_conmat(
-        decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results.pickle",
+        decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle",
         recording_type=recording_type,
         depth_list=depth_list.tolist(),
         decoder_inputs=decoder_inputs, 
         decoder_inputs_path=decoder_inputs_path,
         k_folds=k_folds,
+        special_sfx=special_sfx,
         use_slurm=use_slurm,
         slurm_folder=slurm_folder,
-        scripts_name=f"decoder_{recording_type}_accuracy",
+        scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy",
         job_dependency=job_dependency,
     )
         
     return decoder_dict
 
-
-def find_acc_speed_bins(trials_df, speed_bins, y_test, y_preds, continuous_still=True, still_thr=0.05, still_time=1, frame_rate=15):
+@slurm_it(
+    conda_env=CONDA_ENV,
+    slurm_options={
+        "mem": "32G",
+        "time": "8:00:00",
+        "partition": "ncpu",
+    },
+    print_job_id=True,
+)
+def find_acc_speed_bins(decoder_dict_path, 
+                        recording_type,
+                        speed_bins, 
+                        continuous_still=True, 
+                        still_thr=0.05, 
+                        still_time=1, 
+                        frame_rate=15,):
+    decoder_dict = pd.read_pickle(decoder_dict_path)
+    trials_df = decoder_dict[f"trials_df{recording_type}"]
+    y_test = decoder_dict[f"y_test_all{recording_type}"]
+    y_preds = decoder_dict[f"y_preds_all{recording_type}"]
+    
+    def fill_in_missing_depths_to_conmat(y_test, y_preds, trials_df):
+        ndepths = len(trials_df.depth.unique())
+        y_test_missing = list(set(np.arange(ndepths)) - set(np.unique(y_test)))
+        y_preds_missing = list(set(np.arange(ndepths)) - set(np.unique(y_preds)))
+        common_missing = list(set(y_test_missing) & set(y_preds_missing))
+        return common_missing
     acc_speed_bins = []
     conmat_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"])
@@ -598,16 +637,35 @@ def find_acc_speed_bins(trials_df, speed_bins, y_test, y_preds, continuous_still
                             shift=int(still_time * frame_rate),
                         )
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        for miss in missing_idx:
+            conmat = np.insert(conmat, miss, np.nan, axis=0)
+            conmat = np.insert(conmat, miss, np.nan, axis=1)
+        conmat_speed_bins.append(conmat)
         print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
     for i in range(len(speed_bins)-1):
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i+1])
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        for miss in missing_idx:
+            conmat = np.insert(conmat, miss, np.nan, axis=0)
+            conmat = np.insert(conmat, miss, np.nan, axis=1)
+        conmat_speed_bins.append(conmat)
         print(f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
     for speed_bin in [speed_bins[-1]]: # speed that's larger than the max boundary of speed_bins
         idx = rs_arr >= speed_bin
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat_speed_bins.append(confusion_matrix(y_test[idx], y_preds[idx]))
+        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        for miss in missing_idx:
+            conmat = np.insert(conmat, miss, np.nan, axis=0)
+            conmat = np.insert(conmat, miss, np.nan, axis=1)
+        conmat_speed_bins.append(conmat)
         print(f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
-    return acc_speed_bins, conmat_speed_bins
+    decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
+    decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
+    with open(decoder_dict_path, "wb") as f:
+        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return decoder_dict
