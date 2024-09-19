@@ -11,7 +11,7 @@ from cottage_analysis.plotting import basic_vis_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-PROTOCOL_BASE = "SpheresPermTubeReward"
+PROTOCOL_BASE = "SizeControl" # "SpherePermTubeReward"
 
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
@@ -255,9 +255,27 @@ def main(
 
     # Save neurons_df
     neurons_df.to_pickle(neurons_ds.path_full.parent/"neurons_df_size_control.pickle")
-
+    
+    # Merge fit dataframes
+    out = pipeline_utils.merge_fit_dataframes(
+        project,
+        session_name,
+        use_slurm=use_slurm,
+        slurm_folder="",
+        job_dependency=None,
+        scripts_name="",
+        conflicts=conflicts,
+        prefix="neurons_df",
+        suffix="_size_control",
+        exclude_keywords=[], 
+        include_keywords=[],
+        target_column_suffix=None,
+        target_column_prefix="",
+        filetype=".pickle",
+        target_filename="neurons_df.pickle",
+    )
+    
     # Plotting
-    # neurons_df = pd.read_pickle(neurons_ds.path_full)
     basic_vis_plots.size_control_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds
     )
