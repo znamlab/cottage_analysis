@@ -84,22 +84,6 @@ def main(
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
     else:
-        # # read finished time
-        # if os.path.exists(neurons_ds.path_full.parent / "finished.pickle"):
-        #     finished = pd.read_pickle(neurons_ds.path_full.parent / "finished.pickle")
-        #     for key, item in zip(["run_depth_fit", "run_rf", "run_rsof_fit", "run_plot"], 
-        #                          [run_depth_fit, run_rf, run_rsof_fit, run_plot]):
-        #         finished[key] = item
-        # else:
-        #     finished = {
-        #         "run_depth_fit": run_depth_fit,
-        #         "run_rf": run_rf,
-        #         "run_rsof_fit": run_rsof_fit,
-        #         "run_plot": run_plot,
-        #     }
-        #     finished = pd.DataFrame(finished, index=[0])
-        # finished.to_pickle(neurons_ds.path_full.parent / "finished.pickle")
-        
         # Synchronisation
         print("---Start synchronisation...---")
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
