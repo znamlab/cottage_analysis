@@ -38,11 +38,13 @@ def main(
         "trial_average": False,
         "rolling_window": 0.5,
         "downsample_window": 0.5,
-        "Cs": np.logspace(-3, 3, 7),
+        "Cs": np.logspace(-1,1,3),
+        # "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,
         "speed_bins": np.array([0.05, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2]),
+        "special_sfx": "",
     }
     
     if use_slurm:
@@ -88,14 +90,15 @@ def main(
     )
 
     # Run depth decoder
-    decoder_dict = {}
     assert len(trials_df_all.closed_loop.unique()) in [1, 2]
     if len(trials_df_all.closed_loop.unique()) == 1:
         print("This is a closed-loop only session")
     elif len(trials_df_all.closed_loop.unique()) == 2:
         print("This is a session with open loop")
-        
+    
+    outputs_all = []
     for closed_loop in np.sort(trials_df_all.closed_loop.unique()):
+        outputs = []
         if closed_loop:
             sfx = "_closedloop"
         else:
@@ -116,97 +119,40 @@ def main(
             k_folds=5,
             use_slurm=use_slurm,
             neurons_ds=neurons_ds,
-            decoder_dict=decoder_dict,
+            decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{params['special_sfx']}.pickle",
+            special_sfx=params["special_sfx"],
         )
-        # decoder_dict[f"best_C{sfx}"] = best_params["C"]
-        # decoder_dict["params"] = params
+        outputs.append(out)
+        outputs_all.append(out)
         
-    #     # Get accuracy for different speed bins
-    #     print(f"Calculating accuracy for depth decoder at different speed bins{sfx}")
-    #     acc_speed_bins, conmat_speed_bins = population_depth_decoder.find_acc_speed_bins(trials_df,
-    #                                                                                      params["speed_bins"],
-    #                                                                                      y_test=y_test_all, 
-    #                                                                                      y_preds=y_preds_all, 
-    #                                                                                      continuous_still=params["continuous_still"], 
-    #                                                                                      still_thr=params["still_thr"], 
-    #                                                                                      still_time=params["still_time"],
-    #                                                                                      frame_rate=frame_rate)
-    #     decoder_dict[f"acc_speed_bins{sfx}"] = acc_speed_bins
-    #     decoder_dict[f"conmat_speed_bins{sfx}"] = conmat_speed_bins
-    # decoder_dict["params"] = params
-    
-    # # Save decoder results
-    # with open(neurons_ds.path_full.parent / "decoder_results.pickle", "wb") as handle:
-    #     pickle.dump(decoder_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    # print("Results saved.")
+        # Get accuracy for different speed bins
+        print(f"Calculating accuracy for depth decoder at different speed bins{sfx}")
+        job_dependency = outputs if use_slurm else None
+        out = population_depth_decoder.find_acc_speed_bins(decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{params['special_sfx']}.pickle",
+                                                                                         recording_type=sfx,
+                                                                                         speed_bins=params["speed_bins"],
+                                                                                         continuous_still=params["continuous_still"], 
+                                                                                         still_thr=params["still_thr"], 
+                                                                                         still_time=params["still_time"],
+                                                                                         frame_rate=frame_rate,
+                                                                                         use_slurm=use_slurm,
+                                                                                         slurm_folder=slurm_folder,
+                                                                                         scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
+                                                                                         job_dependency=job_dependency,)
+        outputs_all.append(out)
 
-    # # Plot confusion matrix
-    # print("Plotting confusion matrices...")
-    # plt.figure()
-    # for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
-    #     if closed_loop:
-    #         sfx = "_closedloop"
-    #     else:
-    #         sfx = "_openloop"
-    #     plt.subplot(1, 2, i + 1)
-    #     depth_decoder_plots.plot_confusion_matrix(
-    #         decoder_dict[f"conmat{sfx}"],
-    #         decoder_dict[f"accuracy{sfx}"],
-    #         normalize=True,
-    #         fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
-    #     )
-    # os.makedirs(neurons_ds.path_full.parent / "plots" / "depth_decoder", exist_ok=True)
-    # plt.savefig(
-    #     neurons_ds.path_full.parent
-    #     / "plots"
-    #     / "depth_decoder"
-    #     / "confusion_matrix.png",
-    #     dpi=300,
-    # )
-    # print("Confusion matrix plotted.")
-        
-    # plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
-    # for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
-    #     if closed_loop:
-    #         sfx = "_closedloop"
-    #     else:
-    #         sfx = "_openloop"
-    #     for ispeed, speed_bin in enumerate(params["speed_bins"]):
-    #         if ispeed == 0:
-    #             title_sfx = "still"
-    #         else:
-    #             title_sfx = f"speed {params['speed_bins'][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
-    #         if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
-    #             plt.subplot2grid((len(params["speed_bins"])+1, 2), (ispeed, i))
-    #             depth_decoder_plots.plot_confusion_matrix(
-    #                 decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
-    #                 decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
-    #                 normalize=True,
-    #                 fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-    #                 title_sfx=title_sfx,
-    #             )
-    #     for speed_bin in [params["speed_bins"][-1]]:
-    #         if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
-    #             title_sfx = f"speed > {speed_bin:.1f} m/s"
-    #             plt.subplot2grid((len(params["speed_bins"])+1, 2), (len(params["speed_bins"]), i))
-    #             depth_decoder_plots.plot_confusion_matrix(
-    #                 decoder_dict[f"conmat_speed_bins{sfx}"][-1],
-    #                 decoder_dict[f"acc_speed_bins{sfx}"][-1],
-    #                 normalize=True,
-    #                 fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-    #                 title_sfx=title_sfx,
-    #             )
-    # plt.tight_layout()
-    # plt.savefig(
-    #     neurons_ds.path_full.parent
-    #     / "plots"
-    #     / "depth_decoder"
-    #     / f"confusion_matrix_speed_bins.png",
-    #     dpi=300,
-    # )
-    # print("Confusion matrix for different speed bins plotted.")
-    
-
+    job_dependency = outputs_all if use_slurm else None
+    depth_decoder_plots.plot_decoder_session(decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{params['special_sfx']}.pickle",
+                                             neurons_ds=neurons_ds,
+                                             session_name=session_name,
+                                             flexilims_session=flexilims_session,
+                                             photodiode_protocol=photodiode_protocol,
+                                             params=params,
+                                             use_slurm=use_slurm,
+                                             slurm_folder=slurm_folder,
+                                             scripts_name=f"decoder_plots_{params['special_sfx']}",
+                                             job_dependency=job_dependency,)
+                         
 
 if __name__ == "__main__":
     defopt.run(main)

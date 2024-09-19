@@ -321,7 +321,8 @@ def fit_each_fold(i,
     # load decoder inputs and results
     if decoder_inputs_path is not None:
         if os.path.exists(decoder_inputs_path):
-            decoder_inputs = pd.read_pickle(decoder_inputs_path)
+            with open(decoder_inputs_path, "rb") as f:
+                decoder_inputs = pickle.load(f)
     decoder_dict = pd.read_pickle(decoder_dict_path)
     (
         trials_df,
@@ -431,13 +432,16 @@ def calculate_acc_conmat(decoder_dict_path,
                          k_folds=5, 
                          special_sfx="",
                          ):
-    decoder_dict = pd.read_pickle(decoder_dict_path)
+    with open(decoder_dict_path, "rb") as f:
+        decoder_dict = pickle.load(f)
     if decoder_inputs_path is not None:
         if os.path.exists(decoder_inputs_path):
-            decoder_inputs = pd.read_pickle(decoder_inputs_path)
+            with open(decoder_inputs_path, "rb") as f:
+                decoder_inputs = pickle.load(f)
     # concatenate results from all folds
     for i in range(k_folds):
-        decoder_outputs = pd.read_pickle(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle")
+        with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle", "rb") as f:
+            decoder_outputs = pickle.load(f)
         decoder_dict[f"best_params_all_{recording_type}"]["C"].append(decoder_outputs["best_params"]["C"])
         if decoder_inputs["kernel"] != "linear":
             decoder_dict[f"best_params_all_{recording_type}"]["gamma"].append(decoder_outputs["best_params"]["gamma"])
@@ -477,7 +481,8 @@ def depth_decoder(
 ):
     if decoder_dict_path is not None:
         if os.path.exists(decoder_dict_path):
-            decoder_dict = pd.read_pickle(decoder_dict_path)
+            with open(decoder_dict_path, "rb") as f:
+                decoder_dict = pickle.load(f)
         else:
             decoder_dict = {}
     # set slurm folder
@@ -615,7 +620,8 @@ def find_acc_speed_bins(decoder_dict_path,
                         still_thr=0.05, 
                         still_time=1, 
                         frame_rate=15,):
-    decoder_dict = pd.read_pickle(decoder_dict_path)
+    with open(decoder_dict_path, "rb") as f:
+        decoder_dict = pickle.load(f)
     trials_df = decoder_dict[f"trials_df{recording_type}"]
     y_test = decoder_dict[f"y_test_all{recording_type}"]
     y_preds = decoder_dict[f"y_preds_all{recording_type}"]
