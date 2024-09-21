@@ -38,8 +38,7 @@ def main(
         "trial_average": False,
         "rolling_window": 0.5,
         "downsample_window": 0.5,
-        "Cs": np.logspace(-1,1,3),
-        # "Cs": np.logspace(-3, 3, 7),
+        "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,
@@ -143,14 +142,14 @@ def main(
 
     job_dependency = outputs_all if use_slurm else None
     depth_decoder_plots.plot_decoder_session(decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{params['special_sfx']}.pickle",
-                                             neurons_ds=neurons_ds,
+                                             save_path=str(neurons_ds.path_full.parent),
                                              session_name=session_name,
-                                             flexilims_session=flexilims_session,
+                                             project=project,
                                              photodiode_protocol=photodiode_protocol,
-                                             params=params,
+                                             speed_bins=params["speed_bins"].tolist(),
                                              use_slurm=use_slurm,
                                              slurm_folder=slurm_folder,
-                                             scripts_name=f"decoder_plots_{params['special_sfx']}",
+                                             scripts_name=f"decoder_plots{params['special_sfx']}",
                                              job_dependency=job_dependency,)
                          
 

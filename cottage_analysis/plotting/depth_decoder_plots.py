@@ -5,6 +5,8 @@ from znamutils import slurm_it
 import pickle
 import os
 from cottage_analysis.analysis import spheres
+import flexiznam as flz
+from pathlib import Path
 
 CONDA_ENV = "2p_analysis_cottage2"
 
@@ -48,12 +50,13 @@ def plot_confusion_matrix(conmat, acc, normalize, fontsize_dict, title_sfx=""):
     print_job_id=True,
 )
 def plot_decoder_session(decoder_dict_path,
-                         neurons_ds,
+                         save_path,
                         session_name,
-                        flexilims_session,
+                        project,
                         photodiode_protocol,
-                        params,
+                        speed_bins,
                          ):
+    flexilims_session = flz.get_flexilims_session(project)
     _, trials_df_all = spheres.sync_all_recordings(
         session_name=session_name,
         flexilims_session=flexilims_session,
@@ -80,9 +83,10 @@ def plot_decoder_session(decoder_dict_path,
             normalize=True,
             fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
         )
-    os.makedirs(neurons_ds.path_full.parent / "plots" / "depth_decoder", exist_ok=True)
+        plt.title(sfx[1:], fontsize=10)
+    os.makedirs(Path(save_path) / "plots" / "depth_decoder", exist_ok=True)
     plt.savefig(
-        neurons_ds.path_full.parent
+        Path(save_path)
         / "plots"
         / "depth_decoder"
         / "confusion_matrix.png",
@@ -90,19 +94,19 @@ def plot_decoder_session(decoder_dict_path,
     )
     print("Confusion matrix plotted.")
         
-    plt.figure(figsize=(3*2,3*len(params["speed_bins"]+1)))
+    plt.figure(figsize=(3*2,3*(len(speed_bins)+1)))
     for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
         if closed_loop:
             sfx = "_closedloop"
         else:
             sfx = "_openloop"
-        for ispeed, speed_bin in enumerate(params["speed_bins"]):
+        for ispeed, speed_bin in enumerate(speed_bins):
             if ispeed == 0:
-                title_sfx = "still"
+                title_sfx = f"still{sfx}"
             else:
-                title_sfx = f"speed {params['speed_bins'][ispeed-1]:.1f}-{speed_bin:.1f} m/s"
+                title_sfx = f"speed{sfx} {speed_bins[ispeed-1]:.1f}-{speed_bin:.1f} m/s"
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
-                plt.subplot2grid((len(params["speed_bins"])+1, 2), (ispeed, i))
+                plt.subplot2grid((len(speed_bins)+1, 2), (ispeed, i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
                     decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
@@ -110,10 +114,10 @@ def plot_decoder_session(decoder_dict_path,
                     fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
                     title_sfx=title_sfx,
                 )
-        for speed_bin in [params["speed_bins"][-1]]:
+        for speed_bin in [speed_bins[-1]]:
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
                 title_sfx = f"speed > {speed_bin:.1f} m/s"
-                plt.subplot2grid((len(params["speed_bins"])+1, 2), (len(params["speed_bins"]), i))
+                plt.subplot2grid((len(speed_bins)+1, 2), (len(speed_bins), i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][-1],
                     decoder_dict[f"acc_speed_bins{sfx}"][-1],
@@ -123,7 +127,7 @@ def plot_decoder_session(decoder_dict_path,
                 )
     plt.tight_layout()
     plt.savefig(
-        neurons_ds.path_full.parent
+        Path(save_path)
         / "plots"
         / "depth_decoder"
         / f"confusion_matrix_speed_bins.png",
