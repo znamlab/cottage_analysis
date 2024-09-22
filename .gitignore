@@ -13,4 +13,3 @@ scripts/ccyp*
 cottage_analysis/analysis/tests/*
 cottage_analysis/depth_analysis/*
 cottage_analysis.code-workspace
-__init__.py
