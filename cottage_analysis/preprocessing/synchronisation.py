@@ -380,7 +380,8 @@ def generate_vs_df(
 
 
 def generate_imaging_df(
-    vs_df, recording, flexilims_session, filter_datasets=None, return_volumes=True
+    vs_df, recording, flexilims_session, filter_datasets=None, return_volumes=True,
+    add_spikes=False
 ):
     """
     Generate a DataFrame that contains information for each imaging volume / frame incorporating
@@ -392,6 +393,7 @@ def generate_imaging_df(
         flexilims_session (flexilims.Flexilims): flexilims session.
         filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
         return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
+        add_spikes (bool): if True, add the suite2p traces to the output. Defaults to False.
 
     Returns:
         DataFrame: contains information for each imaging volume / frame.
@@ -485,16 +487,20 @@ def generate_imaging_df(
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )
-    spks_fname = (
-        "spks_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "spks.npy"
-    )
+    if add_spikes:
+        spks_fname = (
+            "spks_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "spks.npy"
+        )
+        spks = []
     dffs = []
-    spks = []
+    
     for iplane in range(int(nplanes)):
         dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
-        spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
+        if add_spikes:
+            spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
     dffs = np.vstack(dffs).T
-    spks = np.vstack(spks).T
+    if add_spikes:
+        spks = np.vstack(spks).T
     # convert dffs to list of arrays
     if nplanes == 1.0 and dffs.shape[0] > imaging_df["imaging_frame"].idxmax() + 1:
         print(
@@ -504,9 +510,10 @@ def generate_imaging_df(
         imaging_df["dffs"] = np.split(
             dffs[0:last_valid_frame, :], last_valid_frame, axis=0
         )
-        imaging_df["spks"] = np.split(
-            spks[0:last_valid_frame, :], last_valid_frame, axis=0
-        )
+        if add_spikes:
+            imaging_df["spks"] = np.split(
+                spks[0:last_valid_frame, :], last_valid_frame, axis=0
+            )
     elif nplanes > 1.0 and dffs.shape[0] > imaging_df["imaging_volume"].idxmax() + 1:
         print(
             "Warning: The number of imaging frames from ScanImage is greater than the number of imaging frames synchronised with visual stimulus. Truncating the suite2p traces to match."
@@ -515,12 +522,14 @@ def generate_imaging_df(
         imaging_df["dffs"] = np.split(
             dffs[0:last_valid_volume, :], last_valid_volume, axis=0
         )
-        imaging_df["spks"] = np.split(
-            spks[0:last_valid_volume, :], last_valid_volume, axis=0
-        )
+        if add_spikes:
+            imaging_df["spks"] = np.split(
+                    spks[0:last_valid_volume, :], last_valid_volume, axis=0
+                )
     else:
         imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
-        imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
+        if add_spikes:
+            imaging_df["spks"] = np.split(spks, spks.shape[0], axis=0)
 
     return imaging_df
 
