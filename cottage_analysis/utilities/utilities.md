@@ -1,0 +1,3 @@
+Common utilities function 
+
+These are useful for different protocol, setups etc...
