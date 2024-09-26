@@ -14,7 +14,7 @@ ml purge
 ml Anaconda3/2020.07
 source activate base
 
-conda activate 2p_analysis_cottage2
+conda activate v1_depth_map
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
 echo Run depth fit ${RUN_DEPTH_FIT}

@@ -15,7 +15,7 @@ from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
 
-CONDA_ENV = "2p_analysis_cottage2"
+CONDA_ENV = "v1_depth_map"
 
 
 def get_current_time():
