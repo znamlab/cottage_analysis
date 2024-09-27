@@ -13,8 +13,6 @@ setup(
         "numpy",
         "pandas",
         "pathlib",
-        "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
-        "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
         "matplotlib",
         "scipy",
         "tables",
@@ -24,5 +22,9 @@ setup(
         "numba_progress",
         "scikit-image",
         "defopt",
+        "black",
+        "flexilims @ git+ssh://git@github.com/znamlab/flexilims.git@v0.9",
+        "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git@v0.4",
+        "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git@0.9",
     ],
 )
