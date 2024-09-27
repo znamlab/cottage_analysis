@@ -23,7 +23,6 @@ setup(
         "scikit-image",
         "defopt",
         "black",
-        "flexilims @ git+ssh://git@github.com/znamlab/flexilims.git#egg=flexilims",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git@v0.4",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git@v0.9",
     ],
