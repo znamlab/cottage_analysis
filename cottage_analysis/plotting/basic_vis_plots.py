@@ -82,32 +82,6 @@ def plot_depth_neuron_distribution(
     plt.title("Depth preference")
 
 
-def get_depth_color(depth, depth_list, cmap=cm.cool.reversed(), log=True):
-    """
-    Calculate the color for a certain depth out of a depth list
-
-    Args:
-        depth (float): preferred depth of a certain neuron.
-        depth_list (float): list of all depths.
-        cmap (colormap, optional): colormap used. Defaults to cm.cool.reversed().
-
-    Returns:
-        rgba_color: tuple of 3 with RGB color values.
-
-    """
-    depth_list = [i for i in depth_list if isinstance(i, float)]
-    if log:
-        norm = mpl.colors.Normalize(
-            vmin=np.log(min(depth_list)), vmax=np.log(max(depth_list))
-        )
-        rgba_color = cmap(norm(np.log(depth)), bytes=True)
-    else:
-        norm = mpl.colors.Normalize(vmin=min(depth_list), vmax=max(depth_list))
-        rgba_color = cmap(norm(depth), bytes=True)
-    rgba_color = tuple(it / 255 for it in rgba_color)
-
-    return rgba_color
-
 
 def plot_spatial_distribution(
     neurons_df, trials_df, ops, stat, iscell, cmap=cm.cool.reversed()
@@ -157,10 +131,12 @@ def plot_spatial_distribution(
                 / np.max(stat[n]["lam"][~stat[n]["overlap"]]),
                 (3, 1),
             ).T
-            rgba_color = get_depth_color(
-                depth=neurons_df.loc[n, "preferred_depth_closed_loop"],
-                depth_list=depth_list,
+            rgba_color = plotting_utils.get_color(
+                value=neurons_df.loc[n, "preferred_depth_closed_loop"],
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
                 cmap=cmap,
+                log=True,
             )
             im[ypix, xpix, :] = (
                 (np.asarray(rgba_color)[:-1].reshape(-1, 1))
@@ -587,7 +563,13 @@ def plot_speed_tuning(
 
     # Plotting
     for idepth, depth in enumerate(depth_list):
-        linecolor = get_depth_color(depth, depth_list, cmap=cm.cool.reversed())
+        linecolor = plotting_utils.get_color(
+                value=depth,
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
+                cmap=cm.cool.reversed(),
+                log=True,
+            )
         plt.plot(
             bin_centers[idepth, :],
             speed_tuning[idepth, :],
@@ -746,7 +728,13 @@ def plot_PSTH(
     all_ci[-1, :] = ci
 
     for idepth, depth in enumerate(depth_list):
-        linecolor = get_depth_color(depth, depth_list, cmap=cm.cool.reversed())
+        linecolor = plotting_utils.get_color(
+                value=depth,
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
+                cmap=cm.cool.reversed(),
+                log=True,
+            )
         plt.plot(
             bin_centers,
             all_means[idepth, :],

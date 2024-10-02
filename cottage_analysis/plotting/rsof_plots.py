@@ -149,8 +149,12 @@ def plot_speed_tuning(
             linecolor = "gray"
             label = "blank"
         else:
-            linecolor = basic_vis_plots.get_depth_color(
-                depth, depth_list, cmap=cm.cool.reversed()
+            linecolor = plotting_utils.get_color(
+                value=depth,
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
+                cmap=cm.cool.reversed(),
+                log=True,
             )
             label = f"{int(depth_list[idepth] * 100)} cm"
         ax.plot(
@@ -996,8 +1000,12 @@ def plot_speed_trace(
 
         # plot trials
         for i, trial_start in enumerate(trial_starts):
-            color = basic_vis_plots.get_depth_color(
-                depths[i], depth_list, cmap=cm.cool.reversed()
+            color = plotting_utils.get_color(
+                value=depths[i],
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
+                cmap=cm.cool.reversed(),
+                log=True,
             )
             if ylim is None:
                 rect = patches.Rectangle(
@@ -1197,9 +1205,13 @@ def plot_openloop_rs_correlation_alldepths(
     )
 
     for idepth in range(len(depth_list)):
-        color = basic_vis_plots.get_depth_color(
-            depth_list[idepth], depth_list, cmap=cm.cool.reversed()
-        )
+        color = plotting_utils.get_color(
+                value=depth_list[idepth],
+                value_min=np.min(depth_list),
+                value_max=np.max(depth_list),
+                cmap=cm.cool.reversed(),
+                log=True,
+            )
         sns.stripplot(
             x=np.ones(r_alldepths.shape[0]) * idepth,
             y=r_alldepths[:, idepth],
