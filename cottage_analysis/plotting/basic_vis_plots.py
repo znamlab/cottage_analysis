@@ -289,59 +289,6 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                 plt.close()
 
 
-def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=True):
-    bin_numbers = [log_range["rs_bin_num"] - 1, log_range["of_bin_num"] - 1]
-    bin_edges1 = np.logspace(
-        log_range["rs_bin_log_min"],
-        log_range["rs_bin_log_max"],
-        num=log_range["rs_bin_num"],
-        base=log_range["log_base"],
-    )
-    bin_edges2 = np.logspace(
-        log_range["of_bin_log_min"],
-        log_range["of_bin_log_max"],
-        num=log_range["of_bin_num"],
-        base=log_range["log_base"],
-    )
-    if playback:
-        bin_numbers = [log_range["rs_bin_num"], log_range["of_bin_num"]]
-        bin_edges1 = np.insert(bin_edges1, 0, 0)
-        bin_edges2 = np.insert(bin_edges2, 0, 0)
-    # bin_edges1 = bin_edges1 / 100
-    bin_edges1 = bin_edges1.tolist()
-    bin_edges2 = bin_edges2.tolist()
-    ctr = 0
-    for it in bin_edges1:
-        if (it >= 1) or (it == 0):
-            bin_edges1[ctr] = int(np.round(it))
-        else:
-            bin_edges1[ctr] = np.round(it, 2)
-        ctr += 1
-    ctr = 0
-    for it in bin_edges2:
-        if it >= 1:
-            bin_edges2[ctr] = int(np.round(it))
-        else:
-            bin_edges2[ctr] = np.round(it, 2)
-        ctr += 1
-    # if log == False:
-    #     _, _ = plt.xticks(np.arange(bin_numbers[0]), bin_centers1, rotation=60, ha='center',
-    #                       fontsize=fontsize_dict['xticks'])
-    #     _, _ = plt.yticks(np.arange(bin_numbers[1]), bin_centers2, fontsize=fontsize_dict['yticks'])
-    else:
-        ticks_select1 = (np.arange(-1, bin_numbers[0] * 2, 1) / 2)[0::2]
-        ticks_select2 = (np.arange(-1, bin_numbers[1] * 2, 1) / 2)[0::2]
-        # _, _ = plt.xticks(
-        #     ticks_select1,
-        #     bin_edges1,
-        #     rotation=60,
-        #     ha="center",
-        #     fontsize=fontsize_dict["tick"],
-        # )
-        # _, _ = plt.yticks(ticks_select2, bin_edges2, fontsize=fontsize_dict["tick"])
-
-    return ticks_select1, ticks_select2, bin_edges1, bin_edges2
-
 
 def plot_RS_OF_fitted_tuning(
     neurons_df,
