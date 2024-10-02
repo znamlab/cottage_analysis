@@ -1,8 +1,16 @@
 import numpy as np
 import scipy
 import pandas as pd
+import yaml
+from tifffile import TiffFile
 from scipy.optimize import curve_fit
-from cottage_analysis.analysis import find_depth_neurons
+from tqdm import tqdm
+from matplotlib import pyplot as plt
+from scipy import stats
+
+from cottage_analysis.analysis import find_depth_neurons, common_utils
+import flexiznam as flz
+from flexilims.offline import download_database
 
 
 def bootstrap_sample(df, columns):
@@ -319,3 +327,149 @@ def ztest_2d(x, mu0=(0, 0)):
     # p-value computed using chi-squared distribution
     pval = np.exp(-d2 / 2)
     return pval, d2
+
+
+def download_full_flexilims_database(flexilims_session, target_file=None):
+    """Download the full flexilims database as json and save to file
+
+    Args:
+        flexilims_session (flz.Session): Flexilims session
+        target_file (str, optional): Path to save json file. Defaults to None.
+
+    Returns:
+        dict: The json data
+    """
+
+    json_data = download_database(
+        flexilims_session, root_datatypes=("mouse"), verbose=True
+    )
+    if target_file is not None:
+        with open(target_file, "w") as f:
+            yaml.dump(json_data, f)
+    return json_data
+
+
+def get_si_metadata(flexilims_session, session):
+    recording = flz.get_children(
+        parent_name=session,
+        flexilims_session=flexilims_session,
+        children_datatype="recording",
+    ).iloc[0]
+    dataset = flz.get_children(
+        parent_name=recording["name"],
+        flexilims_session=flexilims_session,
+        children_datatype="dataset",
+        filter={"dataset_type": "scanimage"},
+    ).iloc[0]
+    data_root = flz.get_data_root("raw", flexilims_session=flexilims_session)
+    if (data_root / recording["path"] / sorted(dataset["tif_files"])[0]).exists():
+        tif_path = data_root / recording["path"] / sorted(dataset["tif_files"])[0]
+        metadata = TiffFile(tif_path).scanimage_metadata
+    else:
+        suite2p_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="suite2p_traces",
+            filter_datasets={"anatomical_only": 3},
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        metadata_path = suite2p_ds.path_full / "si_metadata.npy"
+        metadata = np.load(metadata_path, allow_pickle=True).item()
+    return metadata
+
+
+def create_nested_nan_list(levels):
+    nested_list = np.nan  # Start with np.nan
+    for _ in range(levels):
+        nested_list = [nested_list]  # Wrap the current structure in a new list
+    return [nested_list]
+
+
+def dict2df(dict, df, cols, index):
+    for key, item in dict.items():
+        if key in cols:
+            if isinstance(item, float):
+                df[key].iloc[index] = item
+            elif isinstance(item, list):
+                df[key] = create_nested_nan_list(1)
+                df[key].iloc[index] = item
+            elif isinstance(item, np.ndarray):
+                df[key] = create_nested_nan_list(item.ndim)
+                df[key].iloc[index] = item.tolist()
+    return df
+
+
+def find_columns_containing_string(df, substring):
+    return [col for col in df.columns if substring in col]
+
+
+def ceil(a, base=1, precision=1):
+    fold = a // (base * (10 ** (-precision)))
+    extra = int((a % (base * (10 ** (-precision)))) > 0)
+    ceiled_num = (fold + extra) * (base * (10 ** (-precision)))
+    return np.round(ceiled_num, precision)
+
+
+def hierarchical_bootstrap_stats(
+    data,
+    n_boots,
+    xcol,
+    resample_cols,
+    ycol=None,
+    correlation=False,
+    difference=False,
+    ratio=False,
+):
+    np.random.seed(0)
+    if "mouse" not in data.columns:
+        data["mouse"] = data["session"].str.split("_").str[0]
+    distribution = np.zeros((n_boots, len(xcol)))
+    r = np.zeros(len(xcol))
+    if correlation:
+        for icol, (x, y) in enumerate(zip(xcol, ycol)):
+            r[icol] = stats.spearmanr(data[x], data[y])[0]
+    elif difference:
+        for icol, (x, y) in enumerate(zip(xcol, ycol)):
+            r[icol] = np.median(data[x] - data[y])
+    elif ratio:
+        for icol, (x, y) in enumerate(zip(xcol, ycol)):
+            r[icol] = np.median(data[x] / data[y])
+    else:
+        r = None
+    for i in tqdm(range(n_boots)):
+        sample = common_utils.bootstrap_sample(data, resample_cols)
+        if ycol is None:
+            for icol, x in enumerate(xcol):
+                distribution[i, icol] = np.median(data.loc[sample][x])
+        else:
+            for icol, (x, y) in enumerate(zip(xcol, ycol)):
+                if correlation:
+                    distribution[i, icol] = stats.spearmanr(
+                        data.loc[sample][x], data.loc[sample][y]
+                    )[0]
+                if difference:
+                    distribution[i, icol] = np.median(
+                        data.loc[sample][x] - data.loc[sample][y]
+                    )
+                if ratio:
+                    distribution[i, icol] = np.median(
+                        data.loc[sample][x] / data.loc[sample][y]
+                    )
+    plt.figure()
+    for icol, x in enumerate(xcol):
+        plt.subplot(2, len(xcol) // 2 + 1, icol + 1)
+        plt.hist(distribution[:, icol], bins=31)
+        plt.axvline(
+            np.percentile(distribution[:, icol], 2.5), color="r", linestyle="--"
+        )
+        plt.axvline(
+            np.percentile(distribution[:, icol], 97.5), color="r", linestyle="--"
+        )
+    return r, distribution
+
+
+def calculate_pval_from_bootstrap(distribution, value):
+    distribution = np.array(distribution)
+    q_min = np.min([np.mean(distribution > value), np.mean(distribution < value)])
+    return q_min * 2
