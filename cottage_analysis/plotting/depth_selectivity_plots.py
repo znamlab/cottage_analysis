@@ -17,7 +17,7 @@ from cottage_analysis.analysis import (
     size_control,
     fit_gaussian_blob,
 )
-from cottage_analysis.plotting import basic_vis_plots, plotting_utils
+from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import rf_plots
 from cottage_analysis.analysis import roi_location, common_utils
@@ -92,7 +92,7 @@ def plot_raster_all_depths(
             dffs_binned[idepth, itrial, :] = bin_means
 
     # colormap
-    WhRdcmap = basic_vis_plots.generate_cmap(cmap_name="WhRd")
+    WhRdcmap = plotting_utils.generate_cmap(cmap_name="WhRd")
 
     # plot all depths as one heatmap
     if plot:
@@ -732,8 +732,12 @@ def plot_PSTH(
     if use_col == "RS":
         all_means = all_means * 100  # convert m/s to cm/s
     for idepth, depth in enumerate(depth_list):
-        linecolor = basic_vis_plots.get_depth_color(
-            depth, depth_list, cmap=cm.cool.reversed()
+        linecolor = plotting_utils.get_color(
+            value=depth, 
+            value_min=np.min(depth_list), 
+            value_max=np.max(depth_list),
+            cmap=cm.cool.reversed(),
+            log=True,
         )
         plt.plot(
             bin_centers,
@@ -1186,8 +1190,12 @@ def plot_mean_running_speed_alldepths(
         rs_means[rs_means < of_threshold] = of_threshold
     CI_low, CI_high = common_utils.get_bootstrap_ci(rs_means.T, sig_level=0.05)
     for idepth in range(len(depth_list)):
-        color = basic_vis_plots.get_depth_color(
-            depth_list[idepth], depth_list, cmap=cm.cool.reversed()
+        color = plotting_utils.get_color(
+            value=depth_list[idepth], 
+            value_min=np.min(depth_list), 
+            value_max=np.max(depth_list),
+            cmap=cm.cool.reversed(),
+            log=True,
         )
         sns.stripplot(
             x=np.ones(rs_means.shape[0]) * idepth,
