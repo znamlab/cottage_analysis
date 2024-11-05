@@ -151,8 +151,8 @@ def plot_speed_tuning(
         else:
             linecolor = plotting_utils.get_color(
                 value=depth,
-                value_min=np.min(depth_list),
-                value_max=np.max(depth_list),
+                value_min=np.min(depth_list[:-1]),
+                value_max=np.max(depth_list[:-1]),
                 cmap=cm.cool.reversed(),
                 log=True,
             )

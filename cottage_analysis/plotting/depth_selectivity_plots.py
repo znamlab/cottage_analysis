@@ -489,37 +489,25 @@ def get_PSTH(
     max_distance=6,  # m
     min_distance=0,
     nbins=20,
+    bins=[],  # if bins are provided, nbins is ignored
     frame_rate=15,
     compute_ci=True,
 ):
-    '''Calculate PSTH for a given ROI.
-
-    Args:
-        roi (int): ROI number.
-        psth (list, optional): pre-calculated PSTH. Defaults to [].
-        depth_list (list, optional): list of depths. Defaults to [].
-        is_closed_loop (int, optional): whether it's closedloop or openloop. Defaults to 1.
-        trials_df (pd.DataFrame, optional): dataframe with info of all trials. Defaults to None.
-        use_col (str, optional): column name to use for PSTH calculation. Defaults to "dff".
-        rs_thr_min (float, optional): min threshold of running speed for imaging frames. Defaults to None.
-        rs_thr_max (float, optional): max threshold of running speed for imaging frames. Defaults to None.
-        still_only (bool, optional): whether to use only frames when the mouse stay still for x frames. Defaults to False.
-        still_time (int, optional): number of seconds before a certain frame when the mouse stay still. Defaults to 1.
-        max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
-        min_distance (int, optional): min distance for each trial in meters. Defaults to 0.
-        nbins (int, optional): number of bins to bin the activity. Defaults to 20.
-        frame_rate (int, optional): imaging frame rate. Defaults to 15.
-        compute_ci (bool, optional): whether to compute confidence interval or not. Defaults to True.
-    '''
     # confidence interval z calculation
     ci_range = 0.95
 
-    if len(depth_list) > 0:
-        all_ci = np.zeros((2, len(depth_list) + 1, nbins))
-    bins = np.linspace(
-        start=min_distance, stop=max_distance, num=nbins + 1, endpoint=True
-    )
-    bin_centers = (bins[1:] + bins[:-1]) / 2
+    if len(bins) == 0:
+        if len(depth_list) > 0:
+            all_ci = np.zeros((2, len(depth_list) + 1, nbins))
+        bins = np.linspace(
+            start=min_distance, stop=max_distance, num=nbins + 1, endpoint=True
+        )
+        bin_centers = (bins[1:] + bins[:-1]) / 2
+    else:
+        nbins = len(bins) - 1
+        if len(depth_list) > 0:
+            all_ci = np.zeros((2, len(depth_list) + 1, len(bins)-1))
+        bin_centers = (bins[1:] + bins[:-1]) / 2
     if len(psth) == 0:
         # choose the trials with closed or open loop to visualize
         trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
@@ -669,6 +657,7 @@ def plot_PSTH(
     corridor_length=6,
     blank_length=0,
     nbins=20,
+    bins=[],  # if bins are provided, nbins is ignored
     rs_thr_min=None,
     rs_thr_max=None,
     still_only=False,
@@ -682,31 +671,16 @@ def plot_PSTH(
     show_ci=True,
     ylim=(None, None),
 ):
-    '''Plot PSTH for a given ROI.
+    """PSTH of a neuron for each depth and blank period.
 
     Args:
-        roi (int): ROI number.
-        is_closed_loop (bool): whether it's closedloop or openloop.
         trials_df (pd.DataFrame): dataframe with info of all trials.
-        psth (list, optional): pre-calculated PSTH. Defaults to [].
-        depth_list (list, optional): list of depths. Defaults to [].
-        use_col (str, optional): column name to use for PSTH calculation. Defaults to "dff".
-        corridor_length (float, optional): length of the corridor in meters. Defaults to 6.
-        blank_length (float, optional): length of the blank period to be plotted at each end of the corridor. Defaults to 0.
+        roi (int): ROI number
+        is_closed_loop (bool): plotting the closed loop or open loop results.
+        max_distance (int, optional): max distance for each trial in meters. Defaults to 6.
         nbins (int, optional): number of bins to bin the activity. Defaults to 20.
-        rs_thr_min (float, optional): min threshold of running speed for imaging frames. Defaults to None.
-        rs_thr_max (float, optional): max threshold of running speed for imaging frames. Defaults to None.
-        still_only (bool, optional): whether to use only frames when the mouse stay still for x frames. Defaults to False.
-        still_time (int, optional): number of seconds before a certain frame when the mouse stay still. Defaults to 1.
         frame_rate (int, optional): imaging frame rate. Defaults to 15.
-        fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick and legend. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
-        linewidth (int, optional): linewidth. Defaults to 3.
-        legend_on (bool, optional): whether to show legend or not. Defaults to False.
-        legend_loc (str, optional): location of the legend. Defaults to "lower right".
-        legend_bbox_to_anchor (tuple, optional): bbox_to_anchor of the legend. Defaults to (1.4, -0.6).
-        show_ci (bool, optional): whether to show confidence interval or not. Defaults to True.
-        ylim (tuple, optional): y-axis limits. Defaults to (None, None).
-    '''
+    """
     max_distance = corridor_length + blank_length
     min_distance = -blank_length
     if trials_df is not None:
@@ -726,6 +700,7 @@ def plot_PSTH(
         min_distance=min_distance,
         max_distance=max_distance,
         nbins=nbins,
+        bins=bins,
         frame_rate=frame_rate,
     )
 
@@ -733,11 +708,11 @@ def plot_PSTH(
         all_means = all_means * 100  # convert m/s to cm/s
     for idepth, depth in enumerate(depth_list):
         linecolor = plotting_utils.get_color(
-            value=depth, 
-            value_min=np.min(depth_list), 
+            depth_list[idepth], 
+            value_min=np.min(depth_list),
             value_max=np.max(depth_list),
-            cmap=cm.cool.reversed(),
             log=True,
+            cmap=cm.cool.reversed()
         )
         plt.plot(
             bin_centers,
@@ -766,10 +741,10 @@ def plot_PSTH(
     plt.yticks(fontsize=fontsize_dict["tick"])
     if (ylim[0] is None) and (ylim[1] is None):
         ylim = plt.gca().get_ylim()
-        ylim = [ylim[0], common_utils.ceil(ylim[1], 1)]
+        ylim = [ylim[0], plt_common_utils.ceil(ylim[1], 1)]
     elif ylim[0] is not None:
         if ylim[1] is None:
-            ylim = (ylim[0], common_utils.ceil(plt.gca().get_ylim()[1], 1))
+            ylim = (ylim[0], plt_common_utils.ceil(plt.gca().get_ylim()[1], 1))
             plt.ylim(ylim)
         else:
             ylim = ylim

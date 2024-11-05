@@ -15,7 +15,7 @@ from znamutils import slurm_it
 from cottage_analysis.analysis import spheres, common_utils
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import plotting_utils
-from cottage_analysis.population_analysis import depth_decoder_stats
+from cottage_analysis.summary_analysis import depth_decoder_stats
 
 CONDA_ENV = "2p_analysis_cottage2"
 

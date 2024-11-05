@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
-from cottage_analysis.analysis import find_depth_neurons
-
+import flexiznam as flz
+from cottage_analysis.analysis import find_depth_neurons, spheres
+from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.summary_analysis import depth_responses
 
 def calculate_openloop_rs_correlation(
     imaging_df_openloop, 
@@ -169,7 +171,7 @@ def get_rs_stats_all_sessions(
             # Calculate the running speed psth
             print("Calculating running speed PSTH")
             # just for stim period
-            rs_psth_stim, _, _ = get_PSTH(
+            rs_psth_stim, _, _ = depth_responses.get_PSTH(
                 trials_df=trials_df,
                 roi=0,
                 use_col="RS",
@@ -189,7 +191,7 @@ def get_rs_stats_all_sessions(
             )
 
             # stim + some blank period
-            rs_psth, _, _ = get_PSTH(
+            rs_psth, _, _ = depth_responses.get_PSTH(
                 trials_df=trials_df,
                 roi=0,
                 use_col="RS",
