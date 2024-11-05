@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from functools import partial
+from functools import partial, reduce
 import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
@@ -173,7 +173,7 @@ def load_session(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "48:00:00",
+        "time": "7-00:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },
@@ -295,7 +295,7 @@ def merge_fit_dataframes(
     neurons_df = pd.read_pickle(neurons_ds.path_full)
 
     search_str = f"{prefix}*{suffix}{filetype}"
-    merge_df_names = []
+    dfs_to_merge = []
     for df_name in neurons_ds.path_full.parent.glob(search_str):
         if exclude_keywords:
             # if the name contains any keywords that needs to be excluded
@@ -309,42 +309,57 @@ def merge_fit_dataframes(
                     ):
                         print(f"Exclude files {df_name}")
                     else:
-                        merge_df_names.append(df_name)
+                        tmp = pd.read_pickle(df_name)
+                        dfs_to_merge.append(tmp)
                 else:
-                    merge_df_names.append(df_name)
+                    tmp = pd.read_pickle(df_name)
+                    dfs_to_merge.append(tmp)
         else:
-            merge_df_names.append(df_name)
+            tmp = pd.read_pickle(df_name)
+            dfs_to_merge.append(tmp)
+    
+    # Checking that the number of ROIs is the same across dataframes with fit results
+    assert all([df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge])
 
-    for df_name in merge_df_names:
-        print(f"Merging {df_name}...")
-        df = pd.read_pickle(df_name)
-        assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
-        for col in df.columns:
-            if col == "roi":
-                continue
-            if target_column_suffix is not None:
-                new_col = (
-                    col
-                    + target_column_prefix
-                    + "_"
-                    + "_".join(str(df_name.stem).split("_")[target_column_suffix:])
-                )
-            else:
-                new_col = col
-            if new_col in neurons_df.columns:
-                if conflicts == "skip":
-                    print(
-                        f"WARNING: Skipping column {col} - already present in neurons_df"
-                    )
-                elif conflicts == "overwrite":
-                    neurons_df[new_col] = df[col]
-                    print(f"WARNING: Overwriting column {col}")
-            else:
-                neurons_df[new_col] = df[col]
+    rsof_df = reduce(lambda x,y: pd.merge(x,y, on="roi", how="inner"), dfs_to_merge)
+
+    if conflicts == "skip":
+        columns_to_add = rsof_df.columns.difference(neurons_df.columns).to_list()
+        columns_to_add.append("roi")
+        neurons_df = pd.merge(neurons_df, rsof_df.loc[:,columns_to_add], on="roi")
+        print(f"New columns written to neurons_df: {[name for name in columns_to_add if name != "roi"]}")
+    elif conflicts == "overwrite":
+        columns_to_drop = neurons_df.columns.intersection(rsof_df.columns).to_list()
+        columns_to_drop.remove("roi")
+        neurons_df = neurons_df.drop(columns_to_drop, axis=1)
+        neurons_df = pd.merge(neurons_df, rsof_df, on="roi")
+        print(f"New columns written to neurons_df: {rsof_df.columns.to_list()}")
+        print(f"Data overwritten in neurons_df: {columns_to_drop}")
+
+    # for df_name in merge_df_names:
+    #     print(f"Merging {df_name}...")
+    #     df = pd.read_pickle(df_name)
+    #     assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
+    #     for col in df.columns:
+    #         if col == "roi":
+    #             continue
+    #         if target_column_suffix is not None:
+    #             new_col = col + target_column_prefix + '_' + '_'.join(str(df_name.stem).split('_')[target_column_suffix:])
+    #         else:
+    #             new_col = col
+    #         if new_col in neurons_df.columns:
+    #             if conflicts == "skip":
+    #                 print(
+    #                     f"WARNING: Skipping column {col} - already present in neurons_df"
+    #                 )
+    #             elif conflicts == "overwrite":
+    #                 neurons_df[new_col] = df[col]
+    #                 print(f"WARNING: Overwriting column {col}")
+    #         else:
+    #             neurons_df[new_col] = df[col]
 
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
-    print("All dataframes merged. Neurons_df saved.")
 
     return neurons_df
 
