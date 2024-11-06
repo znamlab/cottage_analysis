@@ -330,28 +330,6 @@ def merge_fit_dataframes(
         print(f"New columns written to neurons_df: {rsof_df.columns.to_list()}")
         print(f"Data overwritten in neurons_df: {columns_to_drop}")
 
-    # for df_name in merge_df_names:
-    #     print(f"Merging {df_name}...")
-    #     df = pd.read_pickle(df_name)
-    #     assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
-    #     for col in df.columns:
-    #         if col == "roi":
-    #             continue
-    #         if target_column_suffix is not None:
-    #             new_col = col + target_column_prefix + '_' + '_'.join(str(df_name.stem).split('_')[target_column_suffix:])
-    #         else:
-    #             new_col = col
-    #         if new_col in neurons_df.columns:
-    #             if conflicts == "skip":
-    #                 print(
-    #                     f"WARNING: Skipping column {col} - already present in neurons_df"
-    #                 )
-    #             elif conflicts == "overwrite":
-    #                 neurons_df[new_col] = df[col]
-    #                 print(f"WARNING: Overwriting column {col}")
-    #         else:
-    #             neurons_df[new_col] = df[col]
-
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
 
