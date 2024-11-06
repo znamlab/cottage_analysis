@@ -367,7 +367,9 @@ def load_sig_rf(
             )[:, 0]
             neurons_df["iscell"] = iscell
             neurons_df["session"] = session
-            roi_location.determine_roi_locations(neurons_df, flexilims_session, session, suite2p_ds)
+            roi_location.determine_roi_locations(
+                neurons_df, flexilims_session, session, suite2p_ds
+            )
             # Load RF significant %
             coef = np.stack(neurons_df["rf_coef_closedloop"].values)
             coef_ipsi = np.stack(neurons_df["rf_coef_ipsi_closedloop"].values)

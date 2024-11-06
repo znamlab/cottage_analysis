@@ -118,7 +118,9 @@ def determine_roi_locations(neurons_df, flexilims_session, session, suite2p_ds):
     ops = np.load(suite2p_ds.path_full / "plane0" / "ops.npy", allow_pickle=True).item()
     si_metadata = common_utils.get_si_metadata(flexilims_session, session)
     if "FrameData" in si_metadata.keys():
-        neurons_df["z_position"] = si_metadata["FrameData"]["SI.hMotors.samplePosition"][2]
+        neurons_df["z_position"] = si_metadata["FrameData"][
+            "SI.hMotors.samplePosition"
+        ][2]
     else:
         neurons_df["z_position"] = si_metadata["SI.hMotors.samplePosition"][2]
     find_roi_centers(neurons_df, stat)

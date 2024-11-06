@@ -344,10 +344,8 @@ def plot_RS_OF_matrix(
         ax.get_position().height,
     )
 
-    ticks_select1, ticks_select2, bin_edges1, bin_edges2 = (
-        get_RS_OF_heatmap_axis_ticks(
-            log_range=log_range, fontsize_dict=fontsize_dict
-        )
+    ticks_select1, ticks_select2, bin_edges1, bin_edges2 = get_RS_OF_heatmap_axis_ticks(
+        log_range=log_range, fontsize_dict=fontsize_dict
     )
     plt.xticks(
         ticks_select1[0::2],
@@ -1260,12 +1258,12 @@ def plot_openloop_rs_correlation_alldepths(
 
     for idepth in range(len(depth_list)):
         color = plotting_utils.get_color(
-                value=depth_list[idepth],
-                value_min=np.min(depth_list),
-                value_max=np.max(depth_list),
-                cmap=cm.cool.reversed(),
-                log=True,
-            )
+            value=depth_list[idepth],
+            value_min=np.min(depth_list),
+            value_max=np.max(depth_list),
+            cmap=cm.cool.reversed(),
+            log=True,
+        )
         sns.stripplot(
             x=np.ones(r_alldepths.shape[0]) * idepth,
             y=r_alldepths[:, idepth],

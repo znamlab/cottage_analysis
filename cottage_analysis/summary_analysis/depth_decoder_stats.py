@@ -4,6 +4,7 @@ import numpy as np
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.analysis import common_utils
 
+
 def concatenate_all_decoder_results(
     flexilims_session, session_list, filename="decoder_results.pickle"
 ):

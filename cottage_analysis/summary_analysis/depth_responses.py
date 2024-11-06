@@ -10,13 +10,9 @@ from cottage_analysis.plotting import depth_selectivity_plots
 
 
 def get_visually_responsive_neurons(
-    trials_df, 
-    neurons_df, 
-    is_closed_loop=1, 
-    before_onset=0.5, 
-    frame_rate=15
+    trials_df, neurons_df, is_closed_loop=1, before_onset=0.5, frame_rate=15
 ):
-    '''Find visually responsive neurons.
+    """Find visually responsive neurons.
 
     Args:
         trials_df (pd.DataFrame): dataframe with info of all trials.
@@ -24,7 +20,7 @@ def get_visually_responsive_neurons(
         is_closed_loop (int, optional): whether it's closedloop or openloop. Defaults to 1.
         before_onset (float, optional): time before onset to calculate mean response. Defaults to 0.5.
         frame_rate (int, optional): imaging frame rate. Defaults to 15.
-    '''
+    """
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
 
     # Find the mean response of each trial for all ROIs

@@ -76,7 +76,7 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )
-        
+
         # Add trial number to flexilims
         trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
         trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
@@ -85,12 +85,14 @@ def main(
             "session",
             name=session_name,
             mode="update",
-            attributes={"closedloop_trials": trial_no_closedloop,
-                        "openloop_trials": trial_no_openloop,
-                        "ndepths": ndepths},
+            attributes={
+                "closedloop_trials": trial_no_closedloop,
+                "openloop_trials": trial_no_openloop,
+                "ndepths": ndepths,
+            },
             flexilims_session=flexilims_session,
         )
-        
+
         suite2p_datasets = flz.get_datasets(
             origin_name=session_name,
             dataset_type="suite2p_rois",
@@ -110,7 +112,7 @@ def main(
                 "niter": 10,
                 "min_sigma": 0.5,
             }
-            
+
             # Find depth neurons and fit preferred depth
             print("---Start finding depth neurons...---")
             print("Find depth neurons...")
@@ -193,7 +195,7 @@ def main(
 
             # Save neurons_df
             neurons_df.to_pickle(neurons_ds.path_full)
-         
+
             # Update neurons_ds on flexilims
             neurons_ds.update_flexilims(mode="update")
             print("Depth tuning fitting finished. Neurons_df saved.")
@@ -291,7 +293,7 @@ def main(
                 niter=10,
                 min_sigma=0.25,
                 run_openloop_only=False,
-                file_special_sfx="",    
+                file_special_sfx="",
             )
 
             to_do = [
@@ -326,7 +328,7 @@ def main(
                     k_folds=k_folds,
                     **common_params,
                 )
-                outputs.append(out)  
+                outputs.append(out)
                 print("---RS OF fit finished. Neurons_df saved.---")
 
             # Merge fit dataframes
@@ -341,7 +343,7 @@ def main(
                 conflicts=conflicts,
                 prefix="fit_rs_of_tuning_",
                 suffix="",
-                exclude_keywords=["recording","openclosed","openloop"], 
+                exclude_keywords=["recording", "openclosed", "openloop"],
                 include_keywords=[],
                 target_column_suffix=None,
                 filetype=".pickle",
@@ -361,7 +363,7 @@ def main(
                 conflicts=conflicts,
                 prefix="fit_rs_of_tuning_",
                 suffix="",
-                exclude_keywords=["recording","openclosed","openloop"], 
+                exclude_keywords=["recording", "openclosed", "openloop"],
                 include_keywords=[],
                 target_column_suffix=None,
                 filetype=".pickle",
@@ -386,7 +388,7 @@ def main(
                 scripts_name=f"{session_name}_basic_vis_plots",
             )
             print("---Plotting finished. ---")
-            
+
 
 if __name__ == "__main__":
 

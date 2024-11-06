@@ -16,6 +16,7 @@ from cottage_analysis.plotting import depth_decoder_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
+
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
 ):
@@ -44,7 +45,7 @@ def main(
         "still_thr": 0.05,
         "speed_bins": np.array([0.05, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2]),
     }
-    
+
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
@@ -94,20 +95,22 @@ def main(
         print("This is a closed-loop only session")
     elif len(trials_df_all.closed_loop.unique()) == 2:
         print("This is a session with open loop")
-        
+
     unique_recordings = np.sort(trials_df_all["recording"].unique())
     openloop_positions = pd.Series(unique_recordings).str.contains("Playback")
-    closedloop_positions = (~pd.Series(unique_recordings).str.contains("Playback"))
+    closedloop_positions = ~pd.Series(unique_recordings).str.contains("Playback")
     n_openloop = np.sum(openloop_positions)
     n_closedloop = len(unique_recordings) - n_openloop
-    
+
     if (n_closedloop == 1) and (n_openloop <= 0):
-        print("This session doesn't contain multiple closedloop / openloop session. skip.")
+        print(
+            "This session doesn't contain multiple closedloop / openloop session. skip."
+        )
         return
-    
+
     else:
         for i, recording in enumerate(unique_recordings):
-            select_trials = (trials_df_all["recording"] == recording)
+            select_trials = trials_df_all["recording"] == recording
             closed_loop = trials_df_all[select_trials].closed_loop.values[0]
             if closed_loop:
                 sfx = "_closedloop"
@@ -130,9 +133,10 @@ def main(
                 k_folds=5,
                 use_slurm=use_slurm,
                 neurons_ds=neurons_ds,
-                decoder_dict_path=neurons_ds.path_full.parent / f"decoder_results{sfx}{i}.pickle",
+                decoder_dict_path=neurons_ds.path_full.parent
+                / f"decoder_results{sfx}{i}.pickle",
                 special_sfx=f"{sfx}{i}",
-            )    
+            )
 
 
 if __name__ == "__main__":

@@ -6,18 +6,17 @@ from cottage_analysis.analysis import find_depth_neurons, spheres
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.summary_analysis import depth_responses
 
+
 def calculate_openloop_rs_correlation(
-    imaging_df_openloop, 
-    trials_df, 
-    separate_depths=False
+    imaging_df_openloop, trials_df, separate_depths=False
 ):
-    '''Calculate the correlation between actual and virtual running speeds for openloop sessions.
+    """Calculate the correlation between actual and virtual running speeds for openloop sessions.
 
     Args:
         imaging_df_openloop (pd.DataFrame): imaging dataframe for openloop sessions.
         trials_df (pd.DataFrame): trials dataframe.
         separate_depths (bool, optional): whether to calculate the correlation for each depth separately. Defaults to False.
-    '''
+    """
     if not separate_depths:
         rs_actual = imaging_df_openloop["RS"][
             (imaging_df_openloop["RS"].notnull())

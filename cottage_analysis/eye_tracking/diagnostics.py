@@ -1,4 +1,5 @@
 """Functions to save diagnostic plots for eye tracking"""
+
 import cv2
 import yaml
 import pandas as pd

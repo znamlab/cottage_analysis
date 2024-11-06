@@ -292,9 +292,7 @@ def plot_depth_tuning_curve(
         plt.yticks(
             [
                 0,
-                common_utils.ceil(
-                    np.max(CI_high), ylim_precision_base, ylim_precision
-                ),
+                common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
             ],
             fontsize=fontsize_dict["tick"],
         )
@@ -337,7 +335,7 @@ def plot_running_stationary_depth_tuning(
     legend_loc="upper right",
     text_pos="upper_left",
 ):
-    '''Plot depth tuning curve for one neuron when the mouse is running vs stationary.
+    """Plot depth tuning curve for one neuron when the mouse is running vs stationary.
 
     Args:
         roi (int): ROI number.
@@ -353,7 +351,7 @@ def plot_running_stationary_depth_tuning(
         stat (dict, optional): stat from suite2p. Defaults to None.
         legend_loc (str, optional): location of the legend. Defaults to "upper right".
         text_pos (str, optional): position of the text. Defaults to "upper_left".
-    '''
+    """
     ylims = []
     for (
         rs_thr,
@@ -473,8 +471,8 @@ def plot_running_stationary_depth_tuning(
             frameon=False,
             handlelength=0.5,
         )
-        
-        
+
+
 def get_PSTH(
     roi,
     psth=[],
@@ -506,7 +504,7 @@ def get_PSTH(
     else:
         nbins = len(bins) - 1
         if len(depth_list) > 0:
-            all_ci = np.zeros((2, len(depth_list) + 1, len(bins)-1))
+            all_ci = np.zeros((2, len(depth_list) + 1, len(bins) - 1))
         bin_centers = (bins[1:] + bins[:-1]) / 2
     if len(psth) == 0:
         # choose the trials with closed or open loop to visualize
@@ -604,14 +602,14 @@ def get_PSTH(
 
 
 def apply_rs_threshold(
-    rs_arr, 
-    rs_thr_min, 
-    rs_thr_max, 
-    still_only, 
-    still_time, 
+    rs_arr,
+    rs_thr_min,
+    rs_thr_max,
+    still_only,
+    still_time,
     frame_rate,
 ):
-    '''Apply running speed threshold to select frames.
+    """Apply running speed threshold to select frames.
 
     Args:
         rs_arr (np.array): running speed array.
@@ -620,7 +618,7 @@ def apply_rs_threshold(
         still_only (bool): whether to use only frames when the mouse stay still for x frames.
         still_time (int): number of seconds before a certain frame when the mouse stay still.
         frame_rate (int): imaging frame rate.
-    '''
+    """
     # threshold running speed according to rs_thr
     if not still_only:  # take running frames
         if (rs_thr_min is None) and (rs_thr_max is None):  # take all frames
@@ -708,11 +706,11 @@ def plot_PSTH(
         all_means = all_means * 100  # convert m/s to cm/s
     for idepth, depth in enumerate(depth_list):
         linecolor = plotting_utils.get_color(
-            depth_list[idepth], 
+            depth_list[idepth],
             value_min=np.min(depth_list),
             value_max=np.max(depth_list),
             log=True,
-            cmap=cm.cool.reversed()
+            cmap=cm.cool.reversed(),
         )
         plt.plot(
             bin_centers,
@@ -753,12 +751,7 @@ def plot_PSTH(
         ylim = (plt.gca().get_ylim()[0], ylim[1])
         plt.ylim(ylim)
     plt.yticks([ylim[0], ylim[1]], fontsize=fontsize_dict["tick"])
-    plt.plot([0, 0], 
-             ylim, 
-             "k", 
-             linestyle="dotted", 
-             linewidth=0.5, 
-             label="_nolegend_")
+    plt.plot([0, 0], ylim, "k", linestyle="dotted", linewidth=0.5, label="_nolegend_")
     plt.plot(
         [corridor_length, corridor_length],
         ylim,
@@ -785,14 +778,14 @@ def plot_preferred_depth_hist(
     nbins=50,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
-    '''Plot histogram of preferred depth.
+    """Plot histogram of preferred depth.
 
     Args:
         results_df (pd.DataFrame): dataframe with analyzed info of all rois.
         use_col (str, optional): column name to use for plotting. Defaults to "preferred_depth_closedloop".
         nbins (int, optional): number of bins for histogram. Defaults to 50.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
-    '''
+    """
     results_df = results_df[results_df["iscell"] == 1].copy()
     # convert to cm
     results_df[use_col] = results_df[use_col].apply(lambda x: np.log(x * 100))
@@ -871,14 +864,14 @@ def plot_psth_raster(
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
     vmax=2,
 ):
-    '''Plot PSTH raster for all neurons.
+    """Plot PSTH raster for all neurons.
 
     Args:
         results_df (pd.DataFrame): dataframe with analyzed info of all rois from all sessions.
         depth_list (list): list of depths.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
         vmax (int, optional): maximum value for the colorbar. Defaults to 2.
-    '''
+    """
     psths = np.stack(results_df["psth_crossval"])[:, :-1, 10:-10]  # exclude blank
     ndepths = psths.shape[1]
     nbins = psths.shape[2]
@@ -937,14 +930,14 @@ def plot_depth_neuron_perc_hist(
     ylim=None,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
-    '''Plot histogram of proportion of depth-tuned neurons for each session.
+    """Plot histogram of proportion of depth-tuned neurons for each session.
 
     Args:
         results_df (pd.DataFrame): dataframe with analyzed info of all rois from all sessions.
         bins (int, optional): number of bins for histogram. Defaults to 50.
         ylim (tuple, optional): y-axis limits. Defaults to None.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
-    '''
+    """
     session_prop = results_df.groupby("session").agg({"depth_tuned": "mean"})
     plt.hist(
         session_prop["depth_tuned"],
@@ -1166,8 +1159,8 @@ def plot_mean_running_speed_alldepths(
     CI_low, CI_high = common_utils.get_bootstrap_ci(rs_means.T, sig_level=0.05)
     for idepth in range(len(depth_list)):
         color = plotting_utils.get_color(
-            value=depth_list[idepth], 
-            value_min=np.min(depth_list), 
+            value=depth_list[idepth],
+            value_min=np.min(depth_list),
             value_max=np.max(depth_list),
             cmap=cm.cool.reversed(),
             log=True,

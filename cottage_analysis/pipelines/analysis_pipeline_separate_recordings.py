@@ -14,28 +14,33 @@ from cottage_analysis.analysis import (
 from cottage_analysis.pipelines import pipeline_utils
 
 
-def copy_fit_df(neurons_ds, model, choose_trials, k_folds, recording_type='closedloop', file_special_sfx=''):
+def copy_fit_df(
+    neurons_ds,
+    model,
+    choose_trials,
+    k_folds,
+    recording_type="closedloop",
+    file_special_sfx="",
+):
 
     # create source and target file name
     suffix = f"{model}"
     if isinstance(choose_trials, str):
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
-    
+
     # copy fit_df from source to target
-    source_path = neurons_ds.path_full.with_name(
-        f"fit_rs_of_tuning_{suffix}.pickle"
-    )
+    source_path = neurons_ds.path_full.with_name(f"fit_rs_of_tuning_{suffix}.pickle")
     target_path = neurons_ds.path_full.with_name(
         f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
     )
     fit_df = pd.read_pickle(source_path)
-    fit_df = fit_df.loc[:,fit_df.columns.str.contains(f"{recording_type}|roi")]
+    fit_df = fit_df.loc[:, fit_df.columns.str.contains(f"{recording_type}|roi")]
     print(f"Copying {source_path.name} to {target_path.name}")
     fit_df.to_pickle(target_path)
-    
+
     return fit_df
-    
+
 
 def main(
     project,
@@ -117,54 +122,72 @@ def main(
             ("gaussian_2d", None, 5),
         ]
 
-        # Count the number of closedloop / openloop recordings in the session. no need to redo the analysis if there was only 1 closedloop or openloop recordings
+        # Count the number of closedloop / openloop recordings in the session. no need to redo the analysis if there was only 1 closedloop or openloop recordings
         unique_recordings = np.sort(trials_df_all["recording"].unique())
         openloop_positions = pd.Series(unique_recordings).str.contains("Playback")
-        closedloop_positions = (~pd.Series(unique_recordings).str.contains("Playback"))
+        closedloop_positions = ~pd.Series(unique_recordings).str.contains("Playback")
         n_openloop = np.sum(openloop_positions)
         n_closedloop = len(unique_recordings) - n_openloop
-        assert(n_closedloop > 0)
+        assert n_closedloop > 0
         recordings_todo = np.zeros(len(unique_recordings))
-        if (n_closedloop == 1):
-            if (n_openloop == 0):
-                print(f"Session {session_name} has one closedloop recording only. Copying existing fit_df for closedloop...")
+        if n_closedloop == 1:
+            if n_openloop == 0:
+                print(
+                    f"Session {session_name} has one closedloop recording only. Copying existing fit_df for closedloop..."
+                )
                 recordings_todo[:] = 0
-            elif (n_openloop == 1):
-                print(f"Session {session_name} has only one closedloop and one openloop recording. Copying existing fit_df for closedloop and openloop...")
+            elif n_openloop == 1:
+                print(
+                    f"Session {session_name} has only one closedloop and one openloop recording. Copying existing fit_df for closedloop and openloop..."
+                )
                 recordings_todo[:] = 0
-            elif (n_openloop > 1):
-                print(f"Session {session_name} has only one closedloop recording. Copying existing fit_df for closedloop...")
+            elif n_openloop > 1:
+                print(
+                    f"Session {session_name} has only one closedloop recording. Copying existing fit_df for closedloop..."
+                )
                 print("Fitting for separate openloop recordings...")
                 recordings_todo[openloop_positions] = 1
-        elif (n_closedloop > 1):
-            if (n_openloop == 0):
-                print(f"Session {session_name} has only closedloop recordings but multiple ones.")
+        elif n_closedloop > 1:
+            if n_openloop == 0:
+                print(
+                    f"Session {session_name} has only closedloop recordings but multiple ones."
+                )
                 print(f"Fitting for separate closedloop recordings...")
                 recordings_todo[:] = 1
-            if (n_openloop == 1):
-                print(f"Session {session_name} has only one openloop recording. Copying existing fit_df for openloop...")
+            if n_openloop == 1:
+                print(
+                    f"Session {session_name} has only one openloop recording. Copying existing fit_df for openloop..."
+                )
                 print("Fitting for separate closedloop recordings...")
                 recordings_todo[closedloop_positions] = 1
-            if (n_openloop > 1):
-                print(f"Session {session_name} has multiple closedloop and openloop recordings.")
+            if n_openloop > 1:
+                print(
+                    f"Session {session_name} has multiple closedloop and openloop recordings."
+                )
                 print("Fitting for separate closedloop and openloop recordings...")
                 recordings_todo[:] = 1
-        
+
         for model, trials, k_folds in to_do:
             name = f"{session_name}_{model}"
             if trials is not None:
                 name += "_crossval"
             name += f"_k{k_folds}"
             print(f"Fitting {model}...")
-            for i, (recording, fit_recording) in enumerate(zip(unique_recordings, recordings_todo)):
-                choose_trials = trials_df_all[trials_df_all.recording == recording].index.tolist()
+            for i, (recording, fit_recording) in enumerate(
+                zip(unique_recordings, recordings_todo)
+            ):
+                choose_trials = trials_df_all[
+                    trials_df_all.recording == recording
+                ].index.tolist()
                 new_name = name + f"_recording_{recording}"
                 if "Playback" in recording:
                     recording_type = "openloop"
                 else:
                     recording_type = "closedloop"
                 if fit_recording:
-                    print(f"Fitting rsof model {model}_k{k_folds} for recording {recording}")
+                    print(
+                        f"Fitting rsof model {model}_k{k_folds} for recording {recording}"
+                    )
                     out = pipeline_utils.load_and_fit(
                         project,
                         session_name,
@@ -180,17 +203,19 @@ def main(
                     )
                     outputs.append(out)
                 else:
-                    copy_fit_df(neurons_ds, 
-                                model, 
-                                choose_trials, 
-                                k_folds, 
-                                recording_type=recording_type, 
-                                file_special_sfx=f"_recording_{'_'.join(recording.split('_')[-2:])}_{recording_type}_{i}")
+                    copy_fit_df(
+                        neurons_ds,
+                        model,
+                        choose_trials,
+                        k_folds,
+                        recording_type=recording_type,
+                        file_special_sfx=f"_recording_{'_'.join(recording.split('_')[-2:])}_{recording_type}_{i}",
+                    )
             print("---RS OF fit finished. Neurons_df saved.---")
 
         # Merge fit dataframes
         job_dependency = outputs if use_slurm else None
-        
+
         if np.sum(recordings_todo) == 0:
             job_dependency = None
         out = pipeline_utils.merge_fit_dataframes(
@@ -203,15 +228,16 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix="",
-            exclude_keywords=["openclosed"], 
-            include_keywords=["recording","loop"],
+            exclude_keywords=["openclosed"],
+            include_keywords=["recording", "loop"],
             target_column_suffix=-2,
             target_column_prefix="_recording",
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )
 
-        print("---Analysis finished. Neurons_df saved.---")   
+        print("---Analysis finished. Neurons_df saved.---")
+
 
 if __name__ == "__main__":
 

@@ -17,9 +17,7 @@ from cottage_analysis.analysis.common_utils import get_confidence_interval
 
 def get_color(value, value_min, value_max, log=False, cmap=cm.cool.reversed()):
     if log:
-        norm = mpl.colors.Normalize(
-            vmin=np.log(value_min), vmax=np.log(value_max)
-        )
+        norm = mpl.colors.Normalize(vmin=np.log(value_min), vmax=np.log(value_max))
         rgba_color = cmap(norm(np.log(value)), bytes=True)
     else:
         norm = mpl.colors.Normalize(vmin=value_min, vmax=value_max)

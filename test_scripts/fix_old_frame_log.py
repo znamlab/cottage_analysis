@@ -2,6 +2,7 @@
 This script was written for old ephys files in which the frame log was split into
 several files. It should not be needed anymore.
 """
+
 # %%
 import pandas as pd
 import numpy as np

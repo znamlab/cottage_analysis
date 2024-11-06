@@ -145,7 +145,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         use_col="depth_tuning_popt_closedloop",
                     )
                     plt.title(f"roi{roi}")
-                    
+
                     # plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
                     # plot_depth_tuning_curve(
                     #     neurons_df=neurons_df,
@@ -159,7 +159,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     #     closed_loop=is_closedloop,
                     #     use_col="depth_tuning_popt_closedloop_running",
                     # )
-                    
+
                     # plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
                     # plot_depth_tuning_curve(
                     #     neurons_df=neurons_df,
@@ -177,7 +177,6 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     #     closed_loop=is_closedloop,
                     #     use_col="depth_tuning_popt_closedloop_notrunning",
                     # )
-                    
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
                     plot_speed_tuning(
@@ -232,10 +231,12 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         roi=roi,
                         log_range=log_range,
                     )
-                    
+
                     models = ["gof", "gadd", "g2d", "gratio"]
                     model_labels = ["OF only", "Additive", "Conjunctive", "Pure depth"]
-                    for imodel, (model, model_label) in enumerate(zip(models, model_labels)):
+                    for imodel, (model, model_label) in enumerate(
+                        zip(models, model_labels)
+                    ):
                         if imodel == 0:
                             ylabel = "Optic flow speed (degrees/s)"
                         else:
@@ -245,8 +246,12 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         else:
                             xlabel = ""
 
-                        ax = plt.subplot2grid((plot_rows, plot_cols), (iroi, 7+imodel), fig=fig)
-                        vmin = np.nanmax([0, np.percentile(extended_matrix[1:, 1:].flatten(), 1)])
+                        ax = plt.subplot2grid(
+                            (plot_rows, plot_cols), (iroi, 7 + imodel), fig=fig
+                        )
+                        vmin = np.nanmax(
+                            [0, np.percentile(extended_matrix[1:, 1:].flatten(), 1)]
+                        )
                         vmax = np.nanmax(extended_matrix[1:, 1:].flatten())
                         plot_RS_OF_fit(
                             fig=fig,
@@ -288,7 +293,6 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                 )
 
                 plt.close()
-
 
 
 def plot_RS_OF_fitted_tuning(

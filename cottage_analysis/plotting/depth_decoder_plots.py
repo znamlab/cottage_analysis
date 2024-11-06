@@ -365,7 +365,9 @@ def plot_decoder_err_by_speeds(
     mean_err = np.nanmean(err_speed_bins[:, 1:highest_bin], axis=0)
     CI_low, CI_high = common_utils.get_bootstrap_ci(err_speed_bins[:, 1:highest_bin].T)
     # bins that are within the highest bin (>1m/s)
-    mean_err = np.concatenate([mean_err, [np.nanmean(np.nanmean(err_speed_bins[:, highest_bin:].T, axis=0))]]) # be careful with this array as it has a lot of nans
+    mean_err = np.concatenate(
+        [mean_err, [np.nanmean(np.nanmean(err_speed_bins[:, highest_bin:].T, axis=0))]]
+    )  # be careful with this array as it has a lot of nans
     CI_low_highest, CI_high_highest = common_utils.get_bootstrap_ci(
         np.nanmean(err_speed_bins[:, highest_bin:].T, axis=0)
     )
@@ -510,7 +512,7 @@ def plot_decoder_acc_by_speeds(
     plotting_utils.despine()
 
 
-# -- OLD -- 
+# -- OLD --
 
 # def plot_confusion_matrix(conmat, acc, normalize, fontsize_dict, title_sfx=""):
 #     # Normalize confusion matrix with true labels
@@ -550,13 +552,14 @@ def plot_decoder_acc_by_speeds(
     },
     print_job_id=True,
 )
-def plot_decoder_session(decoder_dict_path,
-                         save_path,
-                        session_name,
-                        project,
-                        photodiode_protocol,
-                        speed_bins,
-                         ):
+def plot_decoder_session(
+    decoder_dict_path,
+    save_path,
+    session_name,
+    project,
+    photodiode_protocol,
+    speed_bins,
+):
     flexilims_session = flz.get_flexilims_session(project)
     _, trials_df_all = spheres.sync_all_recordings(
         session_name=session_name,
@@ -587,15 +590,12 @@ def plot_decoder_session(decoder_dict_path,
         plt.title(sfx[1:], fontsize=10)
     os.makedirs(Path(save_path) / "plots" / "depth_decoder", exist_ok=True)
     plt.savefig(
-        Path(save_path)
-        / "plots"
-        / "depth_decoder"
-        / "confusion_matrix.png",
+        Path(save_path) / "plots" / "depth_decoder" / "confusion_matrix.png",
         dpi=300,
     )
     print("Confusion matrix plotted.")
-        
-    plt.figure(figsize=(3*2,3*(len(speed_bins)+1)))
+
+    plt.figure(figsize=(3 * 2, 3 * (len(speed_bins) + 1)))
     for i, closed_loop in enumerate(np.sort(trials_df_all.closed_loop.unique())):
         if closed_loop:
             sfx = "_closedloop"
@@ -607,7 +607,7 @@ def plot_decoder_session(decoder_dict_path,
             else:
                 title_sfx = f"speed{sfx} {speed_bins[ispeed-1]:.1f}-{speed_bin:.1f} m/s"
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
-                plt.subplot2grid((len(speed_bins)+1, 2), (ispeed, i))
+                plt.subplot2grid((len(speed_bins) + 1, 2), (ispeed, i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
                     decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
@@ -618,7 +618,7 @@ def plot_decoder_session(decoder_dict_path,
         for speed_bin in [speed_bins[-1]]:
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
                 title_sfx = f"speed > {speed_bin:.1f} m/s"
-                plt.subplot2grid((len(speed_bins)+1, 2), (len(speed_bins), i))
+                plt.subplot2grid((len(speed_bins) + 1, 2), (len(speed_bins), i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][-1],
                     decoder_dict[f"acc_speed_bins{sfx}"][-1],
