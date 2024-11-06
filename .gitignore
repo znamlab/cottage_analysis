@@ -12,4 +12,5 @@ launch.json
 scripts/ccyp*
 cottage_analysis/analysis/tests/*
 cottage_analysis/depth_analysis/*
-cottage_analysis.code-workspace
+.vscode/settings.json
+cottage_analysis_debug.code-workspace

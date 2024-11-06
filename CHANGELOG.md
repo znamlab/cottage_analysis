@@ -10,4 +10,9 @@
     - Added the `summary_analysis` package to store functions to do summary analysis and plot summary plots across sessions.
 
 ### Notes
-- We need to retire `basic_vis_plots.py` from the `plotting` package
+- We need to retire `basic_vis_plots.py` from the `plotting` package!
+
+## v2.0.3
+### Major changes
+- Added analysis code for the mismatch experiments.
+- Changed `preprocessing/synchronisation.py` to enable preprocessing of the mismatch stimulus protocol.
