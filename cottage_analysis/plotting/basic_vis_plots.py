@@ -1,3 +1,4 @@
+# RETIRE THIS SCRIPT!!!
 import os
 from tqdm import tqdm
 import numpy as np
