@@ -312,7 +312,7 @@ def merge_fit_dataframes(
             dfs_to_merge.append(tmp)
     
     # Checking that the number of ROIs is the same across dataframes with fit results
-    assert all([df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge])
+    assert all([df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge]), "ROIs in dataframes do not match neurons_df."
 
     rsof_df = reduce(lambda x,y: pd.merge(x,y, on="roi", how="inner"), dfs_to_merge)
 
@@ -321,6 +321,7 @@ def merge_fit_dataframes(
         columns_to_add.append("roi")
         neurons_df = pd.merge(neurons_df, rsof_df.loc[:,columns_to_add], on="roi")
         print(f"New columns written to neurons_df: {[name for name in columns_to_add if name != "roi"]}")
+        
     elif conflicts == "overwrite":
         columns_to_drop = neurons_df.columns.intersection(rsof_df.columns).to_list()
         columns_to_drop.remove("roi")
