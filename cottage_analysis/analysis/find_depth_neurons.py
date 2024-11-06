@@ -72,7 +72,8 @@ def trial_average_dff(
             ).copy()
         elif rs_thr_max is None:  # no rs_thr_max, use all data above rs_thr
             trials_df["trial_mean_dff"] = trials_df.apply(
-                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr_min, :], axis=0), axis=1
+                lambda x: np.nanmean(x.dff_stim[x.RS_stim > rs_thr_min, :], axis=0),
+                axis=1,
             ).copy()
         elif rs_thr_min is None:  # no rs_thr, use all data below rs_thr_max
             trials_df["trial_mean_dff"] = trials_df.apply(
@@ -415,12 +416,12 @@ def fit_preferred_depth(
     if k_folds == 1:
         # Create empty columns for fitting results
         neurons_df[f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = np.nan
-        neurons_df[f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"] = [[np.nan]] * len(
-            neurons_df
-        )
-        neurons_df[f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"] = [[np.nan]] * len(
-            neurons_df
-        )
+        neurons_df[f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"] = [
+            [np.nan]
+        ] * len(neurons_df)
+        neurons_df[f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"] = [
+            [np.nan]
+        ] * len(neurons_df)
 
         for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
             popt, rsq = common_utils.iterate_fit(
@@ -432,10 +433,12 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = np.exp(
-                popt[1]
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
+                np.exp(popt[1])
             )
-            neurons_df.at[roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"] = popt
+            neurons_df.at[
+                roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
+            ] = popt
             neurons_df.at[
                 roi, f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"
             ] = choose_trial_nums
@@ -481,12 +484,16 @@ def fit_preferred_depth(
             rval, pval = spearmanr(
                 np.concatenate(y_test_all), np.concatenate(y_pred_all)
             )
-            neurons_df.at[roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"] = rsq
             neurons_df.at[
-                roi, f"{param}_tuning_test_spearmanr_rval{protocol_sfx}{sfx}{special_sfx}"
+                roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"
+            ] = rsq
+            neurons_df.at[
+                roi,
+                f"{param}_tuning_test_spearmanr_rval{protocol_sfx}{sfx}{special_sfx}",
             ] = rval
             neurons_df.at[
-                roi, f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}{special_sfx}"
+                roi,
+                f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}{special_sfx}",
             ] = pval
 
     return neurons_df, neurons_ds

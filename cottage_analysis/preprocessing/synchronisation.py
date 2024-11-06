@@ -52,7 +52,7 @@ def find_monitor_frames(
         sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if
             flexilims_session is None.
-        verbose (bool): if True, print information about the recording. Defaults to 
+        verbose (bool): if True, print information about the recording. Defaults to
             True.
 
     Returns:
@@ -380,8 +380,12 @@ def generate_vs_df(
 
 
 def generate_imaging_df(
-    vs_df, recording, flexilims_session, filter_datasets=None, return_volumes=True,
-    add_spikes=False
+    vs_df,
+    recording,
+    flexilims_session,
+    filter_datasets=None,
+    return_volumes=True,
+    add_spikes=False,
 ):
     """
     Generate a DataFrame that contains information for each imaging volume / frame incorporating
@@ -489,11 +493,13 @@ def generate_imaging_df(
     )
     if add_spikes:
         spks_fname = (
-            "spks_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "spks.npy"
+            "spks_ast.npy"
+            if suite2p_ds.extra_attributes["ast_neuropil"]
+            else "spks.npy"
         )
         spks = []
     dffs = []
-    
+
     for iplane in range(int(nplanes)):
         dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
         if add_spikes:
@@ -524,8 +530,8 @@ def generate_imaging_df(
         )
         if add_spikes:
             imaging_df["spks"] = np.split(
-                    spks[0:last_valid_volume, :], last_valid_volume, axis=0
-                )
+                spks[0:last_valid_volume, :], last_valid_volume, axis=0
+            )
     else:
         imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
         if add_spikes:

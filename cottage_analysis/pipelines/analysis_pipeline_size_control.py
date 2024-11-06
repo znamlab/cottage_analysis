@@ -11,7 +11,8 @@ from cottage_analysis.plotting import basic_vis_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-PROTOCOL_BASE = "SizeControl" # "SpherePermTubeReward"
+PROTOCOL_BASE = "SizeControl"  # "SpherePermTubeReward"
+
 
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
@@ -52,7 +53,7 @@ def main(
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
     )
-    
+
     # Add trial number to flexilims
     trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
     trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
@@ -61,12 +62,14 @@ def main(
         "session",
         name=session_name,
         mode="update",
-        attributes={"closedloop_trials": trial_no_closedloop,
-                    "openloop_trials": trial_no_openloop,
-                    "ndepths": ndepths},
+        attributes={
+            "closedloop_trials": trial_no_closedloop,
+            "openloop_trials": trial_no_openloop,
+            "ndepths": ndepths,
+        },
         flexilims_session=flexilims_session,
     )
-    
+
     suite2p_datasets = flz.get_datasets(
         origin_name=session_name,
         dataset_type="suite2p_rois",
@@ -77,7 +80,6 @@ def main(
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]
-
 
     # Find depth neurons and fit preferred depth
     print("---Start finding depth neurons...---")
@@ -163,7 +165,7 @@ def main(
             k_folds=5,
             special_sfx=special_sfx,
         )
-                
+
     # Fit preferred depth for different sizes
     for isize, size in enumerate(np.sort(trials_df_all["size"].unique())):
         print(f"Fit preferred depth for size {size}...")
@@ -254,8 +256,8 @@ def main(
     )
 
     # Save neurons_df
-    neurons_df.to_pickle(neurons_ds.path_full.parent/"neurons_df_size_control.pickle")
-    
+    neurons_df.to_pickle(neurons_ds.path_full.parent / "neurons_df_size_control.pickle")
+
     # Merge fit dataframes
     out = pipeline_utils.merge_fit_dataframes(
         project,
@@ -267,14 +269,14 @@ def main(
         conflicts=conflicts,
         prefix="neurons_df",
         suffix="_size_control",
-        exclude_keywords=[], 
+        exclude_keywords=[],
         include_keywords=[],
         target_column_suffix=None,
         target_column_prefix="",
         filetype=".pickle",
         target_filename="neurons_df.pickle",
     )
-    
+
     # Plotting
     basic_vis_plots.size_control_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds

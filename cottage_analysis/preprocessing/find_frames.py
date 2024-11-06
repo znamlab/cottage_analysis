@@ -1,6 +1,7 @@
 """
 Module to find frames based on photodiode flicker
 """
+
 import warnings
 import time
 import numpy as np
@@ -780,7 +781,7 @@ def run_cross_correlation(
         frames_df[f"residuals_{which}"] = residuals[iw]
         frames_df[f"lag_{which}"] = lags[cc.argmax(axis=1)] / pd_sampling
         frames_df[f"peak_corr_{which}"] = cc.max(axis=1)
-        # to find the match between photiodiode and frame log, we want to look at what 
+        # to find the match between photiodiode and frame log, we want to look at what
         # is the value of the lag-shifed sequence index in during the real frame.
         # The sync is made the closest computer frame log time
         time_of_match = (

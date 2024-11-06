@@ -3,6 +3,7 @@ Utilities function for plotting
 
 Functions that help handling figures but not specific to any analysis
 """
+
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt

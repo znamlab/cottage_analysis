@@ -1,4 +1,5 @@
 """Utility functions to load visual stimulation data from the database."""
+
 import pandas as pd
 
 import flexiznam as flz
