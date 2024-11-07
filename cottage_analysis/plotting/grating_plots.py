@@ -3,7 +3,6 @@ import pandas as pd
 import os
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
 from cottage_analysis.plotting import basic_vis_plots
 from functools import partial
 
@@ -43,6 +42,7 @@ def plot_sftf_fit(
         colorbar (bool, optional): whether to add colorbar. Defaults to True.
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {"title": 10, "label": 10, "tick": 10}.
     """
+    from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
 
     neuron_series = neurons_df.iloc[roi]
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
@@ -351,6 +351,7 @@ def basic_vis_SFTF_roi(
         add_depth (bool, optional): whether to add depth tunings & speed tunings. Defaults to False.
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {'title': 10, 'label': 10, 'tick': 10}.
     """
+    from cottage_analysis.analysis.fit_gaussian_blob import grating_tuning
     plot_rows = 3
     if add_depth:
         plot_cols = 7
