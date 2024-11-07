@@ -373,7 +373,6 @@ def generate_vs_df(
         direction="backward",
         allow_exact_matches=True,
     )
-    print(vs_df)
 
     # The keller stimulus has no paramLog
     if protocol_base == "KellerTube":
@@ -413,6 +412,7 @@ def generate_vs_df(
                 param_log = param_log[param_log.Frameindex.notnull()]
                 param_log.Frameindex = param_log.Frameindex.astype("int")
 
+        # TODO: check if that shouldn't also happen for protocol_base == "KellerTube"
         if photodiode_protocol == 5:
             vs_df = pd.merge_asof(
                 left=vs_df,
