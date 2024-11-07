@@ -298,11 +298,11 @@ def read_message(
 
     # mmap is platform dependent, we want to open a 'read only' file
     if os.name == "nt":
-        access = mmap.ACCESS_READ
+        kwargs = dict(access = mmap.ACCESS_READ)
     else:
-        access = mmap.PROT_WRITE
+        kwargs= dict(flags = mmap.PROT_WRITE)
     with open(path_to_file, "rb") as f:
-        mmap_file = mmap.mmap(f.fileno(), 0, access=access)
+        mmap_file = mmap.mmap(f.fileno(), 0, **kwargs)
 
     filesize = path_to_file.stat().st_size
     step = 0
