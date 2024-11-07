@@ -7,6 +7,7 @@ import flexiznam as flz
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.analysis import spheres, common_utils
 from cottage_analysis.plotting import depth_selectivity_plots
+from cottage_analysis.io_module import suite2p as s2p_io
 
 
 def get_visually_responsive_neurons(
@@ -120,9 +121,7 @@ def get_visually_responsive_all_sessions(
                 allow_multiple=False,
                 return_dataseries=False,
             )
-            iscell = np.load(
-                suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True
-            )[:, 0]
+            iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
 
             if isess == 0:
@@ -239,9 +238,7 @@ def get_psth_crossval_all_sessions(
                 allow_multiple=False,
                 return_dataseries=False,
             )
-            iscell = np.load(
-                suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True
-            )[:, 0]
+            iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
 

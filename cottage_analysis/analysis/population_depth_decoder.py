@@ -28,6 +28,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 import flexiznam as flz
 from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.io_module import suite2p as s2p_io
 
 from znamutils import slurm_it
 
@@ -318,9 +319,7 @@ def preprocess_data(
         allow_multiple=False,
         return_dataseries=False,
     )
-    iscell = np.load(suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True)[
-        :, 0
-    ].astype("bool")
+    iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
 
     # process dff and trials_df
     trials_df = downsample_dff(
