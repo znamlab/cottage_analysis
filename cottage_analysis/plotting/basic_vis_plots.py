@@ -14,7 +14,6 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     size_control,
 )
-from v1_depth_map.figure_utils import closed_loop_rsof
 
 
 # REPLACE
