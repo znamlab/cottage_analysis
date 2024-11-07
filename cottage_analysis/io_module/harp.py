@@ -8,6 +8,7 @@ The main entry points are:
 The rest is lower level stuff to handle harp protocol
 """
 
+import os
 import struct
 import warnings
 from pathlib import Path
@@ -295,8 +296,13 @@ def read_message(
     )
     all_msgs = []
 
+    # mmap is platform dependent, we want to open a 'read only' file
+    if os.name == "nt":
+        access = mmap.ACCESS_READ
+    else:
+        access = mmap.PROT_WRITE
     with open(path_to_file, "rb") as f:
-        mmap_file = mmap.mmap(f.fileno(), 0, mmap.PROT_WRITE)
+        mmap_file = mmap.mmap(f.fileno(), 0, access=access)
 
     filesize = path_to_file.stat().st_size
     step = 0
