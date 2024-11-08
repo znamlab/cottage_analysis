@@ -140,7 +140,8 @@ def plot_raster_all_depths(
         # set colorbar
         cbar = plt.colorbar(im, cax=ax2, label="\u0394F/F")
         ax2.tick_params(labelsize=fontsize_dict["tick"])
-        cbar.set_ticks([0, vmax])
+        if vmax is not None:
+            cbar.set_ticks([0, vmax])
         ax2.set_ylabel("\u0394F/F", fontsize=fontsize_dict["legend"])
 
     return dffs_binned, ax
@@ -582,20 +583,22 @@ def get_PSTH(
                 all_dff.append(dff)
             all_means[idepth, :] = np.nanmean(all_dff, axis=0)
             if compute_ci:
-                all_ci[0, idepth, :], all_ci[1, idepth, :] = (
-                    common_utils.get_bootstrap_ci(
-                        np.array(all_dff).T, sig_level=1 - ci_range
-                    )
+                (
+                    all_ci[0, idepth, :],
+                    all_ci[1, idepth, :],
+                ) = common_utils.get_bootstrap_ci(
+                    np.array(all_dff).T, sig_level=1 - ci_range
                 )
     else:
         all_dff = psth
         all_means = np.nanmean(all_dff, axis=0)
         for idepth, depth in enumerate(depth_list):
             if compute_ci:
-                all_ci[0, idepth, :], all_ci[1, idepth, :] = (
-                    common_utils.get_bootstrap_ci(
-                        np.array(all_dff[:, idepth, :]).T, sig_level=1 - ci_range
-                    )
+                (
+                    all_ci[0, idepth, :],
+                    all_ci[1, idepth, :],
+                ) = common_utils.get_bootstrap_ci(
+                    np.array(all_dff[:, idepth, :]).T, sig_level=1 - ci_range
                 )
 
     return all_means, all_ci, bin_centers
@@ -737,19 +740,20 @@ def plot_PSTH(
         fontsize=fontsize_dict["tick"],
     )
     plt.yticks(fontsize=fontsize_dict["tick"])
-    if (ylim[0] is None) and (ylim[1] is None):
-        ylim = plt.gca().get_ylim()
-        ylim = [ylim[0], common_utils.ceil(ylim[1], 1)]
-    elif ylim[0] is not None:
+    current_ylim = np.array(plt.gca().get_ylim())
+
+    if ylim is None:
+        ylim = current_ylim
+    else:
+        # ensure ylim is a list to be mutable
+        ylim = list(ylim)
+        if ylim[0] is None:
+            ylim[0] = current_ylim[0]
         if ylim[1] is None:
-            ylim = (ylim[0], common_utils.ceil(plt.gca().get_ylim()[1], 1))
-            plt.ylim(ylim)
-        else:
-            ylim = ylim
-        plt.ylim(ylim)
-    elif (ylim[1] is not None) and (ylim[0] is None):
-        ylim = (plt.gca().get_ylim()[0], ylim[1])
-        plt.ylim(ylim)
+            ylim[1] = current_ylim[1]
+
+    ylim[1] = np.max([ylim[1], 1])
+    plt.ylim(ylim)
     plt.yticks([ylim[0], ylim[1]], fontsize=fontsize_dict["tick"])
     plt.plot([0, 0], ylim, "k", linestyle="dotted", linewidth=0.5, label="_nolegend_")
     plt.plot(
