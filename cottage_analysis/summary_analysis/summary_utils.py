@@ -4,6 +4,7 @@ import pandas as pd
 import flexiznam as flz
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.analysis import common_utils
+from cottage_analysis.io_module import suite2p as s2p_io
 from scipy import stats
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
@@ -45,10 +46,7 @@ def concatenate_all_neurons_df(
                     return_dataseries=False,
                 )
                 if read_iscell:
-                    iscell = np.load(
-                        suite2p_ds.path_full / "plane0" / "iscell.npy",
-                        allow_pickle=True,
-                    )[:, 0]
+                    iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
                     neurons_df["iscell"] = iscell
 
                 neurons_df["session"] = session

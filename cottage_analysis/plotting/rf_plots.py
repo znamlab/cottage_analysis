@@ -7,6 +7,7 @@ from cottage_analysis.analysis import spheres
 from cottage_analysis.analysis import roi_location
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.io_module import suite2p as s2p_io
 import plotly.graph_objects as go
 import os
 
@@ -176,9 +177,7 @@ def get_rf_results(project, sessions, is_closed_loop=1):
             allow_multiple=False,
             return_dataseries=False,
         )
-        iscell = np.load(
-            suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True
-        )[:, 0]
+        iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
         results["iscell"] = iscell
 
         # Add coef to results
@@ -362,9 +361,7 @@ def load_sig_rf(
                 allow_multiple=False,
                 return_dataseries=False,
             )
-            iscell = np.load(
-                suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True
-            )[:, 0]
+            iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["session"] = session
             roi_location.determine_roi_locations(
@@ -624,9 +621,7 @@ def calculate_rf_gradient(
         allow_multiple=False,
         return_dataseries=False,
     )
-    iscell = np.load(suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True)[
-        :, 0
-    ]
+    iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
     neurons_df["iscell"] = iscell
 
     # calculate gradients of azimuth and elevation
