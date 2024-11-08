@@ -486,12 +486,18 @@ def generate_imaging_df(
         allow_multiple=False,
         return_dataseries=False,
     )
+    if suite2p_ds is None:
+        raise FileNotFoundError(
+            f"Suite2p dataset not found for recording {recording.name}."
+        )
     if "nframes" in suite2p_ds.extra_attributes:
         volume_number = float(suite2p_ds.extra_attributes["nframes"])
     else:
+        # volume number is the number of frames per plane. Look at the first plane
         volume_number = float(
             np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
+
     nplanes = float(suite2p_ds.extra_attributes["nplanes"])
     fs = float(suite2p_ds.extra_attributes["fs"])
     harp_npz_path = flz.get_datasets(
