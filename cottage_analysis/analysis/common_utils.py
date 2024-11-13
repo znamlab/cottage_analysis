@@ -85,7 +85,10 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    valid = ~np.isnan(X) & ~np.isnan(y)
+    if y.ndim == 1:
+        valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis,:])
+    else:
+        valid = ~np.isnan(X) & ~np.isnan(y)
     if np.any(~valid):
         print(f"Warning: {np.sum(~valid)} NaN values in X or y")
         X = X[valid]

@@ -3,7 +3,6 @@ import pandas as pd
 import os
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
 from cottage_analysis.plotting import basic_vis_plots
 from functools import partial
 
@@ -17,10 +16,17 @@ def plot_sftf_fit(
     tf_ticks=None,
     min_sigma=0.25,
     plot_grid=True,
+    plot_subplots=False,
+    plot_axes=False,
+    fig=None,
     grid_rows=3,
     grid_cols=3,
     grid_x=0,
     grid_y=0,
+    plot_x=0,
+    plot_y=0,
+    plot_width=1,
+    plot_height=1,
     colorbar=True,
     vmax=None,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
@@ -43,6 +49,7 @@ def plot_sftf_fit(
         colorbar (bool, optional): whether to add colorbar. Defaults to True.
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {"title": 10, "label": 10, "tick": 10}.
     """
+    from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
 
     neuron_series = neurons_df.iloc[roi]
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
@@ -60,11 +67,18 @@ def plot_sftf_fit(
     )
     # plot polar plot of direction tuning at the preferred SF and TF
     if plot_grid:
-        plt.subplot2grid(
+        ax = plt.subplot2grid(
             (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
         )
-    else:
-        plt.subplot(3, 3, 5, projection="polar")
+    elif plot_subplots:
+        ax = plt.subplot(3, 3, 5, projection="polar")
+    elif plot_axes:
+        each_panel_width = plot_width / 3
+        each_panel_height = plot_height / 3
+        ax = fig.add_axes(
+            [plot_x+each_panel_width, plot_y-each_panel_height, each_panel_width*0.75, each_panel_height*0.75],
+            projection="polar",
+        )
     angles = np.linspace(0, 2 * np.pi, 100)
     dir_tuning = grating_tuning_(
         (
@@ -74,15 +88,18 @@ def plot_sftf_fit(
         ),
         *popt,
     )
-    plt.plot(angles, dir_tuning, color="k", linewidth=2)
-    plt.fill_between(angles, dir_tuning)
+    ax.plot(angles, dir_tuning, color="k", linewidth=2)
+    ax.set_ylim(0, vmax)
+    ax.fill_between(angles, dir_tuning)
     sfs, tfs = np.meshgrid(
         np.linspace(sf_range[0], sf_range[1], 100),
         np.linspace(tf_range[0], tf_range[1], 100),
     )
-    plt.xticks(fontsize=fontsize_dict["tick"])
-    yticks = plt.gca().get_yticks()
-    plt.yticks([yticks[0], yticks[-2]], fontsize=fontsize_dict["tick"])
+    yticks = ax.get_yticks()
+    ax.set_yticks([0, vmax])
+    ax.tick_params(labelsize=fontsize_dict["tick"])
+    ax.tick_params(axis="x", pad=-5)
+
 
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
@@ -94,13 +111,17 @@ def plot_sftf_fit(
             *popt,
         )
         if plot_grid:
-            plt.subplot2grid(
+            ax = plt.subplot2grid(
                 (grid_rows, grid_cols),
                 (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
             )
-        else:
-            plt.subplot(3, 3, angle_pos[i])
-        plt.imshow(
+        elif plot_subplots:
+            ax = plt.subplot(3, 3, angle_pos[i])
+        elif plot_axes:
+            ax = fig.add_axes(
+                [plot_x+(angle_pos[i]-1)%3*each_panel_width, plot_y-(angle_pos[i]-1)//3*each_panel_height, each_panel_width*0.85, each_panel_height*0.85]
+            )
+        im = plt.imshow(
             responses,
             extent=[sf_range[0], sf_range[1], tf_range[0], tf_range[1]],
             origin="lower",
@@ -108,19 +129,33 @@ def plot_sftf_fit(
             vmin=popt.offset,
             cmap="magma",
         )
-        if sf_ticks is not None:
-            plt.xticks(
-                np.log(sf_ticks), sf_ticks, rotation=90, fontsize=fontsize_dict["tick"]
-            )
-        if tf_ticks is not None:
-            plt.yticks(np.log(tf_ticks), tf_ticks, fontsize=fontsize_dict["tick"])
+        ax.set_yticks(
+            np.linspace(tf_range[0], tf_range[1], len(tf_ticks)),
+            tf_ticks,
+        )
+        ax.set_xticks(
+            np.linspace(sf_range[0], sf_range[1], len(sf_ticks)),
+            sf_ticks,
+        )
+        if angle_pos[i] in [1,4,7]:
+            if angle_pos[i] == 4:
+                ax.set_ylabel("Temporal Frequency", fontsize=fontsize_dict["label"])
+        else:
+            ax.set_yticklabels([])
+        if i in [5,6,7]:
+            if i == 6:
+                ax.set_xlabel("Spatial Frequency", fontsize=fontsize_dict["label"])
+        else:
+            ax.set_xticklabels([])
+        ax.tick_params(labelsize=fontsize_dict["tick"])
+        ax.tick_params(axis="x", rotation=90)
     # add a colorbar aligned to the bottom subplots without changing axis locations
     if plot_grid:
         plt.tight_layout(pad=0.005)
-    if not plot_grid:
+    if plot_subplots:
         plt.tight_layout(pad=0.4)
     if colorbar:
-        add_colorbar()
+        add_colorbar(im, x=plot_width/3, y=0, fontsize=fontsize_dict["tick"])
     return vmax
 
 
@@ -128,10 +163,17 @@ def plot_sftf_tuning(
     trials_df,
     roi,
     plot_grid=True,
+    plot_subplots=False,
+    plot_axes=False,
+    fig=None,
     grid_rows=3,
     grid_cols=3,
     grid_x=0,
     grid_y=0,
+    plot_x=0,
+    plot_y=0,
+    plot_width=1,
+    plot_height=1,
     colorbar=True,
     vmax=None,
     fontsize_dict={"title": 10, "label": 10, "tick": 10},
@@ -185,7 +227,7 @@ def plot_sftf_tuning(
                 all_angles[i, isf, itf] = this_angle[isf, itf]
     if vmax is None:
         # vmax=dff_mean[roi].max()
-        vmax = np.nanmax(all_angles)
+        vmax = np.round(np.nanmax(all_angles),1)
 
     # plot a polar plot of dff as a function of angle
     dir_tuning = np.max(all_angles, axis=(1, 2))
@@ -193,72 +235,100 @@ def plot_sftf_tuning(
     dirs = np.deg2rad([0, 45, 90, 135, 180, 225, 270, 315, 0])
 
     if plot_grid:
-        plt.subplot2grid(
+        ax = plt.subplot2grid(
             (grid_rows, grid_cols), (grid_x + 1, grid_y + 1), projection="polar"
         )
-    else:
-        plt.subplot(3, 3, 5, projection="polar")
-    plt.plot(
+    elif plot_subplots:
+        ax = plt.subplot(3, 3, 5, projection="polar")
+    elif plot_axes:
+        each_panel_width = plot_width / 3
+        each_panel_height = plot_height / 3
+        ax = fig.add_axes(
+            [plot_x+each_panel_width, plot_y-each_panel_height, each_panel_width*0.75, each_panel_height*0.75],
+            projection="polar",
+        )
+    ax.plot(
         np.deg2rad([0, 45, 90, 135, 180, 225, 270, 315, 0]),
         dir_tuning,
         color="k",
     )
-    plt.fill_between(
+    ax.set_ylim(0, vmax)
+    ax.fill_between(
         np.deg2rad([0, 45, 90, 135, 180, 225, 270, 315, 0]),
         dir_tuning,
     )
-    plt.xticks(fontsize=fontsize_dict["tick"])
-    yticks = plt.gca().get_yticks()
-    plt.yticks([yticks[0], yticks[-3]], fontsize=fontsize_dict["tick"])
+    yticks = ax.get_yticks()
+    ax.set_yticks([0, vmax])
+    ax.tick_params(labelsize=fontsize_dict["tick"])
+    ax.tick_params(axis="x", pad=-5)
 
     for i, angle in enumerate(angle_range):
         # create a subplot for each angle
         if plot_grid:
-            plt.subplot2grid(
+            ax = plt.subplot2grid(
                 (grid_rows, grid_cols),
                 (grid_x + (angle_pos[i] - 1) // 3, grid_y + (angle_pos[i] - 1) % 3),
             )
-        else:
-            plt.subplot(3, 3, angle_pos[i])
+        elif plot_subplots:
+            ax = plt.subplot(3, 3, angle_pos[i])
+        elif plot_axes:
+            ax = fig.add_axes(
+                [plot_x+(angle_pos[i]-1)%3*each_panel_width, plot_y-(angle_pos[i]-1)//3*each_panel_height, each_panel_width*0.85, each_panel_height*0.85]
+            )
         # plot a colormap of this_angle with tick labels
-        plt.imshow(
+        im = ax.imshow(
             all_angles[i].T,
             cmap="magma",
             vmin=0,
             vmax=vmax,
         )
-        plt.yticks(
-            range(len(tf_range)),
-            tf_range,
-            fontsize=fontsize_dict["tick"],
-        )
-        plt.xticks(
-            range(len(sf_range)),
-            sf_range,
-            rotation=90,
-            fontsize=fontsize_dict["tick"],
-        )
-        plt.gca().invert_yaxis()
+        if angle_pos[i] in [1,4,7]:
+            ax.set_yticks(
+                range(len(tf_range)),
+                tf_range,
+            )
+            if angle_pos[i] == 4:
+                ax.set_ylabel("Temporal Frequency", fontsize=fontsize_dict["label"])
+        else:
+            ax.set_yticklabels([])
+        if i in [5,6,7]:
+            ax.set_xticks(
+                range(len(sf_range)),
+                sf_range,
+            )
+            if i == 6:
+                ax.set_xlabel("Spatial Frequency", fontsize=fontsize_dict["label"])
+        else:
+            ax.set_xticklabels([])
+        ax.tick_params(labelsize=fontsize_dict["tick"])
+        ax.tick_params(axis="x", rotation=90)
+        ax.invert_yaxis()
     # add a colorbar aligned to the bottom subplots without changing axis locations
     if plot_grid:
         plt.tight_layout(pad=0.005)
-    if not plot_grid:
+    if plot_subplots:
         plt.tight_layout(pad=0.4)
     if colorbar:
-        add_colorbar(y=0.5)
+        add_colorbar(im, x=plot_width/3, y=0, fontsize=fontsize_dict["tick"])
     return vmax
 
 
-def add_colorbar(y=0):
+def add_colorbar(im, x=0, y=0, fontsize=10):
     """Add colorbar to the current axis"""
     cbar_pos = [
-        1.02,
+        plt.gca().get_position().x0 + x,
         plt.gca().get_position().y0 + y,
-        0.02,
+        0.01,
         plt.gca().get_position().height,
     ]
     plt.axes(cbar_pos)
-    plt.colorbar(cax=plt.gca(), label="dF/F")
+    cbar = plt.colorbar(im, cax=plt.gca())
+    cbar.ax.tick_params(labelsize=fontsize)
+    yticks = cbar.ax.get_yticks()
+    vmin, vmax = im.get_clim()
+    cbar.ax.set_yticks([0, vmax])
+    cbar.ax.set_ylabel("\u0394F/F", fontsize=fontsize)
+    
 
 
 def plot_tuning_stats(neurons_df, trials_df, rsq_thresh=0.1):
@@ -351,6 +421,7 @@ def basic_vis_SFTF_roi(
         add_depth (bool, optional): whether to add depth tunings & speed tunings. Defaults to False.
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {'title': 10, 'label': 10, 'tick': 10}.
     """
+    from cottage_analysis.analysis.fit_gaussian_blob import grating_tuning
     plot_rows = 3
     if add_depth:
         plot_cols = 7
