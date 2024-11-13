@@ -2,13 +2,123 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
 from matplotlib.colors import ListedColormap
+from matplotlib import cm
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
-from cottage_analysis.analysis.common_utils import get_confidence_interval
+from scipy import stats
 from sklearn.linear_model import LinearRegression
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+from cottage_analysis.analysis.common_utils import get_confidence_interval
 
 
+def get_color(value, value_min, value_max, log=False, cmap=cm.cool.reversed()):
+    if log:
+        norm = mpl.colors.Normalize(vmin=np.log(value_min), vmax=np.log(value_max))
+        rgba_color = cmap(norm(np.log(value)), bytes=True)
+    else:
+        norm = mpl.colors.Normalize(vmin=value_min, vmax=value_max)
+        rgba_color = cmap(norm(value), bytes=True)
+    rgba_color = np.array([it / 255 for it in rgba_color])
+
+    return rgba_color
+
+
+def get_unique_labels(ax):
+    handles, labels = ax.get_legend_handles_labels()
+    unique = {}
+    for handle, label in zip(handles, labels):
+        if label not in unique:
+            unique[label] = handle
+    return unique.values(), unique.keys()
+
+
+def draw_axis_scalebars(
+    ax,
+    scalebar_x,
+    scalebar_y,
+    scalebar_width,
+    scalebar_height,
+    scalebar_labels,
+    xlim=None,
+    ylim=None,
+    label_fontsize=5,
+    linewidth=1,
+    right=True,
+    bottom=True,
+):
+    rect = patches.Rectangle(
+        (scalebar_x, scalebar_y),
+        scalebar_width,
+        scalebar_height,
+        linewidth=linewidth,
+        edgecolor="none",
+        facecolor="none",
+    )
+    ax.add_patch(rect)
+    if right:
+        right_edge = patches.FancyBboxPatch(
+            (scalebar_x + scalebar_width, scalebar_y),
+            0,
+            scalebar_height,
+            boxstyle="square,pad=0",
+            linewidth=linewidth,
+            edgecolor="black",
+            facecolor="none",
+        )
+        ax.add_patch(right_edge)
+        ax.text(
+            scalebar_x + scalebar_width * 1.2,
+            scalebar_y + scalebar_height / 2,
+            scalebar_labels[1],
+            fontsize=label_fontsize,
+            ha="left",
+            va="center",
+        )
+    ax.set_ylim(ylim)
+    if bottom:
+        bottom_edge = patches.FancyBboxPatch(
+            (scalebar_x, scalebar_y),
+            scalebar_width,
+            0,
+            boxstyle="square,pad=0",
+            linewidth=linewidth,
+            edgecolor="black",
+            facecolor="none",
+        )
+        ax.add_patch(bottom_edge)
+        ax.text(
+            scalebar_x,
+            scalebar_y + scalebar_height * 0.1,
+            scalebar_labels[0],
+            fontsize=label_fontsize,
+            ha="left",
+            va="bottom",
+        )
+    ax.set_xlim(xlim)
+    ax.axis("off")
+
+
+def plot_white_rectangle(x0, y0, width, height):
+    ax = plt.gcf().add_axes([x0, y0, width, height])
+    # Define the rectangle's bottom-left corner, width, and height
+    rectangle = patches.Rectangle((0, 0), 1, 1, edgecolor="white", facecolor="white")
+
+    # Add the rectangle to the plot
+    ax.add_patch(rectangle)
+
+    # Set plot limits to better visualize the rectangle
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_axis_off()
+    ax.set_aspect("equal")
+    # fig.patch.set_facecolor('gray')
+
+
+# --- OLD ---
 def segment_arr(arr_idx, segment_size):
     """
     Segment an input array into small chunks with defined size.

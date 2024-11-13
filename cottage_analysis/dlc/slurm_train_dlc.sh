@@ -12,7 +12,7 @@
 #SBATCH --mail-user=blota@crick.ac.uk
 
 # echo 'ml-ing'
-ml cuDNN/8.4.1.50-CUDA-11.7.0 
+ml cuDNN/8.4.1.50-CUDA-11.7.0
 echo 'Sourcing conda'
 ml Anaconda3
 source activate base
@@ -23,4 +23,3 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/dlc_nogui/lib/
 
 cd /camp/lab/znamenskiyp/home/users/blota/code/cottage_analysis
 python cottage_analysis/dlc/train_network.py
-

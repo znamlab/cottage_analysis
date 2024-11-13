@@ -789,13 +789,17 @@ def regenerate_frames_all_recordings(
                 imaging_df_all = imaging_df
             else:
                 frames_all = np.concatenate((frames_all, frames), axis=0)
-                imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
+                imaging_df_all = pd.concat(
+                    [imaging_df_all, imaging_df], ignore_index=True
+                )
         else:
-            frames_all=None
+            frames_all = None
             if i == 0:
                 imaging_df_all = imaging_df
             else:
-                imaging_df_all = pd.concat([imaging_df_all, imaging_df], ignore_index=True)
+                imaging_df_all = pd.concat(
+                    [imaging_df_all, imaging_df], ignore_index=True
+                )
     print(f"Finished concatenating regenerated frames and imaging_df")
 
     return frames_all, imaging_df_all
@@ -903,9 +907,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
-                -np.identity(m.shape[1])
-            )
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)

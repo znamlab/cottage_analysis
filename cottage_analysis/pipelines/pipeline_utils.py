@@ -76,7 +76,7 @@ def sbatch_session(
     script_path = str(
         Path(__file__).parent.parent.parent / "sbatch" / pipeline_filename
     )
-    
+
     if "log_fname" in kwargs.keys():
         log_fname = f"{session_name}_{kwargs['log_fname']}_%j.out"
     else:
@@ -84,7 +84,12 @@ def sbatch_session(
 
     if "log_path" in kwargs.keys():
         print(f"Using custom log path {kwargs['log_path']}")
-        log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{kwargs['log_path']}" / f"{log_fname}")
+        log_path = str(
+            Path(__file__).parent.parent.parent
+            / "logs"
+            / f"{kwargs['log_path']}"
+            / f"{log_fname}"
+        )
     else:
         log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
@@ -190,7 +195,7 @@ def load_and_fit(
     run_closedloop_only=False,
     run_openloop_only=False,
 ):
-    '''Load and fit a model to a session.
+    """Load and fit a model to a session.
 
     Args:
         project (str): project name.
@@ -208,7 +213,7 @@ def load_and_fit(
 
     Returns:
         pd.DataFrame: result dataframe for the fit.
-    '''
+    """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     (
         neurons_ds,
@@ -258,10 +263,10 @@ def merge_fit_dataframes(
     conflicts="skip",
     prefix="fit_rs_of_tuning_",
     suffix="",
-    exclude_keywords=["recording","openclosed"], 
+    exclude_keywords=["recording", "openclosed"],
     include_keywords=[],
     target_column_suffix=None,
-    target_column_prefix="", #"_recording"
+    target_column_prefix="",  # "_recording"
     filetype=".pickle",
     target_filename="neurons_df.pickle",
 ):
@@ -279,7 +284,7 @@ def merge_fit_dataframes(
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
-    
+
     neurons_ds = create_neurons_ds(
         session_name=session_name,
         flexilims_session=flexilims_session,
@@ -292,14 +297,16 @@ def merge_fit_dataframes(
     search_str = f"{prefix}*{suffix}{filetype}"
     dfs_to_merge = []
     for df_name in neurons_ds.path_full.parent.glob(search_str):
-        if exclude_keywords: 
+        if exclude_keywords:
             # if the name contains any keywords that needs to be excluded
             if any([keyword in str(df_name) for keyword in exclude_keywords]):
                 print(f"Exclude files {df_name}")
-            else: # name doesn't contain anything that needs to be excluded
+            else:  # name doesn't contain anything that needs to be excluded
                 if include_keywords:
                     # if name doesn't contain all the things that need to be included
-                    if not all([keyword in str(df_name) for keyword in include_keywords]):
+                    if not all(
+                        [keyword in str(df_name) for keyword in include_keywords]
+                    ):
                         print(f"Exclude files {df_name}")
                     else:
                         tmp = pd.read_pickle(df_name)
@@ -370,7 +377,7 @@ def run_basic_plots(project, session_name, photodiode_protocol):
     basic_vis_plots.basic_vis_session(
         neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
     )
-    
+
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
         if is_closedloop:

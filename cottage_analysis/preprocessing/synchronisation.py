@@ -52,7 +52,7 @@ def find_monitor_frames(
         sync_kwargs (dict): keyword arguments for the sync function. Defaults to None.
         project (str): project name. Defaults to None. Must be provided if
             flexilims_session is None.
-        verbose (bool): if True, print information about the recording. Defaults to 
+        verbose (bool): if True, print information about the recording. Defaults to
             True.
 
     Returns:
@@ -197,6 +197,7 @@ def generate_vs_df(
     photodiode_protocol=5,
     flexilims_session=None,
     project=None,
+    protocol_base="SpheresPermTubeReward",
     harp_recording=None,
     onix_recording=None,
     conflicts="skip",
@@ -271,16 +272,55 @@ def generate_vs_df(
             vis_stim_recording=recording,
         )
 
-        frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
-        frame_log_z.rename(
-            columns={
+        if protocol_base == "KellerTube":
+            # Define the columns to extract from the frame_log dataframe
+            columns_to_extract = ["FrameIndex", "HarpTime", "MouseZ"]
+
+            # Check which mismatch column exists and add it to the columns to extract
+            if "MismatchMouseZ" in frame_log.columns:
+                columns_to_extract.append("MismatchMouseZ")
+            elif "MismatchEyeZ" in frame_log.columns:
+                columns_to_extract.append("MismatchEyeZ")
+            else:
+                raise KeyError(
+                    "Neither 'MismatchMouseZ' nor 'MismatchEyeZ' found in frame_log columns"
+                )
+
+            # Check if EyeZ exists in frame_log columns and add it if protocol_base is KellerTube
+            if "EyeZ" in frame_log.columns:
+                columns_to_extract.append("EyeZ")
+
+            # Extract the necessary columns
+            frame_log_z = frame_log[columns_to_extract].copy()
+
+            # Rename the columns accordingly
+            rename_dict = {
                 "FrameIndex": "closest_frame",
                 "HarpTime": "harptime_framelog",
                 "MouseZ": "mouse_z",
-                "EyeZ": "eye_z",
-            },
-            inplace=True,
-        )
+            }
+
+            if "MismatchMouseZ" in frame_log.columns:
+                rename_dict["MismatchMouseZ"] = "mismatch_mouse_z"
+            elif "MismatchEyeZ" in frame_log.columns:
+                rename_dict["MismatchEyeZ"] = "mismatch_mouse_z"
+
+            if "EyeZ" in frame_log.columns:
+                rename_dict["EyeZ"] = "eye_z"
+
+            frame_log_z.rename(columns=rename_dict, inplace=True)
+
+        else:
+            frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
+            frame_log_z.rename(
+                columns={
+                    "FrameIndex": "closest_frame",
+                    "HarpTime": "harptime_framelog",
+                    "MouseZ": "mouse_z",
+                    "EyeZ": "eye_z",
+                },
+                inplace=True,
+            )
 
         if frame_log_z.closest_frame.isna().any():
             print(
@@ -306,7 +346,14 @@ def generate_vs_df(
         merge_on = "onset_time"
 
     frame_log_z.mouse_z = frame_log_z.mouse_z / 100  # convert cm to m
-    frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
+    if protocol_base == "KellerTube":
+        frame_log_z.mismatch_mouse_z = (
+            frame_log_z.mismatch_mouse_z / 100
+        )  # convert cm to m
+        if "eye_z" in frame_log_z.columns:
+            frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
+    else:
+        frame_log_z.eye_z = frame_log_z.eye_z / 100  # convert cm to m
 
     if monitor_frames_df[merge_on].dtype != frame_log_z[merge_on].dtype:
         # print a warning if the merge_on column is not the same type in both dataframes
@@ -326,62 +373,93 @@ def generate_vs_df(
         direction="backward",
         allow_exact_matches=True,
     )
-    # Align paramLog with vs_df
-    param_log = get_param_log(
-        flexilims_session=flexilims_session,
-        harp_recording=harp_recording,
-        vis_stim_recording=recording,
-    )
-    # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
-    param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
-    if "Frameindex" in param_log.columns:
-        if param_log.Frameindex.isna().any():
-            print(
-                f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end."
-            )
-            param_log = param_log[param_log.Frameindex.notnull()]
-            param_log.Frameindex = param_log.Frameindex.astype("int")
 
-    if photodiode_protocol == 5:
-        vs_df = pd.merge_asof(
-            left=vs_df,
-            right=param_log,
-            left_on="closest_frame",
-            right_on="Frameindex",
-            direction="backward",
-            allow_exact_matches=True,
+    # The keller stimulus has no paramLog
+    if protocol_base == "KellerTube":
+        # Rename
+        vs_df.rename(
+            columns={
+                "closest_frame": "monitor_frame",
+                "onset_time": "monitor_harptime",
+            },
+            inplace=True,
         )
-    else:
-        vs_df = pd.merge_asof(
-            left=vs_df,
-            right=param_log,
-            left_on="onset_time",
-            right_on="stimulus_harptime",
-            direction="backward",
-            allow_exact_matches=True,
+        vs_df.drop(
+            columns=[
+                "harptime_framelog",
+                "harptime_sphere",
+                "harptime_imaging_trigger",
+                "offset_time",
+                "peak_time",
+            ],
+            errors="ignore",
+            inplace=True,
         )
-    # Rename
-    vs_df.rename(
-        columns={"closest_frame": "monitor_frame", "onset_time": "monitor_harptime"},
-        inplace=True,
-    )
-    vs_df.drop(
-        columns=[
-            "harptime_framelog",
-            "harptime_sphere",
-            "harptime_imaging_trigger",
-            "offset_time",
-            "peak_time",
-        ],
-        errors="ignore",
-        inplace=True,
-    )
+    else:  # Stimuli that are not KellerTube do have a ParamLog
+        # Align paramLog with vs_df
+        param_log = get_param_log(
+            flexilims_session=flexilims_session,
+            harp_recording=harp_recording,
+            vis_stim_recording=recording,
+        )
+        # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
+        param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
+        if "Frameindex" in param_log.columns:
+            if param_log.Frameindex.isna().any():
+                print(
+                    f"WARNING: {np.sum(param_log.Frameindex.isna())} frames are missing from ParamLog.csv. This is likely due to bonsai crash at the end."
+                )
+                param_log = param_log[param_log.Frameindex.notnull()]
+                param_log.Frameindex = param_log.Frameindex.astype("int")
+
+        # TODO: check if that shouldn't also happen for protocol_base == "KellerTube"
+        if photodiode_protocol == 5:
+            vs_df = pd.merge_asof(
+                left=vs_df,
+                right=param_log,
+                left_on="closest_frame",
+                right_on="Frameindex",
+                direction="backward",
+                allow_exact_matches=True,
+            )
+        else:
+            vs_df = pd.merge_asof(
+                left=vs_df,
+                right=param_log,
+                left_on="onset_time",
+                right_on="stimulus_harptime",
+                direction="backward",
+                allow_exact_matches=True,
+            )
+        # Rename
+        vs_df.rename(
+            columns={
+                "closest_frame": "monitor_frame",
+                "onset_time": "monitor_harptime",
+            },
+            inplace=True,
+        )
+        vs_df.drop(
+            columns=[
+                "harptime_framelog",
+                "harptime_sphere",
+                "harptime_imaging_trigger",
+                "offset_time",
+                "peak_time",
+            ],
+            errors="ignore",
+            inplace=True,
+        )
     return vs_df
 
 
 def generate_imaging_df(
-    vs_df, recording, flexilims_session, filter_datasets=None, return_volumes=True,
-    add_spikes=False
+    vs_df,
+    recording,
+    flexilims_session,
+    filter_datasets=None,
+    return_volumes=True,
+    add_spikes=False,
 ):
     """
     Generate a DataFrame that contains information for each imaging volume / frame incorporating
@@ -408,12 +486,18 @@ def generate_imaging_df(
         allow_multiple=False,
         return_dataseries=False,
     )
+    if suite2p_ds is None:
+        raise FileNotFoundError(
+            f"Suite2p dataset not found for recording {recording.name}."
+        )
     if "nframes" in suite2p_ds.extra_attributes:
         volume_number = float(suite2p_ds.extra_attributes["nframes"])
     else:
+        # volume number is the number of frames per plane. Look at the first plane
         volume_number = float(
             np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
         )
+
     nplanes = float(suite2p_ds.extra_attributes["nplanes"])
     fs = float(suite2p_ds.extra_attributes["fs"])
     harp_npz_path = flz.get_datasets(
@@ -489,11 +573,13 @@ def generate_imaging_df(
     )
     if add_spikes:
         spks_fname = (
-            "spks_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "spks.npy"
+            "spks_ast.npy"
+            if suite2p_ds.extra_attributes["ast_neuropil"]
+            else "spks.npy"
         )
         spks = []
     dffs = []
-    
+
     for iplane in range(int(nplanes)):
         dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
         if add_spikes:
@@ -524,8 +610,8 @@ def generate_imaging_df(
         )
         if add_spikes:
             imaging_df["spks"] = np.split(
-                    spks[0:last_valid_volume, :], last_valid_volume, axis=0
-                )
+                spks[0:last_valid_volume, :], last_valid_volume, axis=0
+            )
     else:
         imaging_df["dffs"] = np.split(dffs, dffs.shape[0], axis=0)
         if add_spikes:

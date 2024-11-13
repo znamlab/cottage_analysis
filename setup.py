@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cottage_analysis",
-    version="v2.0",
+    version="v2.0.3",
     packages=find_packages(),
     url="https://github.com/znamlab/cottage_analysis",
     license="MIT",
@@ -23,7 +23,7 @@ setup(
         "scikit-image",
         "defopt",
         "black",
-        "flexilims @ git+ssh://git@github.com/znamlab/flexilims.git@v0.9",
+        "tqdm",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git@v0.4",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git@v0.9",
     ],

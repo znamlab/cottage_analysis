@@ -16,34 +16,42 @@ from tqdm import tqdm
 import scipy
 import itertools
 
-from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold, StratifiedShuffleSplit
+from sklearn.model_selection import (
+    train_test_split,
+    GridSearchCV,
+    StratifiedKFold,
+    StratifiedShuffleSplit,
+)
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 import flexiznam as flz
 from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.io_module import suite2p as s2p_io
 
 from znamutils import slurm_it
 
 CONDA_ENV = "2p_analysis_cottage2"
 
+
 def rolling_average(arr, window, axis=0):
     # calculate rolling average along an axis
     if arr.ndim == 1:
-        return (
-            pd.Series(arr).rolling(window=window, min_periods=1).mean().values
-        )
+        return pd.Series(arr).rolling(window=window, min_periods=1).mean().values
     else:
         return (
-            pd.DataFrame(arr).rolling(window=window, axis=axis, min_periods=1).mean().values
+            pd.DataFrame(arr)
+            .rolling(window=window, axis=axis, min_periods=1)
+            .mean()
+            .values
         )
 
 
 def downsample(arr, factor, mode="average"):
     # downsample 1d or 2d array by factor along axis 0
     end = int(factor * int(arr.shape[0] / factor))
-    
+
     if mode == "average":
         if arr.ndim == 1:
             arr_crop = arr[:end].reshape(-1, factor)
@@ -97,63 +105,89 @@ def downsample_dff(
 def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=False):
     # train test val split based on trials
     depth_list = np.sort(trials_df.depth.unique())
-    if len(trials_df)%len(depth_list) != 0:
-        trials_df = trials_df[:-(len(trials_df)%len(depth_list))] 
+    if len(trials_df) % len(depth_list) != 0:
+        trials_df = trials_df[: -(len(trials_df) % len(depth_list))]
     if trial_average:
         dff_col = "trial_mean_dff"
         depth_col = "depth_label"
     else:
         dff_col = "dff_stim_downsample"
         depth_col = "depth_labels"
-        
+
     # get the indices of each number in dff_col
     # if trial_average is True, it's np.arange(nframes) for each row
     # if trial_average is False, it's the trial number for each row
     trials_df["frame_num"] = trials_df.apply(
         lambda x: x[dff_col].shape[0], axis=1
     ).astype("int")
-    trials_df["frame_num_prev_trials"] = trials_df["frame_num"].shift(1).fillna(0).cumsum().astype("int")
-    trials_df["frame_indices"] = trials_df.apply(
-        lambda x: (np.arange(x["frame_num"])+x["frame_num_prev_trials"]).astype("int"), axis=1
+    trials_df["frame_num_prev_trials"] = (
+        trials_df["frame_num"].shift(1).fillna(0).cumsum().astype("int")
     )
-    
+    trials_df["frame_indices"] = trials_df.apply(
+        lambda x: (np.arange(x["frame_num"]) + x["frame_num_prev_trials"]).astype(
+            "int"
+        ),
+        axis=1,
+    )
+
     # train test val split
     depth_label = np.hstack(trials_df["depth_label"].values)
 
-    dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all = [], [], [], [], [], []
+    (
+        dff_train_all,
+        dff_val_all,
+        dff_test_all,
+        depth_train_all,
+        depth_val_all,
+        depth_test_all,
+    ) = ([], [], [], [], [], [])
     if k_folds == 1:
-        test_size=0.2
-        sss = StratifiedShuffleSplit(n_splits=k_folds, test_size=test_size, random_state=random_state)
+        test_size = 0.2
+        sss = StratifiedShuffleSplit(
+            n_splits=k_folds, test_size=test_size, random_state=random_state
+        )
     else:
-        test_size = 1/k_folds
+        test_size = 1 / k_folds
         sss = StratifiedKFold(n_splits=k_folds, random_state=random_state, shuffle=True)
-        
+
     # Train test split
     test_frame_indices = []
     test_index_all = []
     train_index_temp_all = []
-    for fold, (train_index_temp, test_index) in enumerate(sss.split(np.arange(len(depth_label)), depth_label)):
+    for fold, (train_index_temp, test_index) in enumerate(
+        sss.split(np.arange(len(depth_label)), depth_label)
+    ):
         depth_label_train = depth_label[train_index_temp]
         dff_test = np.vstack(trials_df.iloc[test_index][dff_col].values)
         depth_test = np.hstack(trials_df.iloc[test_index][depth_col].values)
         dff_test_all.append(dff_test)
-        depth_test_all.append(depth_test) 
+        depth_test_all.append(depth_test)
         test_index_all.append(test_index)
         train_index_temp_all.append(train_index_temp)
-        test_frame_indices.append(np.hstack(trials_df.iloc[test_index]["frame_indices"].values))
-        assert(len(test_frame_indices[fold]) == dff_test.shape[0]), "ERROR: Test indices do not match."
-        
+        test_frame_indices.append(
+            np.hstack(trials_df.iloc[test_index]["frame_indices"].values)
+        )
+        assert (
+            len(test_frame_indices[fold]) == dff_test.shape[0]
+        ), "ERROR: Test indices do not match."
+
     # Train val split
     train_index_all, val_index_all = [], []
-    for fold, (train_index, val_index) in enumerate(sss.split(np.arange(len(depth_label_train)), depth_label_train)):
+    for fold, (train_index, val_index) in enumerate(
+        sss.split(np.arange(len(depth_label_train)), depth_label_train)
+    ):
         if train_index.max() == len(train_index_temp_all[fold]):
             train_index = train_index[:-1]
-            print(f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
-                  Train index max is equal to the length of the training set. Removing the last index.")
+            print(
+                f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
+                  Train index max is equal to the length of the training set. Removing the last index."
+            )
         if val_index.max() == len(train_index_temp_all[fold]):
             val_index = val_index[:-1]
-            print(f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
-                  Validation index max is equal to the length of the training set. Removing the last index.")
+            print(
+                f"Trial number is not the multiple of {int(len(depth_list)*k_folds)}. \n\
+                  Validation index max is equal to the length of the training set. Removing the last index."
+            )
         train_index = train_index_temp_all[fold][train_index]
         val_index = train_index_temp_all[fold][val_index]
         dff_train = np.vstack(trials_df.iloc[train_index][dff_col].values)
@@ -163,16 +197,31 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
         dff_train_all.append(dff_train)
         dff_val_all.append(dff_val)
         depth_train_all.append(depth_train)
-        depth_val_all.append(depth_val) 
+        depth_val_all.append(depth_val)
         train_index_all.append(train_index)
         val_index_all.append(val_index)
-        
+
     # Check if the split has been done correctly (no repetition in train, val, test sets)
     for i in range(k_folds):
-        all = np.sort(np.hstack([train_index_all[i], test_index_all[i], val_index_all[i]]))
-        assert(len(np.unique(all)) == len(trials_df)), "ERROR: There are repetitions in the train, val, test sets."
-        
-    return trials_df, dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, test_frame_indices, dff_col, depth_col
+        all = np.sort(
+            np.hstack([train_index_all[i], test_index_all[i], val_index_all[i]])
+        )
+        assert len(np.unique(all)) == len(
+            trials_df
+        ), "ERROR: There are repetitions in the train, val, test sets."
+
+    return (
+        trials_df,
+        dff_train_all,
+        dff_val_all,
+        dff_test_all,
+        depth_train_all,
+        depth_val_all,
+        depth_test_all,
+        test_frame_indices,
+        dff_col,
+        depth_col,
+    )
 
 
 def svm_classifier_hyperparam_tuning(
@@ -212,7 +261,7 @@ def svm_classifier_hyperparam_tuning(
                     best_acc = acc
                     best_params = {"C": C, "gamma": gamma}
         print(f"Best C: {best_params['C']}, Best gamma: {best_params['gamma']}")
-        
+
     return best_params
 
 
@@ -242,7 +291,7 @@ def test_svm_classifier(
     return clf, y_pred
 
 
-def preprocess_data(    
+def preprocess_data(
     trials_df,
     flexilims_session,
     session_name,
@@ -253,13 +302,14 @@ def preprocess_data(
     downsample_window=0.5,
     random_state=42,
     kernel="linear",
-    k_folds=5,):
+    k_folds=5,
+):
     # set test_size:
     if k_folds == 1:
         test_size = 0.2
     else:
-        test_size = 1/k_folds
-    
+        test_size = 1 / k_folds
+
     # add iscell
     suite2p_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
@@ -269,9 +319,7 @@ def preprocess_data(
         allow_multiple=False,
         return_dataseries=False,
     )
-    iscell = np.load(suite2p_ds.path_full / "plane0" / "iscell.npy", allow_pickle=True)[
-        :, 0
-    ].astype('bool')
+    iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
 
     # process dff and trials_df
     trials_df = downsample_dff(
@@ -290,15 +338,40 @@ def preprocess_data(
         closed_loop=closed_loop,
     )
     depth_list = np.sort(trials_df.depth.unique())
-        
+
     # split train test val (test 0.2, val 0.2, train 0.6)
-    trials_df, dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all, test_frame_indices, dff_col, depth_col = split_train_test_val(
-        trials_df=trials_df, 
+    (
+        trials_df,
+        dff_train_all,
+        dff_val_all,
+        dff_test_all,
+        depth_train_all,
+        depth_val_all,
+        depth_test_all,
+        test_frame_indices,
+        dff_col,
+        depth_col,
+    ) = split_train_test_val(
+        trials_df=trials_df,
         k_folds=k_folds,
-        random_state=random_state, 
-        trial_average=trial_average)
-    
-    return (trials_df, (dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all), (iscell, depth_list), (test_frame_indices, dff_col, depth_col))
+        random_state=random_state,
+        trial_average=trial_average,
+    )
+
+    return (
+        trials_df,
+        (
+            dff_train_all,
+            dff_val_all,
+            dff_test_all,
+            depth_train_all,
+            depth_val_all,
+            depth_test_all,
+        ),
+        (iscell, depth_list),
+        (test_frame_indices, dff_col, depth_col),
+    )
+
 
 @slurm_it(
     conda_env=CONDA_ENV,
@@ -310,13 +383,15 @@ def preprocess_data(
     },
     print_job_id=True,
 )
-def fit_each_fold(i, 
-                  decoder_inputs, 
-                  recording_type, 
-                  decoder_inputs_path=None, 
-                  decoder_dict_path=None,
-                  special_sfx="",
-                  k_folds=5,):
+def fit_each_fold(
+    i,
+    decoder_inputs,
+    recording_type,
+    decoder_inputs_path=None,
+    decoder_dict_path=None,
+    special_sfx="",
+    k_folds=5,
+):
     print(f"Fitting fold {i+1}...")
     # load decoder inputs and results
     if decoder_inputs_path is not None:
@@ -326,9 +401,9 @@ def fit_each_fold(i,
     decoder_dict = pd.read_pickle(decoder_dict_path)
     (
         trials_df,
-        dff_train_all, 
+        dff_train_all,
         dff_val_all,
-        dff_test_all, 
+        dff_test_all,
         depth_train_all,
         depth_val_all,
         depth_test_all,
@@ -359,20 +434,19 @@ def fit_each_fold(i,
         decoder_inputs["gammas"],
         decoder_inputs["y_test_all"],
     )
-    
+
     (
         best_params_all,
         # y_test_all,
         y_preds_all,
         # trials_df,
-        
     ) = (
         decoder_dict[f"best_params_all_{recording_type}"],
         # decoder_dict[f"y_test_all_{recording_type}"],
         decoder_dict[f"y_preds_all_{recording_type}"],
         # decoder_dict[f"trials_df_{recording_type}"],
     )
-    
+
     # only select current fold and cells
     dff_train = dff_train_all[i][:, iscell]
     dff_val = dff_val_all[i][:, iscell]
@@ -380,8 +454,8 @@ def fit_each_fold(i,
     depth_train = depth_train_all[i]
     depth_val = depth_val_all[i]
     depth_test = depth_test_all[i]
-    
-    # get best hyperparameters for this fold
+
+    # get best hyperparameters for this fold
     best_params = svm_classifier_hyperparam_tuning(
         X_train=dff_train,
         y_train=depth_train,
@@ -392,7 +466,7 @@ def fit_each_fold(i,
         Cs=Cs,
         gammas=gammas,
     )
-    
+
     # train and test on the current fold (train on combined train and val data)
     clf, y_pred = test_svm_classifier(
         X_train=dff_train,
@@ -405,12 +479,16 @@ def fit_each_fold(i,
         kernel=kernel,
         best_params=best_params,
     )
-    
-    decoder_outputs={
+
+    decoder_outputs = {
         "y_pred": y_pred,
         "best_params": best_params,
     }
-    with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle", "wb") as f:
+    with open(
+        Path(decoder_dict_path).parent
+        / f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle",
+        "wb",
+    ) as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
 
@@ -424,14 +502,15 @@ def fit_each_fold(i,
     },
     print_job_id=True,
 )
-def calculate_acc_conmat(decoder_dict_path, 
-                         recording_type, 
-                         depth_list, 
-                         decoder_inputs={}, 
-                         decoder_inputs_path=None, 
-                         k_folds=5, 
-                         special_sfx="",
-                         ):
+def calculate_acc_conmat(
+    decoder_dict_path,
+    recording_type,
+    depth_list,
+    decoder_inputs={},
+    decoder_inputs_path=None,
+    k_folds=5,
+    special_sfx="",
+):
     with open(decoder_dict_path, "rb") as f:
         decoder_dict = pickle.load(f)
     if decoder_inputs_path is not None:
@@ -440,22 +519,36 @@ def calculate_acc_conmat(decoder_dict_path,
                 decoder_inputs = pickle.load(f)
     # concatenate results from all folds
     for i in range(k_folds):
-        with open(Path(decoder_dict_path).parent/f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle", "rb") as f:
+        with open(
+            Path(decoder_dict_path).parent
+            / f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle",
+            "rb",
+        ) as f:
             decoder_outputs = pickle.load(f)
-        decoder_dict[f"best_params_all_{recording_type}"]["C"].append(decoder_outputs["best_params"]["C"])
+        decoder_dict[f"best_params_all_{recording_type}"]["C"].append(
+            decoder_outputs["best_params"]["C"]
+        )
         if decoder_inputs["kernel"] != "linear":
-            decoder_dict[f"best_params_all_{recording_type}"]["gamma"].append(decoder_outputs["best_params"]["gamma"])
-        decoder_dict[f"y_preds_all_{recording_type}"][decoder_inputs["test_frame_indices"][i]] = decoder_outputs["y_pred"]
-    
+            decoder_dict[f"best_params_all_{recording_type}"]["gamma"].append(
+                decoder_outputs["best_params"]["gamma"]
+            )
+        decoder_dict[f"y_preds_all_{recording_type}"][
+            decoder_inputs["test_frame_indices"][i]
+        ] = decoder_outputs["y_pred"]
+
     y_test_all = decoder_dict[f"y_test_all_{recording_type}"]
     y_preds_all = decoder_dict[f"y_preds_all_{recording_type}"]
     # calculate acc & conmat
     acc = accuracy_score(y_test_all, y_preds_all)
-    conmat = confusion_matrix(y_test_all, y_preds_all, labels=np.arange(len(depth_list)))
+    conmat = confusion_matrix(
+        y_test_all, y_preds_all, labels=np.arange(len(depth_list))
+    )
     decoder_dict[f"accuracy_{recording_type}"] = acc
     decoder_dict[f"conmat_{recording_type}"] = conmat
     print(f"Accuracy {recording_type}: {acc}")
-    with open(Path(decoder_dict_path).parent/f"decoder_results{special_sfx}.pickle", "wb") as f:
+    with open(
+        Path(decoder_dict_path).parent / f"decoder_results{special_sfx}.pickle", "wb"
+    ) as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
 
@@ -493,17 +586,24 @@ def depth_decoder(
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
-        
+
     # choose closedloop or openloop
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
-    
+
     # prepare data
     (
         trials_df,
-        (dff_train_all, dff_val_all, dff_test_all, depth_train_all, depth_val_all, depth_test_all),
-        (iscell, depth_list), 
-        (test_frame_indices, dff_col, depth_col)
-     ) = preprocess_data(
+        (
+            dff_train_all,
+            dff_val_all,
+            dff_test_all,
+            depth_train_all,
+            depth_val_all,
+            depth_test_all,
+        ),
+        (iscell, depth_list),
+        (test_frame_indices, dff_col, depth_col),
+    ) = preprocess_data(
         trials_df=trials_df,
         flexilims_session=flexilims_session,
         session_name=session_name,
@@ -538,7 +638,7 @@ def depth_decoder(
         "gammas": gammas,
         "y_test_all": y_test_all,
     }
-    
+
     if kernel == "linear":
         best_params_all = {
             "C": [],
@@ -548,51 +648,62 @@ def depth_decoder(
             "C": [],
             "gamma": [],
         }
-    
+
     if closed_loop:
-        recording_type="closedloop"
+        recording_type = "closedloop"
     else:
-        recording_type="openloop"
-            
+        recording_type = "openloop"
+
     if use_slurm:
-        assert neurons_ds is not None, "ERROR: neurons_ds must be provided when use_slurm is True."
-        decoder_inputs_path = neurons_ds.path_full.parent/f"decoder_inputs_{recording_type}{special_sfx}.pickle"
+        assert (
+            neurons_ds is not None
+        ), "ERROR: neurons_ds must be provided when use_slurm is True."
+        decoder_inputs_path = (
+            neurons_ds.path_full.parent
+            / f"decoder_inputs_{recording_type}{special_sfx}.pickle"
+        )
         with open(decoder_inputs_path, "wb") as f:
             pickle.dump(decoder_inputs, f, protocol=pickle.HIGHEST_PROTOCOL)
-        decoder_inputs={} # don't pass the dict on to the slurm job
+        decoder_inputs = {}  # don't pass the dict on to the slurm job
     else:
-        decoder_inputs_path=None
-        
+        decoder_inputs_path = None
+
     # save temp decoder results
     decoder_dict[f"best_params_all_{recording_type}"] = best_params_all
     decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
     decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
     decoder_dict[f"trials_df_{recording_type}"] = trials_df
-    with open(neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle", "wb") as f:
+    with open(
+        neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle", "wb"
+    ) as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     # fit each fold
-    outputs=[]
+    outputs = []
     for i in range(k_folds):
-        out = fit_each_fold(i, 
-                            decoder_inputs=decoder_inputs, 
-                            decoder_inputs_path=decoder_inputs_path,
-                            decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle",
-                            recording_type=recording_type,
-                            special_sfx=special_sfx,
-                            k_folds=k_folds,
-                            use_slurm=use_slurm,
-                            slurm_folder=slurm_folder,
-                            scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}",)
+        out = fit_each_fold(
+            i,
+            decoder_inputs=decoder_inputs,
+            decoder_inputs_path=decoder_inputs_path,
+            decoder_dict_path=neurons_ds.path_full.parent
+            / f"decoder_results{special_sfx}.pickle",
+            recording_type=recording_type,
+            special_sfx=special_sfx,
+            k_folds=k_folds,
+            use_slurm=use_slurm,
+            slurm_folder=slurm_folder,
+            scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}",
+        )
         outputs.append(out)
-        
-    # calculate the accuracy on all test data   
+
+    # calculate the accuracy on all test data
     job_dependency = outputs if use_slurm else None
     decoder_dict = calculate_acc_conmat(
-        decoder_dict_path=neurons_ds.path_full.parent/f"decoder_results{special_sfx}.pickle",
+        decoder_dict_path=neurons_ds.path_full.parent
+        / f"decoder_results{special_sfx}.pickle",
         recording_type=recording_type,
         depth_list=depth_list.tolist(),
-        decoder_inputs=decoder_inputs, 
+        decoder_inputs=decoder_inputs,
         decoder_inputs_path=decoder_inputs_path,
         k_folds=k_folds,
         special_sfx=special_sfx,
@@ -601,8 +712,9 @@ def depth_decoder(
         scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy",
         job_dependency=job_dependency,
     )
-        
+
     return decoder_dict
+
 
 @slurm_it(
     conda_env=CONDA_ENV,
@@ -613,64 +725,79 @@ def depth_decoder(
     },
     print_job_id=True,
 )
-def find_acc_speed_bins(decoder_dict_path, 
-                        recording_type,
-                        speed_bins, 
-                        continuous_still=True, 
-                        still_thr=0.05, 
-                        still_time=1, 
-                        frame_rate=15,):
+def find_acc_speed_bins(
+    decoder_dict_path,
+    recording_type,
+    speed_bins,
+    continuous_still=True,
+    still_thr=0.05,
+    still_time=1,
+    frame_rate=15,
+):
     speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
         decoder_dict = pickle.load(f)
     trials_df = decoder_dict[f"trials_df{recording_type}"]
     y_test = decoder_dict[f"y_test_all{recording_type}"]
     y_preds = decoder_dict[f"y_preds_all{recording_type}"]
-    
+
     def fill_in_missing_depths_to_conmat(y_test, y_preds, trials_df):
         ndepths = len(trials_df.depth.unique())
         y_test_missing = list(set(np.arange(ndepths)) - set(np.unique(y_test)))
         y_preds_missing = list(set(np.arange(ndepths)) - set(np.unique(y_preds)))
         common_missing = list(set(y_test_missing) & set(y_preds_missing))
         return common_missing
+
     acc_speed_bins = []
     conmat_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"])
     if continuous_still:
-        idx =  common_utils.find_thresh_sequence(
-                            array=rs_arr,
-                            threshold_max=still_thr,
-                            length=int(still_time * frame_rate),
-                            shift=int(still_time * frame_rate),
-                        )
+        idx = common_utils.find_thresh_sequence(
+            array=rs_arr,
+            threshold_max=still_thr,
+            length=int(still_time * frame_rate),
+            shift=int(still_time * frame_rate),
+        )
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
         conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        missing_idx = fill_in_missing_depths_to_conmat(
+            y_test[idx], y_preds[idx], trials_df
+        )
         for miss in missing_idx:
             conmat = np.insert(conmat, miss, np.nan, axis=0)
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
         print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
-    for i in range(len(speed_bins)-1):
-        idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i+1])
+    for i in range(len(speed_bins) - 1):
+        idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i + 1])
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
         conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        missing_idx = fill_in_missing_depths_to_conmat(
+            y_test[idx], y_preds[idx], trials_df
+        )
         for miss in missing_idx:
             conmat = np.insert(conmat, miss, np.nan, axis=0)
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
-        print(f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
-    for speed_bin in [speed_bins[-1]]: # speed that's larger than the max boundary of speed_bins
+        print(
+            f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
+        )
+    for speed_bin in [
+        speed_bins[-1]
+    ]:  # speed that's larger than the max boundary of speed_bins
         idx = rs_arr >= speed_bin
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
         conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(y_test[idx], y_preds[idx], trials_df)
+        missing_idx = fill_in_missing_depths_to_conmat(
+            y_test[idx], y_preds[idx], trials_df
+        )
         for miss in missing_idx:
             conmat = np.insert(conmat, miss, np.nan, axis=0)
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
-        print(f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+        print(
+            f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
+        )
     decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
     decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
     with open(decoder_dict_path, "wb") as f:

@@ -1,6 +1,7 @@
 """
 Find frames for visual stimulation based on photodiode signal
 """
+
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -198,6 +199,7 @@ def find_imaging_frames(
         frame_triggers = frame_triggers[:-2]
         print("WARNING: SAVED VIDEO FRAMES ARE 2 FRAMES LESS THAN FRAME TRIGGERS!!!")
     else:
+        print(f'Triggers - Frames: {n_frame_triggers - frame_number}')
         print(
             "FRAME NUMBER NOT CORRECT likely due to incomplete imaging volume at the end of the stack or bonsai crash."
         )
