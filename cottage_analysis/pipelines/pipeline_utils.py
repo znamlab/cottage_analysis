@@ -327,7 +327,7 @@ def merge_fit_dataframes(
         columns_to_add = rsof_df.columns.difference(neurons_df.columns).to_list()
         columns_to_add.append("roi")
         neurons_df = pd.merge(neurons_df, rsof_df.loc[:,columns_to_add], on="roi")
-        print(f"New columns written to neurons_df: {[name for name in columns_to_add if name != "roi"]}")
+        print(f"New columns written to neurons_df: {[name for name in columns_to_add if name != 'roi']}")
         
     elif conflicts == "overwrite":
         columns_to_drop = neurons_df.columns.intersection(rsof_df.columns).to_list()
