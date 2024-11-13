@@ -265,10 +265,10 @@ def plot_confusion_matrix(
             ]
         )
         # set colorbar
-        cbar = plt.colorbar(im, cax=ax2, label="Accuracy")
+        cbar = plt.colorbar(im, cax=ax2)
         cbar.set_ticks([0, vmax])
         ax2.tick_params(labelsize=fontsize_dict["tick"])
-        ax2.set_ylabel("Porportion of frames", fontsize=fontsize_dict["legend"])
+        ax2.set_title("Porportion\nof frames", fontsize=fontsize_dict["legend"], x=3)
     return im
 
 
