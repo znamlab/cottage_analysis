@@ -739,10 +739,10 @@ def plot_PSTH(
     plt.yticks(fontsize=fontsize_dict["tick"])
     if (ylim[0] is None) and (ylim[1] is None):
         ylim = plt.gca().get_ylim()
-        ylim = [ylim[0], plt_common_utils.ceil(ylim[1], 1)]
+        ylim = [ylim[0], common_utils.ceil(ylim[1], 1)]
     elif ylim[0] is not None:
         if ylim[1] is None:
-            ylim = (ylim[0], plt_common_utils.ceil(plt.gca().get_ylim()[1], 1))
+            ylim = (ylim[0], common_utils.ceil(plt.gca().get_ylim()[1], 1))
             plt.ylim(ylim)
         else:
             ylim = ylim
@@ -913,14 +913,14 @@ def plot_psth_raster(
     ax_pos = ax.get_position()
     ax2 = plt.gcf().add_axes(
         [
-            ax_pos.x1 + ax_pos.width * 0.05,
+            ax_pos.x1 + ax_pos.width * 0.03,
             ax_pos.y0,
             0.01,
             ax_pos.height / 2,
         ]
     )
     cbar = plt.colorbar(mappable=im, cax=ax2)
-    cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
+    cbar.ax.set_title("Z-score", fontsize=fontsize_dict["legend"], x=1.5)
     cbar.ax.tick_params(labelsize=fontsize_dict["tick"])
 
 
@@ -1125,7 +1125,7 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
     rect = plt.Rectangle(
-        (40, im.shape[0] * 0.93), scalebar_length_px, 20, color="white"
+        (40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white"
     )
     plt.gca().add_patch(rect)
 
