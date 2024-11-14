@@ -125,7 +125,7 @@ def plot_raster_all_depths(
         ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
         ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=0)
 
-        # # for aligning with the scalebar
+        # # COMMENT THIS OUT: for aligning with the scalebar
         # ax.vlines(blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
         # ax.vlines(nbins-blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
 
@@ -906,7 +906,7 @@ def plot_psth_raster(
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
-    # # for aligning with the scalebar
+    # # COMMENT THIS OUT: for aligning with the scalebar
     # ax.vlines(1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
     # ax.vlines(60-1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
 
@@ -951,7 +951,7 @@ def plot_depth_neuron_perc_hist(
     if ylim is not None:
         ax.set_ylim(ylim)
     ax.set_xlabel(
-        "Proportion of \ndepth-tuned neurons", fontsize=fontsize_dict["label"]
+        "Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"]
     )
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
@@ -969,7 +969,7 @@ def plot_depth_neuron_perc_hist(
         median_prop,
         ax.get_ylim()[1] * 0.95,
         marker="v",
-        markersize=5,
+        markersize=10,
         markerfacecolor="cornflowerblue",
         markeredgecolor="royalblue",
     )
