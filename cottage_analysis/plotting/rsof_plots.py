@@ -960,6 +960,48 @@ def plot_speed_colored_by_depth(
     ax_inset.set_ylabel("Optic flow speed", fontsize=fontsize_dict["tick"], labelpad=5)
 
 
+def add_trial_colorbox(
+    ax,
+    trial_starts, 
+    trial_lengths, 
+    depths,
+    depth_list, 
+    param_trace, 
+    fs, 
+    ylim,
+    cmap=cm.cool.reversed(), 
+    alpha=0.3,
+):
+    for i, trial_start in enumerate(trial_starts):
+        color = plotting_utils.get_color(
+            value=depths[i],
+            value_min=np.min(depth_list),
+            value_max=np.max(depth_list),
+            cmap=cm.cool.reversed(),
+            log=True,
+        )
+        if ylim is None:
+            rect = patches.Rectangle(
+                (trial_starts[i] / fs, np.nanmin(param_trace)),
+                trial_lengths[i] / fs,
+                (np.nanmax(param_trace) - np.nanmin(param_trace)) * 1.1,
+                linewidth=0,
+                edgecolor="none",
+                facecolor=color,
+                alpha=alpha,
+            )
+        else:
+            rect = patches.Rectangle(
+                (trial_starts[i] / fs, ylim[0]),
+                trial_lengths[i] / fs,
+                ylim[1] - ylim[0],
+                linewidth=0,
+                edgecolor="none",
+                facecolor=color,
+                alpha=alpha,
+            )
+        ax.add_patch(rect)
+
 def plot_speed_trace(
     trials_df,
     trial_list,
