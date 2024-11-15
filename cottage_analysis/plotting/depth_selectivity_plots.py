@@ -927,7 +927,9 @@ def plot_psth_raster(
 def plot_depth_neuron_perc_hist(
     results_df,
     bins=50,
+    xlim=None,
     ylim=None,
+    markersize=10,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """Plot histogram of proportion of depth-tuned neurons for each session.
@@ -946,7 +948,8 @@ def plot_depth_neuron_perc_hist(
         edgecolor="royalblue",
     )
     ax = plt.gca()
-    xlim = ax.get_xlim()
+    if xlim is None:
+        xlim = ax.get_xlim()
     ax.set_xlim([0, xlim[1]])
     if ylim is not None:
         ax.set_ylim(ylim)
@@ -969,7 +972,7 @@ def plot_depth_neuron_perc_hist(
         median_prop,
         ax.get_ylim()[1] * 0.95,
         marker="v",
-        markersize=10,
+        markersize=markersize,
         markerfacecolor="cornflowerblue",
         markeredgecolor="royalblue",
     )
