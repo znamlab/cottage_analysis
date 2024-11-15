@@ -977,7 +977,7 @@ def add_trial_colorbox(
             value=depths[i],
             value_min=np.min(depth_list),
             value_max=np.max(depth_list),
-            cmap=cm.cool.reversed(),
+            cmap=cmap,
             log=True,
         )
         if ylim is None:
@@ -1010,9 +1010,12 @@ def plot_speed_trace(
     ax,
     ylabel,
     plot=True,
+    xlim=(0,100),
     ylim=None,
     linecolor="k",
     linewidth=1,
+    plot_trial_number=False,
+    colorbox_alpha=0.4, 
     fontsize_dict={"title": 15, "label": 10, "ticks": 10},
 ):
     if param == "RS":
@@ -1082,47 +1085,35 @@ def plot_speed_trace(
         )
         if param == "RS":
             ax.set_ylim(ylim)
-            ax.set_yticks([0, 140])
+            ax.set_yticks([0, ylim[1]//10*10])
         if param == "OF":
             ax.set_yscale("log")
             ax.set_ylim(1e-2, np.nanmax(param_trace) * 2)
             ax.set_yticks([1e-2, 1e2])
         ax.set_ylabel(ylabel, rotation=90, labelpad=15, fontsize=fontsize_dict["label"])
         # ax.set_xlim(0, len(param_trace) / fs)
-        ax.set_xlim(0, 100)
-        ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["ticks"])
+        ax.set_xlim(xlim)
+        ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
 
         # plot trials
-        for i, trial_start in enumerate(trial_starts):
-            color = plotting_utils.get_color(
-                value=depths[i],
-                value_min=np.min(depth_list),
-                value_max=np.max(depth_list),
-                cmap=cm.cool.reversed(),
-                log=True,
-            )
-            if ylim is None:
-                rect = patches.Rectangle(
-                    (trial_starts[i] / fs, np.nanmin(param_trace)),
-                    trial_lengths[i] / fs,
-                    (np.nanmax(param_trace) - np.nanmin(param_trace)) * 1.1,
-                    linewidth=0,
-                    edgecolor="none",
-                    facecolor=color,
-                    alpha=0.3,
-                )
-            else:
-                rect = patches.Rectangle(
-                    (trial_starts[i] / fs, ylim[0]),
-                    trial_lengths[i] / fs,
-                    ylim[1] - ylim[0],
-                    linewidth=0,
-                    edgecolor="none",
-                    facecolor=color,
-                    alpha=0.3,
-                )
-            ax.add_patch(rect)
+        add_trial_colorbox(
+            ax=ax,
+            trial_starts=trial_starts,
+            trial_lengths=trial_lengths,
+            depths=depths,
+            depth_list=depth_list,
+            param_trace=param_trace,
+            fs=fs,
+            ylim=ylim,
+            alpha=colorbox_alpha,
+        )
 
+        # plot trial number at xticks instead of time
+        if plot_trial_number:
+            ax.set_xticks((np.array(trial_starts)+np.array(trial_lengths)/2)/fs)
+            ax.set_xticklabels(np.arange(len(trial_list)))
+            ax.set_xlabel("Trial number", fontsize=fontsize_dict["label"])
+            
         # remove upper and right frame of the plot
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
