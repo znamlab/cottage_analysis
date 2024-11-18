@@ -1016,43 +1016,47 @@ def plot_speed_trace(
     linewidth=1,
     plot_trial_number=False,
     colorbox_alpha=0.4, 
+    OF_to_degree=True,
     fontsize_dict={"title": 15, "label": 10, "ticks": 10},
 ):
-    if param == "RS":
-        trials_df[f"{param}_merged"] = trials_df.apply(
-            lambda x: np.concatenate([x[f"{param}_stim"], x[f"{param}_blank"]]),
-            axis=1,
-        )
+    if "RS" in param:
+        if f"{param}_merged" not in trials_df.columns:
+            trials_df[f"{param}_merged"] = trials_df.apply(
+                lambda x: np.concatenate([x[f"{param}_stim"], x[f"{param}_blank"]]),
+                axis=1,
+            )
         param_trace = np.concatenate(
             [row[f"{param}_merged"] for _, row in trials_df.iloc[trial_list].iterrows()]
         )
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([blank_start, param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
             param_trace = np.concatenate([blank_start, param_trace])
         param_trace = param_trace * 100
-    elif param == "OF":
-        trials_df[f"{param}_merged"] = trials_df.apply(
-            lambda x: np.concatenate(
-                [x[f"{param}_stim"], np.full(len(x[f"{param}_blank"]), np.nan)]
-            ),
-            axis=1,
-        )
+    elif "OF" in param:
+        if f"{param}_merged" not in trials_df.columns:
+            trials_df[f"{param}_merged"] = trials_df.apply(
+                lambda x: np.concatenate(
+                    [x[f"{param}_stim"], np.full(len(x[f"{param}_blank"]), np.nan)]
+                ),
+                axis=1,
+            )
         param_trace = np.concatenate(
             [row[f"{param}_merged"] for _, row in trials_df.iloc[trial_list].iterrows()]
         )
-        param_trace = np.degrees(param_trace)
+        if OF_to_degree: # to convert OF from rads/s to degrees/s
+            param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([np.full(int(fs * 10), np.nan), param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
             param_trace = np.concatenate(
                 [np.full(len(blank_start), np.nan), param_trace]
             )
@@ -1065,9 +1069,14 @@ def plot_speed_trace(
             for _, row in trials_df.iloc[trial_list].iterrows()
         ]
     )
-    trial_lengths = [
-        len(row[f"{param}_stim"]) for _, row in trials_df.iloc[trial_list].iterrows()
-    ]
+    if "processed" not in param:
+        trial_lengths = [
+            len(row[f"{param}_stim"]) for _, row in trials_df.iloc[trial_list].iterrows()
+        ]
+    else:
+        trial_lengths = [
+            len(row[f"{param}"]) for _, row in trials_df.iloc[trial_list].iterrows()
+        ]
     trial_starts = np.concatenate([[0], trial_starts[:-1]]) + len(blank_start)
 
     depths = trials_df.iloc[trial_list]["depth"].values
@@ -1083,13 +1092,17 @@ def plot_speed_trace(
             c=linecolor,
             linewidth=linewidth,
         )
-        if param == "RS":
-            ax.set_ylim(ylim)
-            ax.set_yticks([0, ylim[1]//10*10])
-        if param == "OF":
+        if "RS" in param:
+                ax.set_ylim(ylim)
+                ax.set_yticks([0, ylim[1]//10*10])
+        if "OF" in param:
             ax.set_yscale("log")
-            ax.set_ylim(1e-2, np.nanmax(param_trace) * 2)
-            ax.set_yticks([1e-2, 1e2])
+            if ylim is None:
+                ax.set_ylim(1e-2, np.nanmax(param_trace) * 2)
+                ax.set_yticks([1e-2, 1e2])
+            else:
+                ax.set_ylim(ylim)
+                ax.set_yticks([ylim[0], ylim[1]])
         ax.set_ylabel(ylabel, rotation=90, labelpad=15, fontsize=fontsize_dict["label"])
         # ax.set_xlim(0, len(param_trace) / fs)
         ax.set_xlim(xlim)
