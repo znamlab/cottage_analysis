@@ -798,7 +798,7 @@ def plot_2d_hist(
     plot_height=1,
     xlim=None,
     ylim=None,
-    aspect_equal=False,
+    aspect_equal=True,
     plot_diagonal=False,
     diagonal_linewidth=1,
     diagonal_color="k",
