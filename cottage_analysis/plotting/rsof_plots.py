@@ -1424,3 +1424,4 @@ def plot_histogram_overlay(ax,
         ax2.set_ylim(ylim)
         ax2.yaxis.set_visible(False)
         ax2.xaxis.set_visible(False)
+    sns.despine(ax=ax2)
