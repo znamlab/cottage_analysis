@@ -796,6 +796,8 @@ def plot_2d_hist(
     plot_y=0,
     plot_width=1,
     plot_height=1,
+    xlim=None,
+    ylim=None,
     aspect_equal=False,
     plot_diagonal=False,
     diagonal_linewidth=1,
@@ -840,9 +842,12 @@ def plot_2d_hist(
             linestyle="dotted",
             linewidth=diagonal_linewidth,
         )
-
-    plt.xlim([np.nanmin(X) * 0.9, np.nanmax(X) / 0.9])
-    plt.ylim([np.nanmin(y) * 0.9, np.nanmax(y) / 0.9])
+    if xlim is None:
+        xlim = [np.nanmin(X) * 0.9, np.nanmax(X) / 0.9]
+    if ylim is None:
+        ylim = [np.nanmin(y) * 0.9, np.nanmax(y) / 0.9]
+    plt.xlim(xlim)
+    plt.ylim(ylim)
 
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=1)
     ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=1)
@@ -1361,3 +1366,61 @@ def plot_openloop_rs_correlation_alldepths(
     )
     ax1.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
     sns.despine(ax=ax1)
+
+
+def plot_histogram_overlay(ax, 
+                           fig,
+                           rs, 
+                           depth_list, 
+                           nbins, 
+                           scaling_factor = 0.01,
+                           facecolor="g", 
+                           edgecolor="k",
+                           alpha=0.5, 
+                           ylim=[1,2e3], 
+                           xlim=None, 
+                           ):
+    '''Plot histogram overlay of OF distribution for different depths on top of the preferred OF-depth scatter plot. 
+
+    Args:
+        ax (matplotlib.axes): Axes object to plot the histogram overlay
+        fig (matplotlib.figure): Figure object to plot the histogram overlay
+        rs (numpy.array): Running speed array
+        depth_list (list): List of depths for which to plot the histogram overlay
+        nbins (int): Number of bins for the histogram
+        scaling_factor (float): Scaling factor for the histogram
+        facecolor (str): Facecolor of the histogram
+        edgecolor (str): Edgecolor of the histogram
+        alpha (float): Transparency of the histogram
+        ylim (list): Y-axis limits
+        xlim (list): X-axis limits
+    '''
+    ax2 = fig.add_axes([ax.get_position().x0,
+                        ax.get_position().y0,
+                        ax.get_position().width,
+                        ax.get_position().height,])
+    ax2.set_facecolor('none')
+    if xlim is None:
+        xlim = ax.get_xlim()
+    ax2.set_xlim(xlim)
+    ax2.set_xscale("log")
+    for idepth, depth in enumerate(depth_list):
+        of = np.degrees(rs / depth)
+        bins = np.geomspace(np.nanmin(of), np.nanmax(of), nbins)
+        n, _ = np.histogram(of, bins=bins);
+        # Calculate bin widths
+        bin_width = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
+
+        # Plot histogram manually
+        bottom = (np.log10(depth*100)-np.log10(ylim[0]))/(np.log10(ylim[1])-np.log10(ylim[0]))*(ylim[1]-ylim[0])+ylim[0]
+        ax2.bar(bins[:-1], 
+                (n*scaling_factor), 
+                width=bin_width, 
+                align='edge',
+                facecolor=facecolor, 
+                edgecolor=edgecolor, 
+                bottom=bottom,
+                alpha=alpha)
+        ax2.set_ylim(ylim)
+        ax2.yaxis.set_visible(False)
+        ax2.xaxis.set_visible(False)
