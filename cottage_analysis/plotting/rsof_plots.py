@@ -811,6 +811,7 @@ def plot_2d_hist(
     s=3,
     alpha=0.5,
     edgecolors="none",
+    rasterized=False,
 ):
     # Plot scatter
     ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
@@ -828,7 +829,7 @@ def plot_2d_hist(
     )
     if plot_scatter:
         ax.scatter(
-            X, y, s=s, alpha=alpha, c=color, edgecolors=edgecolors, linewidths=0.5
+            X, y, s=s, alpha=alpha, c=color, edgecolors=edgecolors, linewidths=0.5, rasterized=rasterized,
         )
     if plot_diagonal:
         diag = [
