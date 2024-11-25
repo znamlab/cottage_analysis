@@ -1176,6 +1176,7 @@ def plot_speed_trace_closed_open_loop(
                 linecolor="k",
                 linewidth=linewidth,
                 plot=False,
+                fontsize_dict=fontsize_dict,
             )
             ylims.append(ylim)
 
@@ -1201,6 +1202,7 @@ def plot_speed_trace_closed_open_loop(
                     np.max([ylims[lim_set][0], ylims[lim_set + 2][0]]),
                     np.max([ylims[lim_set][1], ylims[lim_set + 2][1]]),
                 ),
+                fontsize_dict=fontsize_dict,
             )
             xlims.append(ax.get_xlim())
 
