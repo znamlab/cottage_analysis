@@ -2,7 +2,7 @@
 #
 #SBATCH --job-name=decoder
 #SBATCH --ntasks=1
-#SBATCH --time=4:00:00
+#SBATCH --time=144:00:00
 #SBATCH --mem=16G
 #SBATCH --partition=ncpu
 #SBATCH --mail-type=END,FAIL
