@@ -209,11 +209,8 @@ def calculate_average_confusion_matrix(
         else:
             print(f"Using {col} for confusion matrix")
             col_new = col
-        decoder_results[f"conmat_prop_{recording_type}"] = decoder_results[
-            col_new
-        ].apply(lambda x: x / np.nansum(x))
         conmat_mean[recording_type] = np.nanmean(
-            np.stack(decoder_results[f"conmat_prop_{recording_type}"]), axis=0
+            np.stack(decoder_results[f"conmat_{recording_type}"]), axis=0
         )
     return conmat_mean
 
@@ -265,10 +262,10 @@ def plot_confusion_matrix(
             ]
         )
         # set colorbar
-        cbar = plt.colorbar(im, cax=ax2, label="Accuracy")
+        cbar = plt.colorbar(im, cax=ax2)
         cbar.set_ticks([0, vmax])
         ax2.tick_params(labelsize=fontsize_dict["tick"])
-        ax2.set_ylabel("Porportion of frames", fontsize=fontsize_dict["legend"])
+        ax2.set_title("Porportion\nof frames", fontsize=fontsize_dict["legend"], x=3)
     return im
 
 

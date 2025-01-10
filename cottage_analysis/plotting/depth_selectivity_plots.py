@@ -125,7 +125,7 @@ def plot_raster_all_depths(
         ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
         ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=0)
 
-        # # for aligning with the scalebar
+        # # COMMENT THIS OUT: for aligning with the scalebar
         # ax.vlines(blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
         # ax.vlines(nbins-blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
 
@@ -740,20 +740,19 @@ def plot_PSTH(
         fontsize=fontsize_dict["tick"],
     )
     plt.yticks(fontsize=fontsize_dict["tick"])
-    current_ylim = np.array(plt.gca().get_ylim())
-
-    if ylim is None:
-        ylim = current_ylim
-    else:
-        # ensure ylim is a list to be mutable
-        ylim = list(ylim)
-        if ylim[0] is None:
-            ylim[0] = current_ylim[0]
+    if (ylim[0] is None) and (ylim[1] is None):
+        ylim = plt.gca().get_ylim()
+        ylim = [ylim[0], common_utils.ceil(ylim[1], 1)]
+    elif ylim[0] is not None:
         if ylim[1] is None:
-            ylim[1] = current_ylim[1]
-
-    ylim[1] = np.max([ylim[1], 1])
-    plt.ylim(ylim)
+            ylim = (ylim[0], common_utils.ceil(plt.gca().get_ylim()[1], 1))
+            plt.ylim(ylim)
+        else:
+            ylim = ylim
+        plt.ylim(ylim)
+    elif (ylim[1] is not None) and (ylim[0] is None):
+        ylim = (plt.gca().get_ylim()[0], ylim[1])
+        plt.ylim(ylim)
     plt.yticks([ylim[0], ylim[1]], fontsize=fontsize_dict["tick"])
     plt.plot([0, 0], ylim, "k", linestyle="dotted", linewidth=0.5, label="_nolegend_")
     plt.plot(
@@ -910,28 +909,30 @@ def plot_psth_raster(
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
-    # # for aligning with the scalebar
+    # # COMMENT THIS OUT: for aligning with the scalebar
     # ax.vlines(1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
     # ax.vlines(60-1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
 
     ax_pos = ax.get_position()
     ax2 = plt.gcf().add_axes(
         [
-            ax_pos.x1 + ax_pos.width * 0.05,
+            ax_pos.x1 + ax_pos.width * 0.03,
             ax_pos.y0,
             0.01,
             ax_pos.height / 2,
         ]
     )
     cbar = plt.colorbar(mappable=im, cax=ax2)
-    cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
+    cbar.ax.set_title("Z-score", fontsize=fontsize_dict["legend"], x=1.5)
     cbar.ax.tick_params(labelsize=fontsize_dict["tick"])
 
 
 def plot_depth_neuron_perc_hist(
     results_df,
     bins=50,
+    xlim=None,
     ylim=None,
+    markersize=10,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """Plot histogram of proportion of depth-tuned neurons for each session.
@@ -950,12 +951,13 @@ def plot_depth_neuron_perc_hist(
         edgecolor="royalblue",
     )
     ax = plt.gca()
-    xlim = ax.get_xlim()
+    if xlim is None:
+        xlim = ax.get_xlim()
     ax.set_xlim([0, xlim[1]])
     if ylim is not None:
         ax.set_ylim(ylim)
     ax.set_xlabel(
-        "Proportion of \ndepth-tuned neurons", fontsize=fontsize_dict["label"]
+        "Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"]
     )
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
@@ -973,7 +975,7 @@ def plot_depth_neuron_perc_hist(
         median_prop,
         ax.get_ylim()[1] * 0.95,
         marker="v",
-        markersize=5,
+        markersize=markersize,
         markerfacecolor="cornflowerblue",
         markeredgecolor="royalblue",
     )
@@ -1129,7 +1131,7 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
     rect = plt.Rectangle(
-        (40, im.shape[0] * 0.93), scalebar_length_px, 20, color="white"
+        (40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white"
     )
     plt.gca().add_patch(rect)
 
