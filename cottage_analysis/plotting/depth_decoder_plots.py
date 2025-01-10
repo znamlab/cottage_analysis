@@ -200,7 +200,7 @@ def decoder_accuracy(
 
 
 def calculate_average_confusion_matrix(
-    decoder_results, col="", ibin=None, recording_types=["closedloop", "openloop"]
+    decoder_results, col="", recording_types=["closedloop", "openloop"]
 ):
     conmat_mean = {}
     for recording_type in recording_types:
@@ -209,17 +209,8 @@ def calculate_average_confusion_matrix(
         else:
             print(f"Using {col} for confusion matrix")
             col_new = col
-        if ibin is not None:
-            print(f"Using bin {ibin} for confusion matrix")
-            decoder_results[f"conmat_prop_{recording_type}"] = decoder_results[
-                col_new
-            ].apply(lambda x: x[ibin] / np.nansum(x[ibin]))
-        else:
-            decoder_results[f"conmat_prop_{recording_type}"] = decoder_results[
-                col_new
-            ].apply(lambda x: x / np.nansum(x))
         conmat_mean[recording_type] = np.nanmean(
-            np.stack(decoder_results[f"conmat_prop_{recording_type}"]), axis=0
+            np.stack(decoder_results[f"conmat_{recording_type}"]), axis=0
         )
     return conmat_mean
 
