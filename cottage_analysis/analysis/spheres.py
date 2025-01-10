@@ -907,9 +907,9 @@ def fit_3d_rfs(
                 m.shape[1]
             )
         if idepth < depths.shape[0] - 1:
-            L_depth[:, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]] = (
-                -np.identity(m.shape[1])
-            )
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
         Ls_depth.append(L_depth)
 
     L = np.concatenate(Ls, axis=0)

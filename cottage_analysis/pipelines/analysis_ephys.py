@@ -41,7 +41,7 @@ def main(
     print(
         f"""
         -------------------------------------
-        Start analysing {session_name}   
+        Start analysing {session_name}
         -------------------------------------
         """
     )

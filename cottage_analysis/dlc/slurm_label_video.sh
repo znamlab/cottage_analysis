@@ -21,4 +21,3 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.conda/envs/dlc_nogui/lib/
 
 cd /camp/lab/znamenskiyp/home/users/blota/code/cottage_analysis
 python cottage_analysis/dlc/label_video.py
-

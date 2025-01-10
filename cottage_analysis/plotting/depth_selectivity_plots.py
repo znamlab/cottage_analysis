@@ -140,7 +140,8 @@ def plot_raster_all_depths(
         # set colorbar
         cbar = plt.colorbar(im, cax=ax2, label="\u0394F/F")
         ax2.tick_params(labelsize=fontsize_dict["tick"])
-        cbar.set_ticks([0, vmax])
+        if vmax is not None:
+            cbar.set_ticks([0, vmax])
         ax2.set_ylabel("\u0394F/F", fontsize=fontsize_dict["legend"])
 
     return dffs_binned, ax
@@ -582,20 +583,22 @@ def get_PSTH(
                 all_dff.append(dff)
             all_means[idepth, :] = np.nanmean(all_dff, axis=0)
             if compute_ci:
-                all_ci[0, idepth, :], all_ci[1, idepth, :] = (
-                    common_utils.get_bootstrap_ci(
-                        np.array(all_dff).T, sig_level=1 - ci_range
-                    )
+                (
+                    all_ci[0, idepth, :],
+                    all_ci[1, idepth, :],
+                ) = common_utils.get_bootstrap_ci(
+                    np.array(all_dff).T, sig_level=1 - ci_range
                 )
     else:
         all_dff = psth
         all_means = np.nanmean(all_dff, axis=0)
         for idepth, depth in enumerate(depth_list):
             if compute_ci:
-                all_ci[0, idepth, :], all_ci[1, idepth, :] = (
-                    common_utils.get_bootstrap_ci(
-                        np.array(all_dff[:, idepth, :]).T, sig_level=1 - ci_range
-                    )
+                (
+                    all_ci[0, idepth, :],
+                    all_ci[1, idepth, :],
+                ) = common_utils.get_bootstrap_ci(
+                    np.array(all_dff[:, idepth, :]).T, sig_level=1 - ci_range
                 )
 
     return all_means, all_ci, bin_centers
