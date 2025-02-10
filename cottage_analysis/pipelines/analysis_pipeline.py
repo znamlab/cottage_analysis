@@ -197,7 +197,7 @@ def main(
             neurons_df.to_pickle(neurons_ds.path_full)
 
             # Update neurons_ds on flexilims
-            neurons_ds.update_flexilims(mode="update")
+            # neurons_ds.update_flexilims(mode="update")
             print("Depth tuning fitting finished. Neurons_df saved.")
 
         # Regenerate sphere stimuli
@@ -275,7 +275,7 @@ def main(
             neurons_df.to_pickle(neurons_ds.path_full)
 
             # Update neurons_ds on flexilims
-            neurons_ds.update_flexilims(mode="update")
+            # neurons_ds.update_flexilims(mode="update")
             print("RF fitting finished. Neurons_df saved.")
 
         # Fit gaussian blob to neuronal activity
