@@ -6,6 +6,9 @@ from pathlib import Path
 def load_is_cell(suite2p_path: Path) -> np.ndarray:
     """Load the iscell array from Suite2p.
 
+    If a `combined` directory exists, the function loads the iscell array from it.
+    Otherwise, it loads the iscell array from each plane directory and concatenates them
+    
     Args:
         suite2p_path: Path to the Suite2p output directory.
 
