@@ -24,6 +24,7 @@ setup(
         "defopt",
         "black",
         "tqdm",
+        "plotly",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
     ],
