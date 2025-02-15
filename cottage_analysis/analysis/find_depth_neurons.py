@@ -217,13 +217,16 @@ def find_depth_neurons(
     """Find depth neurons from all ROIs segmented.
 
     Args:
-        trials_df (DataFrame): trials_df dataframe for this session that describes the parameters for each trial.
+        trials_df (DataFrame): trials_df dataframe for this session that describes the
+            parameters for each trial.
         neurons_ds (Series): flexilims dataset for neurons_df.
-        rs_thr (float, optional): threshold of running speed to be counted into depth tuning analysis. Defaults to 0.2 m/s.
+        rs_thr (float, optional): threshold of running speed to be counted into depth
+            tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
 
     Returns:
-        (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the analysed properties for each ROI; flexilims dataset for neurons_df.
+        (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the
+            analysed properties for each ROI; flexilims dataset for neurons_df.
 
 
     """
@@ -433,9 +436,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
-                np.exp(popt[1])
-            )
+            neurons_df.at[
+                roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"
+            ] = np.exp(popt[1])
             neurons_df.at[
                 roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
             ] = popt
@@ -495,5 +498,21 @@ def fit_preferred_depth(
                 roi,
                 f"{param}_tuning_test_spearmanr_pval{protocol_sfx}{sfx}{special_sfx}",
             ] = pval
-
+    extra_attr = dict(
+        closed_loop=closed_loop,
+        choose_trials=choose_trials,
+        depth_min=depth_min,
+        depth_max=depth_max,
+        rs_thr=rs_thr,
+        rs_thr_max=rs_thr_max,
+        still_only=still_only,
+        still_time=still_time,
+        frame_rate=frame_rate,
+        niter=niter,
+        min_sigma=min_sigma,
+        k_folds=k_folds,
+        param=param,
+        special_sfx=special_sfx,
+    )
+    neuron_ds.extra_attributes = extra_attr
     return neurons_df, neurons_ds
