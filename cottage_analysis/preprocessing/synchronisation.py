@@ -581,7 +581,11 @@ def generate_imaging_df(
     dffs = []
 
     for iplane in range(int(nplanes)):
-        dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
+        dff_file = suite2p_ds.path_full / f"plane{iplane}" / dff_fname
+        if not dff_file.exists():
+            print(f"No dff found for plane {iplane}. Skipping.")
+            continue
+        dffs.append(np.load(dff_file))
         if add_spikes:
             spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
     dffs = np.vstack(dffs).T
