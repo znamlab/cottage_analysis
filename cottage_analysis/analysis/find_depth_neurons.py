@@ -527,5 +527,5 @@ def fit_preferred_depth(
         param=param,
         special_sfx=special_sfx,
     )
-    neuron_ds.extra_attributes = extra_attr
+    neurons_ds.extra_attributes = extra_attr
     return neurons_df, neurons_ds
