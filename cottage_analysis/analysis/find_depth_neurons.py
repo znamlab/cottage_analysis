@@ -283,22 +283,34 @@ def fit_preferred_depth(
     """Function to fit depth tuning with gaussian function
 
     Args:
-        trials_df (pd.DataFrame): trials_df for this session that describes the parameters for each trial.
-        neurons_df (pd.DataFrame): neurons_df for this session that describes the properties for each ROI.
+        trials_df (pd.DataFrame): trials_df for this session that describes the
+            parameters for each trial.
+        neurons_df (pd.DataFrame): neurons_df for this session that describes the
+            properties for each ROI.
         neurons_ds (Series): flexilims dataset for neurons_df.
-        closed_loop (int, optional): Fit based on closed loop data or not. Defaults to 1.
-        choose_trials (str or list, optional): Which trials to choose for the fit. Defaults to None. None: all trials. "odd": odd trials. "even": even trials. list: a list of trial numbers.
-        depth_min (float, optional): min boundary of preferred depth in m. Defaults to 0.02.
-        depth_max (float, optional): min boundary of preferred depth in m. Defaults to 20.
-        rs_thr (float, optional): Running speed threshold for fiting preferred depth in m. Defaults to 0.2.
-        rs_thr_max (float, optional): Running speed threshold for fiting preferred depth in m. Defaults to None.
-        still_only (bool, optional): Whether to only use the frames when the mouse is not running. Defaults to False.
-        still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
+        closed_loop (int, optional): Fit based on closed loop data or not. Defaults to 1
+        choose_trials (str or list, optional): Which trials to choose for the fit.
+            Defaults to None. None: all trials. "odd": odd trials. "even": even trials.
+            list: a list of trial numbers.
+        depth_min (float, optional): min boundary of preferred depth in m. Defaults to
+            0.02.
+        depth_max (float, optional): min boundary of preferred depth in m. Defaults to
+            20.
+        rs_thr (float, optional): Running speed threshold for fiting preferred depth in
+            m. Defaults to 0.2.
+        rs_thr_max (float, optional): Running speed threshold for fiting preferred depth
+            in m. Defaults to None.
+        still_only (bool, optional): Whether to only use the frames when the mouse is
+            not running. Defaults to False.
+        still_time (int, optional): Number of seconds to use when the mouse stay still.
+            Defaults to 0.
         frame_rate (float, optional): frame rate of the recording. Defaults to 15.
         niter (int, optional): Number of rounds of fitting iterations. Defaults to 10.
         min_sigma (float, optional): min sigma for gaussian fitting. Defaults to 0.5.
-        k_folds (int, optional): Number of folds for k-fold cross-validation. Defaults to 1.
+        k_folds (int, optional): Number of folds for k-fold cross-validation. Defaults
+            to 1.
         param (str, optional): "depth" or "size". Defaults to "depth".
+        special_sfx (str, optional): Special suffix for the column names. Defaults to ""
 
     Returns:
         (pd.DataFrame, Series): neurons_df, neurons_df
@@ -357,7 +369,7 @@ def fit_preferred_depth(
 
     # Stratified K-fold cross validation on trials_df_fit
     # if k_folds = 1: fit all data, save the best popt results as depth_tuning_popt;
-    # if k_folds > 1: fit data in nfolds, save rsq for test data as depth_tuning_test_rsq;
+    # if k_folds > 1: fit data in nfolds, save rsq for test data (depth_tuning_test_rsq)
 
     # give class labels to each depth / size
     if param == "depth":
@@ -396,7 +408,8 @@ def fit_preferred_depth(
         X_label = trials_df_fit["size_label"]
         X = trials_df_fit["physical_size"]
 
-    # if running, take the RS of the current frame; if not-running, take the max RS of the previous still_time period
+    # if running, take the RS of the current frame; if not-running, take the max RS of
+    # the previous still_time period
     Y = trial_average_dff(
         trials_df=Y,
         rs_thr_min=rs_thr,
@@ -446,7 +459,7 @@ def fit_preferred_depth(
                 roi, f"{param}_tuning_trials{protocol_sfx}{sfx}{special_sfx}"
             ] = choose_trial_nums
 
-    # if k_folds > 1: fit data in nfolds, save rsq for test data as depth_tuning_test_rsq;
+    # if k_folds > 1: fit data in nfolds, save rsq for test data (depth_tuning_test_rsq)
     elif k_folds > 1:
         neurons_df[f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"] = np.nan
         # initialize StratifiedKFold with the number of folds you want
@@ -469,7 +482,7 @@ def fit_preferred_depth(
                 )
 
                 # Fit depth tuning with gaussian function
-                # fit gaussian function to the average dffs for each trial (depth tuning)
+                # Fit gaussian function to the average dffs for each trial
                 popt, _ = common_utils.iterate_fit(
                     gaussian_func_,
                     np.log(np.array(X_train)).flatten(),
