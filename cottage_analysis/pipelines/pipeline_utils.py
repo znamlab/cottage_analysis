@@ -296,6 +296,7 @@ def load_and_fit(
         f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
     )
     fit_df.to_pickle(target)
+    print(f"Fit results saved to {target}")
 
     return fit_df
 
