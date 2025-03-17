@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks, butter, sosfiltfilt
 from functools import partial
+import pandas as pd
 
 print = partial(print, flush=True)
 
@@ -165,7 +166,12 @@ def find_imaging_frames(
 
     """
     # TODO: This version always rejects the last imaging frame. check the intervals between the last few frame triggers.
-    frame_triggers = harp_message[harp_message.RegisterAddress == register_address]
+    frame_triggers = pd.DataFrame(
+        {
+            "FrameTriggers": harp_message["FrameTriggers"],
+            "Timestamp": harp_message["HarpTime"],
+        }
+    )
     frame_triggers = frame_triggers[
         frame_triggers.FrameTriggers == 1
     ]  # only keep frame onset
@@ -203,8 +209,6 @@ def find_imaging_frames(
             "FRAME NUMBER NOT CORRECT likely due to incomplete imaging volume at the end of the stack or bonsai crash."
         )
         frame_triggers = frame_triggers[:frame_number]
-    frame_triggers = frame_triggers.drop(
-        columns=["HarpTime_diff", "FramePeriod", "RegisterAddress"]
-    )
+    frame_triggers = frame_triggers.drop(columns=["HarpTime_diff", "FramePeriod"])
 
     return frame_triggers
