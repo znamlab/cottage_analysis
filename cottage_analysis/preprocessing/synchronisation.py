@@ -309,8 +309,8 @@ def generate_vs_df(
                 rename_dict["EyeZ"] = "eye_z"
 
             frame_log_z.rename(columns=rename_dict, inplace=True)
-
         else:
+            # same for SpherePermTubeReward and SpherePermTubeReward_multidepth
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
             frame_log_z.rename(
                 columns={
@@ -324,7 +324,9 @@ def generate_vs_df(
 
         if frame_log_z.closest_frame.isna().any():
             print(
-                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end."
+                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are "
+                + "missing from FrameLog.csv. This is likely due to bonsai crash at "
+                + "the end."
             )
             frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
             frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
@@ -395,12 +397,14 @@ def generate_vs_df(
             errors="ignore",
             inplace=True,
         )
+
     else:  # Stimuli that are not KellerTube do have a ParamLog
         # Align paramLog with vs_df
         param_log = get_param_log(
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
+            multidepth="multidepth" in protocol_base,
         )
         # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
         param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})

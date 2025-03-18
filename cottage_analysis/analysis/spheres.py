@@ -73,9 +73,11 @@ def regenerate_frames(
     sphere_size=10,
     azimuth_limits=(-120, 120),
     elevation_limits=(-40, 40),
-    verbose=True,
+    verbose=False,
     output_datatype="int16",
     output=None,
+    return_sphere_number=False,
+    separate_depths=None,
 ):
     """Regenerate frames of sphere stimulus
 
@@ -85,19 +87,25 @@ def regenerate_frames(
     Args:
         frame_times (np.array): Array of time at which the frame should be regenerated.
         trials_df (pd.DataFrame): Dataframe contains information for each trial.
-        vs_df (pd.DataFrame): Dataframe contains information for each monitor frame.
+        vs_df (pd.DataFrame): Dataframe containing mouse position information for each
+            monitor frame.
         param_logger (pd.DataFrame): Params saved by Bonsai logger
         time_column (str): Name of the column containing timing information in
-                           dataframes (Default: 'HarpTime')
+            dataframes (Default: 'HarpTime')
         resolution (float): size of a pixel in degrees
         sphere_size (float): size of a sphere in degrees
         azimuth_limits ([float, float]): Minimum and maximum azimuth of the display
         elevation_limits ([float, float]): Minimum and maximum elevation of the display
         verbose (bool): Print information
         output_datatype (type): datatype of the output. Use bool to have binary
-                                sphere/no sphere output. int for seeing sphere overlap.
-                                Not used if output is provided
+            sphere/no sphere output. int for seeing sphere overlap. Not used if output
+            is provided
         output (np.array): Array to add output. Will be done inplace
+        return_sphere_number (bool): If True, return the number of spheres on screen for
+            each frame. Defaults to False.
+        separate_depths (list): List of depths to separate. If None, all depths are
+            put on the same frame. Defaults to None.
+
 
     Returns:
         virtual_screen (np.array): an array of [elevation, azimuth] with spheres added.
@@ -115,12 +123,22 @@ def regenerate_frames(
         int((elevation_limits[1] - elevation_limits[0]) / resolution),
         int((azimuth_limits[1] - azimuth_limits[0]) / resolution),
     )
+    if separate_depths is not None:
+        ndepths = len(separate_depths)
+        out_shape = (ndepths,) + out_shape
     if output is None:
         output = np.zeros(out_shape, dtype=output_datatype)
     else:
         assert output.shape == out_shape
-
+    if return_sphere_number:
+        if separate_depths is not None:
+            n_spheres_per_frame = np.zeros(
+                (len(separate_depths), len(frame_times)), dtype=int
+            )
+        else:
+            n_spheres_per_frame = np.zeros(len(frame_times), dtype=int)
     # Find frame indices that are not grey and within the imaging time.
+    assert trials_df.imaging_harptime_stim_start.is_monotonic_increasing
     trial_index = (
         trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
         - 1
@@ -151,47 +169,67 @@ def regenerate_frames(
         # load the logger from trial start until the time of the frame. This is the list
         # of all the spheres as they appear. Some/most of the spheres might already be
         # far behind the mouse.
-        logger = param_logger.iloc[
+        full_logger = param_logger.iloc[
             corridor.param_log_start : np.max(
                 [log_ends[frame_index], corridor.param_log_start + 1]
             )
         ]
-        # remove the spheres that are behind the mouse
-        if "Radius" in logger.columns:
-            logger = logger[logger.Radius > 0]
-        elif "Depth" in logger.columns:
-            logger = logger[logger.Depth > 0]
-        else:
-            raise ValueError("Neither Radius nor Depth in param_logger columns")
-        sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
-        sphere_coordinates[:, 2] = (
-            sphere_coordinates[:, 2] - mouse_position[frame_index]
-        )
-        this_frame, n_on_screen = draw_spheres(
-            sphere_x=sphere_coordinates[:, 0],
-            sphere_y=sphere_coordinates[:, 1],
-            sphere_z=sphere_coordinates[:, 2],
-            depth=float(corridor.depth) * 100,
-            resolution=float(resolution),
-            sphere_size=float(sphere_size),
-            azimuth_limits=np.array(azimuth_limits, dtype=float),
-            elevation_limits=np.array(elevation_limits, dtype=float),
-        )
-        if this_frame is None:
-            this_frame = np.zeros((out_shape[1], out_shape[2]))
-            if verbose:
-                # Some frames are not reconstructed. This is likely due to the fact that
-                # that the trial just started and sphere had not time to appear. We will
-                # complain only if at least 10ms have passed since the start of the trial.
-                trial_start = corridor.imaging_harptime_stim_start
-                t2start = frame_times[frame_index] - trial_start
-                if (n_on_screen == 0) and (t2start > 0.01):
-                    print(
-                        f"Warning: failed to reconstruct frame {frame_index}"
-                        + f" ({n_on_screen} spheres on screen, {t2start:.3f}s after trial start)"
-                    )
-        output[frame_index] = this_frame
+        for depth, logger in full_logger.groupby("Radius"):
+            if separate_depths is not None:
+                if depth == -9999:
+                    continue
+                idepth = separate_depths.index(depth)
+            # remove the spheres that are behind the mouse
+            if "Radius" in logger.columns:
+                logger = logger[logger.Radius > 0]
+            elif "Depth" in logger.columns:
+                logger = logger[logger.Depth > 0]
+            else:
+                raise ValueError("Neither Radius nor Depth in param_logger columns")
+            sphere_coordinates = np.array(logger[["X", "Y", "Z"]].values, dtype=float)
+            sphere_coordinates[:, 2] = (
+                sphere_coordinates[:, 2] - mouse_position[frame_index]
+            )
 
+            this_frame, n_on_screen = draw_spheres(
+                sphere_x=sphere_coordinates[:, 0],
+                sphere_y=sphere_coordinates[:, 1],
+                sphere_z=sphere_coordinates[:, 2],
+                depth=depth,
+                resolution=float(resolution),
+                sphere_size=float(sphere_size),
+                azimuth_limits=np.array(azimuth_limits, dtype=float),
+                elevation_limits=np.array(elevation_limits, dtype=float),
+            )
+            if return_sphere_number:
+                if separate_depths is not None:
+                    n_spheres_per_frame[idepth, frame_index] = n_on_screen
+                else:
+                    n_spheres_per_frame[frame_index] = n_on_screen
+
+            if this_frame is None:
+                if verbose:
+                    # Some frames are not reconstructed. This is likely due to the fact that
+                    # that the trial just started and sphere had not time to appear. We will
+                    # complain only if at least 10ms have passed since the start of the trial.
+                    trial_start = corridor.imaging_harptime_stim_start
+                    t2start = frame_times[frame_index] - trial_start
+                    if verbose and (n_on_screen == 0) and (t2start > 0.01):
+                        print(
+                            f"Warning: failed to reconstruct frame {frame_index}"
+                            + f" ({n_on_screen} spheres on screen, {t2start:.3f}s after trial start)"
+                        )
+                # 0 in case output was provided
+                if separate_depths is not None:
+                    output[idepth, frame_index] *= 0
+                else:
+                    output[frame_index] *= 0
+            elif separate_depths is not None:
+                output[idepth, frame_index] = this_frame.astype(output.dtype)
+            else:
+                output[frame_index] = this_frame.astype(output.dtype)
+    if return_sphere_number:
+        return output, n_spheres_per_frame
     return output
 
 
@@ -247,6 +285,8 @@ def draw_spheres(
     # convert `in_screen` spheres in pixel space
     az_on_screen = (az_compas[in_screen] - azimuth_limits[0]) / resolution
     el_on_screen = (elevation[in_screen] - elevation_limits[0]) / resolution
+    if np.any(radius[in_screen] < depth * 0.95):  # allow 5% of rounding error
+        raise ValueError("Radius values are too small compared to depth")
     size = depth / radius[in_screen] * sphere_size / resolution
 
     xx, yy = np.meshgrid(np.arange(azi_n), np.arange(ele_n))
@@ -255,7 +295,8 @@ def draw_spheres(
     ok = (xx - az_on_screen) ** 2 + (yy - el_on_screen) ** 2 - size**2
     ok = ok <= 0
     # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
-    return np.any(ok, axis=1).reshape((ele_n, azi_n)), np.sum(in_screen)
+    frame = np.any(ok, axis=1).reshape((ele_n, azi_n))
+    return frame, np.sum(in_screen)
 
 
 def cartesian_to_spherical(x, y, z):
@@ -486,7 +527,11 @@ def generate_trials_df(recording, imaging_df):
 
 
 def search_param_log_trials(
-    harp_recording, trials_df, flexilims_session, vis_stim_recording=None
+    harp_recording,
+    trials_df,
+    flexilims_session,
+    vis_stim_recording=None,
+    multidepth=False,
 ):
     """Add the start param logger row and stop param logger row to each trial.
     This is required for regenerate_spheres.
@@ -497,6 +542,7 @@ def search_param_log_trials(
         flexilims_session (flexilims_session): flexilims session.
         vis_stim_recording (Series or str, optional): Visual stimulation recording.
             required if `recording` does not contain vis_stim info. Defaults to None.
+        multidepth (bool): if True, the depth is in the param log. Defaults to False.
 
     Returns:
         Dataframe: Dataframe that contails information for each trial.
@@ -506,6 +552,7 @@ def search_param_log_trials(
         flexilims_session,
         vis_stim_recording=vis_stim_recording,
         harp_recording=harp_recording,
+        multidepth=multidepth,
     )
 
     # find trial index from param_log
@@ -593,7 +640,7 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    recordings = recordings[recordings.protocol == protocol_base]
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
 
@@ -612,6 +659,7 @@ def sync_all_recordings(
             project=project,
             conflicts=conflicts,
             sync_kwargs=sync_kwargs,
+            protocol_base=protocol_base,
         )
 
         if recording_type == "two_photon":
@@ -643,6 +691,7 @@ def sync_all_recordings(
             trials_df=trials_df,
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
+            multidepth="multidepth" in protocol_base,
         )
         trials_df["recording"] = recording_name
         if i == 0:
@@ -673,6 +722,7 @@ def regenerate_frames_all_recordings(
     use_onix=False,
     ephys_kwargs=None,
     do_regenerate_frames=True,
+    verbose=True,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -702,8 +752,8 @@ def regenerate_frames_all_recordings(
              False.
         ephys_kwargs (dict): Keyword arguments for generate_spike_rate_df.
             `return_multiunit` or `exp_sd` for instance. Defaults to None.
-
-
+        do_regenerate_frames (bool): if True, regenerate frames. Defaults to True.
+        verbose (bool): if True, print progress. Defaults to True.
 
     Returns:
         (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all
@@ -723,15 +773,11 @@ def regenerate_frames_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
+    recordings = recordings[recordings.protocol == protocol_base]
     if is_closedloop:
-        recordings = recordings[
-            (recordings.name.str.contains(protocol_base))
-            & (~recordings.name.str.contains("Playback"))
-        ]
+        recordings = recordings[~recordings.name.str.contains("Playback")]
     else:
-        recordings = recordings[
-            (recordings.name.str.contains(protocol_base + "Playback"))
-        ]
+        recordings = recordings[recordings.name.str.contains("Playback")]
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         recording, harp_recording, onix_rec = get_relevant_recordings(
@@ -747,6 +793,7 @@ def regenerate_frames_all_recordings(
             onix_recording=onix_rec if use_onix else None,
             project=project,
             sync_kwargs=sync_kwargs,
+            protocol_base=protocol_base,
         )
 
         if recording_type == "two_photon":
@@ -777,6 +824,7 @@ def regenerate_frames_all_recordings(
             trials_df=trials_df,
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
+            multidepth="multidepth" in protocol_base,
         )
 
         # Load paramlog
@@ -784,6 +832,7 @@ def regenerate_frames_all_recordings(
             flexilims_session,
             vis_stim_recording=recording,
             harp_recording=harp_recording,
+            multidepth="multidepth" in protocol_base,
         )
 
         # Regenerate frames for this trial
@@ -794,6 +843,14 @@ def regenerate_frames_all_recordings(
         )
         assert not isinstance(sphere_size, list)
         if do_regenerate_frames:
+            if "multidepth" in protocol_base:
+                separate_depth = param_log.Radius.unique()
+                # remove the -9999 and nan
+                separate_depth = separate_depth[~np.isnan(separate_depth)]
+                separate_depth = separate_depth[separate_depth > 0]
+                separate_depth = list(np.sort(separate_depth))
+            else:
+                separate_depth = None
             frames = regenerate_frames(
                 frame_times=imaging_df.imaging_harptime,
                 trials_df=trials_df,
@@ -804,9 +861,10 @@ def regenerate_frames_all_recordings(
                 sphere_size=sphere_size,
                 azimuth_limits=(-120, 120),
                 elevation_limits=(-40, 40),
-                verbose=True,
                 output_datatype="int16",
                 output=None,
+                separate_depths=separate_depth,
+                verbose=verbose,
                 # flip_x=True,
             )
             if i == 0:
@@ -849,6 +907,146 @@ def laplace_matrix(nx, ny):
     return L
 
 
+def fit_3d_rfs_multidepth(
+    imaging_df,
+    frames,
+    reg_xy=100,
+    reg_depth=20,
+    shift_stim=2,
+    use_col="dffs",
+    k_folds=5,
+    choose_rois=(),
+    validation=False,
+):
+    """Fit 3D receptive fields with multiple depths.
+
+    Adapted version of fit_3d_rfs to fit data where mutliple depth are present on the
+    same trial
+
+    Args:
+        imaging_df (pd.DataFrame): dataframe that contains info for each monitor frame.
+        frames (np.array): imaging data (nframes, depth, ele, azi).
+        reg_xy (float): regularization penalty on the first derivative of the coefficients
+            along the x and y axes. Defaults to 100.
+        reg_depth (float): regularization penalty on the first derivative of the coefficients
+            along the depth axis. Defaults to 20.
+        shift_stim (int): shift to account for response lag. Defaults to 2.
+        use_col (str): column to use for the response. Defaults to "dffs".
+        k_folds (int): number of folds for cross-validation. Defaults to 5.
+        choose_rois (tuple): indices of the ROIs to use. Defaults to ().
+        validation (bool): if True, use validation set to select the best regularization
+            parameters (train, val, test). Defaults to False.
+
+    Returns:
+        np.array: 3D receptive fields (depth, ele, azi).
+        np.array: R2 values for each ROI and split.
+    """
+    resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
+    if len(choose_rois) > 0:
+        resps = resps[:, choose_rois]
+    depths = imaging_df.depth.unique()
+    depths = depths[~np.isnan(depths)]
+    depths = depths[depths > 0]
+    depths = np.sort(depths)
+
+    is_stim = imaging_df.depth > 0
+    trial_start_stop = np.diff(is_stim.astype(int))
+    trial_idx = np.cumsum(np.hstack([0, trial_start_stop == 1])).astype(float)
+    trial_idx[imaging_df.depth.isna()] = np.nan
+    trial_idx[imaging_df.depth < 0] = np.nan
+    imaging_df["trial_idx"] = trial_idx
+
+    assert depths.shape[0] == frames.shape[0]
+    # Shift to account for response lag
+    X = np.roll(frames, shift_stim, axis=1)
+    X = np.swapaxes(X, 0, 1)  # put back frame number as first axis
+    # (now we have frame, depth, ele, azi)
+    X = X.reshape(X.shape[0], -1)  # flatten
+
+    L = laplace_matrix(frames.shape[1], frames.shape[2])
+    Ls = []
+    Ls_depth = []
+    for idepth, depth in enumerate(depths):
+        L_xy = np.zeros((L.shape[0], X.shape[1]))
+        L_xy[:, idepth * L.shape[1] : (idepth + 1) * L.shape[1]] = L
+        Ls.append(L_xy)
+        # add regularization penalty on the second derivative of the coefficients
+        # along the depth axis
+        L_depth = np.zeros((m.shape[1], X.shape[1]))
+        L_depth[:, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = (
+            np.identity(m.shape[1]) * 2
+        )
+        if idepth > 0:
+            L_depth[:, (idepth - 1) * m.shape[1] : idepth * m.shape[1]] = -np.identity(
+                m.shape[1]
+            )
+        if idepth < depths.shape[0] - 1:
+            L_depth[
+                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
+            ] = -np.identity(m.shape[1])
+        Ls_depth.append(L_depth)
+    L = np.concatenate(Ls, axis=0)
+    L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
+    L_depth = np.concatenate(Ls_depth, axis=0)
+    L_depth = np.concatenate([L_depth, np.zeros((L_depth.shape[0], 1))], axis=1)
+    # add bias
+    X = np.concatenate([X, np.ones((X.shape[0], 1))], axis=1)
+    coefs = []
+    # 0 for train and -1 for test, 1 for validation prediction
+    n_splits = 3 if validation else 2
+    Y_pred = np.zeros((resps.shape[0], resps.shape[1], n_splits)) * np.nan
+    # randomly split trials into training and test sets
+    kfold = KFold(n_splits=k_folds, random_state=42, shuffle=True)
+    # Use validation set to select the best regularization parameters (train, val, test),
+    # or use test set to evaluate performance (train, test)
+    trials = imaging_df.trial_idx.dropna().unique()
+    for train_trials, test_trials in kfold.split(trials):
+        if validation:
+            train_trials, validation_trials = train_test_split(
+                train_trials,
+                test_size=(1 / (k_folds - 1)),
+            )
+            validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
+        train_idx = np.isin(imaging_df.trial_idx, train_trials)
+        test_idx = np.isin(imaging_df.trial_idx, test_trials)
+
+        X_train = np.concatenate(
+            [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
+        )
+        Q = np.linalg.inv(X_train.T @ X_train) @ X_train.T
+
+        Y_train = np.concatenate(
+            [
+                resps[train_idx, :],
+                np.zeros((L.shape[0], resps.shape[1])),
+                np.zeros((L_depth.shape[0], resps.shape[1])),
+            ],
+            axis=0,
+        )
+        coef = Q @ Y_train
+        coefs.append(coef)
+
+        if validation:
+            idxs = [train_idx, validation_idx, test_idx]
+        else:
+            idxs = [train_idx, test_idx]
+        for isplit, idx in enumerate(idxs):
+            Y_pred[idx, :, isplit] = X[idx, :] @ coef
+    # calculate R2
+    r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
+    for isplit in range(n_splits):
+        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        residual_var = np.sum(
+            (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
+            axis=0,
+        )
+        total_var = np.sum(
+            (resps[use_idx, :] - np.mean(resps[use_idx, :], axis=0)) ** 2, axis=0
+        )
+        r2[:, isplit] = 1 - residual_var / total_var
+    return coefs, r2
+
+
 def fit_3d_rfs(
     imaging_df,
     frames,
@@ -860,12 +1058,14 @@ def fit_3d_rfs(
     choose_rois=(),
     validation=False,
 ):
-    """Fit 3D receptive fields using regularized least squares regression, with only one set of hyperparameters.
+    """Fit 3D receptive fields using regularized least squares regression, with only one
+    set of hyperparameters.
+
     Runs on all ROIs in parallel.
 
     Args:
         imaging_df (pd.DataFrame): dataframe that contains info for each imaging volume.
-        frames (np.array): array of frames
+        frames (np.array): array of frames, nframes x nelevation x nazimuth
         reg_xy (float): regularization constant for spatial regularization
         reg_depth (float): regularization constant for depth regularization
         shift_stim (int): number of frames to shift the stimulus by.
@@ -873,12 +1073,16 @@ def fit_3d_rfs(
             Defaults to 2.
         use_col (str): column in imaging_df to use for fitting. Defaults to "dffs".
         k_folds (int): number of folds for cross validation. Defaults to 5.
-        choose_rois (list): a list of ROI indices to fit. Defaults to [], which means fit all ROIs.
-        validation (bool): whether to include a validation set for hyperparameter tuning. Defaults to False.
+        choose_rois (list): a list of ROI indices to fit. Defaults to [], which means
+            fit all ROIs.
+        validation (bool): whether to include a validation set for hyperparameter
+            tuning. Defaults to False.
 
     Returns:
-        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x nazi x nele + 1) x ncells
-        r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
+        coef (np.array): array of coefficients for each pixel, ndepths x (ndepths x
+            nazi x nele + 1) x ncells
+        r2 (list): list of arrays of r2 for each ROI for training, validation and test
+            sets, ncells x 2
 
     """
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
@@ -1043,7 +1247,7 @@ def fit_3d_rfs_hyperparam_tuning(
         (
             len(reg_xys) * len(reg_depths),
             k_folds,
-            frames.shape[1] * frames.shape[2] * len(depth_list) + 1,
+            frames.shape[-2] * frames.shape[-1] * len(depth_list) + 1,
             imaging_df.loc[0, "dffs"].shape[1],
         )
     )
@@ -1053,11 +1257,17 @@ def fit_3d_rfs_hyperparam_tuning(
     hyperparams = np.zeros((len(reg_xys) * len(reg_depths), 2))
     good_neuron_percs = np.zeros((len(reg_xys), len(reg_depths)))
     nrois = imaging_df.loc[0, "dffs"].shape[1]
+    if frames.ndim == 4:
+        fit_func = fit_3d_rfs_multidepth
+    elif frames.ndim == 3:
+        fit_func = fit_3d_rfs
+    else:
+        raise ValueError("frames must be 3D or 4D")
     idx = 0
     for i, reg_xy in enumerate(reg_xys):
         for j, reg_depth in enumerate(reg_depths):
             print(f"fitting reg_xy: {reg_xy}, reg_depth: {reg_depth}")
-            coef, r2 = fit_3d_rfs(
+            coef, r2 = fit_func(
                 imaging_df,
                 frames,
                 reg_xy=reg_xy,
@@ -1137,9 +1347,14 @@ def fit_3d_rfs_ipsi(
         r2 (list): list of arrays of r2 for each ROI for training, validation and test sets, ncells x 2
 
     """
-
+    if frames.ndim == 4:
+        fit_func = fit_3d_rfs_multidepth
+    elif frames.ndim == 3:
+        fit_func = fit_3d_rfs
+    else:
+        raise ValueError("frames must be 3D or 4D")
     best_regs = np.stack([best_reg_xys, best_reg_depths], axis=1)
-    coef_temp, r2_temp = fit_3d_rfs(
+    coef_temp, r2_temp = fit_func(
         imaging_df,
         frames,
         reg_xy=80,
@@ -1156,7 +1371,7 @@ def fit_3d_rfs_ipsi(
         print(
             f"Fit with best param for {len(best_reg_neurons)} neurons: reg_xy: {best_reg[0]}, reg_depth: {best_reg[1]}"
         )
-        coef_temp, r2_temp = fit_3d_rfs(
+        coef_temp, r2_temp = fit_func(
             imaging_df,
             frames,
             reg_xy=best_reg[0],
