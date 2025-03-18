@@ -66,12 +66,7 @@ def gaussian_density(data, sd, start=None, end=None, dstep=None, verbose=True):
     used sd*0.05 A 2d np.array is returned with the time scale and
     non-normalised 'density' as first and second rows."""
 
-    # Note: once I've understood convolutions and Fourier transforms, they
-    # probably represent the quick way of doing this.
-    # note: try to fft this
-
     # Resolution as fraction of sd
-
     data = np.array(data)
     dmax = np.max(data) + sd * 4.0 if end is None else float(end)
     dmin = np.min(data) - sd * 4.0 if start is None else float(start)
