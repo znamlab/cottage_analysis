@@ -293,7 +293,7 @@ def plot_RS_OF_matrix(
     plot_width=1,
     plot_height=1,
     cbar_width=0.01,
-    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
 ):
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     rs_bins = (
@@ -703,7 +703,6 @@ def plot_r2_violin(
     ylim=(10**-4, 1),
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
-
     cols = [f"rsof_test_rsq_closedloop_{model}" for model in models]
     df = neurons_df[cols].melt(var_name="model", value_name="r2")
     df["model"] = df["model"].apply(lambda x: model_labels[cols.index(x)])
@@ -829,7 +828,14 @@ def plot_2d_hist(
     )
     if plot_scatter:
         ax.scatter(
-            X, y, s=s, alpha=alpha, c=color, edgecolors=edgecolors, linewidths=0.5, rasterized=rasterized,
+            X,
+            y,
+            s=s,
+            alpha=alpha,
+            c=color,
+            edgecolors=edgecolors,
+            linewidths=0.5,
+            rasterized=rasterized,
         )
     if plot_diagonal:
         diag = [
@@ -968,14 +974,14 @@ def plot_speed_colored_by_depth(
 
 def add_trial_colorbox(
     ax,
-    trial_starts, 
-    trial_lengths, 
+    trial_starts,
+    trial_lengths,
     depths,
-    depth_list, 
-    param_trace, 
-    fs, 
+    depth_list,
+    param_trace,
+    fs,
     ylim,
-    cmap=cm.cool.reversed(), 
+    cmap=cm.cool.reversed(),
     alpha=0.3,
 ):
     for i, trial_start in enumerate(trial_starts):
@@ -1008,6 +1014,7 @@ def add_trial_colorbox(
             )
         ax.add_patch(rect)
 
+
 def plot_speed_trace(
     trials_df,
     trial_list,
@@ -1016,12 +1023,12 @@ def plot_speed_trace(
     ax,
     ylabel,
     plot=True,
-    xlim=(0,100),
+    xlim=(0, 100),
     ylim=None,
     linecolor="k",
     linewidth=1,
     plot_trial_number=False,
-    colorbox_alpha=0.4, 
+    colorbox_alpha=0.4,
     OF_to_degree=True,
     fontsize_dict={"title": 15, "label": 10, "ticks": 10},
 ):
@@ -1054,7 +1061,7 @@ def plot_speed_trace(
         param_trace = np.concatenate(
             [row[f"{param}_merged"] for _, row in trials_df.iloc[trial_list].iterrows()]
         )
-        if OF_to_degree: # to convert OF from rads/s to degrees/s
+        if OF_to_degree:  # to convert OF from rads/s to degrees/s
             param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
             blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
@@ -1077,7 +1084,8 @@ def plot_speed_trace(
     )
     if "processed" not in param:
         trial_lengths = [
-            len(row[f"{param}_stim"]) for _, row in trials_df.iloc[trial_list].iterrows()
+            len(row[f"{param}_stim"])
+            for _, row in trials_df.iloc[trial_list].iterrows()
         ]
     else:
         trial_lengths = [
@@ -1099,8 +1107,8 @@ def plot_speed_trace(
             linewidth=linewidth,
         )
         if "RS" in param:
-                ax.set_ylim(ylim)
-                ax.set_yticks([0, ylim[1]//10*10])
+            ax.set_ylim(ylim)
+            ax.set_yticks([0, ylim[1] // 10 * 10])
         if "OF" in param:
             ax.set_yscale("log")
             if ylim is None:
@@ -1129,10 +1137,10 @@ def plot_speed_trace(
 
         # plot trial number at xticks instead of time
         if plot_trial_number:
-            ax.set_xticks((np.array(trial_starts)+np.array(trial_lengths)/2)/fs)
+            ax.set_xticks((np.array(trial_starts) + np.array(trial_lengths) / 2) / fs)
             ax.set_xticklabels(np.arange(len(trial_list)))
             ax.set_xlabel("Trial number", fontsize=fontsize_dict["label"])
-            
+
         # remove upper and right frame of the plot
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -1371,19 +1379,20 @@ def plot_openloop_rs_correlation_alldepths(
     sns.despine(ax=ax1)
 
 
-def plot_histogram_overlay(ax, 
-                           fig,
-                           rs, 
-                           depth_list, 
-                           nbins, 
-                           scaling_factor = 0.01,
-                           facecolor="g", 
-                           edgecolor="k",
-                           alpha=0.5, 
-                           ylim=[1,2e3], 
-                           xlim=None, 
-                           ):
-    '''Plot histogram overlay of OF distribution for different depths on top of the preferred OF-depth scatter plot. 
+def plot_histogram_overlay(
+    ax,
+    fig,
+    rs,
+    depth_list,
+    nbins,
+    scaling_factor=0.01,
+    facecolor="g",
+    edgecolor="k",
+    alpha=0.5,
+    ylim=[1, 2e3],
+    xlim=None,
+):
+    """Plot histogram overlay of OF distribution for different depths on top of the preferred OF-depth scatter plot.
 
     Args:
         ax (matplotlib.axes): Axes object to plot the histogram overlay
@@ -1397,12 +1406,16 @@ def plot_histogram_overlay(ax,
         alpha (float): Transparency of the histogram
         ylim (list): Y-axis limits
         xlim (list): X-axis limits
-    '''
-    ax2 = fig.add_axes([ax.get_position().x0,
-                        ax.get_position().y0,
-                        ax.get_position().width,
-                        ax.get_position().height,])
-    ax2.set_facecolor('none')
+    """
+    ax2 = fig.add_axes(
+        [
+            ax.get_position().x0,
+            ax.get_position().y0,
+            ax.get_position().width,
+            ax.get_position().height,
+        ]
+    )
+    ax2.set_facecolor("none")
     if xlim is None:
         xlim = ax.get_xlim()
     ax2.set_xlim(xlim)
@@ -1410,20 +1423,24 @@ def plot_histogram_overlay(ax,
     for idepth, depth in enumerate(depth_list):
         of = np.degrees(rs / depth)
         bins = np.geomspace(np.nanmin(of), np.nanmax(of), nbins)
-        n, _ = np.histogram(of, bins=bins);
+        n, _ = np.histogram(of, bins=bins)
         # Calculate bin widths
         bin_width = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
 
         # Plot histogram manually
-        bottom = (np.log10(depth*100)-np.log10(ylim[0]))/(np.log10(ylim[1])-np.log10(ylim[0]))*(ylim[1]-ylim[0])+ylim[0]
-        ax2.bar(bins[:-1], 
-                (n*scaling_factor), 
-                width=bin_width, 
-                align='edge',
-                facecolor=facecolor, 
-                edgecolor=edgecolor, 
-                bottom=bottom,
-                alpha=alpha)
+        bottom = (np.log10(depth * 100) - np.log10(ylim[0])) / (
+            np.log10(ylim[1]) - np.log10(ylim[0])
+        ) * (ylim[1] - ylim[0]) + ylim[0]
+        ax2.bar(
+            bins[:-1],
+            (n * scaling_factor),
+            width=bin_width,
+            align="edge",
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            bottom=bottom,
+            alpha=alpha,
+        )
         ax2.set_ylim(ylim)
         ax2.yaxis.set_visible(False)
         ax2.xaxis.set_visible(False)
