@@ -172,6 +172,7 @@ def plot_depth_tuning_curve(
     ylim_precision_base=1,
     ylim_precision=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    ax=None,
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -201,7 +202,12 @@ def plot_depth_tuning_curve(
         ylim_precision_base (int, optional): base for setting y-axis limits. Defaults to 1.
         ylim_precision (int, optional): precision for setting y-axis limits. Defaults to 1.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        ax (plt.Axes, optional): axes to plot the depth tuning curve. Defaults to None.
     """
+    if ax is None:
+        ax = plt.gca()
+    else:
+        plt.sca(ax)
 
     # Load average activity and confidence interval for this roi
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
@@ -225,7 +231,7 @@ def plot_depth_tuning_curve(
     )[:, :, roi]
     CI_low, CI_high = common_utils.get_bootstrap_ci(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
-    ax = plt.gca()
+
     ax.errorbar(
         log_param_list,
         mean_arr,
@@ -249,7 +255,7 @@ def plot_depth_tuning_curve(
         for i, x in enumerate(xs):
             weights = np.exp(-((log_param_list - x) ** 2) / (2 * sd**2))
             ys[i] = np.sum(weights * mean_arr) / np.sum(weights)
-        plt.plot(
+        ax.plot(
             xs,
             ys,
             color=linecolor,
@@ -265,7 +271,7 @@ def plot_depth_tuning_curve(
                 gaussian_arr = fit_gaussian_blob.gaussian_1d(
                     np.log(x), a, x0, log_sigma, b, min_sigma
                 )
-                plt.plot(
+                ax.plot(
                     np.log(x),
                     gaussian_arr,
                     color=linecolor,
@@ -277,7 +283,7 @@ def plot_depth_tuning_curve(
             gaussian_arr = fit_gaussian_blob.gaussian_1d(
                 np.log(x), a, x0, log_sigma, b, min_sigma
             )
-            plt.plot(
+            ax.plot(
                 np.log(x),
                 gaussian_arr,
                 color=linecolor,
@@ -286,10 +292,10 @@ def plot_depth_tuning_curve(
             )
     if ylim is None:
         ylim = [
-            plt.gca().get_ylim()[0],
+            ax.get_ylim()[0],
             common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
         ]
-        plt.ylim(ylim)
+        ax.set_ylim(ylim)
         plt.yticks(
             [
                 0,
@@ -318,7 +324,7 @@ def plot_depth_tuning_curve(
     plt.xticks(
         rotation=45,
     )
-    plt.gca().tick_params(axis="both", labelsize=fontsize_dict["tick"])
+    ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
 
 
 def plot_running_stationary_depth_tuning(
