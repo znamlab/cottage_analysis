@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from functools import partial
+from functools import partial, reduce
 import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
@@ -29,15 +29,23 @@ def save_finish_time(finished, col):
 
 
 def create_neurons_ds(
-    session_name, flexilims_session=None, project=None, conflicts="skip"
+    session_name,
+    flexilims_session=None,
+    project=None,
+    conflicts="skip",
+    base_name=None,
 ):
     """Create a neurons_df dataset from flexilims.
 
     Args:
         session_name (str): session name. {Mouse}_{Session}.
-        flexilims_session (Series, optional): flexilims session object. Defaults to None.
-        project (str, optional): project name. Defaults to None. Must be provided if flexilims_session is None.
+        flexilims_session (Series, optional): flexilims session object. Defaults to
+            None.
+        project (str, optional): project name. Defaults to None. Must be provided if
+            flexilims_session is None.
         conflicts (str, optional): how to handle conflicts. Defaults to "skip".
+        base_name (str, optional): base name for the dataset. Defaults to None.
+
     """
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
@@ -51,9 +59,11 @@ def create_neurons_ds(
         origin_id=exp_session.id,
         dataset_type="neurons_df",
         flexilims_session=flexilims_session,
+        base_name=base_name,
         conflicts=conflicts,
     )
-    neurons_ds.path = neurons_ds.path.parent / f"neurons_df.pickle"
+    fname = base_name if base_name else "neurons_df"
+    neurons_ds.path = neurons_ds.path.parent / f"{fname}.pickle"
 
     return neurons_ds
 
@@ -110,7 +120,13 @@ def sbatch_session(
 
 
 def load_session(
-    project, session_name, photodiode_protocol=None, regenerate_frames=False
+    project,
+    session_name,
+    photodiode_protocol=None,
+    regenerate_frames=False,
+    base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Load data from a single session.
 
@@ -120,15 +136,24 @@ def load_session(
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
         photodiode_protocol (str, optional): photodiode protocol. Defaults to None.
-        regenerate_frames (bool, optional): whether to regenerate frames. Defaults to False.
+        regenerate_frames (bool, optional): whether to regenerate frames. Defaults to
+            False.
+        base_name (str, optional): base name for the dataset. Defaults to None.
+        filter_datasets (dict, optional): filter datasets. Defaults to
+            {"anatomical_only": 3}.
+        exclude_datasets (dict, optional): exclude datasets. Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
         vs_df_all (pd.DataFrame): vs_df_all dataframe.
         trials_df_all (pd.DataFrame): trials_df_all dataframe.
-        frames_all (pd.DataFrame): frames_all dataframe. Only returned if regenerate_frames is True.
-        imaging_df_all (pd.DataFrame): imaging_df_all dataframe. Only returned if regenerate_frames is True.
+        frames_all (pd.DataFrame): frames_all dataframe. Only returned if
+            regenerate_frames is True.
+        imaging_df_all (pd.DataFrame): imaging_df_all dataframe. Only returned if
+            regenerate_frames is True.
     """
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
 
     flexilims_session = flz.get_flexilims_session(project)
 
@@ -137,6 +162,7 @@ def load_session(
         flexilims_session=flexilims_session,
         project=project,
         conflicts="skip",
+        base_name=base_name,
     )
     if neurons_ds.get_flexilims_entry() is None:
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
@@ -146,7 +172,8 @@ def load_session(
         session_name=session_name,
         flexilims_session=flexilims_session,
         project=project,
-        filter_datasets={"anatomical_only": 3},
+        filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
         recording_type="two_photon",
         protocol_base="SpheresPermTubeReward",
         photodiode_protocol=photodiode_protocol,
@@ -158,7 +185,8 @@ def load_session(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=None,
-            filter_datasets={"anatomical_only": 3},
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
             recording_type="two_photon",
             protocol_base="SpheresPermTubeReward",
             photodiode_protocol=photodiode_protocol,
@@ -173,7 +201,7 @@ def load_session(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "48:00:00",
+        "time": "7-00:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },
@@ -194,6 +222,9 @@ def load_and_fit(
     file_special_sfx="",
     run_closedloop_only=False,
     run_openloop_only=False,
+    base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Load and fit a model to a session.
 
@@ -209,11 +240,22 @@ def load_and_fit(
         min_sigma (float): minimum sigma.
         k_folds (int, optional): number of k-folds. Defaults to 1.
         trial_sfx (str, optional): trial suffix. Defaults to "". Example: "_crossval".
-        file_special_sfx (str, optional): file special suffix. Defaults to "". Example: "_openclosed0".
+        file_special_sfx (str, optional): file special suffix. Defaults to "". Example:
+            "_openclosed0".
+        run_closedloop_only (bool, optional): run closedloop only. Defaults to False.
+        run_openloop_only (bool, optional): run openloop only. Defaults to False.
+        base_name (str, optional): base name for the dataset. Defaults to None.
+        filter_datasets (dict, optional): filter datasets. Defaults to
+            {"anatomical_only": 3}.
+        exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+
 
     Returns:
         pd.DataFrame: result dataframe for the fit.
     """
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
+
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     (
         neurons_ds,
@@ -221,9 +263,14 @@ def load_and_fit(
         _,
         trials_df_all,
     ) = load_session(
-        project, session_name, photodiode_protocol, regenerate_frames=False
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=False,
+        base_name=base_name,
+        filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
     )
-
     # create name from model and choose_trials
     suffix = f"{model}"
     if isinstance(choose_trials, str):
@@ -249,6 +296,7 @@ def load_and_fit(
         f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
     )
     fit_df.to_pickle(target)
+    print(f"Fit results saved to {target}")
 
     return fit_df
 
@@ -269,6 +317,7 @@ def merge_fit_dataframes(
     target_column_prefix="",  # "_recording"
     filetype=".pickle",
     target_filename="neurons_df.pickle",
+    base_name=None,
 ):
     """Merge fit dataframe from all fits
 
@@ -276,11 +325,16 @@ def merge_fit_dataframes(
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
         conflicts (str, optional): how to handle conflicts. Defaults to "skip".
-        prefix (str, optional): prefix of the files to merge. Defaults to "fit_rs_of_tuning_".
+        prefix (str, optional): prefix of the files to merge. Defaults to
+            "fit_rs_of_tuning_".
         suffix (str, optional): suffix of the files to merge. Defaults to ""
-        column_suffix (int, optional): digits for the source filename, which becomes the special suffix to append to each column name of the dataframe to be merged. Defaults to None.
+        column_suffix (int, optional): digits for the source filename, which becomes the
+            special suffix to append to each column name of the dataframe to be merged.
+                Defaults to None.
         filetype (str, optional): filetype of the files to merge. Defaults to ".pickle".
-        target_filename (str, optional): target filename. Defaults to "neurons_df.pickle".
+        target_filename (str, optional): target filename. Defaults to
+            "neurons_df.pickle".
+        base_name (str, optional): base name for the dataset. Defaults to None.
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     flexilims_session = flz.get_flexilims_session(project)
@@ -290,12 +344,13 @@ def merge_fit_dataframes(
         flexilims_session=flexilims_session,
         project=project,
         conflicts="skip",
+        base_name=base_name,
     )
     # load the main neurons_df
     neurons_df = pd.read_pickle(neurons_ds.path_full)
 
     search_str = f"{prefix}*{suffix}{filetype}"
-    merge_df_names = []
+    dfs_to_merge = []
     for df_name in neurons_ds.path_full.parent.glob(search_str):
         if exclude_keywords:
             # if the name contains any keywords that needs to be excluded
@@ -309,42 +364,49 @@ def merge_fit_dataframes(
                     ):
                         print(f"Exclude files {df_name}")
                     else:
-                        merge_df_names.append(df_name)
+                        tmp = pd.read_pickle(df_name)
+                        dfs_to_merge.append(tmp)
                 else:
-                    merge_df_names.append(df_name)
+                    tmp = pd.read_pickle(df_name)
+                    dfs_to_merge.append(tmp)
         else:
-            merge_df_names.append(df_name)
+            tmp = pd.read_pickle(df_name)
+            dfs_to_merge.append(tmp)
 
-    for df_name in merge_df_names:
-        print(f"Merging {df_name}...")
-        df = pd.read_pickle(df_name)
-        assert (df.roi == neurons_df.roi).all(), "ROI mismatch"
-        for col in df.columns:
-            if col == "roi":
-                continue
-            if target_column_suffix is not None:
-                new_col = (
-                    col
-                    + target_column_prefix
-                    + "_"
-                    + "_".join(str(df_name.stem).split("_")[target_column_suffix:])
-                )
-            else:
-                new_col = col
-            if new_col in neurons_df.columns:
-                if conflicts == "skip":
-                    print(
-                        f"WARNING: Skipping column {col} - already present in neurons_df"
-                    )
-                elif conflicts == "overwrite":
-                    neurons_df[new_col] = df[col]
-                    print(f"WARNING: Overwriting column {col}")
-            else:
-                neurons_df[new_col] = df[col]
+    # Checking that the number of ROIs is the same across dataframes with fit results
+    assert all(
+        [df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge]
+    ), "ROIs in dataframes do not match neurons_df."
+
+    if target_column_suffix is not None:
+        suffix = f"{target_column_prefix}_" + "_".join(
+            str(df_name.stem).split("_")[target_column_suffix:]
+        )
+        # rename all columns before merging
+        for df in dfs_to_merge:
+            df.columns = [
+                f"{col}{suffix}" if col != "roi" else "roi" for col in df.columns
+            ]
+    rsof_df = reduce(lambda x, y: pd.merge(x, y, on="roi", how="inner"), dfs_to_merge)
+
+    if conflicts == "skip":
+        columns_to_add = rsof_df.columns.difference(neurons_df.columns).to_list()
+        columns_to_add.append("roi")
+        neurons_df = pd.merge(neurons_df, rsof_df.loc[:, columns_to_add], on="roi")
+        print(
+            f"New columns written to neurons_df: {[name for name in columns_to_add if name != 'roi']}"
+        )
+
+    elif conflicts == "overwrite":
+        columns_to_drop = neurons_df.columns.intersection(rsof_df.columns).to_list()
+        columns_to_drop.remove("roi")
+        neurons_df = neurons_df.drop(columns_to_drop, axis=1)
+        neurons_df = pd.merge(neurons_df, rsof_df, on="roi")
+        print(f"New columns written to neurons_df: {rsof_df.columns.to_list()}")
+        print(f"Data overwritten in neurons_df: {columns_to_drop}")
 
     # save the new neurons_df
     neurons_df.to_pickle(neurons_ds.path_full.parent / target_filename)
-    print("All dataframes merged. Neurons_df saved.")
 
     return neurons_df
 

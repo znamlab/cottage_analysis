@@ -458,20 +458,25 @@ def generate_imaging_df(
     recording,
     flexilims_session,
     filter_datasets=None,
+    exclude_datasets=None,
     return_volumes=True,
     add_spikes=False,
 ):
     """
-    Generate a DataFrame that contains information for each imaging volume / frame incorporating
-    the monitor frame information.
+    Generate a DataFrame that contains information for each imaging volume / frame
+    incorporating the monitor frame information.
 
     Args:
         vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
         recording (pandas.Series): recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
-        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
-        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
-        add_spikes (bool): if True, add the suite2p traces to the output. Defaults to False.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets.
+            Defaults to None.
+        exclude_datasets (dict, optional): Filter to exclude datasets. Defaults
+        return_volumes (bool): if True, return only the first frame of each imaging
+            volume. Defaults to True.
+        add_spikes (bool): if True, add the suite2p traces to the output. Defaults to
+            False.
 
     Returns:
         DataFrame: contains information for each imaging volume / frame.
@@ -483,6 +488,7 @@ def generate_imaging_df(
         origin_name=recording.name,
         dataset_type="suite2p_traces",
         filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
         allow_multiple=False,
         return_dataseries=False,
     )
@@ -581,7 +587,11 @@ def generate_imaging_df(
     dffs = []
 
     for iplane in range(int(nplanes)):
-        dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
+        dff_file = suite2p_ds.path_full / f"plane{iplane}" / dff_fname
+        if not dff_file.exists():
+            print(f"No dff found for plane {iplane}. Skipping.")
+            continue
+        dffs.append(np.load(dff_file))
         if add_spikes:
             spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
     dffs = np.vstack(dffs).T
