@@ -957,9 +957,7 @@ def plot_depth_neuron_perc_hist(
     ax.set_xlim([0, xlim[1]])
     if ylim is not None:
         ax.set_ylim(ylim)
-    ax.set_xlabel(
-        "Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"]
-    )
+    ax.set_xlabel("Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"])
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
     # plot median proportion as a triangle along the top of the histogram
@@ -1131,9 +1129,7 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     cbar.remove()
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
-    rect = plt.Rectangle(
-        (40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white"
-    )
+    rect = plt.Rectangle((40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white")
     plt.gca().add_patch(rect)
 
 

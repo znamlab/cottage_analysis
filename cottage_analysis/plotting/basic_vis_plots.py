@@ -22,16 +22,18 @@ def plot_spatial_distribution(
     neurons_df, trials_df, ops, stat, iscell, cmap=cm.cool.reversed()
 ):
     """
-    Plot spatial distribution of depth preference of a session.
+        Plot spatial distribution of depth preference of a session.
 
-#     Args:
-#         neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
-#         trials_df (pd.DataFrame): dataframe with info of all trials.
-#         ops (np.ndarray): suite2p ops.
-#         stat (np.ndarray): suite2p stat.
-#         iscell (bool): suite2p iscell file (needs to reload before the plotting)
-#         cmap (matplotlib object, optional): Matplotlib colormao. Defaults to cm.cool.reversed().
-#     """
+    #     Args:
+    #         neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+    #         trials_df (pd.DataFrame): dataframe with info of all trials.
+    #         ops (np.ndarray): suite2p ops.
+    #         stat (np.ndarray): suite2p stat.
+    #         iscell (bool): suite2p iscell file (needs to reload before the plotting)
+    #         cmap (matplotlib object, optional): Matplotlib colormao. Defaults to cm.cool.reversed().
+    #"""
+
+
 #     # Reload iscell file and filter out non-neuron rois
 #     neurons_df.is_cell = iscell
 
