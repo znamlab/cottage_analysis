@@ -49,7 +49,6 @@ def calculate_speed_tuning(speed_arr, dff_arr, bins, smoothing_sd=1, ci_range=0.
 
 
 def plot_speed_tuning(
-    fig,
     trials_df,
     roi,
     is_closed_loop,
@@ -64,30 +63,41 @@ def plot_speed_tuning(
     markersize=5,
     linewidth=1,
     markeredgecolor="w",
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     legend_on=False,
     ci_range=0.95,
     ylim=None,
+    ax=None,
 ):
     """Plot a neuron's speed tuning to either running speed or optic flow speed.
 
     Args:
-        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
         trials_df (pd.DataFrame): dataframe with info of all trials.
         roi (int): ROI number
         is_closed_loop (bool): plotting the closed loop or open loop results.
         nbins (int, optional): number of bins to bin the tuning curve. Defaults to 20.
-        which_speed (str, optional): 'RS': running speed; 'OF': optic flow speed. Defaults to 'RS'.
+        which_speed (str, optional): 'RS': running speed; 'OF': optic flow speed.
+            Defaults to 'RS'.
         speed_min (float, optional): min RS speed for the bins (m/s). Defaults to 0.01.
         speed_max (float, optional): max RS speed for the bins (m/s). Defaults to 1.5.
-        speed_thr (float, optional): thresholding RS for logging (m/s). Defaults to 0.01.
-        fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        speed_thr (float, optional): threshold RS for logging (m/s). Defaults to 0.01.
+        of_min (float, optional): min OF speed for the bins (deg/s). Defaults to 1e-2.
+        of_max (float, optional): max OF speed for the bins (deg/s). Defaults to 1e4.
+        smoothing_sd (int, optional): standard deviation of the gaussian kernel for
+            smoothing. Defaults to 1.
+        markersize (int, optional): size of the markers. Defaults to 5.
+        linewidth (int, optional): width of the line. Defaults to 1.
+        markeredgecolor (str, optional): color of the marker edge. Defaults to 'w'.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label and
+            tick. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
+        legend_on (bool, optional): whether to show the legend. Defaults to False.
+        ci_range (float, optional): confidence interval range. Defaults to 0.95.
+        ylim (list, optional): y-axis limits. Defaults to None.
+        ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
 
     """
+    if ax is None:
+        ax = plt.gca()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     grouped_trials = trials_df.groupby(by="depth")
@@ -143,7 +153,6 @@ def plot_speed_tuning(
             ci_range=ci_range,
         )
     # Plotting
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
     for idepth, depth in enumerate(depth_list):
         if depth == "blank":
             linecolor = "gray"
@@ -270,7 +279,6 @@ def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=T
 
 
 def plot_RS_OF_matrix(
-    fig,
     trials_df,
     roi,
     log_range={
@@ -288,13 +296,40 @@ def plot_RS_OF_matrix(
     xlabel="Running speed (cm/s)",
     ylabel="Optical flow speed \n(degrees/s)",
     title="",
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     cbar_width=0.01,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
+    ax=None,
 ):
+    """Plot the heatmap of the tuning matrix of a neuron.
+
+    Args:
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        log_range (dict, optional): dictionary of the log range for the heatmap.
+            Defaults to {"rs_bin_log_min": 0, "rs_bin_log_max": 2.5, "rs_bin_num": 6,
+            "of_bin_log_min": -1.5, "of_bin_log_max": 3.5, "of_bin_num": 11, "log_base":
+            10}.
+        is_closed_loop (int, optional): 1 for closed loop, 0 for open loop. Defaults to
+            1.
+        vmin (float, optional): min value of the heatmap. Defaults to None.
+        vmax (float, optional): max value of the heatmap. Defaults to None.
+        xlabel (str, optional): x-axis label. Defaults to "Running speed (cm/s)".
+        ylabel (str, optional): y-axis label. Defaults to "Optical flow speed
+            (degrees/s)".
+        title (str, optional): title of the plot. Defaults to "".
+        cbar_width (float, optional): width of the colorbar. Defaults to 0.01.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick
+            and legend. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
+        ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
+
+    Returns:
+        float: min value of the heatmap.
+        float: max value of the heatmap.
+    """
+
+    if ax is None:
+        ax = plt.gca()
+    fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     rs_bins = (
         np.logspace(
@@ -327,7 +362,7 @@ def plot_RS_OF_matrix(
         vmin = np.nanmax([0, np.percentile(bin_means[1:, 1:].flatten(), 1)])
     if vmax is None:
         vmax = np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
+
     im = ax.imshow(
         bin_means[1:, 1:].T,
         origin="lower",
@@ -361,12 +396,14 @@ def plot_RS_OF_matrix(
     else:
         ax.set_xticks([])
         ax.set_yticks([])
+
+        rect = ax.get_position()
         ax_left = fig.add_axes(
             [
-                plot_x - plot_width / (log_range["rs_bin_num"] - 1) * 1.5,
-                plot_y,
-                plot_width / (log_range["rs_bin_num"] - 1),
-                plot_height,
+                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
+                rect.y0,
+                rect.width / (log_range["rs_bin_num"] - 1),
+                rect.height,
             ]
         )
         ax_left.imshow(
@@ -384,10 +421,10 @@ def plot_RS_OF_matrix(
 
         ax_down = fig.add_axes(
             [
-                plot_x,
-                plot_y - plot_height / (log_range["of_bin_num"] - 1) * 1.5,
-                plot_width,
-                plot_height / (log_range["of_bin_num"] - 1),
+                rect.x0,
+                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
+                rect.width,
+                rect.height / (log_range["of_bin_num"] - 1),
             ]
         )
         ax_down.imshow(
@@ -402,13 +439,12 @@ def plot_RS_OF_matrix(
             ticks_select1[0::2], bin_edges1[0::2], fontsize=fontsize_dict["tick"]
         )
         plt.yticks([])
-
         ax_corner = fig.add_axes(
             [
-                plot_x - plot_width / (log_range["rs_bin_num"] - 1) * 1.5,
-                plot_y - plot_height / (log_range["of_bin_num"] - 1) * 1.5,
-                plot_width / (log_range["rs_bin_num"] - 1),
-                plot_height / (log_range["of_bin_num"] - 1),
+                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
+                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
+                rect.width / (log_range["rs_bin_num"] - 1),
+                rect.height / (log_range["of_bin_num"] - 1),
             ]
         )
         ax_corner.imshow(
@@ -444,7 +480,6 @@ def plot_RS_OF_matrix(
 
 
 def plot_RS_OF_fit(
-    fig,
     neurons_df,
     roi,
     model="g2d",
@@ -461,18 +496,17 @@ def plot_RS_OF_fit(
         "of_bin_num": 11,
         "log_base": 10,
     },
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     cbar_width=0.01,
     xlabel="Running speed (cm/s)",
     ylabel="Optical flow speed \n(degrees/s)",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    ax=None,
 ):
     """
     Plot the fitted tuning of a neuron.
     """
+    if ax is None:
+        ax = plt.gca()
     rs = (
         np.logspace(
             log_range["rs_bin_log_min"], log_range["rs_bin_log_max"], 100, base=10
@@ -505,7 +539,6 @@ def plot_RS_OF_fit(
         min_sigma=min_sigma,
     ).reshape((len(of), len(rs)))
 
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
     im = ax.imshow(
         resp_pred,
         origin="lower",
@@ -531,8 +564,15 @@ def plot_RS_OF_fit(
         fontsize=fontsize_dict["tick"],
     )
     if cbar_width is not None:
+        rect = ax.get_position()
+        fig = ax.get_figure()
         ax2 = fig.add_axes(
-            [plot_x + plot_width * 0.75, plot_y, cbar_width, plot_height * 0.9]
+            [
+                rect.x0 + rect.width * 0.75,
+                rect.y0,
+                cbar_width,
+                rect.height * 0.9,
+            ]
         )
         fig.colorbar(im, cax=ax2, label="\u0394F/F")
         ax2.tick_params(labelsize=fontsize_dict["legend"])

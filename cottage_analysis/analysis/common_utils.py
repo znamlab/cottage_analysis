@@ -86,7 +86,7 @@ def iterate_fit(
     popt_arr = []
     rsq_arr = []
     if y.ndim == 1:
-        valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis,:])
+        valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis, :])
     else:
         valid = ~np.isnan(X) & ~np.isnan(y)
     if np.any(~valid):
@@ -425,6 +425,7 @@ def hierarchical_bootstrap_stats(
     ratio=False,
 ):
     np.random.seed(0)
+    data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
         data["mouse"] = data["session"].str.split("_").str[0]
     distribution = np.zeros((n_boots, len(xcol)))
