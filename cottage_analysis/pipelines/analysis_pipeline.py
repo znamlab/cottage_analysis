@@ -1,5 +1,4 @@
 import os
-import time
 import numpy as np
 import pandas as pd
 import defopt
@@ -23,6 +22,7 @@ def main(
     run_rf=True,
     run_rsof_fit=True,
     run_plot=True,
+    protocol_base: str = "SpheresPermTubeReward",
 ):
     """
     Main function to analyze a session.
@@ -73,7 +73,7 @@ def main(
         project=project,
         filter_datasets={"anatomical_only": 3},
         recording_type="two_photon",
-        protocol_base="SpheresPermTubeReward",
+        protocol_base=protocol_base,
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
     )
@@ -221,9 +221,10 @@ def main(
                 filter_datasets={"anatomical_only": 3},
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
-                protocol_base="SpheresPermTubeReward",
+                protocol_base=protocol_base,
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
+                verbose=False,
                 resolution=5,
             )
 
