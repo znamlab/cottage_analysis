@@ -640,7 +640,7 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.protocol == protocol_base]
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
 
@@ -691,7 +691,7 @@ def sync_all_recordings(
             trials_df=trials_df,
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
-            multidepth="multidepth" in protocol_base,
+            multidepth="multidepth" in recording.protocol,
         )
         trials_df["recording"] = recording_name
         if i == 0:
@@ -714,6 +714,7 @@ def regenerate_frames_all_recordings(
     recording_type="two_photon",
     protocol_base="SpheresPermTubeReward",
     is_closedloop=1,
+    is_multidepth=False,
     photodiode_protocol=5,
     return_volumes=True,
     resolution=5,
@@ -740,6 +741,7 @@ def regenerate_frames_all_recordings(
         protocol_base (str, optional): Base of the protocol. Defaults to
             "SpheresPermTubeReward".
         is_closedloop (bool): if True, closed loop session. Defaults to True.
+        is_multidepth (bool): if True, multidepth session. Defaults to False.
         photodiode_protocol (int): number of photodiode quad colors used for monitoring
             frame refresh. Either 2 or 5 for now. Defaults to 5.
         return_volumes (bool): if True, return only the first frame of each imaging
@@ -773,11 +775,16 @@ def regenerate_frames_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.protocol == protocol_base]
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
     if is_closedloop:
         recordings = recordings[~recordings.name.str.contains("Playback")]
     else:
         recordings = recordings[recordings.name.str.contains("Playback")]
+    if is_multidepth:
+        recordings = recordings[recordings.name.str.contains("multidepth")]
+    else:
+        recordings = recordings[~recordings.name.str.contains("multidepth")]
+
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         recording, harp_recording, onix_rec = get_relevant_recordings(
@@ -824,7 +831,7 @@ def regenerate_frames_all_recordings(
             trials_df=trials_df,
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
-            multidepth="multidepth" in protocol_base,
+            multidepth="multidepth" in recording.protocol,
         )
 
         # Load paramlog
@@ -832,7 +839,7 @@ def regenerate_frames_all_recordings(
             flexilims_session,
             vis_stim_recording=recording,
             harp_recording=harp_recording,
-            multidepth="multidepth" in protocol_base,
+            multidepth="multidepth" in recording.protocol,
         )
 
         # Regenerate frames for this trial
@@ -843,7 +850,7 @@ def regenerate_frames_all_recordings(
         )
         assert not isinstance(sphere_size, list)
         if do_regenerate_frames:
-            if "multidepth" in protocol_base:
+            if "multidepth" in recording.protocol:
                 separate_depth = param_log.Radius.unique()
                 # remove the -9999 and nan
                 separate_depth = separate_depth[~np.isnan(separate_depth)]

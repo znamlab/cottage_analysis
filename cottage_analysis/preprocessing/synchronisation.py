@@ -404,7 +404,7 @@ def generate_vs_df(
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
-            multidepth="multidepth" in protocol_base,
+            multidepth="multidepth" in recording.protocol,
         )
         # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
         param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})

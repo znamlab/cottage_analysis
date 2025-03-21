@@ -192,6 +192,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
+            verbose=False,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)
