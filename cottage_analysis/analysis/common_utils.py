@@ -85,7 +85,7 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if y.ndim == 1:
+    if y.ndim == 1 and (not isinstance(y, np.ndarray)):
         valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis, :])
     else:
         valid = ~np.isnan(X) & ~np.isnan(y)
