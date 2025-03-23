@@ -278,6 +278,10 @@ def load_and_fit(
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
 
+    # remove any multidepth experiment
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
+
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=trials_df_all,
