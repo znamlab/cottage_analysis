@@ -212,7 +212,6 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         nbins=20,
                         frame_rate=15,
                     )
-                    plt.tight_layout()
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 6))
                     log_range = {

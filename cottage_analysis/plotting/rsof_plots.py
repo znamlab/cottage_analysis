@@ -361,7 +361,7 @@ def plot_RS_OF_matrix(
     if vmin is None:
         vmin = np.nanmax([0, np.percentile(bin_means[1:, 1:].flatten(), 1)])
     if vmax is None:
-        vmax = np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)
+        vmax = np.nanmax([0, np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)])
 
     im = ax.imshow(
         bin_means[1:, 1:].T,
