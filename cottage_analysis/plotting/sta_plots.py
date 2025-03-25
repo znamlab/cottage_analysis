@@ -57,7 +57,6 @@ def basic_vis_sta(
         plot_fit=False,
         linewidth=3,
         linecolor="k",
-        fit_linecolor="r",
         closed_loop=is_closedloop,
         fontsize_dict=fontsize_dict,
     )
@@ -100,12 +99,12 @@ def basic_vis_sta_session(
             max_roi = np.min([(i + 1) * 10, len(neurons_df) - 1])
             for roi in np.arange(len(neurons_df))[i * 10 : max_roi]:
                 basic_vis_sta(
-                    coef,
-                    neurons_df,
-                    trials_df,
-                    depth_list,
-                    frames,
-                    roi,
+                    coef=coef,
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    depth_list=depth_list,
+                    frames=frames,
+                    roi=roi,
                     is_closedloop=is_closedloop,
                     plot_rows=len(depth_list) + 1,
                     plot_cols=10,
