@@ -118,6 +118,10 @@ def load_harpmessage(
         allow_multiple=False,
         return_dataseries=False,
     )
+    if harp_ds is None:
+        raise IOError(
+            "Could not find harp dataset for recording %s" % recording["name"]
+        )
     if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
@@ -298,9 +302,9 @@ def read_message(
 
     # mmap is platform dependent, we want to open a 'read only' file
     if os.name == "nt":
-        kwargs = dict(access = mmap.ACCESS_READ)
+        kwargs = dict(access=mmap.ACCESS_READ)
     else:
-        kwargs= dict(flags = mmap.PROT_WRITE)
+        kwargs = dict(flags=mmap.PROT_WRITE)
     with open(path_to_file, "rb") as f:
         mmap_file = mmap.mmap(f.fileno(), 0, **kwargs)
 
