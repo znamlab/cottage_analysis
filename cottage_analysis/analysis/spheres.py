@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
 from scipy.stats import zscore
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 from tqdm import tqdm
 import gc
 
@@ -950,6 +950,8 @@ def fit_3d_rfs_multidepth(
         np.array: 3D receptive fields (depth, ele, azi).
         np.array: R2 values for each ROI and split.
     """
+    ndepths, nframes, nelev, nazim = frames.shape
+
     resps = zscore(np.concatenate(imaging_df[use_col]), axis=0)
     if len(choose_rois) > 0:
         resps = resps[:, choose_rois]
@@ -972,7 +974,7 @@ def fit_3d_rfs_multidepth(
     # (now we have frame, depth, ele, azi)
     X = X.reshape(X.shape[0], -1)  # flatten
 
-    L = laplace_matrix(frames.shape[1], frames.shape[2])
+    L = laplace_matrix(nelev, nazim)
     Ls = []
     Ls_depth = []
     for idepth, depth in enumerate(depths):
@@ -981,18 +983,18 @@ def fit_3d_rfs_multidepth(
         Ls.append(L_xy)
         # add regularization penalty on the second derivative of the coefficients
         # along the depth axis
-        L_depth = np.zeros((m.shape[1], X.shape[1]))
-        L_depth[:, idepth * m.shape[1] : (idepth + 1) * m.shape[1]] = (
-            np.identity(m.shape[1]) * 2
+        L_depth = np.zeros((L.shape[1], X.shape[1]))
+        L_depth[:, idepth * L.shape[1] : (idepth + 1) * L.shape[1]] = (
+            np.identity(L.shape[1]) * 2
         )
         if idepth > 0:
-            L_depth[:, (idepth - 1) * m.shape[1] : idepth * m.shape[1]] = -np.identity(
-                m.shape[1]
+            L_depth[:, (idepth - 1) * L.shape[1] : idepth * L.shape[1]] = -np.identity(
+                L.shape[1]
             )
         if idepth < depths.shape[0] - 1:
             L_depth[
-                :, (idepth + 1) * m.shape[1] : (idepth + 2) * m.shape[1]
-            ] = -np.identity(m.shape[1])
+                :, (idepth + 1) * L.shape[1] : (idepth + 2) * L.shape[1]
+            ] = -np.identity(L.shape[1])
         Ls_depth.append(L_depth)
     L = np.concatenate(Ls, axis=0)
     L = np.concatenate([L, np.zeros((L.shape[0], 1))], axis=1)
