@@ -633,6 +633,8 @@ def sync_all_recordings(
     exp_session = flz.get_entity(
         datatype="session", name=session_name, flexilims_session=flexilims_session
     )
+    if exp_session is None:
+        raise IOError(f"No session called {session_name} found in flexilims.")
     recordings = flz.get_entities(
         datatype="recording",
         origin_id=exp_session["id"],
