@@ -1,7 +1,7 @@
 """Utility functions to load visual stimulation data from the database."""
 
 import pandas as pd
-
+import numpy as np
 import flexiznam as flz
 
 from cottage_analysis.utilities.misc import get_str_or_recording
@@ -92,12 +92,18 @@ def get_param_log(
             continue
         depth = int(csv_id.split("_")[-1][:-2])
         df = pd.read_csv(vis_stim_ds.path_full / file_name)
+        df["logger_fname"] = file_name
         dfs_by_depth[depth] = df
     param_log = pd.concat(dfs_by_depth.values(), ignore_index=True)
-    param_log.sort_values(by="Frameindex", inplace=True)
-    # we sort by Frameindex because that's what we use to match with the frame log.
-    # That might mean that harptime are not sorted for spheres at the border of a frame
+    param_log.sort_values(by="HarpTime", inplace=True)
     param_log.reset_index(drop=True, inplace=True)
+    assert (
+        param_log.Frameindex.diff().min() > -3
+    ), "Frame index and harptime are not aligned"
+    # make sure frame index is monotonically increasing
+    param_log["Frameindex"] = np.maximum.accumulate(param_log.Frameindex.values)
+    param_log["Frameindex"] = param_log.Frameindex.astype(int)
+
     return param_log
 
 
