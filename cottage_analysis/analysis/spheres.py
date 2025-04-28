@@ -505,9 +505,13 @@ def generate_trials_df(recording, imaging_df):
         return trials_df
 
     columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
+    optional_columns = ["expected_optic_flow", "MotorSps"]
+    for column in optional_columns:
+        if column in imaging_df.columns:
+            columns_to_assign.append(column)
     for epoch in ["stim", "blank", "blank_pre"]:
         for column in columns_to_assign:
-            if column != "OF" or column != "RS_eye" or epoch == "stim":
+            if (column not in ["OF", "RS_eye"]) or (epoch == "stim"):
                 trials_df = assign_values_to_df(trials_df, imaging_df, column, epoch)
         trials_df[f"dff_{epoch}"] = trials_df.apply(
             lambda x: np.stack(
@@ -685,17 +689,21 @@ def sync_all_recordings(
             )
 
         imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
+        multidepth = "multidepth" in recording.protocol
+        if multidepth:
+            # Empty trial df for multidepth until we find how to create it
+            trials_df = pd.DataFrame()
+        else:
+            trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
 
-        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
-
-        trials_df = search_param_log_trials(
-            harp_recording=harp_recording,
-            trials_df=trials_df,
-            flexilims_session=flexilims_session,
-            vis_stim_recording=recording,
-            multidepth="multidepth" in recording.protocol,
-        )
-        trials_df["recording"] = recording_name
+            trials_df = search_param_log_trials(
+                harp_recording=harp_recording,
+                trials_df=trials_df,
+                flexilims_session=flexilims_session,
+                vis_stim_recording=recording,
+                multidepth="multidepth" in recording.protocol,
+            )
+            trials_df["recording"] = recording_name
         if i == 0:
             vs_df_all = vs_df
             trials_df_all = trials_df
