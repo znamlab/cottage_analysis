@@ -20,6 +20,7 @@ def calculate_dFF(f, mode="gmm", n_components=2, verbose=True):
     :param n_components: int, number of components for GMM. default 2.
     :return: dffs: np.ndarray, shape nrois x time, dF/F for all rois extracted from suite2p
     """
+    raise DeprecationWarning("This function moved to 2p-preprocess")
     if mode == "average":
         f0 = np.average(f, axis=1).reshape(-1, 1)
     elif mode == "gmm":
