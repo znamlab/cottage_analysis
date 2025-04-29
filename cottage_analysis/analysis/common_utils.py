@@ -7,6 +7,7 @@ from scipy.optimize import curve_fit
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from scipy import stats
+import warnings
 
 from cottage_analysis.analysis import find_depth_neurons, common_utils
 import flexiznam as flz
@@ -85,12 +86,18 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if y.ndim == 1 and (not isinstance(y, np.ndarray)):
-        valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis, :])
+    if X.shape != y.shape:
+        warnings.warn(
+            f"Shape mismatch between X and y, they are supposed to have the same shape"
+        )
+
     else:
-        valid = ~np.isnan(X) & ~np.isnan(y)
+        valid = ~np.isnan(X) & ~np.isnan(
+            y
+        )  # We ignore points for which either dff or depth is NaN
     if np.any(~valid):
-        print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        if verbose:
+            print(f"Warning: {np.sum(~valid)} NaN values in X or y")
         X = X[valid]
         y = y[valid]
     np.random.seed(42)
