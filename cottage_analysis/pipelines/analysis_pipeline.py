@@ -71,6 +71,7 @@ def main(
             flexilims_session=flexilims_session,
             project=project,
             filter_datasets={"anatomical_only": 3},
+            conflicts=conflicts,
             recording_type="two_photon",
             protocol_base="SpheresPermTubeReward",
             photodiode_protocol=photodiode_protocol,
