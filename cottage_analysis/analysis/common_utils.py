@@ -90,6 +90,7 @@ def iterate_fit(
         warnings.warn(
             f"Shape mismatch between X and y, they are supposed to have the same shape"
         )
+
     else:
         valid = ~np.isnan(X) & ~np.isnan(
             y
@@ -431,6 +432,7 @@ def hierarchical_bootstrap_stats(
     ratio=False,
 ):
     np.random.seed(0)
+    data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
         data["mouse"] = data["session"].str.split("_").str[0]
     distribution = np.zeros((n_boots, len(xcol)))

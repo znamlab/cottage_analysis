@@ -118,6 +118,10 @@ def load_harpmessage(
         allow_multiple=False,
         return_dataseries=False,
     )
+    if harp_ds is None:
+        raise IOError(
+            "Could not find harp dataset for recording %s" % recording["name"]
+        )
     if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
@@ -298,9 +302,9 @@ def read_message(
 
     # mmap is platform dependent, we want to open a 'read only' file
     if os.name == "nt":
-        kwargs = dict(access = mmap.ACCESS_READ)
+        kwargs = dict(access=mmap.ACCESS_READ)
     else:
-        kwargs= dict(flags = mmap.PROT_WRITE)
+        kwargs = dict(flags=mmap.PROT_WRITE)
     with open(path_to_file, "rb") as f:
         mmap_file = mmap.mmap(f.fileno(), 0, **kwargs)
 
@@ -346,8 +350,16 @@ def read_message(
                 msg_end = binary_file.read(
                     length - 3
                 )  # ignore the fields I have already read
-
-                msg.update(unpack_payload(msg_end, payload_type))
+                try:
+                    payload = unpack_payload(msg_end, payload_type)
+                except ValueError as e:
+                    # We failed to unpack the payload, this is probably a checksum error
+                    percentage_skip = (1 - step / filesize) * 100
+                    warnings.warn(
+                        f"Could not unpack payload, skipping {percentage_skip:.2f}% of the file"
+                    )
+                    break
+                msg.update(payload)
                 if do_checksum:
                     msg["calculated_checksum"] = calculate_checksum(
                         msg_start + msg_end[:-1]
@@ -381,7 +393,10 @@ def unpack_payload(msg_end, payload_type):
     assert num_elements.is_integer()
     # unpack and put in a dictionary
     full_struct_fmt = payload_struct[:-1] + payload_struct[-1] * int(num_elements) + "B"
-    payload = struct.unpack(full_struct_fmt, msg_end)
+    try:
+        payload = struct.unpack(full_struct_fmt, msg_end)
+    except struct.error as e:
+        raise ValueError(f"Failed to unpack payload: {e}")
     out_dict = {}
     if PAYLOAD_TYPE[payload_type].startswith("Timestamp"):
         out_dict["inner_timestamp_part_s"] = payload[0]

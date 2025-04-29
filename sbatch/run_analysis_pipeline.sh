@@ -17,9 +17,29 @@ source activate base
 conda activate cottage_analysis
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
+# set defaut values for optional arguments
+if [ -z ${CONFLICTS+x} ]; then
+    CONFLICTS="skip"
+fi
+if [ -z ${USE_SLURM+x} ]; then
+    USE_SLURM="True"
+fi
+if [ -z ${RUN_DEPTH_FIT+x} ]; then
+    RUN_DEPTH_FIT="True"
+fi
+if [ -z ${RUN_RF+x} ]; then
+    RUN_RF="True"
+fi
+if [ -z ${RUN_RSOF_FIT+x} ]; then
+    RUN_RSOF_FIT="True"
+fi
+if [ -z ${RUN_PLOT+x} ]; then
+    RUN_PLOT="True"
+fi
 echo Run depth fit ${RUN_DEPTH_FIT}
 echo Run rf fit ${RUN_RF}
 echo Run rs of fit ${RUN_RSOF_FIT}
 echo Run plot ${RUN_PLOT}
 cd "/nemo/lab/znamenskiyp/home/users/colasa/code/cottage_analysis/cottage_analysis/pipelines"
 python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT}
+

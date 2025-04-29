@@ -309,9 +309,11 @@ def generate_vs_df(
                 rename_dict["EyeZ"] = "eye_z"
 
             frame_log_z.rename(columns=rename_dict, inplace=True)
-
         else:
+            # same for SpherePermTubeReward and SpherePermTubeReward_multidepth
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
+            if 'MotorSps' in frame_log:
+                frame_log_z['MotorSps'] = frame_log.MotorSps.copy()
             frame_log_z.rename(
                 columns={
                     "FrameIndex": "closest_frame",
@@ -324,7 +326,9 @@ def generate_vs_df(
 
         if frame_log_z.closest_frame.isna().any():
             print(
-                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end."
+                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are "
+                + "missing from FrameLog.csv. This is likely due to bonsai crash at "
+                + "the end."
             )
             frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
             frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
@@ -395,12 +399,14 @@ def generate_vs_df(
             errors="ignore",
             inplace=True,
         )
+
     else:  # Stimuli that are not KellerTube do have a ParamLog
         # Align paramLog with vs_df
         param_log = get_param_log(
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
+            multidepth="multidepth" in recording.protocol,
         )
         # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
         param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
@@ -458,20 +464,25 @@ def generate_imaging_df(
     recording,
     flexilims_session,
     filter_datasets=None,
+    exclude_datasets=None,
     return_volumes=True,
     add_spikes=False,
 ):
     """
-    Generate a DataFrame that contains information for each imaging volume / frame incorporating
-    the monitor frame information.
+    Generate a DataFrame that contains information for each imaging volume / frame
+    incorporating the monitor frame information.
 
     Args:
         vs_df (DataFrame): DataFrame, e.g. output of generate_vs_df
         recording (pandas.Series): recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
-        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets. Defaults to None.
-        return_volumes (bool): if True, return only the first frame of each imaging volume. Defaults to True.
-        add_spikes (bool): if True, add the suite2p traces to the output. Defaults to False.
+        filter_datasets (dict, optional): filters to apply on choosing suite2p datasets.
+            Defaults to None.
+        exclude_datasets (dict, optional): Filter to exclude datasets. Defaults
+        return_volumes (bool): if True, return only the first frame of each imaging
+            volume. Defaults to True.
+        add_spikes (bool): if True, add the suite2p traces to the output. Defaults to
+            False.
 
     Returns:
         DataFrame: contains information for each imaging volume / frame.
@@ -483,6 +494,7 @@ def generate_imaging_df(
         origin_name=recording.name,
         dataset_type="suite2p_traces",
         filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
         allow_multiple=False,
         return_dataseries=False,
     )
@@ -581,7 +593,11 @@ def generate_imaging_df(
     dffs = []
 
     for iplane in range(int(nplanes)):
-        dffs.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / dff_fname))
+        dff_file = suite2p_ds.path_full / f"plane{iplane}" / dff_fname
+        if not dff_file.exists():
+            print(f"No dff found for plane {iplane}. Skipping.")
+            continue
+        dffs.append(np.load(dff_file))
         if add_spikes:
             spks.append(np.load(suite2p_ds.path_full / f"plane{iplane}" / spks_fname))
     dffs = np.vstack(dffs).T

@@ -665,7 +665,7 @@ def fit_rs_of_tuning(
             print("Running open loop fitting only...")
         else:
             all_protocols = []
-            print("ERROR:Open loop protocol not found!")
+            print("ERROR: Open loop protocol not found!")
     else:
         all_protocols = [1] if (k_folds > 1) else trials_df_select.closed_loop.unique()
     assert len(all_protocols) <= 2, "More than 2 protocols detected!"
