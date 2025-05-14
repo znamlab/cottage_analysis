@@ -329,7 +329,7 @@ def format_imaging_df(recording, imaging_df):
     return imaging_df
 
 
-def generate_trials_df(recording, imaging_df):
+def generate_trials_df(recording, imaging_df, return_volumes=False):
     """Generate a DataFrame that contains information for each trial.
 
     Args:
@@ -370,6 +370,17 @@ def generate_trials_df(recording, imaging_df):
             "mouse_z_harp_blank_pre",
         ]
     )
+
+    # If return_volumes, keep all running speed and mouse z position values for each volume in the trial epoch
+    if return_volumes:
+        extra_df = pd.DataFrame(
+            columns=[
+                "RS_volume_stim",
+                "RS_volume_blank",
+                "RS_volume_blank_pre",
+            ]
+        )
+        trials_df = pd.concat([trials_df, extra_df], axis=1)
 
     # Find the change of depth
     imaging_df["stim"] = np.nan
@@ -455,15 +466,27 @@ def generate_trials_df(recording, imaging_df):
         trials_df.closed_loop = 1
 
     def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
-        trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-            lambda x: imaging_df[column_name]
-            .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
-            .values,
-            axis=1,
-        )
+        if "_volume" in column_name:
+            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+                lambda x: np.stack(
+                    imaging_df[column_name].loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
+                ),
+                axis=1
+            )
+        else:
+            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+                lambda x: imaging_df[column_name]
+                .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
+                .values,
+                axis=1,
+            )
+
         return trials_df
 
     columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
+    if return_volumes:
+        columns_to_assign += ["RS_volume"]
+        
     for epoch in ["stim", "blank", "blank_pre"]:
         for column in columns_to_assign:
             if column != "OF" or column != "RS_eye" or epoch == "stim":
@@ -636,7 +659,7 @@ def sync_all_recordings(
 
         imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
 
-        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
+        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df, return_volumes=return_volumes)
 
         trials_df = search_param_log_trials(
             harp_recording=harp_recording,
