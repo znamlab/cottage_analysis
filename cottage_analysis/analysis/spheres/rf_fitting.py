@@ -13,7 +13,8 @@ from cottage_analysis.analysis.fit_gaussian_blob import (
     gabor_3d_rf,
     gaussian_3d_rf,
 )
-from cottage_analysis.analysis.spheres.spheres import print
+
+print = partial(print, flush=True)
 
 
 def laplace_matrix(nx, ny):
@@ -297,7 +298,7 @@ def fit_3d_rfs_multidepth(
             validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
         train_idx = np.isin(imaging_df.trial_idx, train_trials)
         test_idx = np.isin(imaging_df.trial_idx, test_trials)
-
+        
         X_train = np.concatenate(
             [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
         )
