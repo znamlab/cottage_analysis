@@ -6,7 +6,6 @@ file contains only the few parts that are different
 """
 
 import numpy as np
-import pandas as pd
 
 
 def find_trial_times(param_log, jitter):

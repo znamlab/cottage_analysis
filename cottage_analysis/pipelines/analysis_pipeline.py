@@ -9,6 +9,7 @@ from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
 )
+import cottage_analysis.analysis.spheres.rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
 
 
@@ -77,7 +78,6 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )
-
 
     # Synchronisation
     print("---Start synchronisation...---")
@@ -254,7 +254,7 @@ def main(
                 r2,
                 best_reg_xys,
                 best_reg_depths,
-            ) = spheres.fit_3d_rfs_hyperparam_tuning(
+            ) = cottage_analysis.analysis.spheres.rf_fitting.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
                 frames_all[..., int(frames_all.shape[2] // 2) :],
                 reg_xys=np.geomspace(2.5, 10240, 13),
@@ -267,7 +267,10 @@ def main(
             )
 
             print("Fitting ipsi RF...")
-            coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
+            (
+                coef_ipsi,
+                r2_ipsi,
+            ) = cottage_analysis.analysis.spheres.rf_fitting.fit_3d_rfs_ipsi(
                 imaging_df_all,
                 frames_all[..., : int(frames_all.shape[2] // 2)],
                 best_reg_xys,
