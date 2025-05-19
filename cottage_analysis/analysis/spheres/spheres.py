@@ -359,82 +359,34 @@ def sync_all_recordings(
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
 
-    load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
         print(f"Processing recording {i+1}/{len(recordings)}")
-        recording, harp_recording, onix_rec = get_relevant_recordings(
-            recording_name, flexilims_session, harp_is_in_recording, load_onix
+
+        (
+            vs_df,
+            imaging_df,
+            trials_df,
+            param_log,
+            recording,
+            unit_ids,
+        ) = _process_single_recording_for_session(
+            recording_name,
+            flexilims_session,
+            harp_is_in_recording,
+            use_onix,
+            photodiode_protocol,
+            sync_kwargs,
+            protocol_base,
+            conflicts,
+            recording_type,
+            filter_datasets,
+            exclude_datasets,
+            return_volumes,
+            ephys_kwargs,
+            multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
+            verbose=True,
         )
-        vs_df = synchronisation.generate_vs_df(
-            recording=recording,
-            photodiode_protocol=photodiode_protocol,
-            flexilims_session=flexilims_session,
-            harp_recording=harp_recording,
-            onix_recording=onix_rec if use_onix else None,
-            project=project,
-            conflicts=conflicts,
-            sync_kwargs=sync_kwargs,
-            protocol_base=protocol_base,
-        )
 
-        if recording_type == "two_photon":
-            imaging_df = synchronisation.generate_imaging_df(
-                vs_df=vs_df,
-                recording=recording,
-                flexilims_session=flexilims_session,
-                filter_datasets=filter_datasets,
-                exclude_datasets=exclude_datasets,
-                return_volumes=return_volumes,
-            )
-        else:
-            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
-                vs_df=vs_df,
-                onix_recording=onix_rec,
-                harp_recording=harp_recording,
-                flexilims_session=flexilims_session,
-                filter_datasets=filter_datasets,
-                exclude_datasets=exclude_datasets,
-                **ephys_kwargs,
-            )
-
-        imaging_df = format_imaging_df(imaging_df=imaging_df, recording=recording)
-        multidepth = "multidepth" in recording.protocol
-        if multidepth:
-            param_log = get_param_log(
-                flexilims_session,
-                vis_stim_recording=recording,
-                harp_recording=harp_recording,
-                multidepth=True,
-            )
-            trials_df = multidepth.find_trial_times(param_log, jitter=0.5)
-            if trials_df is not None and len(trials_df) > 0:
-                trials_df = pd.DataFrame(
-                    trials_df.T,
-                    columns=[
-                        "imaging_harptime_stim_start",
-                        "imaging_harptime_stim_stop",
-                    ],
-                )
-            else:
-                trials_df = pd.DataFrame(
-                    columns=[
-                        "imaging_harptime_stim_start",
-                        "imaging_harptime_stim_stop",
-                    ]
-                )
-        else:
-            trials_df = generate_trials_df(
-                recording=recording, imaging_df=imaging_df, is_multidepth=multidepth
-            )
-
-            trials_df = search_param_log_trials(
-                harp_recording=harp_recording,
-                trials_df=trials_df,
-                flexilims_session=flexilims_session,
-                vis_stim_recording=recording,
-                multidepth=multidepth,
-            )
-            trials_df["recording"] = recording_name
         if i == 0:
             vs_df_all = vs_df
             trials_df_all = trials_df
@@ -517,72 +469,45 @@ def regenerate_frames_all_recordings(
         flexilims_session=flexilims_session,
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
+    playback_rec = recordings.name.str.contains("Playback")
     if is_closedloop:
-        recordings = recordings[~recordings.name.str.contains("Playback")]
+        recordings = recordings[~playback_rec]
     else:
-        recordings = recordings[recordings.name.str.contains("Playback")]
+        recordings = recordings[playback_rec]
+    multi_depth_rec = recordings.name.str.contains("multidepth")
     if is_multidepth:
-        recordings = recordings[recordings.name.str.contains("multidepth")]
+        recordings = recordings[multi_depth_rec]
     else:
-        recordings = recordings[~recordings.name.str.contains("multidepth")]
+        recordings = recordings[~multi_depth_rec]
 
     load_onix = False if recording_type == "two_photon" else True
+    conflicts = "skip"
     for i, recording_name in enumerate(recordings.name):
-        recording, harp_recording, onix_rec = get_relevant_recordings(
-            recording_name, flexilims_session, harp_is_in_recording, load_onix
-        )
-        # Generate vs_df, imaging_df, trials_df for this recording
         print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
-        vs_df = synchronisation.generate_vs_df(
-            recording=recording,
-            photodiode_protocol=photodiode_protocol,
-            flexilims_session=flexilims_session,
-            harp_recording=harp_recording,
-            onix_recording=onix_rec if use_onix else None,
-            project=project,
-            sync_kwargs=sync_kwargs,
-            protocol_base=protocol_base,
-        )
-
-        if recording_type == "two_photon":
-            imaging_df = synchronisation.generate_imaging_df(
-                vs_df=vs_df,
-                recording=recording,
-                flexilims_session=flexilims_session,
-                filter_datasets=filter_datasets,
-                exclude_datasets=exclude_datasets,
-                return_volumes=return_volumes,
-            )
-        else:
-            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
-                vs_df=vs_df,
-                onix_recording=onix_rec,
-                harp_recording=harp_recording,
-                flexilims_session=flexilims_session,
-                filter_datasets=filter_datasets,
-                **ephys_kwargs,
-            )
-
-        imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
-
-        trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df)
-
-        trials_df = search_param_log_trials(
-            harp_recording=harp_recording,
-            trials_df=trials_df,
-            flexilims_session=flexilims_session,
-            vis_stim_recording=recording,
-            multidepth="multidepth" in recording.protocol,
-        )
-
-        # Load paramlog
-        param_log = get_param_log(
+        (
+            vs_df,
+            imaging_df,
+            trials_df,
+            param_log,
+            recording,
+            unit_ids,
+        ) = _process_single_recording_for_session(
+            recording_name,
             flexilims_session,
-            vis_stim_recording=recording,
-            harp_recording=harp_recording,
-            multidepth="multidepth" in recording.protocol,
+            harp_is_in_recording,
+            use_onix,
+            photodiode_protocol,
+            sync_kwargs,
+            protocol_base,
+            conflicts,
+            recording_type,
+            filter_datasets,
+            exclude_datasets,
+            return_volumes,
+            ephys_kwargs,
+            multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
+            verbose=True,
         )
-
         # Regenerate frames for this trial
         sphere_size = (
             10
@@ -685,3 +610,113 @@ def get_relevant_recordings(
         onix_rec = None
 
     return recording, harp_recording, onix_rec
+
+
+def _process_single_recording_for_session(
+    recording_name,
+    flexilims_session,
+    harp_is_in_recording,
+    use_onix,
+    photodiode_protocol,
+    sync_kwargs,
+    protocol_base,
+    conflicts,
+    recording_type,
+    filter_datasets,
+    exclude_datasets,
+    return_volumes,
+    ephys_kwargs,
+    multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
+    verbose=True,
+):
+    """
+    Processes a single recording to generate vs_df, imaging_df, trials_df,
+    param_log, and the recording object.
+    """
+    if verbose:
+        print(f"Processing recording: {recording_name}")
+    load_onix = False if recording_type == "two_photon" else True
+
+    recording, harp_recording, onix_rec = get_relevant_recordings(
+        recording_name, flexilims_session, harp_is_in_recording, load_onix
+    )
+
+    vs_df = synchronisation.generate_vs_df(
+        recording=recording,
+        photodiode_protocol=photodiode_protocol,
+        flexilims_session=flexilims_session,
+        harp_recording=harp_recording,
+        onix_recording=onix_rec if use_onix else None,
+        conflicts=conflicts,
+        sync_kwargs=sync_kwargs,
+        protocol_base=protocol_base,
+    )
+
+    unit_ids = None
+    if recording_type == "two_photon":
+        imaging_df = synchronisation.generate_imaging_df(
+            vs_df=vs_df,
+            recording=recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            return_volumes=return_volumes,
+        )
+    else:  # ephys
+        imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
+            vs_df=vs_df,
+            onix_recording=onix_rec,  # Assumes onix_rec is loaded if ephys
+            harp_recording=harp_recording,
+            flexilims_session=flexilims_session,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            **(ephys_kwargs if ephys_kwargs else {}),
+        )
+
+    imaging_df = format_imaging_df(recording=recording, imaging_df=imaging_df)
+
+    is_multidepth_protocol = "multidepth" in recording.protocol
+
+    param_log = get_param_log(
+        flexilims_session,
+        vis_stim_recording=recording,
+        harp_recording=harp_recording,
+        multidepth=is_multidepth_protocol,
+    )
+
+    if is_multidepth_protocol:
+        trials_df_raw = multidepth_analysis.find_trial_times(
+            param_log, jitter=multidepth_jitter_param
+        )
+        if trials_df_raw is not None and len(trials_df_raw) > 0:
+            trials_df = pd.DataFrame(
+                trials_df_raw.T,
+                columns=["imaging_harptime_stim_start", "imaging_harptime_stim_stop"],
+            )
+            # Add recording name, needed for concatenation
+            trials_df["recording_name"] = recording.name
+        else:
+            trials_df = pd.DataFrame(
+                columns=[
+                    "imaging_harptime_stim_start",
+                    "imaging_harptime_stim_stop",
+                    "recording_name",
+                ]
+            )
+    else:  # Default or non-multidepth
+        trials_df = generate_trials_df(
+            recording=recording,
+            imaging_df=imaging_df,
+            is_multidepth=is_multidepth_protocol,
+        )
+        if not trials_df.empty:
+            trials_df = search_param_log_trials(
+                harp_recording=harp_recording,
+                trials_df=trials_df,
+                flexilims_session=flexilims_session,
+                vis_stim_recording=recording,
+                multidepth=is_multidepth_protocol,
+            )
+        trials_df["recording"] = recording.name
+
+    return vs_df, imaging_df, trials_df, param_log, recording, unit_ids
