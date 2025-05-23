@@ -36,10 +36,14 @@ fi
 if [ -z ${RUN_PLOT+x} ]; then
     RUN_PLOT="True"
 fi
+if [ -z ${PROTOCOL_BASE+x} ]; then
+    PROTOCOL_BASE="SpheresPermTubeReward"
+fi
+
 echo Run depth fit ${RUN_DEPTH_FIT}
 echo Run rf fit ${RUN_RF}
 echo Run rs of fit ${RUN_RSOF_FIT}
 echo Run plot ${RUN_PLOT}
-cd "/nemo/lab/znamenskiyp/home/users/colasa/code/cottage_analysis/cottage_analysis/pipelines"
-python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT}
-
+echo Use ${PROTOCOL_BASE}
+cd "/nemo/lab/znamenskiyp/home/users/blota/code/cottage_analysis/cottage_analysis/pipelines"
+python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT} ${PROTOCOL_BASE}
