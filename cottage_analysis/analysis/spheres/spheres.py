@@ -3,6 +3,7 @@ import flexiznam as flz
 import numpy as np
 import pandas as pd
 
+from cottage_analysis.analysis.spheres import multidepth
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
 from cottage_analysis.utilities.misc import get_str_or_recording
@@ -61,13 +62,28 @@ def format_imaging_df(recording, imaging_df):
     return imaging_df
 
 
-def find_stim_times(recording, imaging_df, is_multidepth=False, jitter=0.5):
+def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
     imaging_df["stim"] = np.nan
-    imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
-    imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
+    if not is_multidepth:
+        # easy, just find when depth is changing
+        imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 1
+        imaging_df.loc[imaging_df.depth < 0, "stim"] = 0
+    else:
+        # we have 2 pb. Depth is not unique and the loggers might drift
+        # first put all stim during protocol to 0
+        imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 0
+        # then get trial start and stop, in frame logger time
+        harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
+        onset_index = imaging_df.stimulus_harptime.values.searchsorted(harpstim_time[0])
+        offset_index = imaging_df.stimulus_harptime.values.searchsorted(
+            harpstim_time[1]
+        )
+        for on, off in zip(onset_index, offset_index):
+            imaging_df.loc[on:off, "stim"] = 1
+    return imaging_df
 
 
-def generate_trials_df(recording, imaging_df, is_multidepth=False):
+def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=None):
     """Generate a DataFrame that contains information for each trial.
 
     Args:
@@ -112,7 +128,7 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False):
     )
 
     # Find the change of depth
-    imaging_df = find_stim_times(recording, imaging_df, is_multidepth=is_multidepth)
+    imaging_df = find_stim_time(imaging_df, is_multidepth, param_log)
     imaging_df_simple = imaging_df[
         (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
     ].copy()
@@ -232,7 +248,7 @@ def search_param_log_trials(
     trials_df,
     flexilims_session,
     vis_stim_recording=None,
-    multidepth=False,
+    is_multidepth=False,
 ):
     """Add the start param logger row and stop param logger row to each
     trial. This is required for regenerate_spheres.
@@ -256,23 +272,30 @@ def search_param_log_trials(
         flexilims_session,
         vis_stim_recording=vis_stim_recording,
         harp_recording=harp_recording,
-        multidepth=multidepth,
+        multidepth=is_multidepth,
     )
 
-    # find trial index from param_log
-    param_log["stim"] = np.nan
-    if "Radius" in param_log.columns:
-        param_log.loc[param_log.Radius.notnull(), "stim"] = 1
-        param_log.loc[param_log.Radius < 0, "stim"] = 0
-    elif "Depth" in param_log.columns:
-        param_log.loc[param_log.Depth.notnull(), "stim"] = 1
-        param_log.loc[param_log.Depth < 0, "stim"] = 0
-    p_log_simple = param_log[
-        (param_log["stim"].diff() != 0) & (param_log["stim"]).notnull()
-    ]
-    # find the line of param_log at which trials start and stop
-    param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
-    param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
+    if is_multidepth:
+        harpstim_time, param_log_index = multidepth.find_trial_times(
+            param_log, verbose=False
+        )
+        param_log_start = param_log_index[0]
+        param_log_stop = param_log_index[1]
+    else:
+        # find trial index from param_log
+        param_log["stim"] = np.nan
+        if "Radius" in param_log.columns:
+            param_log.loc[param_log.Radius.notnull(), "stim"] = 1
+            param_log.loc[param_log.Radius < 0, "stim"] = 0
+        elif "Depth" in param_log.columns:
+            param_log.loc[param_log.Depth.notnull(), "stim"] = 1
+            param_log.loc[param_log.Depth < 0, "stim"] = 0
+        p_log_simple = param_log[
+            (param_log["stim"].diff() != 0) & (param_log["stim"]).notnull()
+        ]
+        # find the line of param_log at which trials start and stop
+        param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
+        param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
 
     # trial index for each row of param log
     trials_df["param_log_start"] = param_log_start[: len(trials_df)]
@@ -356,6 +379,10 @@ def sync_all_recordings(
         flexilims_session=flexilims_session,
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
+    # Special case for multidepth, the protocol_base contains the normal sphere
+    if protocol_base == "SpheresPermTubeReward":
+        recordings = recordings[~recordings.name.str.contains("multidepth")]
+
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
 
@@ -383,7 +410,6 @@ def sync_all_recordings(
             exclude_datasets,
             return_volumes,
             ephys_kwargs,
-            multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
             verbose=True,
         )
 
@@ -480,7 +506,6 @@ def regenerate_frames_all_recordings(
     else:
         recordings = recordings[~multi_depth_rec]
 
-    load_onix = False if recording_type == "two_photon" else True
     conflicts = "skip"
     for i, recording_name in enumerate(recordings.name):
         print(f"Regenerating frames for recording {i+1}/{len(recordings)}")
@@ -505,9 +530,9 @@ def regenerate_frames_all_recordings(
             exclude_datasets,
             return_volumes,
             ephys_kwargs,
-            multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
             verbose=True,
         )
+
         # Regenerate frames for this trial
         sphere_size = (
             10
@@ -626,7 +651,6 @@ def _process_single_recording_for_session(
     exclude_datasets,
     return_volumes,
     ephys_kwargs,
-    multidepth_jitter_param=0.5,  # Specific to multidepth.find_trial_times
     verbose=True,
 ):
     """
@@ -684,39 +708,21 @@ def _process_single_recording_for_session(
         multidepth=is_multidepth_protocol,
     )
 
-    if is_multidepth_protocol:
-        trials_df_raw = multidepth_analysis.find_trial_times(
-            param_log, jitter=multidepth_jitter_param
-        )
-        if trials_df_raw is not None and len(trials_df_raw) > 0:
-            trials_df = pd.DataFrame(
-                trials_df_raw.T,
-                columns=["imaging_harptime_stim_start", "imaging_harptime_stim_stop"],
-            )
-            # Add recording name, needed for concatenation
-            trials_df["recording_name"] = recording.name
-        else:
-            trials_df = pd.DataFrame(
-                columns=[
-                    "imaging_harptime_stim_start",
-                    "imaging_harptime_stim_stop",
-                    "recording_name",
-                ]
-            )
-    else:  # Default or non-multidepth
-        trials_df = generate_trials_df(
-            recording=recording,
-            imaging_df=imaging_df,
-            is_multidepth=is_multidepth_protocol,
-        )
-        if not trials_df.empty:
-            trials_df = search_param_log_trials(
-                harp_recording=harp_recording,
-                trials_df=trials_df,
-                flexilims_session=flexilims_session,
-                vis_stim_recording=recording,
-                multidepth=is_multidepth_protocol,
-            )
-        trials_df["recording"] = recording.name
+    trials_df = generate_trials_df(
+        recording=recording,
+        imaging_df=imaging_df,
+        is_multidepth=is_multidepth_protocol,
+        param_log=param_log,
+    )
+    trials_df["recording"] = recording.name
+
+    # Add param log lines to reload only sphere on screen
+    trials_df = search_param_log_trials(
+        harp_recording=harp_recording,
+        trials_df=trials_df,
+        flexilims_session=flexilims_session,
+        vis_stim_recording=recording,
+        is_multidepth=is_multidepth_protocol,
+    )
 
     return vs_df, imaging_df, trials_df, param_log, recording, unit_ids

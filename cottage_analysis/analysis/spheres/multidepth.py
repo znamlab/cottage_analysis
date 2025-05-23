@@ -8,14 +8,15 @@ file contains only the few parts that are different
 import numpy as np
 
 
-def find_trial_times(param_log, jitter):
+def find_trial_times(param_log, jitter=0.5, verbose=True):
     """Finds the onset and offset times of trials for multi-depth recordings.
 
     Args:
         param_log (pd.DataFrame): DataFrame containing the stimulus parameters,
             including 'logger_fname', 'HarpTime' and 'Radius'.
         jitter (float): Maximum acceptable delay between the onset of stimuli
-            at different depths.
+            at different depths. Default to 0.5
+        verbose (bool): Print info. Default to True
 
     Returns:
         np.ndarray: A 2xN array where the first row contains the onset times
@@ -32,7 +33,6 @@ def find_trial_times(param_log, jitter):
     all_offsets = {}
     for log, df in param_log.groupby("logger_fname"):
         stim_onoff = (df.Radius > 0).astype(float).diff().values
-        stim_onoff[0] = 1
         assert df.HarpTime.is_monotonic_increasing, "HarpTime is not sorted"
         # work on values to avoid indexing issues
         times = df.HarpTime.values
@@ -94,14 +94,26 @@ def find_trial_times(param_log, jitter):
     onset_times = onset_times[~too_late]
 
     closest_offset = offset_times.searchsorted(onset_times)
-    # If all went well we should have 1 for 1 matches
+    # If all went well we should have 1 for 1 matches and diff==1
+    matching = np.diff(closest_offset)
+    if np.any(matching == 0):
+        # We have 2 onsets in a row. That means one offset was not quite in sync
+        print(f"{np.sum(matching==0)} onsets with no offset")
+        to_remove = np.where(matching == 0)[0] + 1
+        onset_times = np.delete(onset_times, to_remove)
+        # redo the matching
+        closest_offset = offset_times.searchsorted(onset_times)
+
     if not np.all(np.diff(closest_offset) == 1):
         raise NotImplementedError("Offsets and onsets are not matching")
     trial_on_off = np.vstack([onset_times, offset_times[closest_offset]])
+    param_log_index = param_log.HarpTime.searchsorted(trial_on_off)
 
-    n_on = len(valid_onsets)
-    n_off = len(valid_offsets)
-    print(f"{n_on}/{len(allon)} valid onsets ({n_on/len(allon)*100:.2f}%)")
-    print(f"{n_off}/{len(alloff)} valid offsets ({n_off/len(alloff)*100:.2f}%)")
-    print(f"{len(trial_on_off[0])} valid trials left")
-    return trial_on_off
+    if verbose:
+        n_on = len(valid_onsets)
+        n_off = len(valid_offsets)
+        txt = f"{n_on}/{len(allon)} valid onsets ({n_on/len(allon)*100:.2f}%), "
+        txt += f"{n_off}/{len(alloff)} valid offsets ({n_off/len(alloff)*100:.2f}%)"
+        print(txt)
+        print(f"{len(trial_on_off[0])} valid trials left")
+    return trial_on_off, param_log_index

@@ -10,17 +10,18 @@ import scipy
 import seaborn as sns
 import flexiznam as flz
 from scipy.stats import pearsonr
-from cottage_analysis.analysis.spheres import (
-    rf_fitting,
+from cottage_analysis.analysis import (
     find_depth_neurons,
     common_utils,
     size_control,
     fit_gaussian_blob,
+    roi_location,
+    common_utils,
 )
+from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import rf_plots
-from cottage_analysis.analysis import roi_location, common_utils
 
 
 def plot_raster_all_depths(
