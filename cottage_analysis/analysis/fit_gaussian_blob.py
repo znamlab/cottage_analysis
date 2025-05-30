@@ -126,6 +126,23 @@ def gaussian_1d(
     g = offset + amplitude * np.exp(-((x - x0) ** 2) / (2 * sigma_x_sq))
     return g
 
+def gaussian_2mult(
+        xy_tuple,
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+):
+    (x,y) = xy_tuple
+    sigma_x_sq = np.exp(log_sigma_x2) + min_sigma
+    sigma_y_sq = np.exp(log_sigma_y2) + min_sigma
+    amplitude = np.exp(log_amplitude)
+    g = offset + amplitude * np.exp(-((x-x0) ** 2) / (2*sigma_x_sq) - ((y-y0)**2/ (2*sigma_y_sq)))
+    return g
+
 
 def gaussian_OF(
     xy_tuple,
@@ -213,6 +230,31 @@ def gaussian_additive(
     )
     return g
 
+def gaussian_multiplicative(
+        xy_tuple,
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+):
+    (rs, of) = xy_tuple
+    x = rs - of  # ratio of logged rs/of
+    y = rs # just the logged rs
+    g = gaussian_2mult(
+        (x,y),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+    )
+
+    return g
 
 def gabor_2d(
     xy_tuple,
@@ -558,6 +600,43 @@ def initial_fit_conditions(
                     np.log(param_range["rs_max"] / param_range["of_min"]),
                 ),
                 log_sigma_x2=np.random.normal(),
+                offset=np.random.normal(),
+            )
+    
+    elif model == "gaussian_2mult":
+        model_sfx = "_g2mult"
+        lower_bounds = Gaussian2DParams(
+            log_amplitude=-np.inf,
+            x0=np.log(param_range["rs_min"] / param_range["of_max"]),
+            y0=np.log(param_range["rs_min"]),
+            log_sigma_x2=-np.inf,
+            log_sigma_y2=-np.inf,
+            theta=0,
+            offset=-np.inf,
+        )
+        upper_bounds = Gaussian2DParams(
+            log_amplitude=np.inf,
+            x0=np.log(param_range["rs_max"] / param_range["of_min"]),
+            y0=np.log(param_range["rs_max"]),
+            log_sigma_x2=np.inf,
+            log_sigma_y2=np.inf,
+            theta=0,
+            offset=np.inf,
+        )
+
+        def p0_func():
+            return Gaussian2DParams(
+                log_amplitude=np.random.normal(),
+                x0=np.random.uniform(
+                    np.log(param_range["rs_min"] / param_range["of_max"]),
+                    np.log(param_range["rs_max"] / param_range["of_min"]),
+                ),
+                y0=np.random.uniform(
+                    np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
+                ),
+                log_sigma_x2=np.random.normal(),
+                log_sigma_y2=np.random.normal(),
+                theta=np.random.uniform(0, 0.5 * np.pi),
                 offset=np.random.normal(),
             )
 
