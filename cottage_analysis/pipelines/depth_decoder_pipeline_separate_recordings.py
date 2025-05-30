@@ -16,6 +16,7 @@ from cottage_analysis.plotting import depth_decoder_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
+k_folds=4
 
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
@@ -116,7 +117,7 @@ def main(
                 sfx = "_closedloop"
             else:
                 sfx = "_openloop"
-            print(f"Fitting decoder for recording: {sfx}{i}")
+            print(f"Fitting decoder for recording: {sfx}{i} with {k_folds} folds")
             print(f"---Start depth decoder{sfx}...---")
             out = population_depth_decoder.depth_decoder(
                 trials_df_all[select_trials],
@@ -130,7 +131,7 @@ def main(
                 random_state=42,
                 kernel="linear",
                 Cs=params["Cs"],
-                k_folds=5,
+                k_folds=k_folds,
                 use_slurm=use_slurm,
                 neurons_ds=neurons_ds,
                 decoder_dict_path=neurons_ds.path_full.parent

@@ -49,7 +49,6 @@ def calculate_speed_tuning(speed_arr, dff_arr, bins, smoothing_sd=1, ci_range=0.
 
 
 def plot_speed_tuning(
-    fig,
     trials_df,
     roi,
     is_closed_loop,
@@ -64,30 +63,41 @@ def plot_speed_tuning(
     markersize=5,
     linewidth=1,
     markeredgecolor="w",
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     legend_on=False,
     ci_range=0.95,
     ylim=None,
+    ax=None,
 ):
     """Plot a neuron's speed tuning to either running speed or optic flow speed.
 
     Args:
-        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
         trials_df (pd.DataFrame): dataframe with info of all trials.
         roi (int): ROI number
         is_closed_loop (bool): plotting the closed loop or open loop results.
         nbins (int, optional): number of bins to bin the tuning curve. Defaults to 20.
-        which_speed (str, optional): 'RS': running speed; 'OF': optic flow speed. Defaults to 'RS'.
+        which_speed (str, optional): 'RS': running speed; 'OF': optic flow speed.
+            Defaults to 'RS'.
         speed_min (float, optional): min RS speed for the bins (m/s). Defaults to 0.01.
         speed_max (float, optional): max RS speed for the bins (m/s). Defaults to 1.5.
-        speed_thr (float, optional): thresholding RS for logging (m/s). Defaults to 0.01.
-        fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        speed_thr (float, optional): threshold RS for logging (m/s). Defaults to 0.01.
+        of_min (float, optional): min OF speed for the bins (deg/s). Defaults to 1e-2.
+        of_max (float, optional): max OF speed for the bins (deg/s). Defaults to 1e4.
+        smoothing_sd (int, optional): standard deviation of the gaussian kernel for
+            smoothing. Defaults to 1.
+        markersize (int, optional): size of the markers. Defaults to 5.
+        linewidth (int, optional): width of the line. Defaults to 1.
+        markeredgecolor (str, optional): color of the marker edge. Defaults to 'w'.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label and
+            tick. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
+        legend_on (bool, optional): whether to show the legend. Defaults to False.
+        ci_range (float, optional): confidence interval range. Defaults to 0.95.
+        ylim (list, optional): y-axis limits. Defaults to None.
+        ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
 
     """
+    if ax is None:
+        ax = plt.gca()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     grouped_trials = trials_df.groupby(by="depth")
@@ -143,7 +153,6 @@ def plot_speed_tuning(
             ci_range=ci_range,
         )
     # Plotting
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
     for idepth, depth in enumerate(depth_list):
         if depth == "blank":
             linecolor = "gray"
@@ -270,7 +279,6 @@ def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=T
 
 
 def plot_RS_OF_matrix(
-    fig,
     trials_df,
     roi,
     log_range={
@@ -288,13 +296,40 @@ def plot_RS_OF_matrix(
     xlabel="Running speed (cm/s)",
     ylabel="Optical flow speed \n(degrees/s)",
     title="",
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     cbar_width=0.01,
-    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
+    ax=None,
 ):
+    """Plot the heatmap of the tuning matrix of a neuron.
+
+    Args:
+        trials_df (pd.DataFrame): dataframe with info of all trials.
+        roi (int): ROI number
+        log_range (dict, optional): dictionary of the log range for the heatmap.
+            Defaults to {"rs_bin_log_min": 0, "rs_bin_log_max": 2.5, "rs_bin_num": 6,
+            "of_bin_log_min": -1.5, "of_bin_log_max": 3.5, "of_bin_num": 11, "log_base":
+            10}.
+        is_closed_loop (int, optional): 1 for closed loop, 0 for open loop. Defaults to
+            1.
+        vmin (float, optional): min value of the heatmap. Defaults to None.
+        vmax (float, optional): max value of the heatmap. Defaults to None.
+        xlabel (str, optional): x-axis label. Defaults to "Running speed (cm/s)".
+        ylabel (str, optional): y-axis label. Defaults to "Optical flow speed
+            (degrees/s)".
+        title (str, optional): title of the plot. Defaults to "".
+        cbar_width (float, optional): width of the colorbar. Defaults to 0.01.
+        fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick
+            and legend. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
+        ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
+
+    Returns:
+        float: min value of the heatmap.
+        float: max value of the heatmap.
+    """
+
+    if ax is None:
+        ax = plt.gca()
+    fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     rs_bins = (
         np.logspace(
@@ -326,8 +361,8 @@ def plot_RS_OF_matrix(
     if vmin is None:
         vmin = np.nanmax([0, np.percentile(bin_means[1:, 1:].flatten(), 1)])
     if vmax is None:
-        vmax = np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
+        vmax = np.nanmax([0, np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)])
+
     im = ax.imshow(
         bin_means[1:, 1:].T,
         origin="lower",
@@ -361,12 +396,14 @@ def plot_RS_OF_matrix(
     else:
         ax.set_xticks([])
         ax.set_yticks([])
+
+        rect = ax.get_position()
         ax_left = fig.add_axes(
             [
-                plot_x - plot_width / (log_range["rs_bin_num"] - 1) * 1.5,
-                plot_y,
-                plot_width / (log_range["rs_bin_num"] - 1),
-                plot_height,
+                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
+                rect.y0,
+                rect.width / (log_range["rs_bin_num"] - 1),
+                rect.height,
             ]
         )
         ax_left.imshow(
@@ -384,10 +421,10 @@ def plot_RS_OF_matrix(
 
         ax_down = fig.add_axes(
             [
-                plot_x,
-                plot_y - plot_height / (log_range["of_bin_num"] - 1) * 1.5,
-                plot_width,
-                plot_height / (log_range["of_bin_num"] - 1),
+                rect.x0,
+                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
+                rect.width,
+                rect.height / (log_range["of_bin_num"] - 1),
             ]
         )
         ax_down.imshow(
@@ -402,13 +439,12 @@ def plot_RS_OF_matrix(
             ticks_select1[0::2], bin_edges1[0::2], fontsize=fontsize_dict["tick"]
         )
         plt.yticks([])
-
         ax_corner = fig.add_axes(
             [
-                plot_x - plot_width / (log_range["rs_bin_num"] - 1) * 1.5,
-                plot_y - plot_height / (log_range["of_bin_num"] - 1) * 1.5,
-                plot_width / (log_range["rs_bin_num"] - 1),
-                plot_height / (log_range["of_bin_num"] - 1),
+                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
+                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
+                rect.width / (log_range["rs_bin_num"] - 1),
+                rect.height / (log_range["of_bin_num"] - 1),
             ]
         )
         ax_corner.imshow(
@@ -444,7 +480,6 @@ def plot_RS_OF_matrix(
 
 
 def plot_RS_OF_fit(
-    fig,
     neurons_df,
     roi,
     model="g2d",
@@ -461,18 +496,17 @@ def plot_RS_OF_fit(
         "of_bin_num": 11,
         "log_base": 10,
     },
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     cbar_width=0.01,
     xlabel="Running speed (cm/s)",
     ylabel="Optical flow speed \n(degrees/s)",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    ax=None,
 ):
     """
     Plot the fitted tuning of a neuron.
     """
+    if ax is None:
+        ax = plt.gca()
     rs = (
         np.logspace(
             log_range["rs_bin_log_min"], log_range["rs_bin_log_max"], 100, base=10
@@ -505,7 +539,6 @@ def plot_RS_OF_fit(
         min_sigma=min_sigma,
     ).reshape((len(of), len(rs)))
 
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
     im = ax.imshow(
         resp_pred,
         origin="lower",
@@ -531,8 +564,15 @@ def plot_RS_OF_fit(
         fontsize=fontsize_dict["tick"],
     )
     if cbar_width is not None:
+        rect = ax.get_position()
+        fig = ax.get_figure()
         ax2 = fig.add_axes(
-            [plot_x + plot_width * 0.75, plot_y, cbar_width, plot_height * 0.9]
+            [
+                rect.x0 + rect.width * 0.75,
+                rect.y0,
+                cbar_width,
+                rect.height * 0.9,
+            ]
         )
         fig.colorbar(im, cax=ax2, label="\u0394F/F")
         ax2.tick_params(labelsize=fontsize_dict["legend"])
@@ -703,7 +743,6 @@ def plot_r2_violin(
     ylim=(10**-4, 1),
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
-
     cols = [f"rsof_test_rsq_closedloop_{model}" for model in models]
     df = neurons_df[cols].melt(var_name="model", value_name="r2")
     df["model"] = df["model"].apply(lambda x: model_labels[cols.index(x)])
@@ -796,7 +835,9 @@ def plot_2d_hist(
     plot_y=0,
     plot_width=1,
     plot_height=1,
-    aspect_equal=False,
+    xlim=None,
+    ylim=None,
+    aspect_equal=True,
     plot_diagonal=False,
     diagonal_linewidth=1,
     diagonal_color="k",
@@ -809,6 +850,7 @@ def plot_2d_hist(
     s=3,
     alpha=0.5,
     edgecolors="none",
+    rasterized=False,
 ):
     # Plot scatter
     ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
@@ -826,7 +868,14 @@ def plot_2d_hist(
     )
     if plot_scatter:
         ax.scatter(
-            X, y, s=s, alpha=alpha, c=color, edgecolors=edgecolors, linewidths=0.5
+            X,
+            y,
+            s=s,
+            alpha=alpha,
+            c=color,
+            edgecolors=edgecolors,
+            linewidths=0.5,
+            rasterized=rasterized,
         )
     if plot_diagonal:
         diag = [
@@ -840,9 +889,12 @@ def plot_2d_hist(
             linestyle="dotted",
             linewidth=diagonal_linewidth,
         )
-
-    plt.xlim([np.nanmin(X) * 0.9, np.nanmax(X) / 0.9])
-    plt.ylim([np.nanmin(y) * 0.9, np.nanmax(y) / 0.9])
+    if xlim is None:
+        xlim = [np.nanmin(X) * 0.9, np.nanmax(X) / 0.9]
+    if ylim is None:
+        ylim = [np.nanmin(y) * 0.9, np.nanmax(y) / 0.9]
+    plt.xlim(xlim)
+    plt.ylim(ylim)
 
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=1)
     ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=1)
@@ -960,6 +1012,49 @@ def plot_speed_colored_by_depth(
     ax_inset.set_ylabel("Optic flow speed", fontsize=fontsize_dict["tick"], labelpad=5)
 
 
+def add_trial_colorbox(
+    ax,
+    trial_starts,
+    trial_lengths,
+    depths,
+    depth_list,
+    param_trace,
+    fs,
+    ylim,
+    cmap=cm.cool.reversed(),
+    alpha=0.3,
+):
+    for i, trial_start in enumerate(trial_starts):
+        color = plotting_utils.get_color(
+            value=depths[i],
+            value_min=np.min(depth_list),
+            value_max=np.max(depth_list),
+            cmap=cmap,
+            log=True,
+        )
+        if ylim is None:
+            rect = patches.Rectangle(
+                (trial_starts[i] / fs, np.nanmin(param_trace)),
+                trial_lengths[i] / fs,
+                (np.nanmax(param_trace) - np.nanmin(param_trace)) * 1.1,
+                linewidth=0,
+                edgecolor="none",
+                facecolor=color,
+                alpha=alpha,
+            )
+        else:
+            rect = patches.Rectangle(
+                (trial_starts[i] / fs, ylim[0]),
+                trial_lengths[i] / fs,
+                ylim[1] - ylim[0],
+                linewidth=0,
+                edgecolor="none",
+                facecolor=color,
+                alpha=alpha,
+            )
+        ax.add_patch(rect)
+
+
 def plot_speed_trace(
     trials_df,
     trial_list,
@@ -968,46 +1063,53 @@ def plot_speed_trace(
     ax,
     ylabel,
     plot=True,
+    xlim=(0, 100),
     ylim=None,
     linecolor="k",
     linewidth=1,
+    plot_trial_number=False,
+    colorbox_alpha=0.4,
+    OF_to_degree=True,
     fontsize_dict={"title": 15, "label": 10, "ticks": 10},
 ):
-    if param == "RS":
-        trials_df[f"{param}_merged"] = trials_df.apply(
-            lambda x: np.concatenate([x[f"{param}_stim"], x[f"{param}_blank"]]),
-            axis=1,
-        )
+    if "RS" in param:
+        if f"{param}_merged" not in trials_df.columns:
+            trials_df[f"{param}_merged"] = trials_df.apply(
+                lambda x: np.concatenate([x[f"{param}_stim"], x[f"{param}_blank"]]),
+                axis=1,
+            )
         param_trace = np.concatenate(
             [row[f"{param}_merged"] for _, row in trials_df.iloc[trial_list].iterrows()]
         )
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([blank_start, param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
             param_trace = np.concatenate([blank_start, param_trace])
         param_trace = param_trace * 100
-    elif param == "OF":
-        trials_df[f"{param}_merged"] = trials_df.apply(
-            lambda x: np.concatenate(
-                [x[f"{param}_stim"], np.full(len(x[f"{param}_blank"]), np.nan)]
-            ),
-            axis=1,
-        )
+    elif "OF" in param:
+        if f"{param}_merged" not in trials_df.columns:
+            trials_df[f"{param}_merged"] = trials_df.apply(
+                lambda x: np.concatenate(
+                    [x[f"{param}_stim"], np.full(len(x[f"{param}_blank"]), np.nan)]
+                ),
+                axis=1,
+            )
         param_trace = np.concatenate(
             [row[f"{param}_merged"] for _, row in trials_df.iloc[trial_list].iterrows()]
         )
-        param_trace = np.degrees(param_trace)
+        if OF_to_degree:  # to convert OF from rads/s to degrees/s
+            param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([np.full(int(fs * 10), np.nan), param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
             param_trace = np.concatenate(
                 [np.full(len(blank_start), np.nan), param_trace]
             )
@@ -1020,9 +1122,15 @@ def plot_speed_trace(
             for _, row in trials_df.iloc[trial_list].iterrows()
         ]
     )
-    trial_lengths = [
-        len(row[f"{param}_stim"]) for _, row in trials_df.iloc[trial_list].iterrows()
-    ]
+    if "processed" not in param:
+        trial_lengths = [
+            len(row[f"{param}_stim"])
+            for _, row in trials_df.iloc[trial_list].iterrows()
+        ]
+    else:
+        trial_lengths = [
+            len(row[f"{param}"]) for _, row in trials_df.iloc[trial_list].iterrows()
+        ]
     trial_starts = np.concatenate([[0], trial_starts[:-1]]) + len(blank_start)
 
     depths = trials_df.iloc[trial_list]["depth"].values
@@ -1038,48 +1146,40 @@ def plot_speed_trace(
             c=linecolor,
             linewidth=linewidth,
         )
-        if param == "RS":
+        if "RS" in param:
             ax.set_ylim(ylim)
-            ax.set_yticks([0, 140])
-        if param == "OF":
+            ax.set_yticks([0, ylim[1] // 10 * 10])
+        if "OF" in param:
             ax.set_yscale("log")
-            ax.set_ylim(1e-2, np.nanmax(param_trace) * 2)
-            ax.set_yticks([1e-2, 1e2])
+            if ylim is None:
+                ax.set_ylim(1e-2, np.nanmax(param_trace) * 2)
+                ax.set_yticks([1e-2, 1e2])
+            else:
+                ax.set_ylim(ylim)
+                ax.set_yticks([ylim[0], ylim[1]])
         ax.set_ylabel(ylabel, rotation=90, labelpad=15, fontsize=fontsize_dict["label"])
         # ax.set_xlim(0, len(param_trace) / fs)
-        ax.set_xlim(0, 100)
-        ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["ticks"])
+        ax.set_xlim(xlim)
+        ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
 
         # plot trials
-        for i, trial_start in enumerate(trial_starts):
-            color = plotting_utils.get_color(
-                value=depths[i],
-                value_min=np.min(depth_list),
-                value_max=np.max(depth_list),
-                cmap=cm.cool.reversed(),
-                log=True,
-            )
-            if ylim is None:
-                rect = patches.Rectangle(
-                    (trial_starts[i] / fs, np.nanmin(param_trace)),
-                    trial_lengths[i] / fs,
-                    (np.nanmax(param_trace) - np.nanmin(param_trace)) * 1.1,
-                    linewidth=0,
-                    edgecolor="none",
-                    facecolor=color,
-                    alpha=0.3,
-                )
-            else:
-                rect = patches.Rectangle(
-                    (trial_starts[i] / fs, ylim[0]),
-                    trial_lengths[i] / fs,
-                    ylim[1] - ylim[0],
-                    linewidth=0,
-                    edgecolor="none",
-                    facecolor=color,
-                    alpha=0.3,
-                )
-            ax.add_patch(rect)
+        add_trial_colorbox(
+            ax=ax,
+            trial_starts=trial_starts,
+            trial_lengths=trial_lengths,
+            depths=depths,
+            depth_list=depth_list,
+            param_trace=param_trace,
+            fs=fs,
+            ylim=ylim,
+            alpha=colorbox_alpha,
+        )
+
+        # plot trial number at xticks instead of time
+        if plot_trial_number:
+            ax.set_xticks((np.array(trial_starts) + np.array(trial_lengths) / 2) / fs)
+            ax.set_xticklabels(np.arange(len(trial_list)))
+            ax.set_xlabel("Trial number", fontsize=fontsize_dict["label"])
 
         # remove upper and right frame of the plot
         ax.spines["top"].set_visible(False)
@@ -1124,6 +1224,7 @@ def plot_speed_trace_closed_open_loop(
                 linecolor="k",
                 linewidth=linewidth,
                 plot=False,
+                fontsize_dict=fontsize_dict,
             )
             ylims.append(ylim)
 
@@ -1149,6 +1250,7 @@ def plot_speed_trace_closed_open_loop(
                     np.max([ylims[lim_set][0], ylims[lim_set + 2][0]]),
                     np.max([ylims[lim_set][1], ylims[lim_set + 2][1]]),
                 ),
+                fontsize_dict=fontsize_dict,
             )
             xlims.append(ax.get_xlim())
 
@@ -1315,3 +1417,71 @@ def plot_openloop_rs_correlation_alldepths(
     )
     ax1.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
     sns.despine(ax=ax1)
+
+
+def plot_histogram_overlay(
+    ax,
+    fig,
+    rs,
+    depth_list,
+    nbins,
+    scaling_factor=0.01,
+    facecolor="g",
+    edgecolor="k",
+    alpha=0.5,
+    ylim=[1, 2e3],
+    xlim=None,
+):
+    """Plot histogram overlay of OF distribution for different depths on top of the preferred OF-depth scatter plot.
+
+    Args:
+        ax (matplotlib.axes): Axes object to plot the histogram overlay
+        fig (matplotlib.figure): Figure object to plot the histogram overlay
+        rs (numpy.array): Running speed array
+        depth_list (list): List of depths for which to plot the histogram overlay
+        nbins (int): Number of bins for the histogram
+        scaling_factor (float): Scaling factor for the histogram
+        facecolor (str): Facecolor of the histogram
+        edgecolor (str): Edgecolor of the histogram
+        alpha (float): Transparency of the histogram
+        ylim (list): Y-axis limits
+        xlim (list): X-axis limits
+    """
+    ax2 = fig.add_axes(
+        [
+            ax.get_position().x0,
+            ax.get_position().y0,
+            ax.get_position().width,
+            ax.get_position().height,
+        ]
+    )
+    ax2.set_facecolor("none")
+    if xlim is None:
+        xlim = ax.get_xlim()
+    ax2.set_xlim(xlim)
+    ax2.set_xscale("log")
+    for idepth, depth in enumerate(depth_list):
+        of = np.degrees(rs / depth)
+        bins = np.geomspace(np.nanmin(of), np.nanmax(of), nbins)
+        n, _ = np.histogram(of, bins=bins)
+        # Calculate bin widths
+        bin_width = [bins[i + 1] - bins[i] for i in range(len(bins) - 1)]
+
+        # Plot histogram manually
+        bottom = (np.log10(depth * 100) - np.log10(ylim[0])) / (
+            np.log10(ylim[1]) - np.log10(ylim[0])
+        ) * (ylim[1] - ylim[0]) + ylim[0]
+        ax2.bar(
+            bins[:-1],
+            (n * scaling_factor),
+            width=bin_width,
+            align="edge",
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            bottom=bottom,
+            alpha=alpha,
+        )
+        ax2.set_ylim(ylim)
+        ax2.yaxis.set_visible(False)
+        ax2.xaxis.set_visible(False)
+    sns.despine(ax=ax2)

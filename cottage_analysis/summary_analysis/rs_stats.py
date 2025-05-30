@@ -266,3 +266,71 @@ def get_rs_stats_all_sessions(
         results_all.iloc[isess].to_pickle(save_path)
 
     return results_all
+
+
+def get_rs_of_all_sessions(
+    flexilims_session,
+    session_list,
+):
+    """
+    Concatenate all running speed and optic flow speed values for all sessions in session_list.
+    """
+    results_all = pd.DataFrame(
+        columns=[
+            [
+                "session",
+                "is_closedloop",
+            ]
+        ],
+        index=np.arange(len(session_list)),
+    )
+    results_all["RS_stim"] = [[np.nan]] * len(results_all)
+
+    for isess, session_name in enumerate(session_list):
+        print(f"{isess}/{len(session_list)}: concatenating RS & OF values for {session_name}")
+        neurons_ds = pipeline_utils.create_neurons_ds(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            conflicts="skip",
+        )
+        # Load all data
+        if ("PZAH6.4b" in session_name) or ("PZAG3.4f" in session_name):
+            photodiode_protocol = 2
+        else:
+            photodiode_protocol = 5
+        suite2p_ds = flz.get_datasets_recursively(
+            flexilims_session=flexilims_session,
+            origin_name=session_name,
+            dataset_type="suite2p_traces",
+        )
+        fs = list(suite2p_ds.values())[0][-1].extra_attributes["fs"]
+        _, trials_df = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=None,
+            filter_datasets={"anatomical_only": 3},
+            recording_type="two_photon",
+            protocol_base="SpheresPermTubeReward",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
+        trials_df_original = trials_df.copy()
+        for closed_loop in trials_df_original.closed_loop.unique():
+            trials_df = trials_df_original[
+                trials_df_original.closed_loop == closed_loop
+            ]
+            if closed_loop:
+                sfx = "closedloop"
+            else:
+                sfx = "openloop"
+            results_all.at[isess, "session"] = session_name
+            results_all.at[isess, "is_closedloop"] = closed_loop
+            results_all.at[isess, "RS_stim"] = np.concatenate(trials_df["RS_stim"].values).reshape(1,1,-1)
+            for depth in np.sort(trials_df.depth.unique()):
+                if f"OF_stim_depth_{depth}" not in results_all.columns:
+                    results_all[f"OF_stim_depth_{np.round(depth,2)}"] = [[np.nan]] * len(results_all)
+                results_all.at[isess, f"OF_stim_depth_{np.round(depth,2)}"] = np.concatenate(
+                    trials_df[trials_df.depth == depth]["OF_stim"].values
+                ).reshape(1,1,-1)
+                
+    return results_all

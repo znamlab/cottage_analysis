@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import os
 from tqdm import tqdm
 from cottage_analysis.plotting import basic_vis_plots
+from cottage_analysis.plotting import depth_selectivity_plots as dsp
 
 
 def plot_sta(stas, roi):
@@ -48,7 +49,7 @@ def basic_vis_sta(
     fontsize_dict={"title": 10, "tick": 10, "label": 10},
 ):
     plt.subplot2grid([1 + len(depth_list), plot_cols], [0, plot_y])
-    basic_vis_plots.plot_depth_tuning_curve(
+    dsp.plot_depth_tuning_curve(
         neurons_df=neurons_df,
         trials_df=trials_df,
         roi=roi,
@@ -56,7 +57,6 @@ def basic_vis_sta(
         plot_fit=False,
         linewidth=3,
         linecolor="k",
-        fit_linecolor="r",
         closed_loop=is_closedloop,
         fontsize_dict=fontsize_dict,
     )
@@ -99,12 +99,12 @@ def basic_vis_sta_session(
             max_roi = np.min([(i + 1) * 10, len(neurons_df) - 1])
             for roi in np.arange(len(neurons_df))[i * 10 : max_roi]:
                 basic_vis_sta(
-                    coef,
-                    neurons_df,
-                    trials_df,
-                    depth_list,
-                    frames,
-                    roi,
+                    coef=coef,
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    depth_list=depth_list,
+                    frames=frames,
+                    roi=roi,
                     is_closedloop=is_closedloop,
                     plot_rows=len(depth_list) + 1,
                     plot_cols=10,

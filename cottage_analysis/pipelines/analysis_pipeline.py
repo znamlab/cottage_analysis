@@ -1,5 +1,4 @@
 import os
-import time
 import numpy as np
 import pandas as pd
 import defopt
@@ -23,6 +22,7 @@ def main(
     run_rf=True,
     run_rsof_fit=True,
     run_plot=True,
+    protocol_base: str = "SpheresPermTubeReward",
 ):
     """
     Main function to analyze a session.
@@ -63,7 +63,21 @@ def main(
     )
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
-        return
+    else:
+        # Synchronisation
+        print("---Start synchronisation...---")
+        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets={"anatomical_only": 3},
+            conflicts=conflicts,
+            recording_type="two_photon",
+            protocol_base="SpheresPermTubeReward",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
+
 
     # Synchronisation
     print("---Start synchronisation...---")
@@ -73,7 +87,7 @@ def main(
         project=project,
         filter_datasets={"anatomical_only": 3},
         recording_type="two_photon",
-        protocol_base="SpheresPermTubeReward",
+        protocol_base=protocol_base,
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
     )
@@ -104,6 +118,11 @@ def main(
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]
+
+    is_multidepth = "multidepth" in protocol_base
+    if is_multidepth:
+        run_depth_fit = False
+        run_rsof_fit = False
 
     if run_depth_fit:
         # finished = pipeline_utils.save_finish_time(finished,
@@ -221,9 +240,11 @@ def main(
                 filter_datasets={"anatomical_only": 3},
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
-                protocol_base="SpheresPermTubeReward",
+                is_multidepth=is_multidepth,
+                protocol_base=protocol_base,
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
+                verbose=False,
                 resolution=5,
             )
 
@@ -235,7 +256,7 @@ def main(
                 best_reg_depths,
             ) = spheres.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
-                frames_all[:, :, int(frames_all.shape[2] // 2) :],
+                frames_all[..., int(frames_all.shape[2] // 2) :],
                 reg_xys=np.geomspace(2.5, 10240, 13),
                 reg_depths=np.geomspace(2.5, 10240, 13),
                 shift_stim=2,
@@ -248,7 +269,7 @@ def main(
             print("Fitting ipsi RF...")
             coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
                 imaging_df_all,
-                frames_all[:, :, : int(frames_all.shape[2] // 2)],
+                frames_all[..., : int(frames_all.shape[2] // 2)],
                 best_reg_xys,
                 best_reg_depths,
                 shift_stim=2,

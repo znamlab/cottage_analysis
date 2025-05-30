@@ -1,7 +1,7 @@
 """Utility functions to load visual stimulation data from the database."""
 
 import pandas as pd
-
+import numpy as np
 import flexiznam as flz
 
 from cottage_analysis.utilities.misc import get_str_or_recording
@@ -39,7 +39,11 @@ def get_frame_log(flexilims_session, harp_recording=None, vis_stim_recording=Non
 
 
 def get_param_log(
-    flexilims_session, harp_recording=None, vis_stim_recording=None, log_name=None
+    flexilims_session,
+    harp_recording=None,
+    vis_stim_recording=None,
+    log_name=None,
+    multidepth=False,
 ):
     """Get param log from visual stimulation recording.
 
@@ -52,6 +56,7 @@ def get_param_log(
         vis_stim_recording (str or pandas.Series, optional): Visual stimulation recording. Defaults to None.
         log_name (str, optional): Name of the log to load. If None, will load
             "ParamLog.csv" if it exists, "NewParams.csv" otherwise. Defaults to None.
+        multidepth (bool, optional): Whether to load the multidepth log. Defaults to False.
 
     Returns:
         pandas.DataFrame: frame log.
@@ -71,10 +76,34 @@ def get_param_log(
             vis_stim_ds.path_full
             / eval(vis_stim_ds.extra_attributes["csv_files"])[log_name]
         )
-    else:
+        return param_log
+
+    if not multidepth:
         param_log = pd.read_csv(
             vis_stim_ds.path_full / vis_stim_ds.extra_attributes["csv_files"][log_name]
         )
+        return param_log
+
+    # multidepth case
+    csvs = vis_stim_ds.extra_attributes["csv_files"]
+    dfs_by_depth = {}
+    for csv_id, file_name in csvs.items():
+        if not csv_id.startswith("NewParams"):
+            continue
+        depth = int(csv_id.split("_")[-1][:-2])
+        df = pd.read_csv(vis_stim_ds.path_full / file_name)
+        df["logger_fname"] = file_name
+        dfs_by_depth[depth] = df
+    param_log = pd.concat(dfs_by_depth.values(), ignore_index=True)
+    param_log.sort_values(by="HarpTime", inplace=True)
+    param_log.reset_index(drop=True, inplace=True)
+    assert (
+        param_log.Frameindex.diff().min() > -3
+    ), "Frame index and harptime are not aligned"
+    # make sure frame index is monotonically increasing
+    param_log["Frameindex"] = np.maximum.accumulate(param_log.Frameindex.values)
+    param_log["Frameindex"] = param_log.Frameindex.astype(int)
+
     return param_log
 
 

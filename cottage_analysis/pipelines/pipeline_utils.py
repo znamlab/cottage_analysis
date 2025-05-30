@@ -196,6 +196,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
+            verbose=False,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)
@@ -280,6 +281,10 @@ def load_and_fit(
     if isinstance(choose_trials, str):
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
+
+    # remove any multidepth experiment
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
 
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
@@ -419,8 +424,19 @@ def merge_fit_dataframes(
     conda_env=CONDA_ENV,
     slurm_options={"mem": "16G", "time": "6:00:00", "partition": "ncpu"},
 )
-def run_basic_plots(project, session_name, photodiode_protocol):
-    """Run basic plots on a session."""
+def run_basic_plots(
+    project, session_name, photodiode_protocol, do_sta=True, do_basic_vis=True
+):
+    """Run basic plots on a session.
+
+    Args:
+        project (str): project name.
+        session_name (str): session name. {Mouse}_{Session}.
+        photodiode_protocol (str): photodiode protocol.
+        do_sta (bool, optional): whether to run sta plots. Defaults to True.
+        do_basic_vis (bool, optional): whether to run basic visualisation plots.
+            Defaults to True.
+    """
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
@@ -434,6 +450,10 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         _,
     ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
 
+    # Remove multidepth if there are any
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
+
     kwargs = {
         "RS_OF_matrix_log_range": {
             "rs_bin_log_min": 0,
@@ -445,11 +465,16 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             "log_base": 10,
         }
     }
+    if do_basic_vis:
+        basic_vis_plots.basic_vis_session(
+            neurons_df=neurons_df,
+            trials_df=trials_df_all,
+            neurons_ds=neurons_ds,
+            **kwargs,
+        )
 
-    basic_vis_plots.basic_vis_session(
-        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
-    )
-
+    if not do_sta:
+        return
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
         if is_closedloop:
@@ -465,5 +490,4 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             frames=frames_all,
             is_closedloop=is_closedloop,
             save_dir=neurons_ds.path_full.parent,
-            fontsize_dict={"title": 10, "tick": 10, "label": 10},
         )

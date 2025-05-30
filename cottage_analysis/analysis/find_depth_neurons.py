@@ -244,6 +244,9 @@ def find_depth_neurons(
 
     # Find the averaged dFF for each trial in only closed loop recordings
     trials_df = trials_df[trials_df.closed_loop == 1]
+    # Also remove multi depth recordings
+    is_multidepth = trials_df.recording_name.str.contains("multidepth")
+    trials_df = trials_df[~is_multidepth]
 
     # Anova test to determine which neurons are depth neurons
     depth_list = find_depth_list(trials_df)
@@ -358,6 +361,10 @@ def fit_preferred_depth(
     # Choose trials
     depth_list = find_depth_list(trials_df)
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    # remove multi depth recordings
+    is_multidepth = trials_df.recording_name.str.contains("multidepth")
+    trials_df = trials_df[~is_multidepth]
+
     trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
         trials_df, choose_trials
     )

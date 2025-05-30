@@ -125,7 +125,7 @@ def plot_raster_all_depths(
         ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
         ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=0)
 
-        # # for aligning with the scalebar
+        # # COMMENT THIS OUT: for aligning with the scalebar
         # ax.vlines(blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
         # ax.vlines(nbins-blank_prop*nbins, 0, dffs_binned.shape[1], color="k", linestyle="--", linewidth=0.5)
 
@@ -172,6 +172,7 @@ def plot_depth_tuning_curve(
     ylim_precision_base=1,
     ylim_precision=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    ax=None,
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -201,7 +202,12 @@ def plot_depth_tuning_curve(
         ylim_precision_base (int, optional): base for setting y-axis limits. Defaults to 1.
         ylim_precision (int, optional): precision for setting y-axis limits. Defaults to 1.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        ax (plt.Axes, optional): axes to plot the depth tuning curve. Defaults to None.
     """
+    if ax is None:
+        ax = plt.gca()
+    else:
+        plt.sca(ax)
 
     # Load average activity and confidence interval for this roi
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
@@ -225,7 +231,7 @@ def plot_depth_tuning_curve(
     )[:, :, roi]
     CI_low, CI_high = common_utils.get_bootstrap_ci(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
-    ax = plt.gca()
+
     ax.errorbar(
         log_param_list,
         mean_arr,
@@ -249,7 +255,7 @@ def plot_depth_tuning_curve(
         for i, x in enumerate(xs):
             weights = np.exp(-((log_param_list - x) ** 2) / (2 * sd**2))
             ys[i] = np.sum(weights * mean_arr) / np.sum(weights)
-        plt.plot(
+        ax.plot(
             xs,
             ys,
             color=linecolor,
@@ -265,7 +271,7 @@ def plot_depth_tuning_curve(
                 gaussian_arr = fit_gaussian_blob.gaussian_1d(
                     np.log(x), a, x0, log_sigma, b, min_sigma
                 )
-                plt.plot(
+                ax.plot(
                     np.log(x),
                     gaussian_arr,
                     color=linecolor,
@@ -277,7 +283,7 @@ def plot_depth_tuning_curve(
             gaussian_arr = fit_gaussian_blob.gaussian_1d(
                 np.log(x), a, x0, log_sigma, b, min_sigma
             )
-            plt.plot(
+            ax.plot(
                 np.log(x),
                 gaussian_arr,
                 color=linecolor,
@@ -286,10 +292,10 @@ def plot_depth_tuning_curve(
             )
     if ylim is None:
         ylim = [
-            plt.gca().get_ylim()[0],
+            ax.get_ylim()[0],
             common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
         ]
-        plt.ylim(ylim)
+        ax.set_ylim(ylim)
         plt.yticks(
             [
                 0,
@@ -318,7 +324,7 @@ def plot_depth_tuning_curve(
     plt.xticks(
         rotation=45,
     )
-    plt.gca().tick_params(axis="both", labelsize=fontsize_dict["tick"])
+    ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
 
 
 def plot_running_stationary_depth_tuning(
@@ -910,28 +916,30 @@ def plot_psth_raster(
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
-    # # for aligning with the scalebar
+    # # COMMENT THIS OUT: for aligning with the scalebar
     # ax.vlines(1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
     # ax.vlines(60-1/4*60-10, -10, 9000, color="k", linestyle="--", linewidth=0.5)
 
     ax_pos = ax.get_position()
     ax2 = plt.gcf().add_axes(
         [
-            ax_pos.x1 + ax_pos.width * 0.05,
+            ax_pos.x1 + ax_pos.width * 0.03,
             ax_pos.y0,
             0.01,
             ax_pos.height / 2,
         ]
     )
     cbar = plt.colorbar(mappable=im, cax=ax2)
-    cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
+    cbar.ax.set_title("Z-score", fontsize=fontsize_dict["legend"], x=1.5)
     cbar.ax.tick_params(labelsize=fontsize_dict["tick"])
 
 
 def plot_depth_neuron_perc_hist(
     results_df,
     bins=50,
+    xlim=None,
     ylim=None,
+    markersize=10,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
     """Plot histogram of proportion of depth-tuned neurons for each session.
@@ -950,13 +958,12 @@ def plot_depth_neuron_perc_hist(
         edgecolor="royalblue",
     )
     ax = plt.gca()
-    xlim = ax.get_xlim()
+    if xlim is None:
+        xlim = ax.get_xlim()
     ax.set_xlim([0, xlim[1]])
     if ylim is not None:
         ax.set_ylim(ylim)
-    ax.set_xlabel(
-        "Proportion of \ndepth-tuned neurons", fontsize=fontsize_dict["label"]
-    )
+    ax.set_xlabel("Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"])
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
     # plot median proportion as a triangle along the top of the histogram
@@ -973,7 +980,7 @@ def plot_depth_neuron_perc_hist(
         median_prop,
         ax.get_ylim()[1] * 0.95,
         marker="v",
-        markersize=5,
+        markersize=markersize,
         markerfacecolor="cornflowerblue",
         markeredgecolor="royalblue",
     )
@@ -1128,9 +1135,7 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     cbar.remove()
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
-    rect = plt.Rectangle(
-        (40, im.shape[0] * 0.93), scalebar_length_px, 20, color="white"
-    )
+    rect = plt.Rectangle((40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white")
     plt.gca().add_patch(rect)
 
 

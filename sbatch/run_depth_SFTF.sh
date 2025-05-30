@@ -3,10 +3,10 @@
 #SBATCH --job-name=2p_analysis
 #SBATCH --ntasks=1
 #SBATCH --time=24:00:00
-#SBATCH --mem=32G
-#SBATCH --partition=cpu
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=8G
+#SBATCH --partition=ncpu
 #SBATCH --mail-type=END,FAIL
-#SBATCH --output="/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/logs/2p_analysis_%j.log"
 . ~/.bash_profile
 ml purge
 
@@ -17,4 +17,4 @@ conda activate v1_depth_map
 
 echo Processing ${SESSION_NAME} in project ${PROJECT}...
 cd "/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/cottage_analysis/pipelines/"
-python depth_SFTF.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} 
+python depth_SFTF.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL}

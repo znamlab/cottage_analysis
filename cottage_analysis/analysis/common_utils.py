@@ -7,6 +7,7 @@ from scipy.optimize import curve_fit
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from scipy import stats
+import warnings
 
 from cottage_analysis.analysis import find_depth_neurons, common_utils
 import flexiznam as flz
@@ -85,9 +86,18 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    valid = ~np.isnan(X) & ~np.isnan(y)
+    if X.shape != y.shape:
+        warnings.warn(
+            f"Shape mismatch between X and y, they are supposed to have the same shape"
+        )
+
+    else:
+        valid = ~np.isnan(X) & ~np.isnan(
+            y
+        )  # We ignore points for which either dff or depth is NaN
     if np.any(~valid):
-        print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        if verbose:
+            print(f"Warning: {np.sum(~valid)} NaN values in X or y")
         X = X[valid]
         y = y[valid]
     np.random.seed(42)
@@ -422,6 +432,7 @@ def hierarchical_bootstrap_stats(
     ratio=False,
 ):
     np.random.seed(0)
+    data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
         data["mouse"] = data["session"].str.split("_").str[0]
     distribution = np.zeros((n_boots, len(xcol)))

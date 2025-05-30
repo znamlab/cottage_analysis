@@ -1,36 +1,35 @@
-# RETIRE THIS SCRIPT!!!
 import os
 from tqdm import tqdm
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.colors import ListedColormap
-import scipy
-from cottage_analysis.plotting import plotting_utils
+from cottage_analysis.plotting import plotting_utils, rsof_plots
+from cottage_analysis.plotting import depth_selectivity_plots as dsp
 from cottage_analysis.analysis import (
     find_depth_neurons,
-    common_utils,
     fit_gaussian_blob,
     size_control,
 )
+from v1_depth_map.figure_utils import utils as ut
 
 
-# REPLACE
+# REPLACE?
 def plot_spatial_distribution(
     neurons_df, trials_df, ops, stat, iscell, cmap=cm.cool.reversed()
 ):
     """
-    Plot spatial distribution of depth preference of a session.
+        Plot spatial distribution of depth preference of a session.
 
-    Args:
-        neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
-        trials_df (pd.DataFrame): dataframe with info of all trials.
-        ops (np.ndarray): suite2p ops.
-        stat (np.ndarray): suite2p stat.
-        iscell (bool): suite2p iscell file (needs to reload before the plotting)
-        cmap (matplotlib object, optional): Matplotlib colormao. Defaults to cm.cool.reversed().
-    """
+    #     Args:
+    #         neurons_df (pd.DataFrame): dataframe with analyzed info of all rois.
+    #         trials_df (pd.DataFrame): dataframe with info of all trials.
+    #         ops (np.ndarray): suite2p ops.
+    #         stat (np.ndarray): suite2p stat.
+    #         iscell (bool): suite2p iscell file (needs to reload before the plotting)
+    #         cmap (matplotlib object, optional): Matplotlib colormao. Defaults to cm.cool.reversed().
+    #"""
+
     # Reload iscell file and filter out non-neuron rois
     neurons_df.is_cell = iscell
 
@@ -107,6 +106,12 @@ def add_colorbar():
 
 def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
     rois = neurons_df.roi.values
+    trials_df["is_multidepth"] = trials_df.recording_name.str.contains("multidepth")
+    if trials_df.is_multidepth.any():
+        print(
+            "trials_df contains multidepth recordings. Ignoring them for basic_vis_session"
+        )
+        trials_df = trials_df[~trials_df.is_multidepth]
     for is_closedloop in np.sort(trials_df.closed_loop.unique()):
         if is_closedloop:
             sfx = "closedloop"
@@ -131,7 +136,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
                 ):
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
-                    plot_depth_tuning_curve(
+                    dsp.plot_depth_tuning_curve(
                         neurons_df=neurons_df,
                         trials_df=trials_df,
                         roi=roi,
@@ -139,14 +144,13 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         plot_fit=is_closedloop,
                         linewidth=3,
                         linecolor="k",
-                        fit_linecolor="r",
                         closed_loop=is_closedloop,
                         use_col="depth_tuning_popt_closedloop",
                     )
                     plt.title(f"roi{roi}")
 
                     # plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
-                    # plot_depth_tuning_curve(
+                    # dsp.plot_depth_tuning_curve(
                     #     neurons_df=neurons_df,
                     #     trials_df=trials_df,
                     #     roi=roi,
@@ -160,7 +164,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     # )
 
                     # plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
-                    # plot_depth_tuning_curve(
+                    # dsp.plot_depth_tuning_curve(
                     #     neurons_df=neurons_df,
                     #     trials_df=trials_df,
                     #     roi=roi,
@@ -178,8 +182,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     # )
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
-                    plot_speed_tuning(
-                        neurons_df=neurons_df,
+                    rsof_plots.plot_speed_tuning(
                         trials_df=trials_df,
                         roi=roi,
                         is_closed_loop=is_closedloop,
@@ -189,8 +192,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     )
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 4))
-                    plot_speed_tuning(
-                        neurons_df=neurons_df,
+                    rsof_plots.plot_speed_tuning(
                         trials_df=trials_df,
                         roi=roi,
                         is_closed_loop=is_closedloop,
@@ -203,16 +205,13 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     )
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 5))
-                    plot_PSTH(
-                        neurons_df=neurons_df,
+                    dsp.plot_PSTH(
                         trials_df=trials_df,
                         roi=roi,
                         is_closed_loop=is_closedloop,
-                        max_distance=6,
                         nbins=20,
                         frame_rate=15,
                     )
-                    plt.tight_layout()
 
                     plt.subplot2grid((plot_rows, plot_cols), (iroi, 6))
                     log_range = {
@@ -225,7 +224,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         "log_base": 10,
                     }
                     log_range.update(kwargs["RS_OF_matrix_log_range"])
-                    extended_matrix = plot_RS_OF_matrix(
+                    vmin, vmax = rsof_plots.plot_RS_OF_matrix(
                         trials_df=trials_df[trials_df.closed_loop == is_closedloop],
                         roi=roi,
                         log_range=log_range,
@@ -248,13 +247,12 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                         ax = plt.subplot2grid(
                             (plot_rows, plot_cols), (iroi, 7 + imodel), fig=fig
                         )
-                        vmin = np.nanmax(
-                            [0, np.percentile(extended_matrix[1:, 1:].flatten(), 1)]
-                        )
-                        vmax = np.nanmax(extended_matrix[1:, 1:].flatten())
-                        plot_RS_OF_fit(
-                            fig=fig,
-                            ax=ax,
+                        col_name = f"rsof_popt_closedloop_{model}"
+                        if col_name not in neurons_df.columns:
+                            print(f"Not data for model {model}")
+                            ax.axis("off")
+                            continue
+                        rsof_plots.plot_RS_OF_fit(
                             neurons_df=neurons_df,
                             roi=roi,
                             model=model,
@@ -271,10 +269,10 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                                 "of_bin_num": 11,
                                 "log_base": 10,
                             },
-                            plot_x=0.24 + 0.1 * imodel,
-                            plot_y=0.64 - 0.43 * iroi,
-                            plot_width=0.15,
-                            plot_height=0.15,
+                            # plot_x=0.24 + 0.1 * imodel,
+                            # plot_y=0.64 - 0.43 * iroi,
+                            # plot_width=0.15,
+                            # plot_height=0.15,
                             xlabel=xlabel,
                             ylabel=ylabel,
                             fontsize_dict={"title": 5, "label": 5, "tick": 5},
@@ -374,7 +372,7 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                 rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
             ):
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
-                plot_depth_tuning_curve(
+                dsp.plot_depth_tuning_curve(
                     neurons_df=neurons_df,
                     trials_df=trials_df,
                     roi=roi,
@@ -396,7 +394,7 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
                 linecolors = ["aqua", "b", "midnightblue"]
                 for isize, size in enumerate(np.sort(trials_df["size"].unique())):
-                    plot_depth_tuning_curve(
+                    dsp.plot_depth_tuning_curve(
                         neurons_df=neurons_df,
                         trials_df=trials_df[trials_df["size"] == size],
                         roi=roi,
@@ -416,7 +414,7 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     )
 
                 plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
-                plot_depth_tuning_curve(
+                dsp.plot_depth_tuning_curve(
                     neurons_df=neurons_df,
                     trials_df=trials_df,
                     roi=roi,
