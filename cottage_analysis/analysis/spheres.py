@@ -483,7 +483,7 @@ def generate_trials_df(recording, imaging_df, return_volumes=False):
 
         return trials_df
 
-    columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
+    columns_to_assign = ["mouse_z_harp", "RS", "RS_eye", "OF"]
     if return_volumes:
         columns_to_assign += ["RS_volume"]
         

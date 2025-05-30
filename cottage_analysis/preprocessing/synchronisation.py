@@ -564,6 +564,7 @@ def generate_imaging_df(
             direction="backward",
             allow_exact_matches=True,
         )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
@@ -591,16 +592,22 @@ def generate_imaging_df(
             direction="backward",
             allow_exact_matches=True,
         )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
     # if return_volumes, calculate the running speed by frame and aggregate across volumes
     if return_volumes:
         imaging_df["RS"] = (
             imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
         )
         running_speeds = []
+
         for i in range(imaging_df["imaging_volume"].max()+1):
             tmp = imaging_df[imaging_df["imaging_volume"] == i].RS.values
+            if len(tmp) != nplanes:
+                tmp = np.append(tmp, np.full(int(nplanes - len(tmp)), np.nan))
             running_speeds.append(tmp)
 
+        # make sure frames and volumes are sorted in the correct order
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
         volume_starts = imaging_df.imaging_volume.diff()
         volume_starts.iloc[0] = 1
         imaging_df = imaging_df[volume_starts != 0].copy()
