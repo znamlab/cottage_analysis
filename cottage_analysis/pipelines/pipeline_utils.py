@@ -34,6 +34,8 @@ def create_neurons_ds(
     project=None,
     conflicts="skip",
     base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Create a neurons_df dataset from flexilims.
 
@@ -163,6 +165,8 @@ def load_session(
         project=project,
         conflicts="skip",
         base_name=base_name,
+        filter_datasets=None,
+        exclude_datasets=exclude_datasets,
     )
     if neurons_ds.get_flexilims_entry() is None:
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
