@@ -1122,11 +1122,13 @@ def plot_example_fov(
     return im
 
 
-def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
-    plt.imshow(np.flip(im, axis=1), vmax=vmax, cmap="gray")
-    plt.axis("off")
-    cbar = plt.colorbar()
-    cbar_pos = np.array(plt.gca().get_position().bounds)
+def plot_fov_mean_img(im, vmax=700, fov_width=572.867, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+    mappable = ax.imshow(np.flip(im, axis=1), vmax=vmax, cmap="gray")
+    ax.axis("off")
+    cbar = plt.colorbar(mappable=mappable, ax=ax)
+    cbar_pos = np.array(ax.get_position().bounds)
     cbar_pos[0] = cbar_pos[0] + cbar_pos[2] + 0.005
     cbar_pos[2] = 0.15
     cbar_pos[3] = cbar_pos[3] * 0.3
@@ -1135,9 +1137,11 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     cbar.remove()
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
-    rect = plt.Rectangle((40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white")
-    plt.gca().add_patch(rect)
-
+    rect = plt.Rectangle(
+        (40, im.shape[0] * 0.93), scalebar_length_px, 10, color="white"
+    )
+    ax.add_patch(rect)
+    return ax
 
 def plot_mean_running_speed_alldepths(
     results,
