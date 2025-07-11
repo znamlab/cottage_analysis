@@ -86,15 +86,20 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if X.shape != y.shape:
-        warnings.warn(
-            f"Shape mismatch between X and y, they are supposed to have the same shape"
-        )
-
+    if X.ndim == y.ndim:
+        valid = ~np.isnan(X) & ~np.isnan(y)
+    elif y.ndim == 1 and X.ndim > 1:
+        valid = ~np.isnan(X) & ~np.isnan(y[np.newaxis, :])
     else:
-        valid = ~np.isnan(X) & ~np.isnan(
-            y
-        )  # We ignore points for which either dff or depth is NaN
+        valid = ~np.isnan(X) & ~np.isnan(y)
+    # if X.shape != y.shape:
+    #     warnings.warn(
+    #         f"Shape mismatch between X and y, they are supposed to have the same shape"
+    #     )
+    # else:
+    #     valid = ~np.isnan(X) & ~np.isnan(
+    #         y
+    #     )  # We ignore points for which either dff or depth is NaN
     if np.any(~valid):
         if verbose:
             print(f"Warning: {np.sum(~valid)} NaN values in X or y")
@@ -227,6 +232,11 @@ def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
         if choose_trials is not None and isinstance(
             choose_trials, list
         ):  # if choose_trials is a given list
+            # check that the list is not longer than the number of trials of each type per depth
+            choose_trial_threshold = min(trials_df.depth.value_counts())
+            choose_trials = [
+                trial for trial in choose_trials if trial < choose_trial_threshold
+            ]
             if by_depth:
                 trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
                 for depth in depth_list:
