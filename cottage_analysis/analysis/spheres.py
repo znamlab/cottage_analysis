@@ -711,14 +711,14 @@ def sync_all_recordings(
 
         trials_df = generate_trials_df(recording=recording, imaging_df=imaging_df, return_volumes=return_volumes)
 
-            trials_df = search_param_log_trials(
+        trials_df = search_param_log_trials(
                 harp_recording=harp_recording,
                 trials_df=trials_df,
                 flexilims_session=flexilims_session,
                 vis_stim_recording=recording,
                 multidepth="multidepth" in recording.protocol,
-            )
-            trials_df["recording"] = recording_name
+        )
+        trials_df["recording"] = recording_name
         if i == 0:
             vs_df_all = vs_df
             trials_df_all = trials_df
