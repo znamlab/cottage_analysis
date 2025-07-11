@@ -352,7 +352,7 @@ def read_message(
                 )  # ignore the fields I have already read
                 try:
                     payload = unpack_payload(msg_end, payload_type)
-                except ValueError as e:
+                except (ValueError, AssertionError) as e:
                     # We failed to unpack the payload, this is probably a checksum error
                     percentage_skip = (1 - step / filesize) * 100
                     warnings.warn(
