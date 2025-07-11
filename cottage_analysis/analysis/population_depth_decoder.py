@@ -73,21 +73,32 @@ def downsample_dff(
     downsample_window=0.5,
 ):
     trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
-        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
+        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
     )
     trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
-        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
+        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
     )
     trials_df["dff_stim_downsample"] = trials_df["dff_stim_rolling"].apply(
         lambda x: downsample(
-            x, factor=int(downsample_window * frame_rate), mode="average"
+            x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
     trials_df["RS_stim_downsample"] = trials_df["RS_stim_rolling"].apply(
         lambda x: downsample(
-            x, factor=int(downsample_window * frame_rate), mode="average"
+            x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
+    if any(trials_df.columns.str.contains("RS_volume")):
+        # Take the maximum running speed in each imaging volume and then compute the rolling average across imaging volumes
+        trials_df["RS_volume_max_stim_rolling"] = trials_df["RS_volume_stim"].apply(
+            lambda x: rolling_average(np.nanmax(x,axis=1), window=round(rolling_window * frame_rate), axis=0)
+        )
+        # Downsample the rolling average of the maximum running speed
+        trials_df["RS_volume_max_stim_downsample"] = trials_df["RS_volume_max_stim_rolling"].apply(
+            lambda x: downsample(
+                x, factor=round(downsample_window * frame_rate), mode="average"
+            )
+        )
     depth_list = np.sort(trials_df.depth.unique())
     trials_df["depth_label"] = trials_df["depth"].apply(
         lambda x: np.where(depth_list == x)[0]
@@ -322,12 +333,30 @@ def preprocess_data(
     iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
 
     # process dff and trials_df
-    trials_df = downsample_dff(
-        trials_df,
-        rolling_window=rolling_window,
-        frame_rate=int(frame_rate),
-        downsample_window=downsample_window,
-    )
+    if None not in (rolling_window, downsample_window):
+        trials_df = downsample_dff(
+            trials_df,
+            rolling_window=rolling_window,
+            frame_rate=int(frame_rate),
+            downsample_window=downsample_window,
+        )
+    else:
+        trials_df["dff_stim_downsample"] = trials_df["dff_stim"].values
+        trials_df["RS_stim_downsample"] = trials_df["RS_stim"].values
+        if any(trials_df.columns.str.contains("RS_volume")):
+            trials_df["RS_volume_max_stim_downsample"] = trials_df["RS_volume_stim"].apply(
+                lambda x: np.nanmax(x, axis=1),
+            )
+        depth_list = np.sort(trials_df.depth.unique())
+        trials_df["depth_label"] = trials_df["depth"].apply(
+            lambda x: np.where(depth_list == x)[0]
+        )
+        trials_df["depth_labels"] = trials_df.apply(
+            lambda x: np.repeat(
+                x["depth_label"], x["dff_stim_downsample"].shape[0], axis=0
+            ),
+            axis=1,
+        )
     trials_df = find_depth_neurons.trial_average_dff(
         trials_df,
         rs_thr_min=None,
@@ -750,10 +779,12 @@ def find_acc_speed_bins(
 
     acc_speed_bins = []
     conmat_speed_bins = []
-    rs_arr = np.hstack(trials_df["RS_stim_downsample"])
+    rs_arr = np.hstack(trials_df["RS_stim_downsample"]) 
     if continuous_still:
+        # for volumetric imaging, take the indices of running volumes where the maximum running speed for each frame is below threshold
+        # but for all other speed bins, take the average running speed across the volume
         idx = common_utils.find_thresh_sequence(
-            array=rs_arr,
+            array=rs_arr if not trials_df.columns.str.contains("RS_volume").any() else np.hstack(trials_df["RS_volume_max_stim_downsample"]),
             threshold_max=still_thr,
             length=int(still_time * frame_rate),
             shift=int(still_time * frame_rate),
