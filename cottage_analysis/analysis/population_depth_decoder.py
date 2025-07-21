@@ -234,6 +234,21 @@ def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=Fa
         depth_col,
     )
 
+def subset_decoder_inputs(decoder_inputs, roi_vector, k_folds=5):
+    """Select a subset of ROIs from the decoder inputs dictionary using the provided roi_vector."""
+    subset = {}
+    for key, value in decoder_inputs.items():
+        if key == "trials_df":
+            subset[key] = common_utils.choose_rois_subset(decoder_inputs[key], roi_vector=roi_vector)
+        elif key in ("dff_test_all", "dff_val_all", "dff_train_all"):
+            tmp = []
+            for i in range(k_folds):
+                tmp.append(value[i][:, roi_vector])
+            subset[key] = tmp
+        else:
+            subset[key] = value
+
+    return subset
 
 def svm_classifier_hyperparam_tuning(
     X_train,
@@ -307,6 +322,7 @@ def preprocess_data(
     flexilims_session,
     session_name,
     closed_loop=1,
+    n_rois=None,
     trial_average=False,
     rolling_window=0.5,
     frame_rate=15,
@@ -314,6 +330,7 @@ def preprocess_data(
     random_state=42,
     kernel="linear",
     k_folds=5,
+    neurons_ds=None,
 ):
     # set test_size:
     if k_folds == 1:
@@ -367,6 +384,20 @@ def preprocess_data(
         closed_loop=closed_loop,
     )
     depth_list = np.sort(trials_df.depth.unique())
+    # subset trials_df to n neurons if n is not None using random state
+    if n_rois is not None and neurons_ds is not None:
+        os.makedirs(neurons_ds.path_full.parent / "decoder_subsets", exist_ok=True)
+        if closed_loop:
+            sfx="closedloop"
+        else:
+            sfx="openloop"
+        trials_df, roi_vector = common_utils.choose_rois_subset(trials_df=trials_df, iscell=iscell, n_rois=n_rois, random_state=random_state)
+        np.savez(
+            file = neurons_ds.path_full.parent / "decoder_subsets" / f"decoder_subset_{sfx}_n{n_rois}_seed{random_state}.npz",
+            random_state=random_state,
+            roi_vector=roi_vector,
+            allow_pickle=True,
+        )
 
     # split train test val (test 0.2, val 0.2, train 0.6)
     (
@@ -418,16 +449,29 @@ def fit_each_fold(
     recording_type,
     decoder_inputs_path=None,
     decoder_dict_path=None,
+    n_rois=None,
+    random_state=None,
     special_sfx="",
     k_folds=5,
 ):
     print(f"Fitting fold {i+1}...")
     # load decoder inputs and results
-    if decoder_inputs_path is not None:
-        if os.path.exists(decoder_inputs_path):
-            with open(decoder_inputs_path, "rb") as f:
-                decoder_inputs = pickle.load(f)
+    if len(decoder_inputs) == 0:
+        assert decoder_inputs_path is not None, f"ERROR: decoder_inputs_path must be provided if decoder_dict is empty."
+        if not os.path.exists(decoder_inputs_path):
+            raise FileNotFoundError(f"Decoder inputs file not found: {decoder_inputs_path}")
+        with open(decoder_inputs_path, "rb") as f:
+            decoder_inputs = pickle.load(f)
+        # filter decoder inputs if using a subset of ROIs
+        if n_rois is not None and random_state is not None:
+            print(f"Filtering decoder inputs with ROI vector for n = {n_rois}, random_state = {random_state}")
+            roi_vector = np.load(
+                file = Path(decoder_inputs_path).parent / "decoder_subsets" / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
+            )['roi_vector']
+            decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
+
     decoder_dict = pd.read_pickle(decoder_dict_path)
+
     (
         trials_df,
         dff_train_all,
@@ -476,13 +520,20 @@ def fit_each_fold(
         # decoder_dict[f"trials_df_{recording_type}"],
     )
 
+   
     # only select current fold and cells
-    dff_train = dff_train_all[i][:, iscell]
-    dff_val = dff_val_all[i][:, iscell]
-    dff_test = dff_test_all[i][:, iscell]
+    dff_train = dff_train_all[i]
+    dff_val = dff_val_all[i]
+    dff_test = dff_test_all[i]
     depth_train = depth_train_all[i]
     depth_val = depth_val_all[i]
     depth_test = depth_test_all[i]
+
+    if n_rois is None:
+        print("Using all cells for fitting...")
+        dff_train = dff_train[:, iscell]
+        dff_val = dff_val[:, iscell]
+        dff_test = dff_test[:, iscell]
 
     # get best hyperparameters for this fold
     best_params = svm_classifier_hyperparam_tuning(
@@ -513,9 +564,13 @@ def fit_each_fold(
         "y_pred": y_pred,
         "best_params": best_params,
     }
+    if n_rois is None:
+        decoder_outputs_str = f"decoder_outputs_{recording_type}{special_sfx}"
+    elif n_rois is not None and random_state is not None:
+        decoder_outputs_str = f"decoder_outputs_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}"
     with open(
         Path(decoder_dict_path).parent
-        / f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle",
+        / f"{decoder_outputs_str}_fold{i}.pickle",
         "wb",
     ) as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -538,22 +593,35 @@ def calculate_acc_conmat(
     decoder_inputs={},
     decoder_inputs_path=None,
     k_folds=5,
+    n_rois=None,
+    random_state=None,
     special_sfx="",
 ):
+    print(f"Reading decoder inputs from {decoder_inputs_path}...")
     with open(decoder_dict_path, "rb") as f:
         decoder_dict = pickle.load(f)
     if decoder_inputs_path is not None:
         if os.path.exists(decoder_inputs_path):
             with open(decoder_inputs_path, "rb") as f:
                 decoder_inputs = pickle.load(f)
+    
+    # getting ROI vector to filter raw decoder inputs if subset of ROIs used for training
+    if n_rois is not None and random_state is not None:
+        roi_vector = np.load(
+            file = Path(decoder_inputs_path).parent / "decoder_subsets" / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
+        )['roi_vector']
+        decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
+
     # concatenate results from all folds
     for i in range(k_folds):
-        with open(
-            Path(decoder_dict_path).parent
-            / f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle",
-            "rb",
-        ) as f:
+        if n_rois is None:
+            decoder_outputs_path = Path(decoder_dict_path).parent / f"decoder_outputs_{recording_type}{special_sfx}_fold{i}.pickle"
+        elif n_rois is not None and random_state is not None:
+            decoder_outputs_path = Path(decoder_dict_path).parent / f"decoder_outputs_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}_fold{i}.pickle"
+        print(f"Loading decoder outputs from {decoder_outputs_path}...")
+        with open(decoder_outputs_path, "rb") as f:
             decoder_outputs = pickle.load(f)
+
         decoder_dict[f"best_params_all_{recording_type}"]["C"].append(
             decoder_outputs["best_params"]["C"]
         )
@@ -574,11 +642,18 @@ def calculate_acc_conmat(
     )
     decoder_dict[f"accuracy_{recording_type}"] = acc
     decoder_dict[f"conmat_{recording_type}"] = conmat
+    decoder_dict[f"error_{recording_type}"] = calculate_error(conmat)
     print(f"Accuracy {recording_type}: {acc}")
+    if n_rois is None:
+        decoder_results_str = f"decoder_results_{recording_type}{special_sfx}.pickle"
+    elif n_rois is not None and random_state is not None:
+        decoder_results_str = f"decoder_results_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}.pickle"
+    print(f"Writing decoder results to {decoder_results_str}")
     with open(
-        Path(decoder_dict_path).parent / f"decoder_results{special_sfx}.pickle", "wb"
+        Path(decoder_dict_path).parent / decoder_results_str, "wb"
     ) as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+
     return decoder_dict
 
 
@@ -587,6 +662,7 @@ def depth_decoder(
     flexilims_session,
     session_name,
     closed_loop=1,
+    n_rois=None,
     trial_average=False,
     rolling_window=0.5,
     frame_rate=15,
@@ -636,6 +712,7 @@ def depth_decoder(
         trials_df=trials_df,
         flexilims_session=flexilims_session,
         session_name=session_name,
+        n_rois=n_rois,
         closed_loop=closed_loop,
         trial_average=trial_average,
         rolling_window=rolling_window,
@@ -644,6 +721,7 @@ def depth_decoder(
         random_state=random_state,
         kernel=kernel,
         k_folds=k_folds,
+        neurons_ds=neurons_ds,
     )
 
     # save decoder inputs if use_slurm
@@ -691,8 +769,17 @@ def depth_decoder(
             neurons_ds.path_full.parent
             / f"decoder_inputs_{recording_type}{special_sfx}.pickle"
         )
-        with open(decoder_inputs_path, "wb") as f:
-            pickle.dump(decoder_inputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        if n_rois is None:
+            decoder_inputs_path = (
+                neurons_ds.path_full.parent
+                / f"decoder_inputs_{recording_type}{special_sfx}.pickle"
+            )
+            with open(decoder_inputs_path, "wb") as f:
+                pickle.dump(decoder_inputs, f, protocol=pickle.HIGHEST_PROTOCOL)
+        if n_rois is not None:
+            # make sure the normal decoder inputs for the whole dataset exists and do not overwrite it with the subset data, 
+            # instead use the roi vector to subset trials_df
+            assert os.path.exists(decoder_inputs_path)
         decoder_inputs = {}  # don't pass the dict on to the slurm job
     else:
         decoder_inputs_path = None
@@ -702,9 +789,11 @@ def depth_decoder(
     decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
     decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
     decoder_dict[f"trials_df_{recording_type}"] = trials_df
-    with open(
-        neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle", "wb"
-    ) as f:
+    if n_rois is None:
+        decoder_results_path = neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
+    else:
+        decoder_results_path = neurons_ds.path_full.parent / "decoder_subsets" / f"decoder_results_{recording_type}_n{n_rois}_seed{random_state}.pickle"
+    with open(decoder_results_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # fit each fold
@@ -714,31 +803,33 @@ def depth_decoder(
             i,
             decoder_inputs=decoder_inputs,
             decoder_inputs_path=decoder_inputs_path,
-            decoder_dict_path=neurons_ds.path_full.parent
-            / f"decoder_results{special_sfx}.pickle",
+            decoder_dict_path=decoder_results_path,
+            n_rois=n_rois,
+            random_state=random_state,
             recording_type=recording_type,
             special_sfx=special_sfx,
             k_folds=k_folds,
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
-            scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}",
+            scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}" if n_rois is None else f"decoder_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}_fold{i}",
         )
         outputs.append(out)
 
     # calculate the accuracy on all test data
     job_dependency = outputs if use_slurm else None
     decoder_dict = calculate_acc_conmat(
-        decoder_dict_path=neurons_ds.path_full.parent
-        / f"decoder_results{special_sfx}.pickle",
+        decoder_dict_path=decoder_results_path,
         recording_type=recording_type,
         depth_list=depth_list.tolist(),
         decoder_inputs=decoder_inputs,
         decoder_inputs_path=decoder_inputs_path,
+        n_rois=n_rois,
+        random_state=random_state,
         k_folds=k_folds,
         special_sfx=special_sfx,
         use_slurm=use_slurm,
         slurm_folder=slurm_folder,
-        scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy",
+        scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy" if n_rois is None else f"decoder_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}_accuracy",
         job_dependency=job_dependency,
     )
 
@@ -762,6 +853,7 @@ def find_acc_speed_bins(
     still_thr=0.05,
     still_time=1,
     frame_rate=15,
+    add_errors=False,
 ):
     speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
@@ -769,7 +861,7 @@ def find_acc_speed_bins(
     trials_df = decoder_dict[f"trials_df{recording_type}"]
     y_test = decoder_dict[f"y_test_all{recording_type}"]
     y_preds = decoder_dict[f"y_preds_all{recording_type}"]
-
+    labels = np.unique(y_test)
     def fill_in_missing_depths_to_conmat(y_test, y_preds, trials_df):
         ndepths = len(trials_df.depth.unique())
         y_test_missing = list(set(np.arange(ndepths)) - set(np.unique(y_test)))
@@ -779,6 +871,11 @@ def find_acc_speed_bins(
 
     acc_speed_bins = []
     conmat_speed_bins = []
+    # if calculating the error, make empty lists for the error of the decoder by speed bins, chance-level confusion matrices and their errors
+    if add_errors:
+        error_speed_bins = []
+        conmat_chance_speed_bins = []
+        error_chance_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"]) 
     if continuous_still:
         # for volumetric imaging, take the indices of running volumes where the maximum running speed for each frame is below threshold
@@ -799,6 +896,15 @@ def find_acc_speed_bins(
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
         print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+
+        if add_errors:
+            # calculating the error of the confusion matrix during stationary periods
+            error_speed_bins.append(calculate_error(conmat))
+            # making the confusion matrix for chance-level label assignment
+            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
+            conmat_chance_speed_bins.append(conmat_chance)
+            error_chance_speed_bins.append(calculate_error(conmat_chance))
+
     for i in range(len(speed_bins) - 1):
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i + 1])
         acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
@@ -813,6 +919,13 @@ def find_acc_speed_bins(
         print(
             f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
         )
+        if add_errors:
+            # calculating the error of the confusion matrix for each speed bin
+            error_speed_bins.append(calculate_error(conmat))
+            # making the confusion matrix for chance-level label assignment
+            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
+            conmat_chance_speed_bins.append(conmat_chance)
+            error_chance_speed_bins.append(calculate_error(conmat_chance))
     for speed_bin in [
         speed_bins[-1]
     ]:  # speed that's larger than the max boundary of speed_bins
@@ -829,8 +942,23 @@ def find_acc_speed_bins(
         print(
             f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
         )
+        if add_errors:
+            # calculating the error of the confusion matrix in the last speed bin
+            error_speed_bins.append(calculate_error(conmat))
+            # making the confusion matrix for chance-level label assignment
+            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
+            conmat_chance_speed_bins.append(conmat_chance)
+            error_chance_speed_bins.append(calculate_error(conmat_chance))
     decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
     decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
+    decoder_dict[f"error_speed_bins{recording_type}"] = error_speed_bins if add_errors else None
+    decoder_dict[f"conmat_chance_speed_bins{recording_type}"] = (
+        conmat_chance_speed_bins if add_errors else None
+    )
+    decoder_dict[f"error_chance_speed_bins{recording_type}"] = (
+        error_chance_speed_bins if add_errors else None
+    )
+    decoder_dict[f"error{recording_type}"] = calculate_error(decoder_dict[f"conmat{recording_type}"] if add_errors else None)
     with open(decoder_dict_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict

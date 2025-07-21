@@ -252,6 +252,26 @@ def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
 
     return trials_df_chosen, choose_trial_nums, sfx
 
+def choose_rois_subset(trials_df, iscell=None, n_rois=None, random_state=42, roi_vector=None):
+    """Subset trials_df by selected ROIs either by n random ROIs or by numerical index."""
+    if roi_vector is None:
+        assert iscell is not None and None not in (n_rois, random_state)
+        rng = np.random.RandomState(random_state)
+        valid = np.arange(trials_df.iloc[0].dff_stim.shape[1])[iscell]
+        roi_vector = rng.choice(valid, size=n_rois, replace=False)
+
+    subset_df  = trials_df.loc[:,~trials_df.columns.str.contains("dff_")].copy()
+    
+    for col in trials_df.columns[trials_df.columns.str.contains("dff_")]:
+        subset_df[col] = trials_df[col].apply(
+            lambda x: x[:, roi_vector],
+        )
+    if n_rois is None:
+        return subset_df
+    else:
+        return subset_df, roi_vector
+
+
 
 def find_thresh_sequence(
     array,
@@ -494,3 +514,17 @@ def calculate_pval_from_bootstrap(distribution, value):
     distribution = np.array(distribution)
     q_min = np.min([np.mean(distribution > value), np.mean(distribution < value)])
     return q_min * 2
+
+def get_n_seeds(n=10):
+    """Choose n random seeds for reproducibility.
+    
+    Args:
+        n (int, optional): number of seeds to choose. Defaults to 10.
+    Returns:
+        list: list of n random seeds.
+    """
+
+    rng = np.random.RandomState(0)
+    seeds = rng.randint(0, 1000, n)
+    return seeds.tolist()
+
