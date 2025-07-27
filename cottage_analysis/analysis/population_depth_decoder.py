@@ -874,8 +874,6 @@ def find_acc_speed_bins(
     # if calculating the error, make empty lists for the error of the decoder by speed bins, chance-level confusion matrices and their errors
     if add_errors:
         error_speed_bins = []
-        conmat_chance_speed_bins = []
-        error_chance_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"]) 
     if continuous_still:
         # for volumetric imaging, take the indices of running volumes where the maximum running speed for each frame is below threshold
@@ -900,10 +898,6 @@ def find_acc_speed_bins(
         if add_errors:
             # calculating the error of the confusion matrix during stationary periods
             error_speed_bins.append(calculate_error(conmat))
-            # making the confusion matrix for chance-level label assignment
-            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
-            conmat_chance_speed_bins.append(conmat_chance)
-            error_chance_speed_bins.append(calculate_error(conmat_chance))
 
     for i in range(len(speed_bins) - 1):
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i + 1])
@@ -922,10 +916,7 @@ def find_acc_speed_bins(
         if add_errors:
             # calculating the error of the confusion matrix for each speed bin
             error_speed_bins.append(calculate_error(conmat))
-            # making the confusion matrix for chance-level label assignment
-            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
-            conmat_chance_speed_bins.append(conmat_chance)
-            error_chance_speed_bins.append(calculate_error(conmat_chance))
+
     for speed_bin in [
         speed_bins[-1]
     ]:  # speed that's larger than the max boundary of speed_bins
@@ -945,20 +936,10 @@ def find_acc_speed_bins(
         if add_errors:
             # calculating the error of the confusion matrix in the last speed bin
             error_speed_bins.append(calculate_error(conmat))
-            # making the confusion matrix for chance-level label assignment
-            conmat_chance = create_chance_matrix(conmat, y_test[idx], labels)
-            conmat_chance_speed_bins.append(conmat_chance)
-            error_chance_speed_bins.append(calculate_error(conmat_chance))
     decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
     decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
     decoder_dict[f"error_speed_bins{recording_type}"] = error_speed_bins if add_errors else None
-    decoder_dict[f"conmat_chance_speed_bins{recording_type}"] = (
-        conmat_chance_speed_bins if add_errors else None
-    )
-    decoder_dict[f"error_chance_speed_bins{recording_type}"] = (
-        error_chance_speed_bins if add_errors else None
-    )
-    decoder_dict[f"error{recording_type}"] = calculate_error(decoder_dict[f"conmat{recording_type}"] if add_errors else None)
+    decoder_dict[f"error{recording_type}"] = calculate_error(decoder_dict[f"conmat{recording_type}"]) if add_errors else None
     with open(decoder_dict_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
