@@ -645,7 +645,7 @@ def calculate_acc_conmat(
     decoder_dict[f"error_{recording_type}"] = calculate_error(conmat)
     print(f"Accuracy {recording_type}: {acc}")
     if n_rois is None:
-        decoder_results_str = f"decoder_results_{recording_type}{special_sfx}.pickle"
+        decoder_results_str = f"decoder_results{special_sfx}.pickle"
     elif n_rois is not None and random_state is not None:
         decoder_results_str = f"decoder_results_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}.pickle"
     print(f"Writing decoder results to {decoder_results_str}")
