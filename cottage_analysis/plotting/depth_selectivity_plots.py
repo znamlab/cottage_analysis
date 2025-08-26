@@ -11,16 +11,17 @@ import seaborn as sns
 import flexiznam as flz
 from scipy.stats import pearsonr
 from cottage_analysis.analysis import (
-    spheres,
     find_depth_neurons,
     common_utils,
     size_control,
     fit_gaussian_blob,
+    roi_location,
+    common_utils,
 )
+from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import rf_plots
-from cottage_analysis.analysis import roi_location, common_utils
 
 
 def plot_raster_all_depths(
@@ -1019,7 +1020,7 @@ def plot_example_fov(
     else:
         coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
         coef_ipsi = np.stack(neurons_df[f"rf_coef_ipsi_closedloop"].values)
-        sig, _ = spheres.find_sig_rfs(
+        sig, _ = rf_fitting.find_sig_rfs(
             np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
             np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
             n_std=n_std,

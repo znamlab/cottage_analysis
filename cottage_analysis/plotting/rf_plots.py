@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy
 import flexiznam as flz
-from cottage_analysis.analysis import spheres
+from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.analysis import roi_location
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
@@ -265,7 +265,7 @@ def plot_rf_centers(
         coef_ipsi = np.stack(results_sess[f"rf_coef_ipsi{sfx}"].values)
 
         # Find cells with significant RF
-        sig, _ = spheres.find_sig_rfs(
+        sig, _ = rf_fitting.find_sig_rfs(
             np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
             np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
             n_std=n_stds,
@@ -371,7 +371,7 @@ def load_sig_rf(
             coef = np.stack(neurons_df["rf_coef_closedloop"].values)
             coef_ipsi = np.stack(neurons_df["rf_coef_ipsi_closedloop"].values)
             if coef_ipsi.ndim == 3:
-                sig, sig_ipsi = spheres.find_sig_rfs(
+                sig, sig_ipsi = rf_fitting.find_sig_rfs(
                     np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
                     np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
                     n_std=n_std,
@@ -628,7 +628,7 @@ def calculate_rf_gradient(
     session_df = pd.DataFrame([session_name], columns=["session_name"])
     coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
     coef_ipsi = np.stack(neurons_df[f"rf_coef_ipsi_closedloop"].values)
-    sig, _ = spheres.find_sig_rfs(
+    sig, _ = rf_fitting.find_sig_rfs(
         np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
         np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
         n_std=n_std,

@@ -20,6 +20,61 @@ WHEEL_RADIUS = 10.5
 CIRCUMFERENCE = 2 * np.pi * WHEEL_RADIUS
 
 
+def compute_response_matrix(neurons_df, trials_df_tread):
+    motor_speeds = 2 ** np.arange(2, 7)
+    optic_flows = 4 ** np.arange(6)
+
+    mot_values = np.zeros((len(motor_speeds), len(optic_flows)))
+    of_values = np.zeros((len(motor_speeds), len(optic_flows)))
+    frame2extract = 152
+    tread_responses = np.zeros(
+        (len(neurons_df), len(motor_speeds), len(optic_flows), frame2extract)
+    )
+    for (motor, optic_flow), df in trials_df_tread.groupby(
+        ["MotorSpeed", "expected_optic_flow"]
+    ):
+        dffs = df.dff_stim.values
+        shapes = np.vstack([dff.shape for dff in dffs])
+        dffs_list = []
+        for idff, dff in enumerate(dffs):
+            f = np.zeros(frame2extract)
+            if len(dff) < frame2extract:
+                f[-len(dff) :] = dff
+            else:
+                f = dff[len(dff) - frame2extract :]
+            dffs_list.append(f)
+        dffs = np.stack(dffs_list)
+        avg_motor = np.nanmean(dffs, axis=0)
+        std_motor = np.nanstd(dffs, axis=0)
+        m_index = list(motor_speeds).index(motor)
+        of_index = list(optic_flows).index(optic_flow)
+        tread_responses[:, m_index, of_index, :] = avg_motor.T
+        mot_values[m_index, of_index] = motor
+        of_values[m_index, of_index] = optic_flow
+    return motor_speeds, optic_flows, tread_responses
+
+
+def sync_treadmill_sess(session_name, project, flexilims_session):
+    if project is None:
+        project = flexilims_session.project
+    vs_df_tread, trials_df_tread = sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        filter_datasets={"anatomical_only": 3},
+        recording_type="two_photon",
+        photodiode_protocol=5,
+        return_volumes=True,
+    )
+    trials_df_tread["MotorSpeed"] = np.round(
+        sps2speed(trials_df_tread["MotorSps_stim"].apply(np.nanmedian).values)
+    )
+    trials_df_tread["expected_optic_flow"] = np.round(
+        trials_df_tread["expected_optic_flow_stim"].apply(np.nanmedian).values
+    )
+    return vs_df_tread, trials_df_tread
+
+
 def sync_all_recordings(
     session_name,
     flexilims_session=None,
@@ -140,7 +195,7 @@ def sync_all_recordings(
             trials_df=trials_df,
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
-            multidepth="multidepth" in recording.protocol,
+            is_multidepth="multidepth" in recording.protocol,
         )
         trials_df["recording"] = recording_name
 

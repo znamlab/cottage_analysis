@@ -105,7 +105,9 @@ def sbatch_session(
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
     for key, value in kwargs.items():
-        if key not in ["log_fname", "log_path"]:
+        if key == "protocol_base":
+            args += f",PROTOCOL_BASE={value}"
+        elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"

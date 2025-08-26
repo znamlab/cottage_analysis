@@ -9,6 +9,7 @@ from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
 )
+from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
 
 
@@ -39,10 +40,11 @@ def main(
         run_plot(bool): whether to run the plot. Default True.
     """
     print(
-        f"------------------------------- \n \
+        f"   ------------------------------- \n \
         Start analysing {session_name}   \n \
         -------------------------------"
     )
+    print(f"Using {protocol_base}")
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
@@ -77,7 +79,6 @@ def main(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )
-
 
     # Synchronisation
     print("---Start synchronisation...---")
@@ -254,7 +255,7 @@ def main(
                 r2,
                 best_reg_xys,
                 best_reg_depths,
-            ) = spheres.fit_3d_rfs_hyperparam_tuning(
+            ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
                 frames_all[..., int(frames_all.shape[2] // 2) :],
                 reg_xys=np.geomspace(2.5, 10240, 13),
@@ -267,7 +268,10 @@ def main(
             )
 
             print("Fitting ipsi RF...")
-            coef_ipsi, r2_ipsi = spheres.fit_3d_rfs_ipsi(
+            (
+                coef_ipsi,
+                r2_ipsi,
+            ) = rf_fitting.fit_3d_rfs_ipsi(
                 imaging_df_all,
                 frames_all[..., : int(frames_all.shape[2] // 2)],
                 best_reg_xys,
