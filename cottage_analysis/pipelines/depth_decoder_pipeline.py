@@ -33,12 +33,12 @@ def main(
     print(
         f"------------------------------- \n \
         Start analysing {session_name}   \n \
-        -------------------------------"
+        -------------------------------", flush=True
     )
     params = {
         "trial_average": False,
-        "rolling_window": 0.5,
-        "downsample_window": 0.5,
+        "rolling_window": None,
+        "downsample_window": None,
         "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
@@ -46,7 +46,7 @@ def main(
         "speed_bins": np.array([0.05, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2]),
         "special_sfx": "",
     }
-
+    print(f"Parameters: {params}", flush=True)
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
@@ -83,6 +83,7 @@ def main(
         flexilims_session=flexilims_session,
         project=project,
         filter_datasets={"anatomical_only": 3},
+        exclude_datasets={"annotated": "yes"},
         recording_type="two_photon",
         protocol_base="SpheresPermTubeReward",
         photodiode_protocol=photodiode_protocol,
@@ -138,6 +139,7 @@ def main(
             still_thr=params["still_thr"],
             still_time=params["still_time"],
             frame_rate=frame_rate,
+            add_errors=True,
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
@@ -145,20 +147,20 @@ def main(
         )
         outputs_all.append(out)
 
-    job_dependency = outputs_all if use_slurm else None
-    depth_decoder_plots.plot_decoder_session(
-        decoder_dict_path=neurons_ds.path_full.parent
-        / f"decoder_results{params['special_sfx']}.pickle",
-        save_path=str(neurons_ds.path_full.parent),
-        session_name=session_name,
-        project=project,
-        photodiode_protocol=photodiode_protocol,
-        speed_bins=params["speed_bins"].tolist(),
-        use_slurm=use_slurm,
-        slurm_folder=slurm_folder,
-        scripts_name=f"decoder_plots{params['special_sfx']}",
-        job_dependency=job_dependency,
-    )
+    # job_dependency = outputs_all if use_slurm else None
+    # depth_decoder_plots.plot_decoder_session(
+    #     decoder_dict_path=neurons_ds.path_full.parent
+    #     / f"decoder_results{params['special_sfx']}.pickle",
+    #     save_path=str(neurons_ds.path_full.parent),
+    #     session_name=session_name,
+    #     project=project,
+    #     photodiode_protocol=photodiode_protocol,
+    #     speed_bins=params["speed_bins"].tolist(),
+    #     use_slurm=use_slurm,
+    #     slurm_folder=slurm_folder,
+    #     scripts_name=f"decoder_plots{params['special_sfx']}",
+    #     job_dependency=job_dependency,
+    # )
 
 
 if __name__ == "__main__":
