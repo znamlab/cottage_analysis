@@ -30,6 +30,11 @@ GaussianAdditiveParams = namedtuple(
     ],
 )
 
+GaussianMultiplicativeParams = namedtuple(
+    "GaussianMultiplicativeParams",
+    ["log_amplitude", "x0", "y0", "log_sigma_x2", "log_sigma_y2", "offset"],
+)
+
 Gaussian1DParams = namedtuple(
     "Gaussian1DParams",
     ["log_amplitude", "x0", "log_sigma_x2", "offset"],
@@ -127,20 +132,21 @@ def gaussian_1d(
     return g
 
 def gaussian_2mult(
-        xy_tuple,
-        log_amplitude,
-        x0,
-        y0,
-        log_sigma_x2,
-        log_sigma_y2,
-        offset,
-        min_sigma,
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
 ):
     (x,y) = xy_tuple
     sigma_x_sq = np.exp(log_sigma_x2) + min_sigma
     sigma_y_sq = np.exp(log_sigma_y2) + min_sigma
     amplitude = np.exp(log_amplitude)
     g = offset + amplitude * np.exp(-((x-x0) ** 2) / (2*sigma_x_sq) - ((y-y0)**2/ (2*sigma_y_sq)))
+    
     return g
 
 
@@ -603,29 +609,27 @@ def initial_fit_conditions(
                 offset=np.random.normal(),
             )
     
-    elif model == "gaussian_2mult":
+    elif model == "gaussian_multiplicative":
         model_sfx = "_g2mult"
-        lower_bounds = Gaussian2DParams(
+        lower_bounds = GaussianMultiplicativeParams(
             log_amplitude=-np.inf,
             x0=np.log(param_range["rs_min"] / param_range["of_max"]),
             y0=np.log(param_range["rs_min"]),
             log_sigma_x2=-np.inf,
             log_sigma_y2=-np.inf,
-            theta=0,
             offset=-np.inf,
         )
-        upper_bounds = Gaussian2DParams(
+        upper_bounds = GaussianMultiplicativeParams(
             log_amplitude=np.inf,
             x0=np.log(param_range["rs_max"] / param_range["of_min"]),
             y0=np.log(param_range["rs_max"]),
             log_sigma_x2=np.inf,
             log_sigma_y2=np.inf,
-            theta=0,
             offset=np.inf,
         )
 
         def p0_func():
-            return Gaussian2DParams(
+            return GaussianMultiplicativeParams(
                 log_amplitude=np.random.normal(),
                 x0=np.random.uniform(
                     np.log(param_range["rs_min"] / param_range["of_max"]),
@@ -636,7 +640,6 @@ def initial_fit_conditions(
                 ),
                 log_sigma_x2=np.random.normal(),
                 log_sigma_y2=np.random.normal(),
-                theta=np.random.uniform(0, 0.5 * np.pi),
                 offset=np.random.normal(),
             )
 
@@ -858,6 +861,20 @@ def fit_rs_of_tuning(
                         ] = np.degrees(
                             np.exp(popt[1])
                         )  # m/deg --> m/deg * deg/rad = m/rad
+
+                    elif model == "gaussian_multiplicative":
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.degrees(
+                            np.exp(popt[1])
+                        )
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.exp(
+                            popt[2]
+                        )
 
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
