@@ -86,12 +86,15 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if X.ndim == y.ndim:
-        valid = ~np.isnan(X) & ~np.isnan(y)
-    elif y.ndim == 1 and X.ndim > 1:
-        valid = ~np.isnan(X) & ~np.isnan(y[np.newaxis, :])
+    if isinstance(X, tuple):
+        valid = ~np.any(np.isnan(np.asarray(X)), axis=0) & ~np.isnan(y)
     else:
-        valid = ~np.isnan(X) & ~np.isnan(y)
+        if X.ndim == y.ndim:
+            valid = ~np.isnan(X) & ~np.isnan(y)
+        elif y.ndim == 1 and X.ndim > 1:
+            valid = ~np.isnan(X) & ~np.isnan(y[np.newaxis, :])
+        else:
+            valid = ~np.isnan(X) & ~np.isnan(y)
     # if X.shape != y.shape:
     #     warnings.warn(
     #         f"Shape mismatch between X and y, they are supposed to have the same shape"
@@ -100,11 +103,17 @@ def iterate_fit(
     #     valid = ~np.isnan(X) & ~np.isnan(
     #         y
     #     )  # We ignore points for which either dff or depth is NaN
-    if np.any(~valid):
+    if np.any(~valid) and not isinstance(X, tuple):
         if verbose:
             print(f"Warning: {np.sum(~valid)} NaN values in X or y")
         X = X[valid]
         y = y[valid]
+    elif np.any(~valid) and isinstance(X, tuple):
+        if verbose:
+            print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        X = tuple(x[valid] for x in X)
+        y = y[valid]
+        
     np.random.seed(42)
     for i_iter in range(niter):
         if p0_func is not None:
