@@ -210,7 +210,7 @@ def calculate_average_confusion_matrix(
             print(f"Using {col} for confusion matrix")
             col_new = col
         conmat_mean[recording_type] = np.nanmean(
-            np.stack(decoder_results[f"conmat_{recording_type}"]), axis=0
+            np.stack(decoder_results[col_new]), axis=0
         )
     return conmat_mean
 
