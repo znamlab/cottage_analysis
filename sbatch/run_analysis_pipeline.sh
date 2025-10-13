@@ -1,20 +1,13 @@
-#!/bin/bash
+#!/bin/bash --login
 #
-#SBATCH --job-name=2p_analysis
+#SBATCH --job-name=cottage_analysis
 #SBATCH --ntasks=1
 #SBATCH --time=48:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8G
 #SBATCH --partition=ncpu
 #SBATCH --mail-type=END,FAIL
-
-. ~/.bash_profile
-ml purge
-
-ml Anaconda3/2020.07
-source activate base
-
-conda activate cottage_analysis
+conda activate v1_depth_map
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
 # set defaut values for optional arguments
@@ -39,11 +32,19 @@ fi
 if [ -z ${PROTOCOL_BASE+x} ]; then
     PROTOCOL_BASE="SpheresPermTubeReward"
 fi
+if [ -z ${ANATOMICAL_ONLY+x} ]; then
+    ANATOMICAL_ONLY="True"
+fi
+if [ -z ${AST_NEUROPIL+x} ]; then
+    AST_NEUROPIL="False"
+fi
 
 echo Run depth fit ${RUN_DEPTH_FIT}
 echo Run rf fit ${RUN_RF}
 echo Run rs of fit ${RUN_RSOF_FIT}
 echo Run plot ${RUN_PLOT}
 echo Use ${PROTOCOL_BASE}
-cd "/nemo/lab/znamenskiyp/home/users/blota/code/cottage_analysis/cottage_analysis/pipelines"
-python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT} ${PROTOCOL_BASE}
+echo Use anatomical only datasets: ${ANATOMICAL_ONLY}
+echo Use ASt neuropil correction: ${AST_NEUROPIL}
+cd "/nemo/lab/znamenskiyp/home/users/znamenp/code/cottage_analysis/cottage_analysis/pipelines"
+python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT} ${PROTOCOL_BASE} ${ANATOMICAL_ONLY} ${AST_NEUROPIL}

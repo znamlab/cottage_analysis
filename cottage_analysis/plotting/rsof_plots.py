@@ -299,6 +299,7 @@ def plot_RS_OF_matrix(
     cbar_width=0.01,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     ax=None,
+    max_acc_ratio=None,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -352,7 +353,16 @@ def plot_RS_OF_matrix(
 
     rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
     of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
+    acc_max_ratio = np.array(
+        [j for i in trials_df.acceleration_ratio_max_stim.values for j in i]
+    )
     dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
+
+    if max_acc_ratio is not None:
+        idx = acc_max_ratio < max_acc_ratio
+        rs_arr = rs_arr[idx]
+        of_arr = of_arr[idx]
+        dff_arr = dff_arr[idx]
 
     bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
         x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]

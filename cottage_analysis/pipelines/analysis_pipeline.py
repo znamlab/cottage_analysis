@@ -24,6 +24,8 @@ def main(
     run_rsof_fit=True,
     run_plot=True,
     protocol_base: str = "SpheresPermTubeReward",
+    anatomical_only=True,
+    ast_neuropil=False,
 ):
     """
     Main function to analyze a session.
@@ -38,6 +40,10 @@ def main(
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
         run_plot(bool): whether to run the plot. Default True.
+        protocol_base(str): protocol base name. Default "SpheresPermTubeReward".
+        anatomical_only(bool): whether to only use anatomical datasets. Default True.
+        ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
+
     """
     print(
         f"   ------------------------------- \n \
@@ -52,7 +58,15 @@ def main(
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
-
+    filter_datasets = {}
+    if anatomical_only:
+        print("Only using anatomical datasets...")
+        filter_datasets["anatomical_only"] = 3
+    if ast_neuropil:
+        print("Using ASt neuropil correction...")
+        filter_datasets["ast_neuropil"] = True
+    else:
+        filter_datasets["ast_neuropil"] = False
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     flexilims_session = flz.get_flexilims_session(project)
@@ -68,30 +82,17 @@ def main(
     else:
         # Synchronisation
         print("---Start synchronisation...---")
-        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+        _, trials_df_all = spheres.sync_all_recordings(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=project,
-            filter_datasets={"anatomical_only": 3},
+            filter_datasets=filter_datasets,
             conflicts=conflicts,
             recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
         )
-
-    # Synchronisation
-    print("---Start synchronisation...---")
-    vs_df_all, trials_df_all = spheres.sync_all_recordings(
-        session_name=session_name,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets={"anatomical_only": 3},
-        recording_type="two_photon",
-        protocol_base=protocol_base,
-        photodiode_protocol=photodiode_protocol,
-        return_volumes=True,
-    )
 
     # Add trial number to flexilims
     trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
@@ -238,7 +239,7 @@ def main(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets={"anatomical_only": 3},
+                filter_datasets=filter_datasets,
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
                 is_multidepth=is_multidepth,
@@ -355,6 +356,7 @@ def main(
                 slurm_folder=slurm_folder,
                 scripts_name=name,
                 k_folds=k_folds,
+                filter_datasets=filter_datasets,
                 **common_params,
             )
             outputs.append(out)
@@ -414,6 +416,7 @@ def main(
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
+            filter_datasets=filter_datasets,
             scripts_name=f"{session_name}_basic_vis_plots",
         )
         print("---Plotting finished. ---")
