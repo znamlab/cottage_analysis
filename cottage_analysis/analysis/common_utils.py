@@ -86,19 +86,18 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if X.shape != y.shape:
-        warnings.warn(
-            f"Shape mismatch between X and y, they are supposed to have the same shape"
-        )
-
-    else:
-        valid = ~np.isnan(X) & ~np.isnan(
-            y
-        )  # We ignore points for which either dff or depth is NaN
+    if type(X) is tuple:
+        X = np.array(X)
+    valid = ~np.isnan(X) & ~np.isnan(y)
+    if valid.ndim > 1:
+        valid = np.all(valid, axis=0)
     if np.any(~valid):
         if verbose:
             print(f"Warning: {np.sum(~valid)} NaN values in X or y")
-        X = X[valid]
+        if X.ndim > 1:
+            X = X[:, valid]
+        else:
+            X = X[valid]
         y = y[valid]
     np.random.seed(42)
     for i_iter in range(niter):
