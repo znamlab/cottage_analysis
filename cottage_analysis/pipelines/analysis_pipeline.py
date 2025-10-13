@@ -26,6 +26,7 @@ def main(
     protocol_base: str = "SpheresPermTubeReward",
     anatomical_only=True,
     ast_neuropil=False,
+    use_annotated=False,
 ):
     """
     Main function to analyze a session.
@@ -35,7 +36,8 @@ def main(
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
-        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default
+             False.
         run_depth_fit(bool): whether to run the depth fit. Default True.
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
@@ -43,7 +45,7 @@ def main(
         protocol_base(str): protocol base name. Default "SpheresPermTubeReward".
         anatomical_only(bool): whether to only use anatomical datasets. Default True.
         ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
-
+        use_annotated(bool): Filter s2p dataset by "annotated=True", default False
     """
     print(
         f"   ------------------------------- \n \
@@ -62,11 +64,14 @@ def main(
     if anatomical_only:
         print("Only using anatomical datasets...")
         filter_datasets["anatomical_only"] = 3
+    if use_annotated:
+        filter_datasets["annotated"] = True
     if ast_neuropil:
         print("Using ASt neuropil correction...")
         filter_datasets["ast_neuropil"] = True
     else:
         filter_datasets["ast_neuropil"] = False
+
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     flexilims_session = flz.get_flexilims_session(project)
@@ -116,7 +121,7 @@ def main(
         project_id=project,
         flexilims_session=flexilims_session,
         return_dataseries=False,
-        filter_datasets={"anatomical_only": 3},
+        filter_datasets=filter_datasets,
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]

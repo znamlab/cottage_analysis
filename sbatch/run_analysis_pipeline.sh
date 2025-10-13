@@ -38,7 +38,9 @@ fi
 if [ -z ${AST_NEUROPIL+x} ]; then
     AST_NEUROPIL="False"
 fi
-
+if [ -z ${USE_ANNOTATED+x} ]; then
+    USE_ANNOTATED="False"
+fi
 echo Run depth fit ${RUN_DEPTH_FIT}
 echo Run rf fit ${RUN_RF}
 echo Run rs of fit ${RUN_RSOF_FIT}
@@ -46,5 +48,6 @@ echo Run plot ${RUN_PLOT}
 echo Use ${PROTOCOL_BASE}
 echo Use anatomical only datasets: ${ANATOMICAL_ONLY}
 echo Use ASt neuropil correction: ${AST_NEUROPIL}
-cd "/nemo/lab/znamenskiyp/home/users/znamenp/code/cottage_analysis/cottage_analysis/pipelines"
-python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT} ${PROTOCOL_BASE} ${ANATOMICAL_ONLY} ${AST_NEUROPIL}
+echo Use annotated dataset: ${USE_ANNOTATED}
+cd "/nemo/lab/znamenskiyp/home/users/blota/code/cottage_analysis/cottage_analysis/pipelines"
+python analysis_pipeline.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${RUN_DEPTH_FIT} ${RUN_RF} ${RUN_RSOF_FIT} ${RUN_PLOT} ${PROTOCOL_BASE} ${ANATOMICAL_ONLY} ${AST_NEUROPIL} ${USE_ANNOTATED}

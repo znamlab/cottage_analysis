@@ -104,9 +104,12 @@ def sbatch_session(
         log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
+    # Handle other kwargs for export
     for key, value in kwargs.items():
         if key == "protocol_base":
             args += f",PROTOCOL_BASE={value}"
+        if key == "use_annotated":
+            args += f",USE_ANNOTATED={value}"
         elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
 
