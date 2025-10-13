@@ -9,7 +9,7 @@ from functools import partial, reduce
 import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neurons
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
@@ -423,7 +423,12 @@ def merge_fit_dataframes(
     slurm_options={"mem": "16G", "time": "6:00:00", "partition": "ncpu"},
 )
 def run_basic_plots(
-    project, session_name, photodiode_protocol, do_sta=True, do_basic_vis=True
+    project,
+    session_name,
+    photodiode_protocol,
+    do_sta=True,
+    do_basic_vis=True,
+    filter_datasets=None,
 ):
     """Run basic plots on a session.
 
@@ -446,7 +451,13 @@ def run_basic_plots(
         trials_df_all,
         frames_all,
         _,
-    ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
+    ) = load_session(
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=True,
+        filter_datasets=filter_datasets,
+    )
 
     # Remove multidepth if there are any
     is_multidepth = trials_df_all.recording_name.str.contains("multidepth")

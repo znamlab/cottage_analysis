@@ -4,7 +4,7 @@ import pandas as pd
 import scipy.signal
 import flexiznam as flz
 from functools import partial
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 from cottage_analysis.utilities.misc import get_str_or_recording
 
 from cottage_analysis.io_module.harp import load_harpmessage
@@ -312,8 +312,8 @@ def generate_vs_df(
         else:
             # same for SpherePermTubeReward and SpherePermTubeReward_multidepth
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
-            if 'MotorSps' in frame_log:
-                frame_log_z['MotorSps'] = frame_log.MotorSps.copy()
+            if "MotorSps" in frame_log:
+                frame_log_z["MotorSps"] = frame_log.MotorSps.copy()
             frame_log_z.rename(
                 columns={
                     "FrameIndex": "closest_frame",
