@@ -83,7 +83,9 @@ def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
     return imaging_df
 
 
-def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=None):
+def generate_trials_df(
+    recording, imaging_df, is_multidepth=False, param_log=None, acceleration_time=0.5
+):
     """Generate a DataFrame that contains information for each trial.
 
     Args:
@@ -95,8 +97,8 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
 
     Returns:
         DataFrame: contains information for each trial.
-    """
 
+    """
     trials_df = pd.DataFrame(
         columns=[
             "trial_no",
@@ -129,11 +131,28 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
 
     # Find the change of depth
     imaging_df = find_stim_time(imaging_df, is_multidepth, param_log)
+    frame_rate = 1 / np.median(np.diff(imaging_df.imaging_harptime))
+    n_acc_frames = int(acceleration_time * frame_rate)
+    # acceleration is the difference in RS between current frame and n_acc_frames ago
+    imaging_df["acceleration_abs"] = imaging_df.RS.diff(n_acc_frames)
+    # acceleration ratio is the ratio between current RS and RS n_acc_frames ago
+    imaging_df["acceleration_ratio"] = imaging_df.RS / imaging_df.RS.shift(n_acc_frames)
+    # max acceleration in the past n_acc_frames
+    imaging_df["acceleration_abs_max"] = imaging_df.RS.rolling(n_acc_frames).apply(
+        lambda x: np.abs(np.max(x) - np.min(x)), raw=True
+    )
+    imaging_df["acceleration_ratio_max"] = imaging_df.RS.rolling(n_acc_frames).apply(
+        lambda x: (
+            np.abs(np.log2(np.max(x) / np.min(x)))
+            if np.min(x) > 0 and np.max(x) > 0
+            else np.nan
+        ),
+        raw=True,
+    )
     imaging_df_simple = imaging_df[
         (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
     ].copy()
     imaging_df_simple.depth = np.round(imaging_df_simple.depth, 2)
-
     # Find frame or volume of imaging_df for trial start and stop
     # (depending on whether return_volume=True in generate_imaging_df)
     blank_time = 10
@@ -217,7 +236,17 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
         )
         return trials_df
 
-    columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
+    columns_to_assign = [
+        "mouse_z_harp",
+        "mouse_z_harp",
+        "RS",
+        "RS_eye",
+        "OF",
+        "acceleration_abs",
+        "acceleration_ratio",
+        "acceleration_abs_max",
+        "acceleration_ratio_max",
+    ]
     optional_columns = ["expected_optic_flow", "MotorSps"]
     for column in optional_columns:
         if column in imaging_df.columns:
