@@ -447,10 +447,13 @@ def fit_preferred_depth(
         ] * len(neurons_df)
 
         for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
+            y = np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten()
+            if np.all(np.isnan(y)):
+                continue
             popt, rsq = common_utils.iterate_fit(
                 func=gaussian_func_,
                 X=np.log(np.array(X)),
-                y=np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten(),
+                y=y,
                 lower_bounds=lower_bounds,
                 upper_bounds=upper_bounds,
                 niter=niter,
@@ -476,6 +479,9 @@ def fit_preferred_depth(
 
         # Loop through each roi
         for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
+            y = np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten()
+            if np.all(np.isnan(y)):
+                continue
             # loop through the folds
             y_pred_all = []
             y_test_all = []
