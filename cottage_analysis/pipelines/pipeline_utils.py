@@ -108,7 +108,7 @@ def sbatch_session(
     for key, value in kwargs.items():
         if key == "protocol_base":
             args += f",PROTOCOL_BASE={value}"
-        if key == "use_annotated":
+        elif key == "use_annotated":
             args += f",USE_ANNOTATED={value}"
         elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
