@@ -732,6 +732,8 @@ def fit_rs_of_tuning(
 
                 # fit for each neuron
                 for roi in tqdm(range(dff.shape[1])):
+                    if np.all(np.isnan(dff[:, roi])):
+                        continue
                     popt, rsq = common_utils.iterate_fit(
                         model_func_,
                         (rs_to_use, of),
@@ -881,6 +883,8 @@ def fit_rs_of_tuning(
 
                 # Loop through each roi
                 for roi in tqdm(range(dff.shape[1])):
+                    if np.all(np.isnan(dff[:, roi])):
+                        continue
                     # loop through the folds
                     dff_pred_all, rsq_train, rval_train, pval_train, popt_train = (
                         [],
