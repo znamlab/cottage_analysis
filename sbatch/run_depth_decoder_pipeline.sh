@@ -1,6 +1,5 @@
 #!/bin/bash --login
 #
-#SBATCH --job-name=decoder
 #SBATCH --ntasks=1
 #SBATCH --time=4:00:00
 #SBATCH --mem=32G
