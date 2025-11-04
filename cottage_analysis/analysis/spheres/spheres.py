@@ -62,7 +62,9 @@ def format_imaging_df(recording, imaging_df):
     return imaging_df
 
 
-def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
+def find_stim_time(
+    imaging_df, is_multidepth=False, param_log=None, diagnostics_folder=None
+):
     imaging_df["stim"] = np.nan
     if not is_multidepth:
         # easy, just find when depth is changing
@@ -73,11 +75,35 @@ def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
         # first put all stim during protocol to 0
         imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 0
         # then get trial start and stop, in frame logger time
-        harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
-        onset_index = imaging_df.stimulus_harptime.values.searchsorted(harpstim_time[0])
-        offset_index = imaging_df.stimulus_harptime.values.searchsorted(
-            harpstim_time[1]
+        if diagnostics_folder is not None:
+            diagnostics_folder.mkdir(parents=True, exist_ok=True)
+            (
+                harpstim_time,
+                param_log_index,
+                all_onsets,
+                all_offsets,
+                closest_offset,
+            ) = multidepth.find_trial_times(param_log, debug=True)
+            fig = multidepth.trial_diagnostic(
+                param_log, harpstim_time, all_offsets, all_onsets
+            )
+            fig.savefig(diagnostics_folder / "trial_diagnostic.png")
+        else:
+            harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
+        # We know when are trial in the frame logger, find where it fits in the
+        # imaging_df
+        imaging_df_frame_log = np.array(imaging_df.stimulus_harptime)
+        half = len(imaging_df_frame_log) // 2
+        imaging_df_frame_log[:half] = np.nan_to_num(imaging_df_frame_log[:half])
+        imaging_df_frame_log[half:] = np.nan_to_num(
+            imaging_df_frame_log[half:], nan=imaging_df_frame_log.max() + 1
         )
+        # replace the initial NaN to be put first onset at stim time
+        onset_index = imaging_df_frame_log.searchsorted(harpstim_time[0])
+        if onset_index[0] == 0:
+            print("WARNING: stim started before imaging")
+            onset_index[0] += 1  # shift by 1 frame otherwise crash at find blank-pre
+        offset_index = imaging_df_frame_log.searchsorted(harpstim_time[1])
         for on, off in zip(onset_index, offset_index):
             imaging_df.loc[on:off, "stim"] = 1
     return imaging_df
@@ -128,9 +154,12 @@ def generate_trials_df(
             "mouse_z_harp_blank_pre",
         ]
     )
-
     # Find the change of depth
-    imaging_df = find_stim_time(imaging_df, is_multidepth, param_log)
+    # Diagnostics folder used only for multidepth experiements
+    diagnostics_folder = flz.get_processed_path(recording.path) / "diagnostics"
+    imaging_df = find_stim_time(
+        imaging_df, is_multidepth, param_log, diagnostics_folder=diagnostics_folder
+    )
     frame_rate = 1 / np.median(np.diff(imaging_df.imaging_harptime))
     n_acc_frames = int(acceleration_time * frame_rate)
     # acceleration is the difference in RS between current frame and n_acc_frames ago
