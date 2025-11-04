@@ -84,20 +84,21 @@ def main(
     )
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
-    else:
-        # Synchronisation
-        print("---Start synchronisation...---")
-        _, trials_df_all = spheres.sync_all_recordings(
-            session_name=session_name,
-            flexilims_session=flexilims_session,
-            project=project,
-            filter_datasets=filter_datasets,
-            conflicts=conflicts,
-            recording_type="two_photon",
-            protocol_base=protocol_base,
-            photodiode_protocol=photodiode_protocol,
-            return_volumes=True,
-        )
+        return
+
+    # Synchronisation
+    print("---Start synchronisation...---")
+    _, trials_df_all = spheres.sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        filter_datasets=filter_datasets,
+        conflicts=conflicts,
+        recording_type="two_photon",
+        protocol_base=protocol_base,
+        photodiode_protocol=photodiode_protocol,
+        return_volumes=True,
+    )
 
     # Add trial number to flexilims
     trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
