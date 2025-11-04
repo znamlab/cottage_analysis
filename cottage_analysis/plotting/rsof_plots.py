@@ -98,6 +98,9 @@ def plot_speed_tuning(
     """
     if ax is None:
         ax = plt.gca()
+    if np.all([np.all(np.isnan(v[:, roi])) for v in trials_df.dff_stim.values]):
+        print("All NaN dff. Not plotting")
+        return
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     grouped_trials = trials_df.groupby(by="depth")
@@ -543,9 +546,13 @@ def plot_RS_OF_fit(
         "gratio": fit_gaussian_blob.gaussian_1d,
         "grs": fit_gaussian_blob.gaussian_1d,
     }
+    popt = neurons_df[f"rsof_popt_closedloop_{model}"].iloc[roi]
+    if np.all(np.isnan(popt)):
+        print("All NaN roi, not plotting. ")
+        return
     resp_pred = funcs[model](
         params,
-        *neurons_df[f"rsof_popt_closedloop_{model}"].iloc[roi],
+        *popt,
         min_sigma=min_sigma,
     ).reshape((len(of), len(rs)))
 

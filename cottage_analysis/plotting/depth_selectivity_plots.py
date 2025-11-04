@@ -265,6 +265,10 @@ def plot_depth_tuning_curve(
         )
     # Load gaussian fit params for this roi
     if plot_fit:
+        popt = neurons_df.loc[roi, use_col]
+        if np.any(np.isnan(popt)):
+            print("All NaN dff. Not plotting")
+            return
         x = np.geomspace(param_list[0], param_list[-1], num=100)
         if folds is not None:
             for fold in np.arange(folds):
