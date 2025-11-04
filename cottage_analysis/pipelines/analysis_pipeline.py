@@ -241,6 +241,9 @@ def main(
                 sfx = "_closedloop"
             else:
                 sfx = "_openloop"
+            if is_multidepth:
+                sfx += "_multidepth"
+
             frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
