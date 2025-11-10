@@ -514,6 +514,7 @@ def plot_RS_OF_fit(
     ylabel="Optical flow speed \n(degrees/s)",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
     ax=None,
+    sfx="",
 ):
     """
     Plot the fitted tuning of a neuron.
@@ -546,7 +547,7 @@ def plot_RS_OF_fit(
         "gratio": fit_gaussian_blob.gaussian_1d,
         "grs": fit_gaussian_blob.gaussian_1d,
     }
-    popt = neurons_df[f"rsof_popt_closedloop_{model}"].iloc[roi]
+    popt = neurons_df[f"rsof_popt_closedloop_{model}{sfx}"].iloc[roi]
     if np.all(np.isnan(popt)):
         print("All NaN roi, not plotting. ")
         return
@@ -601,7 +602,7 @@ def plot_RS_OF_fit(
     plt.text(
         x=log_range["rs_bin_log_min"] + 0.2,
         y=log_range["of_bin_log_max"] - 0.7,
-        s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}'].iloc[roi]:.2f}",
+        s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}{sfx}'].iloc[roi]:.2f}",
         fontsize=fontsize_dict["tick"],
     )
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
