@@ -211,8 +211,10 @@ def average_dff_for_all_trials(
 def find_depth_neurons(
     trials_df,
     neurons_ds,
+    neurons_df=None,
     rs_thr=0.2,
     alpha=0.05,
+    special_sfx="",
 ):
     """Find depth neurons from all ROIs segmented.
 
@@ -220,9 +222,11 @@ def find_depth_neurons(
         trials_df (DataFrame): trials_df dataframe for this session that describes the
             parameters for each trial.
         neurons_ds (Series): flexilims dataset for neurons_df.
+        neurons_df (DataFrame, optional): neurons_df to add columns to. Defaults to None.
         rs_thr (float, optional): threshold of running speed to be counted into depth
             tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
+        special_sfx (str, optional): special suffix to add to column names. Defaults to "".
 
     Returns:
         (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the
@@ -230,17 +234,15 @@ def find_depth_neurons(
 
 
     """
-    # Create an empty datafrom for neurons_df
-    neurons_df = pd.DataFrame(
-        columns=[
-            "roi",  # ROI number
-            "is_depth_neuron",  # bool, is it a depth-selective neuron or not
-            "depth_neuron_anova_p",  # float, p value for depth neuron anova test
-            "best_depth",  # #, depth with the maximum average response
-        ]
-    )
     nrois = trials_df.dff_stim.iloc[0].shape[1]
-    neurons_df["roi"] = np.arange(nrois)
+    if neurons_df is None:
+        # Create an empty datafrom for neurons_df
+        neurons_df = pd.DataFrame()
+        neurons_df["roi"] = np.arange(nrois)
+
+    neurons_df[f"is_depth_neuron{special_sfx}"] = False
+    neurons_df[f"depth_neuron_anova_p{special_sfx}"] = np.nan
+    neurons_df[f"best_depth{special_sfx}"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
     trials_df = trials_df[trials_df.closed_loop == 1]
@@ -255,9 +257,9 @@ def find_depth_neurons(
     for roi in tqdm(np.arange(nrois)):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])
 
-        neurons_df.loc[roi, "depth_neuron_anova_p"] = p
-        neurons_df.loc[roi, "is_depth_neuron"] = p < alpha
-        neurons_df.loc[roi, "best_depth"] = depth_list[
+        neurons_df.loc[roi, f"depth_neuron_anova_p{special_sfx}"] = p
+        neurons_df.loc[roi, f"is_depth_neuron{special_sfx}"] = p < alpha
+        neurons_df.loc[roi, f"best_depth{special_sfx}"] = depth_list[
             np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
         ]
 
@@ -297,7 +299,7 @@ def fit_preferred_depth(
             list: a list of trial numbers.
         depth_min (float, optional): min boundary of preferred depth in m. Defaults to
             0.02.
-        depth_max (float, optional): min boundary of preferred depth in m. Defaults to
+        depth_max (float, optional): max boundary of preferred depth in m. Defaults to
             20.
         rs_thr (float, optional): Running speed threshold for fiting preferred depth in
             m. Defaults to 0.2.
@@ -321,12 +323,16 @@ def fit_preferred_depth(
 
     # Function to initialize depth tuning parameters
     if param == "depth":
+        if "treadmill" in special_sfx:
+            p0_depth = "best_depth_treadmill"
+        else:
+            p0_depth = "best_depth"
 
         def p0_func():
             return np.concatenate(
                 (
                     np.random.normal(size=1),
-                    np.atleast_1d(np.log(neurons_df.loc[roi, "best_depth"])),
+                    np.atleast_1d(np.log(neurons_df.loc[roi, p0_depth])),
                     np.random.normal(size=1),
                     np.random.normal(size=1),
                 )

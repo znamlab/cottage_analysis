@@ -8,6 +8,7 @@ import flexiznam as flz
 from cottage_analysis.analysis import (
     spheres,
     find_depth_neurons,
+    treadmill,
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
@@ -85,36 +86,66 @@ def main(
     if (neurons_ds.get_flexilims_entry() is not None) and conflicts == "skip":
         print(f"Session {session_name} already processed... reading saved data...")
         return
-
+    if neurons_ds.path_full.exists():
+        # If there is a neurons_df, load it to overwrite only the parts that we run in
+        # this instance of the pipeline
+        neurons_df = pd.read_pickle(neurons_ds.path_full)
+    else:
+        neurons_df = None
     # Synchronisation
     print("---Start synchronisation...---")
-    _, trials_df_all = spheres.sync_all_recordings(
-        session_name=session_name,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets=filter_datasets,
-        conflicts=conflicts,
-        recording_type="two_photon",
-        protocol_base=protocol_base,
-        photodiode_protocol=photodiode_protocol,
-        return_volumes=True,
-    )
+    if protocol_base == "SpheresTubeMotor":
+        run_rf = False
+        _, trials_df_all = treadmill.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            conflicts=conflicts,
+            recording_type="two_photon",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
+    else:
+        _, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            conflicts=conflicts,
+            recording_type="two_photon",
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
 
     # Add trial number to flexilims
-    trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
-    trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
-    ndepths = len(trials_df_all["depth"].unique())
-    flz.update_entity(
-        "session",
-        name=session_name,
-        mode="update",
-        attributes={
-            "closedloop_trials": trial_no_closedloop,
-            "openloop_trials": trial_no_openloop,
-            "ndepths": ndepths,
-        },
-        flexilims_session=flexilims_session,
-    )
+    if protocol_base == "SpheresTubeMotor":
+        trial_no = len(trials_df_all)
+        flz.update_entity(
+            "session",
+            name=session_name,
+            mode="update",
+            attributes={
+                "treadmill_trials": trial_no,
+            },
+            flexilims_session=flexilims_session,
+        )
+    else:
+        trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
+        trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
+        ndepths = len(trials_df_all["depth"].unique())
+        flz.update_entity(
+            "session",
+            name=session_name,
+            mode="update",
+            attributes={
+                "closedloop_trials": trial_no_closedloop,
+                "openloop_trials": trial_no_openloop,
+                "ndepths": ndepths,
+            },
+            flexilims_session=flexilims_session,
+        )
 
     suite2p_datasets = flz.get_datasets(
         origin_name=session_name,
@@ -141,6 +172,13 @@ def main(
             "niter": 10,
             "min_sigma": 0.5,
         }
+        if protocol_base == "SpheresTubeMotor":
+            special_sfx_base = "_treadmill"
+            # With treadmill, depth min and max can be lot smaller/larger
+            depth_fit_params["depth_max"] = np.ceil(trials_df_all.depth.max())
+            depth_fit_params["depth_min"] = np.round(trials_df_all.depth.min(), 4)
+        else:
+            special_sfx_base = ""
 
         # Find depth neurons and fit preferred depth
         print("---Start finding depth neurons...---")
@@ -150,6 +188,7 @@ def main(
             neurons_ds=neurons_ds,
             rs_thr=None,
             alpha=0.05,
+            special_sfx=special_sfx_base,
         )
 
         print("Fit preferred depth...")
@@ -162,7 +201,7 @@ def main(
             [0, 0, 1],
             ["", "_running", "_notrunning"],
         ):
-            print(f"Fit preferred depth{special_sfx}...")
+            print(f"Fit preferred depth{special_sfx}{special_sfx_base}...")
             # Find preferred depth of closed loop with all trials
             neurons_df, neurons_ds = find_depth_neurons.fit_preferred_depth(
                 trials_df=trials_df_all,
@@ -180,7 +219,7 @@ def main(
                 niter=depth_fit_params["niter"],
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
-                special_sfx=special_sfx,
+                special_sfx=special_sfx + special_sfx_base,
             )
 
             # Find preferred depth of closed loop with half the data for plotting
@@ -201,7 +240,7 @@ def main(
                 niter=depth_fit_params["niter"],
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
-                special_sfx=special_sfx,
+                special_sfx=special_sfx + special_sfx_base,
             )
 
             # Find r-squared of k-fold cross validation
@@ -221,7 +260,7 @@ def main(
                 niter=depth_fit_params["niter"],
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=5,
-                special_sfx=special_sfx,
+                special_sfx=special_sfx + special_sfx_base,
             )
 
         # Save neurons_df
@@ -321,6 +360,7 @@ def main(
     if run_rsof_fit:
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
+        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
         common_params = dict(
             rs_thr=0.01,
             param_range={
@@ -332,7 +372,7 @@ def main(
             niter=10,
             min_sigma=0.25,
             run_openloop_only=False,
-            file_special_sfx="",
+            file_special_sfx=special_sfx_base,
         )
 
         to_do = [
@@ -366,6 +406,7 @@ def main(
                 scripts_name=name,
                 k_folds=k_folds,
                 filter_datasets=filter_datasets,
+                protocol_base=protocol_base,
                 **common_params,
             )
             outputs.append(out)
@@ -382,16 +423,17 @@ def main(
             scripts_name=f"{session_name}_merge_fit_dataframes",
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
-            suffix="",
+            suffix=special_sfx_base,
             exclude_keywords=["recording", "openclosed", "openloop"],
             include_keywords=[],
-            target_column_suffix=None,
+            target_column_suffix=special_sfx_base,
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )
         print("---Analysis finished. Neurons_df saved.---")
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
+        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
         # Merge fit dataframes
         out = pipeline_utils.merge_fit_dataframes(
             project,
@@ -402,10 +444,10 @@ def main(
             scripts_name=f"{session_name}_merge_fit_dataframes",
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
-            suffix="",
+            suffix=special_sfx_base,
             exclude_keywords=["recording", "openclosed", "openloop"],
             include_keywords=[],
-            target_column_suffix=None,
+            target_column_suffix=special_sfx_base,
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )

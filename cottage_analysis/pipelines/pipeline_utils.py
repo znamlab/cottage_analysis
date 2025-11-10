@@ -132,6 +132,7 @@ def load_session(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
 ):
     """Load data from a single session.
 
@@ -147,6 +148,8 @@ def load_session(
         filter_datasets (dict, optional): filter datasets. Defaults to
             {"anatomical_only": 3}.
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+        protocol_base (str, optional): protocol base name. Defaults to
+            "SpheresPermTubeReward".
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -180,7 +183,7 @@ def load_session(
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
         recording_type="two_photon",
-        protocol_base="SpheresPermTubeReward",
+        protocol_base=protocol_base,
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
     )
@@ -193,7 +196,7 @@ def load_session(
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
             recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
@@ -231,6 +234,7 @@ def load_and_fit(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
 ):
     """Load and fit a model to a session.
 
@@ -254,6 +258,8 @@ def load_and_fit(
         filter_datasets (dict, optional): filter datasets. Defaults to
             {"anatomical_only": 3}.
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+        protocol_base (str, optional): protocol base name. Defaults to
+            "SpheresPermTubeReward".
 
 
     Returns:
@@ -276,6 +282,7 @@ def load_and_fit(
         base_name=base_name,
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
+        protocol_base=protocol_base,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -338,9 +345,9 @@ def merge_fit_dataframes(
         prefix (str, optional): prefix of the files to merge. Defaults to
             "fit_rs_of_tuning_".
         suffix (str, optional): suffix of the files to merge. Defaults to ""
-        column_suffix (int, optional): digits for the source filename, which becomes the
-            special suffix to append to each column name of the dataframe to be merged.
-                Defaults to None.
+        column_suffix (int | str, optional): digits for the source filename, which
+            becomes the special suffix to append to each column name of the dataframe to
+            be merged. If str, will directly be used as sfx. Defaults to None.
         filetype (str, optional): filetype of the files to merge. Defaults to ".pickle".
         target_filename (str, optional): target filename. Defaults to
             "neurons_df.pickle".
@@ -389,13 +396,17 @@ def merge_fit_dataframes(
     ), "ROIs in dataframes do not match neurons_df."
 
     if target_column_suffix is not None:
-        suffix = f"{target_column_prefix}_" + "_".join(
-            str(df_name.stem).split("_")[target_column_suffix:]
-        )
+        if isinstance(target_column_suffix, str):
+            suffix_to_add = target_column_suffix
+        else:
+            suffix_to_add = f"{target_column_prefix}_" + "_".join(
+                str(df_name.stem).split("_")[target_column_suffix:]
+            )
+
         # rename all columns before merging
         for df in dfs_to_merge:
             df.columns = [
-                f"{col}{suffix}" if col != "roi" else "roi" for col in df.columns
+                f"{col}{suffix_to_add}" if col != "roi" else "roi" for col in df.columns
             ]
     rsof_df = reduce(lambda x, y: pd.merge(x, y, on="roi", how="inner"), dfs_to_merge)
 
