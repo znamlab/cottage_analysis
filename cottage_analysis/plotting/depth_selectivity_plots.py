@@ -232,7 +232,9 @@ def plot_depth_tuning_curve(
     )[:, :, roi]
     CI_low, CI_high = common_utils.get_bootstrap_ci(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
-
+    if np.all(np.isnan(mean_arr)):
+        print("All NaN dff. Not plotting")
+        return
     ax.errorbar(
         log_param_list,
         mean_arr,
@@ -300,6 +302,8 @@ def plot_depth_tuning_curve(
             ax.get_ylim()[0],
             common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
         ]
+        if np.any(np.isnan(ylim)):
+            ylim = ax.get_ylim()
         ax.set_ylim(ylim)
         plt.yticks(
             [
