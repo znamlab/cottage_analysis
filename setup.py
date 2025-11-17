@@ -25,6 +25,8 @@ setup(
         "black",
         "tqdm",
         "plotly",
+        "natsort",
+        "roifile",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
     ],
