@@ -18,7 +18,10 @@ def concatenate_all_neurons_df(
     cols=None,
     read_iscell=True,
     verbose=False,
+    filter_datasets=None,
 ):
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
     isess = 0
     for session in session_list:
         neurons_ds = pipeline_utils.create_neurons_ds(
@@ -41,7 +44,7 @@ def concatenate_all_neurons_df(
                     flexilims_session=flexilims_session,
                     origin_name=session,
                     dataset_type="suite2p_rois",
-                    filter_datasets={"anatomical_only": 3},
+                    filter_datasets=filter_datasets,
                     allow_multiple=False,
                     return_dataseries=False,
                 )
