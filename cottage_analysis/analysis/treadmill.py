@@ -54,14 +54,16 @@ def compute_response_matrix(neurons_df, trials_df_tread):
     return motor_speeds, optic_flows, tread_responses
 
 
-def sync_treadmill_sess(session_name, project, flexilims_session):
+def sync_treadmill_sess(session_name, project, flexilims_session, filter_datasets=None):
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
     if project is None:
         project = flexilims_session.project
     vs_df_tread, trials_df_tread = sync_all_recordings(
         session_name=session_name,
         flexilims_session=flexilims_session,
         project=project,
-        filter_datasets={"anatomical_only": 3},
+        filter_datasets=filter_datasets,
         recording_type="two_photon",
         photodiode_protocol=5,
         return_volumes=True,
