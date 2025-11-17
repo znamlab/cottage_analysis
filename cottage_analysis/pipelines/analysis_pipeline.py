@@ -186,6 +186,7 @@ def main(
         neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
             trials_df=trials_df_all,
             neurons_ds=neurons_ds,
+            neurons_df=neurons_df,
             rs_thr=None,
             alpha=0.05,
             special_sfx=special_sfx_base,
