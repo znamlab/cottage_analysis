@@ -7,7 +7,7 @@ from functools import partial
 from znamutils.decorators import slurm_it
 from cottage_analysis.utilities.misc import get_str_or_recording
 
-from cottage_analysis.io_module.harp import load_harpmessage
+from cottage_analysis.io_module.harp import load_harpmessage, get_harp_dataset
 from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
 from cottage_analysis.io_module.spikes import (
@@ -252,22 +252,15 @@ def generate_vs_df(
     ].copy()
     monitor_frames_df = find_frames.remove_frames_in_wrong_order(monitor_frames_df)
     monitor_frames_df.closest_frame = monitor_frames_df.closest_frame.astype("int")
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=harp_recording.name,
-        dataset_type="harp",
-        allow_multiple=False,
-        return_dataseries=False,
+
+    harp_ds = get_harp_dataset(
+        flexilims_session=flexilims_session, recording_name=harp_recording.name
     )
-    if type(harp_ds.extra_attributes["csv_files"]) == str:
-        harp_files = eval(harp_ds.extra_attributes["csv_files"])
-    else:
-        harp_files = harp_ds.extra_attributes["csv_files"]
 
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         frame_log = get_frame_log(
-            harp_ds.flexilims_session,
+            flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
         )

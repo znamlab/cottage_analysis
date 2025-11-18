@@ -76,7 +76,7 @@ _PAYLOAD_STRUCT = {k: "<" + v for k, v in _PAYLOAD_STRUCT.items()}
 
 
 def get_harp_dataset(
-    recording,
+    recording_name,
     flexilims_session,
 ):
     """Find the harp dataset for a given recording.
@@ -86,7 +86,7 @@ def get_harp_dataset(
     is found recursively, it is returned.
 
     Args:
-        recording (pd.Series): A recording entry from flexilims, which must have a 'name' key.
+        recording (str): Full recording name
         flexilims_session (flz.Flexilims): An active flexilims session.
 
     Returns:
@@ -98,7 +98,7 @@ def get_harp_dataset(
 
     harp_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
-        origin_name=recording["name"],
+        origin_name=recording_name,
         dataset_type="harp",
         allow_multiple=False,
         return_dataseries=False,
@@ -107,7 +107,7 @@ def get_harp_dataset(
         # Try recursive
         ds = flz.get_datasets_recursively(
             flexilims_session=flexilims_session,
-            origin_name=recording["name"],
+            origin_name=recording_name,
             dataset_type="harp",
         )
         if len(ds) == 1:
@@ -116,7 +116,7 @@ def get_harp_dataset(
                 harp_ds = ds[0]
         if harp_ds is None:
             raise IOError(
-                "Could not find harp dataset for recording %s" % recording["name"]
+                "Could not find harp dataset for recording %s" % recording_name
             )
     return harp_ds
 
