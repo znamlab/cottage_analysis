@@ -27,6 +27,12 @@ def load_kilosort_folder(kilosort_folder, return_multiunit=True):
             warnings.warn("missing %s" % target)
             continue
         ks_data[w] = pd.read_csv(kilosort_folder / ("cluster_%s.tsv" % w), sep="\t")
+    if "info" not in ks_data:
+        target = kilosort_folder / "cluster_KSLabel.tsv"
+        if target.exists():
+            ks_labels = pd.read_csv(target, sep="\t")
+            ks_data["info"] = ks_labels.rename(dict(KSLabel="group"), axis="columns")
+            print("Found only KSLabel. Use automatic clustering")
     # get good units
     good = ks_data["info"][ks_data["info"].group == "good"]
     good_units = {}
