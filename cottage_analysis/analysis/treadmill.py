@@ -91,6 +91,8 @@ def sync_all_recordings(
     conflicts="skip",
     sync_kwargs=None,
     ephys_kwargs=None,
+    cut_trial_end=None,
+    trial_duration=2,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -118,6 +120,9 @@ def sync_all_recordings(
         return_multiunit (bool): if True, process multiunit activity. Defaults to False.
         ephys_kwargs (dict): Keyword arguments for generate_spike_rate_df.
             `return_multiunit` or `exp_sd` for instance. Defaults to None.
+        cut_trial_end (float or None): Seconds to remove at the end of each trial
+        trial_duration (float): Seconds to the end of the trial to keep (new "start"
+            of trial)
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -186,7 +191,9 @@ def sync_all_recordings(
             imaging_df=imaging_df, recording=recording
         )
         # Add the treadmill specific part
-        imaging_df = process_imaging_df(imaging_df, trial_duration=2)
+        imaging_df = process_imaging_df(
+            imaging_df, trial_duration=trial_duration, cut_trial_end=cut_trial_end
+        )
 
         trials_df = spheres.generate_trials_df(
             recording=recording, imaging_df=imaging_df
@@ -241,14 +248,14 @@ def sps2speed(
     return sps / steps_per_rev * microstepping * circumference
 
 
-def process_imaging_df(imaging_df, trial_duration=2):
+def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
     """Process the imaging dataframe to add treadmill information.
 
     This will take the last `trial_duration` second of each motor step
 
     The following columns are added:
         - MotorSpeed: Speed of the motor in cm/s.
-        - is_trial_end: True if the frame is the end of a trial.
+        - is_trial_end: True if te frame is the end of a trial.
         - is_trial_start: True if the frame is the start of a trial.
         - is_stim: True if the frame is part of a trial.
         - trial_index: Index of the trial.
@@ -257,6 +264,8 @@ def process_imaging_df(imaging_df, trial_duration=2):
     Args:
         imaging_df (pd.DataFrame): Imaging dataframe.
         trial_duration (float, optional): Duration of a trial in seconds. Defaults to 2.
+        cut_trial_end (float, optional): Duration to cut at the end of the trial (will
+            shorten trial_duration)
 
     Returns:
         pd.DataFrame: Imaging dataframe with treadmill information.
@@ -267,7 +276,8 @@ def process_imaging_df(imaging_df, trial_duration=2):
     imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
     # Find trials, defined as last 2 second of motor running
     trial_ends = (imaging_df.MotorSps > 0).astype(int).diff() == -1
-    shifted = trial_ends.shift(-1)
+    # Shifting adds a NaN and astype(int) makes it True, fill it with False
+    shifted = trial_ends.shift(-1).fillna(False)
     imaging_df["is_trial_end"] = shifted.values.astype(bool)
     trial_starts = (
         imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"] - trial_duration
@@ -275,6 +285,15 @@ def process_imaging_df(imaging_df, trial_duration=2):
     imaging_df["is_trial_start"] = False
     trial_start_index = imaging_df.imaging_harptime.searchsorted(trial_starts)
     imaging_df.loc[trial_start_index, "is_trial_start"] = True
+
+    if cut_trial_end is not None:
+        trial_ends = (
+            imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"]
+            - cut_trial_end
+        )
+        imaging_df["is_trial_end"] = False
+        trial_end_index = imaging_df.imaging_harptime.searchsorted(trial_ends)
+        imaging_df.loc[trial_end_index, "is_trial_end"] = True
 
     starts = imaging_df.query("is_trial_start")
     ends = imaging_df.query("is_trial_end")
@@ -285,6 +304,8 @@ def process_imaging_df(imaging_df, trial_duration=2):
     for itrial, (start, end) in enumerate(zip(starts.index, ends.index)):
         imaging_df.loc[start:end, "is_stim"] = True
         imaging_df.loc[start:end, "trial_index"] = itrial
+
+    imaging_df["stim"] = imaging_df["is_stim"].astype(int)
 
     # Calculate the optic flow
     actual_of = np.rad2deg(imaging_df.MotorSpeed / (imaging_df.depth.values * 100))

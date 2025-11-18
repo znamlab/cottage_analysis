@@ -65,6 +65,8 @@ def format_imaging_df(recording, imaging_df):
 def find_stim_time(
     imaging_df, is_multidepth=False, param_log=None, diagnostics_folder=None
 ):
+    if "stim" in imaging_df.columns and imaging_df.stim.isin([0, 1]).any():
+        return imaging_df
     imaging_df["stim"] = np.nan
     if not is_multidepth:
         # easy, just find when depth is changing
