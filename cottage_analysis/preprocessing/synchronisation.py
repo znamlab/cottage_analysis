@@ -339,6 +339,11 @@ def generate_vs_df(
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
         )
+        if type(harp_ds.extra_attributes["csv_files"]) == str:
+            harp_files = eval(harp_ds.extra_attributes["csv_files"])
+        else:
+            harp_files = harp_ds.extra_attributes["csv_files"]
+
         encoder_path = harp_ds.path_full / harp_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0].copy()

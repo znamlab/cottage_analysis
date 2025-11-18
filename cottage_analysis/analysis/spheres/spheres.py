@@ -652,11 +652,14 @@ def get_relevant_recordings(
     Args:
         recording_name (str): name of the recording.
         flexilims_session (flexilims_session): flexilims session.
-        harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
-        use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
+        harp_is_in_recording (bool): if True, harp is in the same recording as the
+            imaging. Defaults to True.
+        use_onix (bool): if True, use onix recording for synchronisation. Defaults to
+            False.
 
     Returns:
-        (recording, harp_recording, onix_rec): tuple of recording, harp recording and onix recording.
+        (recording, harp_recording, onix_rec): tuple of recording, harp recording and
+            onix recording.
     """
     recording = flz.get_entity(
         datatype="recording",
