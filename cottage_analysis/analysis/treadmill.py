@@ -274,14 +274,22 @@ def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
     assert "MotorSps" in imaging_df.columns, "Imaging df must contain MotorSps"
 
     imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
+
     # Find trials, defined as last 2 second of motor running
     trial_ends = (imaging_df.MotorSps > 0).astype(int).diff() == -1
     # Shifting adds a NaN and astype(int) makes it True, fill it with False
     shifted = trial_ends.shift(-1).fillna(False)
     imaging_df["is_trial_end"] = shifted.values.astype(bool)
-    trial_starts = (
-        imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"] - trial_duration
-    )
+    if trial_duration is not None:
+        trial_starts = (
+            imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"]
+            - trial_duration
+        )
+    else:
+        # Find trial starts, defined as first frame of motor running
+        trial_starts_bool = (imaging_df.MotorSps > 0).astype(int).diff() == 1
+        trial_starts = imaging_df.loc[trial_starts_bool, "imaging_harptime"]
+
     imaging_df["is_trial_start"] = False
     trial_start_index = imaging_df.imaging_harptime.searchsorted(trial_starts)
     imaging_df.loc[trial_start_index, "is_trial_start"] = True
