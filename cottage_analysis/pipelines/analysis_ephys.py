@@ -29,6 +29,7 @@ def main(
     rs_thr=0.0002,
     do_rf=True,
     do_rs_of=False,
+    protocol_base="SpheresPermTubeReward",
 ):
     """
     Main function to analyze a session.
@@ -86,7 +87,7 @@ def main(
             project=project,
             filter_datasets=None,
             recording_type="behaviour",
-            protocol_base="SpheresPermTubeReward",
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             harp_is_in_recording=harp_is_in_recording,
@@ -103,7 +104,7 @@ def main(
                 project=None,
                 filter_datasets=None,
                 recording_type="behaviour",
-                protocol_base="SpheresPermTubeReward",
+                protocol_base=protocol_base,
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
                 resolution=5,
@@ -124,7 +125,7 @@ def main(
             project=project,
             filter_datasets=None,
             recording_type="behaviour",
-            protocol_base="SpheresPermTubeReward",
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             harp_is_in_recording=harp_is_in_recording,
@@ -274,7 +275,7 @@ def main(
                 project=None,
                 filter_datasets=None,
                 recording_type="behaviour",
-                protocol_base="SpheresPermTubeReward",
+                protocol_base=protocol_base,
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
                 resolution=5,
