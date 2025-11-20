@@ -333,6 +333,8 @@ def plot_RS_OF_matrix(
 
     if ax is None:
         ax = plt.gca()
+    else:
+        plt.sca(ax)
     fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     rs_bins = (
