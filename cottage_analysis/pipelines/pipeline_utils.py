@@ -133,6 +133,8 @@ def load_session(
     filter_datasets=None,
     exclude_datasets=None,
     protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Load data from a single session.
 
@@ -150,6 +152,9 @@ def load_session(
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
         protocol_base (str, optional): protocol base name. Defaults to
             "SpheresPermTubeReward".
+        recording_type (str, optional): recording type. Defaults to "two_photon".
+        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+            Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -182,10 +187,11 @@ def load_session(
         project=project,
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
-        recording_type="two_photon",
+        recording_type=recording_type,
         protocol_base=protocol_base,
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
+        ephys_kwargs=ephys_kwargs,
     )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
@@ -195,12 +201,13 @@ def load_session(
             project=None,
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
-            recording_type="two_photon",
+            recording_type=recording_type,
             protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
             verbose=False,
+            ephys_kwargs=ephys_kwargs,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)
@@ -235,6 +242,8 @@ def load_and_fit(
     filter_datasets=None,
     exclude_datasets=None,
     protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Load and fit a model to a session.
 
@@ -260,6 +269,9 @@ def load_and_fit(
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
         protocol_base (str, optional): protocol base name. Defaults to
             "SpheresPermTubeReward".
+        recording_type (str, optional): recording type. Defaults to "two_photon".
+        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+            Defaults to None.
 
 
     Returns:
@@ -283,6 +295,8 @@ def load_and_fit(
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
         protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
