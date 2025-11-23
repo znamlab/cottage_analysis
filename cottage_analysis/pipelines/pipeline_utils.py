@@ -457,6 +457,8 @@ def run_basic_plots(
     do_sta=True,
     do_basic_vis=True,
     filter_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
 ):
     """Run basic plots on a session.
 
@@ -485,6 +487,8 @@ def run_basic_plots(
         photodiode_protocol,
         regenerate_frames=True,
         filter_datasets=filter_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
     )
 
     # Remove multidepth if there are any
