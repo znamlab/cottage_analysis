@@ -459,6 +459,7 @@ def run_basic_plots(
     filter_datasets=None,
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Run basic plots on a session.
 
@@ -489,6 +490,7 @@ def run_basic_plots(
         filter_datasets=filter_datasets,
         protocol_base=protocol_base,
         recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
     )
 
     # Remove multidepth if there are any
