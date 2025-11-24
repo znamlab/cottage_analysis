@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.analysis.fit_gaussian_blob import fit_sftf_tuning
+#from cottage_analysis.analysis.fit_gaussian_blob import fit_sftf_tuning
 
 
 def analyze_grating_responses(
