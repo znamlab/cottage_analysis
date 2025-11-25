@@ -14,26 +14,31 @@ from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
 
 
+import typing
+import json
+
+
 def main(
-    project,
-    session_name,
-    conflicts="skip",
-    photodiode_protocol=5,
-    use_slurm=False,
-    run_depth_fit=True,
-    run_rf=True,
-    run_rsof_fit=True,
-    run_plot=True,
-    sync_kwargs=None,
-    use_onix=True,
-    return_multiunit=False,
-    harp_is_in_recording=False,
-    exp_sd=0.1,
-    rate_bin=0.01,
-    unit_list=None,
-    rs_thr=0.0002,
-    filter_datasets=None,
-    protocol_base="SphereTube",
+    project: str,
+    session_name: str,
+    *,
+    conflicts: str = "skip",
+    photodiode_protocol: int = 5,
+    use_slurm: bool = False,
+    run_depth_fit: bool = True,
+    run_rf: bool = True,
+    run_rsof_fit: bool = True,
+    run_plot: bool = True,
+    sync_kwargs: str = None,
+    use_onix: bool = False,
+    return_multiunit: bool = False,
+    harp_is_in_recording: bool = True,
+    exp_sd: float = 0.1,
+    rate_bin: float = 0.01,
+    unit_list: typing.List[int] = None,
+    rs_thr: float = 0.0002,
+    filter_datasets: str = None,
+    protocol_base: str = "SphereTube",
 ):
     """
     Main function to analyze a session.
@@ -43,7 +48,26 @@ def main(
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
+        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        run_depth_fit(bool): whether to run the depth fit. Default True.
+        run_rf(bool): whether to run the rf fit. Default True.
+        run_rsof_fit(bool): whether to run the rsof fit. Default True.
+        run_plot(bool): whether to run the plot. Default True.
+        sync_kwargs(str): json string of kwargs for synchronization.
+        use_onix(bool): whether to use onix. Default False.
+        return_multiunit(bool): whether to return multiunit. Default False.
+        harp_is_in_recording(bool): whether harp is in recording. Default True.
+        exp_sd(float): expected standard deviation. Default 0.1.
+        rate_bin(float): rate bin. Default 0.01.
+        unit_list(list): list of units. Default None.
+        rs_thr(float): rs threshold. Default 0.0002.
+        filter_datasets(str): json string of datasets to filter.
+        protocol_base(str): protocol base name. Default "SphereTube".
     """
+    if isinstance(sync_kwargs, str):
+        sync_kwargs = json.loads(sync_kwargs)
+    if isinstance(filter_datasets, str):
+        filter_datasets = json.loads(filter_datasets)
     print(
         f"""
         -------------------------------------
@@ -51,6 +75,11 @@ def main(
         -------------------------------------
         """
     )
+    # Print all arguements to make debugging easier
+    print("Arguments:")
+    for arg, value in locals().items():
+        print(f"{arg}: {value}")
+
     if filter_datasets is None:
         filter_datasets = {}
     frame_rate = 1 / rate_bin
