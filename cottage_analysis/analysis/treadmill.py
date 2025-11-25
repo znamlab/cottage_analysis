@@ -18,6 +18,8 @@ STEPS_PER_REV = 200
 MICROSTEPPING = 1 / 4
 WHEEL_RADIUS = 10.5
 CIRCUMFERENCE = 2 * np.pi * WHEEL_RADIUS
+# Small error in the motor speed
+ACTUAL_MOTOR_SPEED = {64: 61, 32: 61.0 / 2, 16: 61.0 / 4, 8: 61.0 / 8, 4: 61.0 / 16}
 
 
 def compute_response_matrix(neurons_df, trials_df_tread):
@@ -274,6 +276,7 @@ def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
     assert "MotorSps" in imaging_df.columns, "Imaging df must contain MotorSps"
 
     imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
+    imaging_df["MotorSpeed"] = imaging_df.MotorSpeed.map(ACTUAL_MOTOR_SPEED)
 
     # Find trials, defined as last 2 second of motor running
     trial_ends = (imaging_df.MotorSps > 0).astype(int).diff() == -1
