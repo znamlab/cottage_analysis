@@ -278,7 +278,12 @@ def generate_trials_df(
         "acceleration_abs_max",
         "acceleration_ratio_max",
     ]
-    optional_columns = ["expected_optic_flow", "MotorSps", "MotorSpeed"]
+    optional_columns = [
+        "expected_optic_flow",
+        "MotorSps",
+        "MotorSpeed",
+        "max_abs_rs2motor_diff",
+    ]
     for column in optional_columns:
         if column in imaging_df.columns:
             columns_to_assign.append(column)

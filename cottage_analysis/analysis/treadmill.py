@@ -164,7 +164,7 @@ def sync_all_recordings(
             harp_recording=harp_recording,
             onix_recording=onix_rec if use_onix else None,
             project=project,
-            conflicts=conflicts,
+            conflicts="skip",
             sync_kwargs=sync_kwargs,
             protocol_base=protocol_base,
         )
@@ -250,7 +250,9 @@ def sps2speed(
     return sps / steps_per_rev * microstepping * circumference
 
 
-def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
+def process_imaging_df(
+    imaging_df, trial_duration=2, cut_trial_end=None, motor_stability_window=0.5
+):
     """Process the imaging dataframe to add treadmill information.
 
     This will take the last `trial_duration` second of each motor step
@@ -268,11 +270,12 @@ def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
         trial_duration (float, optional): Duration of a trial in seconds. Defaults to 2.
         cut_trial_end (float, optional): Duration to cut at the end of the trial (will
             shorten trial_duration)
+        motor_stability_window (float, optional): Duration of the motor stability window in seconds. Defaults to 0.5.
 
     Returns:
         pd.DataFrame: Imaging dataframe with treadmill information.
     """
-
+    frame_rate = 1 / np.nanmedian(imaging_df.imaging_harptime.diff())
     assert "MotorSps" in imaging_df.columns, "Imaging df must contain MotorSps"
 
     imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
@@ -326,4 +329,17 @@ def process_imaging_df(imaging_df, trial_duration=2, cut_trial_end=None):
     imaging_df["expected_optic_flow"] = 2 ** (np.round(np.log2(actual_of)))
     warnings.filterwarnings("default")
 
+    # Add a column for the max difference between recording running speed vs motor speed
+    # in a 0.5s rolling window
+    nframe_window = int(motor_stability_window * frame_rate)
+    # first get max and min running speed in the window
+    max_running_speed = imaging_df.RS.rolling(nframe_window).max()
+    min_running_speed = imaging_df.RS.rolling(nframe_window).min()
+    # MotorSpeed is in cm/s, RS is in m/s
+    max_running_speed_diff = (max_running_speed - imaging_df.MotorSpeed / 100).abs()
+    min_running_speed_diff = (min_running_speed - imaging_df.MotorSpeed / 100).abs()
+    # then get max(abs(max), abs(min))
+    imaging_df["max_abs_rs2motor_diff"] = np.maximum(
+        max_running_speed_diff, min_running_speed_diff
+    )
     return imaging_df
