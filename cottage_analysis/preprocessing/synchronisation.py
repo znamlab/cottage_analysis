@@ -547,7 +547,8 @@ def generate_imaging_df(
         imaging_df = imaging_df[volume_starts != 0].copy()
     # add a column for the harptime at end the imaging volume
     imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
-    # set the last value of imaging_harptime_end to the last value of imaging_harptime + median frame period
+    # set the last value of imaging_harptime_end to the last value of imaging_harptime +
+    #  median frame period
     imaging_df.at[imaging_df.index[-1], "imaging_harptime_end"] = (
         imaging_df["imaging_harptime"].iloc[-1]
         + imaging_df["imaging_harptime"].diff().median()
@@ -561,7 +562,8 @@ def generate_imaging_df(
         direction="backward",
         allow_exact_matches=True,
     )
-    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime
+    # of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
         {
@@ -639,8 +641,8 @@ def generate_spike_rate_df(
     onix_recording,
     harp_recording,
     flexilims_session,
-    rate_bin=1 / 30.0,
-    exp_sd=0.1,
+    rate_bin=0.1,
+    exp_sd=None,
     dataset_type="kilosort4",
     filter_datasets=None,
     exclude_datasets=None,
