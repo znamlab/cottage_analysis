@@ -65,6 +65,10 @@ def plot_sftf_fit(
         log_kappa=neuron_series["log_kappa"],
         dsi=neuron_series["dsi"],
     )
+   
+    if vmax is None:
+        vmax = np.exp(popt.log_amplitude) + popt.offset
+    
     # plot polar plot of direction tuning at the preferred SF and TF
     if plot_grid:
         ax = plt.subplot2grid(
@@ -103,8 +107,7 @@ def plot_sftf_fit(
 
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
-    if vmax is None:
-        vmax = np.exp(popt.log_amplitude) + popt.offset
+    
     for i, angle in enumerate(angles):
         responses = grating_tuning_(
             (sfs, tfs, np.ones_like(sfs) * angle),
