@@ -2,7 +2,6 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 import flexiznam as flz
-from cottage_analysis.analysis import common_utils, find_depth_neurons
 from collections import namedtuple
 import pandas as pd
 from functools import partial
@@ -83,7 +82,6 @@ Gabor3DRFParams = namedtuple(
         "log_sigma_z",
     ],
 )
-
 
 def gaussian_2d(
     xy_tuple,
@@ -407,6 +405,7 @@ def grating_tuning(
     tuning = direction_tuning(alpha, alpha0, log_kappa, dsi)
     return gaussian * tuning + offset
 
+from cottage_analysis.analysis import common_utils, find_depth_neurons
 
 def initial_fit_conditions(
     model,
