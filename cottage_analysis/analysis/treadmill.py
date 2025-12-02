@@ -94,7 +94,8 @@ def sync_all_recordings(
     sync_kwargs=None,
     ephys_kwargs=None,
     cut_trial_end=None,
-    trial_duration=2,
+    trial_duration=None,
+    acceleration_time=0.13,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -125,6 +126,8 @@ def sync_all_recordings(
         cut_trial_end (float or None): Seconds to remove at the end of each trial
         trial_duration (float): Seconds to the end of the trial to keep (new "start"
             of trial)
+        acceleration_time (float or None): Acceleration time in s per cm/s. If not None,
+            overrides trial_duration. Default to 0.13 (aka 61cm/s reached in 8s)
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -194,7 +197,10 @@ def sync_all_recordings(
         )
         # Add the treadmill specific part
         imaging_df = process_imaging_df(
-            imaging_df, trial_duration=trial_duration, cut_trial_end=cut_trial_end
+            imaging_df,
+            trial_duration=trial_duration,
+            cut_trial_end=cut_trial_end,
+            acceleration_time=acceleration_time,
         )
 
         trials_df = spheres.generate_trials_df(
@@ -251,7 +257,11 @@ def sps2speed(
 
 
 def process_imaging_df(
-    imaging_df, trial_duration=2, cut_trial_end=None, motor_stability_window=0.5
+    imaging_df,
+    trial_duration=None,
+    cut_trial_end=None,
+    motor_stability_window=0.5,
+    acceleration_time=0.13,
 ):
     """Process the imaging dataframe to add treadmill information.
 
@@ -270,7 +280,10 @@ def process_imaging_df(
         trial_duration (float, optional): Duration of a trial in seconds. Defaults to 2.
         cut_trial_end (float, optional): Duration to cut at the end of the trial (will
             shorten trial_duration)
-        motor_stability_window (float, optional): Duration of the motor stability window in seconds. Defaults to 0.5.
+        motor_stability_window (float, optional): Duration of the motor stability window
+            in seconds. Defaults to 0.5.
+        acceleration_time (float, optional): Acceleration time in s per cm/s. If not
+            None, overrides trial_duration. Defaults to 0.13.
 
     Returns:
         pd.DataFrame: Imaging dataframe with treadmill information.
@@ -281,33 +294,84 @@ def process_imaging_df(
     imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
     imaging_df["MotorSpeed"] = imaging_df.MotorSpeed.map(ACTUAL_MOTOR_SPEED)
 
-    # Find trials, defined as last 2 second of motor running
-    trial_ends = (imaging_df.MotorSps > 0).astype(int).diff() == -1
-    # Shifting adds a NaN and astype(int) makes it True, fill it with False
-    shifted = trial_ends.shift(-1).fillna(False)
-    imaging_df["is_trial_end"] = shifted.values.astype(bool)
-    if trial_duration is not None:
-        trial_starts = (
-            imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"]
-            - trial_duration
-        )
-    else:
-        # Find trial starts, defined as first frame of motor running
-        trial_starts_bool = (imaging_df.MotorSps > 0).astype(int).diff() == 1
-        trial_starts = imaging_df.loc[trial_starts_bool, "imaging_harptime"]
+    # 1. Find physical trial starts and ends
+    # Find trial starts, defined as first frame of motor running
+    trial_starts_bool = (imaging_df.MotorSps > 0).astype(int).diff() == 1
+    trial_starts = imaging_df.loc[trial_starts_bool, "imaging_harptime"].values
 
+    # Find trial ends, defined as last frame of motor running
+    trial_ends_bool = (imaging_df.MotorSps > 0).astype(int).diff() == -1
+    # Shifting adds a NaN and astype(int) makes it True, fill it with False
+    shifted = trial_ends_bool.shift(-1).fillna(False)
+    trial_ends = imaging_df.loc[shifted, "imaging_harptime"].values
+
+    # 2. Apply acceleration_time (modifies start)
+    if acceleration_time is not None:
+        if trial_duration is not None:
+            raise ValueError("Cannot provide both trial_duration and acceleration_time")
+        # Find the motor speed for each trial
+        # We need to find the trial index for each trial start
+        # for each start, find the corresponding end
+        # the end should be the first end after the start
+        trial_end_indices = trial_ends.searchsorted(trial_starts)
+
+        # get the motor speed for each trial
+        motor_speeds = []
+        for start, end_idx in zip(trial_starts, trial_end_indices):
+            if end_idx >= len(trial_ends):
+                end = imaging_df.imaging_harptime.iloc[-1]
+            else:
+                end = trial_ends[end_idx]
+
+            # get the motor speed in this interval
+            # use searchsorted to find indices in imaging_df
+            start_idx = imaging_df.imaging_harptime.searchsorted(start)
+            end_idx = imaging_df.imaging_harptime.searchsorted(end)
+            motor_speeds.append(
+                np.nanmedian(imaging_df.MotorSpeed.iloc[start_idx:end_idx])
+            )
+        motor_speeds = np.array(motor_speeds)
+
+        # Calculate acceleration frames
+        acc_frames = ((acceleration_time * motor_speeds + 0.5) * frame_rate).astype(int)
+
+        # Shift trial starts
+        # We need to add the time corresponding to acc_frames to trial_starts
+        # Shift by index
+        trial_start_indices = imaging_df.imaging_harptime.searchsorted(trial_starts)
+        new_start_indices = trial_start_indices + acc_frames
+        # Clip to be within dataframe
+        new_start_indices = np.clip(new_start_indices, 0, len(imaging_df) - 1)
+        trial_starts = imaging_df.imaging_harptime.iloc[new_start_indices].values
+
+    # 3. Apply trial_duration (modifies start relative to end)
+    elif trial_duration is not None:
+        # If trial_duration is set, start is end - duration
+        # We need to match starts and ends first to make sure we have pairs
+        # But actually, the original logic just took ends and subtracted duration
+        # Let's stick to the original logic for trial_duration which was simpler:
+        # trial_starts = trial_ends - trial_duration
+        # But we need to be careful if we have cut_trial_end as well
+        # The original logic applied cut_trial_end AFTER finding starts with trial_duration
+        # Wait, original logic:
+        # 1. Find ends
+        # 2. If trial_duration: starts = ends - duration
+        # 3. If cut_trial_end: ends = ends - cut_trial_end
+        # So trial_duration defines start relative to PHYSICAL end (before cut)
+        trial_starts = trial_ends - trial_duration
+
+    # 4. Apply cut_trial_end (modifies end)
+    if cut_trial_end is not None:
+        trial_ends = trial_ends - cut_trial_end
+
+    # Update dataframe
     imaging_df["is_trial_start"] = False
     trial_start_index = imaging_df.imaging_harptime.searchsorted(trial_starts)
     imaging_df.loc[trial_start_index, "is_trial_start"] = True
 
-    if cut_trial_end is not None:
-        trial_ends = (
-            imaging_df.loc[imaging_df["is_trial_end"], "imaging_harptime"]
-            - cut_trial_end
-        )
-        imaging_df["is_trial_end"] = False
-        trial_end_index = imaging_df.imaging_harptime.searchsorted(trial_ends)
-        imaging_df.loc[trial_end_index, "is_trial_end"] = True
+    imaging_df["is_trial_end"] = False
+    trial_end_index = imaging_df.imaging_harptime.searchsorted(trial_ends)
+    imaging_df.loc[trial_end_index, "is_trial_end"] = True
 
     starts = imaging_df.query("is_trial_start")
     ends = imaging_df.query("is_trial_end")
@@ -335,6 +399,7 @@ def process_imaging_df(
     # first get max and min running speed in the window
     max_running_speed = imaging_df.RS.rolling(nframe_window).max()
     min_running_speed = imaging_df.RS.rolling(nframe_window).min()
+    mean_running_speed = imaging_df.RS.rolling(nframe_window).mean()
     # MotorSpeed is in cm/s, RS is in m/s
     max_running_speed_diff = (max_running_speed - imaging_df.MotorSpeed / 100).abs()
     min_running_speed_diff = (min_running_speed - imaging_df.MotorSpeed / 100).abs()
@@ -342,4 +407,8 @@ def process_imaging_df(
     imaging_df["max_abs_rs2motor_diff"] = np.maximum(
         max_running_speed_diff, min_running_speed_diff
     )
+    imaging_df["max_abs_rs2motor_diff_ratio"] = (
+        imaging_df.max_abs_rs2motor_diff / imaging_df.MotorSpeed
+    )
+    imaging_df["mean_rs2motor_diff"] = mean_running_speed - imaging_df.MotorSpeed / 100
     return imaging_df

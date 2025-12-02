@@ -283,6 +283,8 @@ def generate_trials_df(
         "MotorSps",
         "MotorSpeed",
         "max_abs_rs2motor_diff",
+        "max_abs_rs2motor_diff_ratio",
+        "mean_rs2motor_diff",
     ]
     for column in optional_columns:
         if column in imaging_df.columns:
