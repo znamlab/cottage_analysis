@@ -307,7 +307,7 @@ def main(
                 best_reg_depths,
             ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
-                frames_all[..., int(frames_all.shape[2] // 2) :],
+                frames_all[..., int(frames_all.shape[-1] // 2) :],
                 reg_xys=np.geomspace(2.5, 10240, 13),
                 reg_depths=np.geomspace(2.5, 10240, 13),
                 shift_stim=2,
@@ -323,7 +323,7 @@ def main(
                 r2_ipsi,
             ) = rf_fitting.fit_3d_rfs_ipsi(
                 imaging_df_all,
-                frames_all[..., : int(frames_all.shape[2] // 2)],
+                frames_all[..., : int(frames_all.shape[-1] // 2)],
                 best_reg_xys,
                 best_reg_depths,
                 shift_stim=2,
