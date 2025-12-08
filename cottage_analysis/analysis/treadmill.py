@@ -407,8 +407,8 @@ def process_imaging_df(
     imaging_df["max_abs_rs2motor_diff"] = np.maximum(
         max_running_speed_diff, min_running_speed_diff
     )
-    imaging_df["max_abs_rs2motor_diff_ratio"] = (
-        imaging_df.max_abs_rs2motor_diff / imaging_df.MotorSpeed
+    imaging_df["max_abs_rs2motor_diff_ratio"] = imaging_df.max_abs_rs2motor_diff / (
+        imaging_df.MotorSpeed / 100
     )
     imaging_df["mean_rs2motor_diff"] = mean_running_speed - imaging_df.MotorSpeed / 100
     return imaging_df

@@ -362,6 +362,7 @@ def main(
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
         common_params = dict(
             rs_thr=0.01,
             param_range={
@@ -374,6 +375,7 @@ def main(
             min_sigma=0.25,
             run_openloop_only=False,
             file_special_sfx=special_sfx_base,
+            max_rs2motor_diff=max_rs2motor_diff,
         )
 
         to_do = [

@@ -607,8 +607,11 @@ def fit_rs_of_tuning(
     run_closedloop_only=False,
     run_openloop_only=False,
     max_acc=None,
+    max_rs2motor_diff=None,
 ):
-    def process_rs_of_for_fit(trials_df, trial_list=[], rs_thr=0.01, max_acc=None):
+    def process_rs_of_for_fit(
+        trials_df, trial_list=[], rs_thr=0.01, max_acc=None, max_rs2motor_diff=None
+    ):
         # take a subset of trials
         trials_df_part = (
             trials_df.iloc[trial_list] if len(trial_list) > 0 else trials_df
@@ -627,6 +630,11 @@ def fit_rs_of_tuning(
         if max_acc is not None:
             acc = np.concatenate(trials_df_part["acceleration_ratio_max_stim"].values)
             running = running & (acc < max_acc)
+        if max_rs2motor_diff is not None:
+            rs2motor_diff = np.concatenate(
+                trials_df_part["max_abs_rs2motor_diff_ratio_stim"].values
+            )
+            running = running & (rs2motor_diff < max_rs2motor_diff)
         rs = np.log(rs[running])
         rs_eye = np.log(rs_eye[running])
         of = np.log(np.degrees(of[running]))  # fit using of in deg
@@ -650,12 +658,14 @@ def fit_rs_of_tuning(
     if choose_trials is not None and isinstance(
         choose_trials, list
     ):  # choose a list of trials from all trials (including openloop and closed loop)
-        trials_df_select, choose_trial_nums, trial_sfx = (
-            common_utils.choose_trials_subset(
-                trials_df,
-                choose_trials,
-                sfx=trial_sfx,
-            )
+        (
+            trials_df_select,
+            choose_trial_nums,
+            trial_sfx,
+        ) = common_utils.choose_trials_subset(
+            trials_df,
+            choose_trials,
+            sfx=trial_sfx,
         )
     else:  # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol below
         trials_df_select = trials_df
@@ -689,12 +699,14 @@ def fit_rs_of_tuning(
             # choose only closed loop or open loop trials
             trials_df_fit = trials_df_fit
         else:  # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol
-            trials_df_fit, choose_trial_nums, trial_sfx = (
-                common_utils.choose_trials_subset(
-                    trials_df_fit,
-                    choose_trials,
-                    sfx=trial_sfx,
-                )
+            (
+                trials_df_fit,
+                choose_trial_nums,
+                trial_sfx,
+            ) = common_utils.choose_trials_subset(
+                trials_df_fit,
+                choose_trials,
+                sfx=trial_sfx,
             )
 
         # give class labels to each depth
@@ -710,7 +722,11 @@ def fit_rs_of_tuning(
         if k_folds == 1:
             # process data for fitting (rs, rs_eye, of are all logged)
             rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(
-                trials_df_fit, trial_list=[], rs_thr=rs_thr, max_acc=max_acc
+                trials_df_fit,
+                trial_list=[],
+                rs_thr=rs_thr,
+                max_acc=max_acc,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # loop between actual and virtual running speeds

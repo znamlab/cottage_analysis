@@ -10,7 +10,12 @@ import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
 from znamutils.decorators import slurm_it
-from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neurons
+from cottage_analysis.analysis import (
+    spheres,
+    fit_gaussian_blob,
+    find_depth_neurons,
+    treadmill,
+)
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
@@ -181,18 +186,31 @@ def load_session(
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
 
     neurons_df = pd.read_pickle(neurons_ds.path_full)
-    vs_df_all, trials_df_all = spheres.sync_all_recordings(
-        session_name=session_name,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets=filter_datasets,
-        exclude_datasets=exclude_datasets,
-        recording_type=recording_type,
-        protocol_base=protocol_base,
-        photodiode_protocol=photodiode_protocol,
-        return_volumes=True,
-        ephys_kwargs=ephys_kwargs,
-    )
+    if protocol_base == "SpheresTubeMotor":
+        vs_df_all, trials_df_all = treadmill.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
+    else:
+        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
         frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
@@ -244,6 +262,7 @@ def load_and_fit(
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
     ephys_kwargs=None,
+    max_rs2motor_diff=None,
     max_acc=None,
 ):
     """Load and fit a model to a session.
@@ -273,6 +292,7 @@ def load_and_fit(
         recording_type (str, optional): recording type. Defaults to "two_photon".
         ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
             Defaults to None.
+
 
     Returns:
         pd.DataFrame: result dataframe for the fit.
@@ -321,6 +341,7 @@ def load_and_fit(
         k_folds=k_folds,
         run_closedloop_only=run_closedloop_only,
         run_openloop_only=run_openloop_only,
+        max_rs2motor_diff=max_rs2motor_diff,
         max_acc=max_acc,
     )
     # save fit_df
