@@ -156,6 +156,8 @@ def get_visstim_ds(flexilims_session, harp_recording=None, vis_stim_recording=No
     harp_recording = get_str_or_recording(
         harp_recording, flexilims_session=flexilims_session
     )
-    harp_ds = get_harp_dataset(flexilims_session, harp_recording.name)
+    harp_ds = get_harp_dataset(
+        flexilims_session=flexilims_session, recording_name=harp_recording.name
+    )
     vis_stim_ds = harp_ds
     return vis_stim_ds
