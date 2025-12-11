@@ -881,7 +881,7 @@ def plot_psth_raster(
     results_df,
     depth_list,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
-    vmax=2,
+    vmax=1,
 ):
     """Plot PSTH raster for all neurons.
 
@@ -891,7 +891,9 @@ def plot_psth_raster(
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
         vmax (int, optional): maximum value for the colorbar. Defaults to 2.
     """
-    psths = np.stack(results_df["psth_crossval"])[:, :-1, 10:-10]  # exclude blank
+    psths = np.stack(results_df["psth_crossval"])
+    psths -= np.nanmean(psths[:, :, :15], axis=2)[:, :, np.newaxis]
+    psths = psths[:, :-1, 10:-10]  # exclude blank
     ndepths = psths.shape[1]
     nbins = psths.shape[2]
     # Sort neurons by preferred depth
@@ -899,9 +901,7 @@ def plot_psth_raster(
     psths = psths[preferred_depths.argsort()]
     psths = psths.reshape(psths.shape[0], -1)
     # zscore each row
-    normed_psth = (psths - np.nanmean(psths, axis=1)[:, np.newaxis]) / (
-        np.nanstd(psths, axis=1)[:, np.newaxis]
-    )
+    normed_psth = psths / np.nanstd(psths, axis=1)[:, np.newaxis]
     # Plot PSTHs
     ax = plt.gca()
     im = ax.imshow(

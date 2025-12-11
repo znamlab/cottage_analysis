@@ -114,7 +114,7 @@ def sbatch_session(
             args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
-
+    args = args + f" --job-name={session_name}_{pipeline_filename.split('.')[0]}"
     command = f"sbatch {args} {script_path}"
     print(command)
     subprocess.Popen(
@@ -244,6 +244,7 @@ def load_and_fit(
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
     ephys_kwargs=None,
+    max_acc=None,
 ):
     """Load and fit a model to a session.
 
@@ -272,7 +273,6 @@ def load_and_fit(
         recording_type (str, optional): recording type. Defaults to "two_photon".
         ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
             Defaults to None.
-
 
     Returns:
         pd.DataFrame: result dataframe for the fit.
@@ -321,6 +321,7 @@ def load_and_fit(
         k_folds=k_folds,
         run_closedloop_only=run_closedloop_only,
         run_openloop_only=run_openloop_only,
+        max_acc=max_acc,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(

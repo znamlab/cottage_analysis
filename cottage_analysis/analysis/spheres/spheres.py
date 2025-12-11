@@ -112,7 +112,12 @@ def find_stim_time(
 
 
 def generate_trials_df(
-    recording, imaging_df, is_multidepth=False, param_log=None, acceleration_time=0.5
+    recording,
+    imaging_df,
+    is_multidepth=False,
+    param_log=None,
+    acceleration_time=0.5,
+    add_spikes=False,
 ):
     """Generate a DataFrame that contains information for each trial.
 
@@ -301,6 +306,17 @@ def generate_trials_df(
             ).squeeze(),
             axis=1,
         )
+        if add_spikes and "spks" in imaging_df.columns:
+            trials_df[f"spks_{epoch}"] = trials_df.apply(
+                lambda x: np.stack(
+                    imaging_df.spks.loc[
+                        int(x[f"imaging_{epoch}_start"]) : int(
+                            x[f"imaging_{epoch}_stop"]
+                        )
+                    ]
+                ).squeeze(),
+                axis=1,
+            )
 
     # Add recording name
     trials_df.recording_name = recording.genealogy[-1]
@@ -384,6 +400,7 @@ def sync_all_recordings(
     harp_is_in_recording=True,
     use_onix=False,
     conflicts="skip",
+    add_spikes=False,
     sync_kwargs=None,
     ephys_kwargs=None,
 ):
@@ -478,6 +495,7 @@ def sync_all_recordings(
             return_volumes,
             ephys_kwargs,
             verbose=True,
+            add_spikes=add_spikes,
         )
 
         if i == 0:
@@ -722,6 +740,7 @@ def _process_single_recording_for_session(
     return_volumes,
     ephys_kwargs,
     verbose=True,
+    add_spikes=False,
 ):
     """
     Processes a single recording to generate vs_df, imaging_df, trials_df,
@@ -755,6 +774,7 @@ def _process_single_recording_for_session(
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
             return_volumes=return_volumes,
+            add_spikes=add_spikes,
         )
     else:  # ephys
         imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
@@ -783,6 +803,7 @@ def _process_single_recording_for_session(
         imaging_df=imaging_df,
         is_multidepth=is_multidepth_protocol,
         param_log=param_log,
+        add_spikes=add_spikes,
     )
     trials_df["recording"] = recording.name
 

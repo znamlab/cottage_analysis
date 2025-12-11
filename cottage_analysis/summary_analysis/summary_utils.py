@@ -31,6 +31,7 @@ def concatenate_all_neurons_df(
             conflicts="skip",
         )
         if os.path.exists(neurons_ds.path_full.parent / filename):
+            print(f"Concatenating {neurons_ds.path_full.parent / filename}...")
             neurons_df = pd.read_pickle(neurons_ds.path_full.parent / filename)
             if isinstance(neurons_df, dict):
                 neurons_df_temp = pd.DataFrame(columns=cols, index=[0])

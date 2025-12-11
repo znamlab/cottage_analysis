@@ -364,7 +364,7 @@ def preprocess_data(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "2-00:00:00",
+        "time": "7-00:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },

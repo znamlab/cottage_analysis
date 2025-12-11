@@ -216,7 +216,7 @@ def get_psth_crossval_all_sessions(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets={"anatomical_only": 3},
+                filter_datasets={"anatomical_only": 3, "ast_neuropil": False},
                 recording_type="two_photon",
                 protocol_base="SpheresPermTubeReward",
                 photodiode_protocol=photodiode_protocol,
