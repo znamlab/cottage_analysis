@@ -4,8 +4,10 @@ from scipy import signal
 from tqdm import tqdm
 from spikeinterface.core.loading import load as si_load
 from spikeinterface import preprocessing as spre
+from znamutils import slurm_it
 
 
+@slurm_it(conda_env="onix-3dvision")
 def compute_lfp_power_spectrum(recording_folder, output_folder=None, cutoff=300):
     """
     Compute the average LFP power spectrum for a recording.
