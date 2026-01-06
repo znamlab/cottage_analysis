@@ -1,14 +1,30 @@
 from pathlib import Path
 import numpy as np
 from scipy import signal
+import json
 from tqdm import tqdm
 from spikeinterface.core.loading import load as si_load
 from spikeinterface import preprocessing as spre
 from znamutils import slurm_it
 
 
+def load_raw_rec_from_aind(preprocessed_json_file):
+    """Temporary function to load raw recording from AIND preprocessed data"""
+    preprocessed_json_file = Path(preprocessed_json_file)
+    with open(preprocessed_json_file, "r") as f:
+        preprocessing_vizualization_data = json.load(f)
+
+    recording_full_dict = preprocessing_vizualization_data["recording"]["timeseries"][
+        "full"
+    ]["raw"]
+    rec = si_load(recording_full_dict, base_folder=preprocessed_json_file.parent)
+    return rec
+
+
 @slurm_it(conda_env="onix-3dvision")
-def compute_lfp_power_spectrum(recording, output_folder=None, cutoff=300):
+def compute_lfp_power_spectrum(
+    recording_path, output_folder=None, cutoff=300, use_load_raw_rec_from_aind=False
+):
     """
     Compute the average LFP power spectrum for a recording.
 
@@ -20,10 +36,14 @@ def compute_lfp_power_spectrum(recording, output_folder=None, cutoff=300):
     Returns:
         power_spectrums: The computed average power spectrum.
     """
-    if isinstance(recording, str) or isinstance(recording, Path):
-        recording = si_load(recording)
+    if use_load_raw_rec_from_aind:
+        recording = load_raw_rec_from_aind(recording_path)
+    else:
+        recording = si_load(recording_path)
     fs = cutoff * 3
-    recording = spre.bandpass_filter(recording, freq_min=0.1, freq_max=cutoff)
+    recording = spre.bandpass_filter(
+        recording, freq_min=0.5, freq_max=cutoff, ignore_low_freq_error=True
+    )
     recording = spre.resample(recording, fs)
 
     power_spectrums = None
