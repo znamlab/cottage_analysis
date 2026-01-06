@@ -8,19 +8,20 @@ from znamutils import slurm_it
 
 
 @slurm_it(conda_env="onix-3dvision")
-def compute_lfp_power_spectrum(recording_folder, output_folder=None, cutoff=300):
+def compute_lfp_power_spectrum(recording, output_folder=None, cutoff=300):
     """
     Compute the average LFP power spectrum for a recording.
 
     Args:
-        recording_folder: Path to the SpikeInterface recording folder.
+        recording: SpikeInterface recording object or path to the recording folder.
         output_folder: Path to save the results (.npz file).
         cutoff: Low-pass filter cutoff frequency (Hz).
 
     Returns:
         power_spectrums: The computed average power spectrum.
     """
-    recording = si_load(recording_folder)
+    if isinstance(recording, str) or isinstance(recording, Path):
+        recording = si_load(recording)
     fs = cutoff * 3
     recording = spre.bandpass_filter(recording, freq_min=0.1, freq_max=cutoff)
     recording = spre.resample(recording, fs)
