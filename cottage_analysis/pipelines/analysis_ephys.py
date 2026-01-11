@@ -31,7 +31,7 @@ def main(
     return_multiunit: bool = False,
     harp_is_in_recording: bool = True,
     exp_sd: float = None,
-    rate_bin: float = 0.1,
+    rate_bin: float = 0.03,
     rs_thr: float = 0.0002,
     filter_datasets: str = None,
     protocol_base: str = "SphereTube",
@@ -54,7 +54,7 @@ def main(
         return_multiunit(bool): whether to return multiunit. Default False.
         harp_is_in_recording(bool): whether harp is in recording. Default True.
         exp_sd(float): expected standard deviation. Default 0.1.
-        rate_bin(float): rate bin. Default 0.01.
+        rate_bin(float): rate bin. Default 0.03.
         rs_thr(float): rs threshold. Default 0.0002.
         filter_datasets(str): json string of datasets to filter.
         protocol_base(str): protocol base name. Default "SphereTube".
