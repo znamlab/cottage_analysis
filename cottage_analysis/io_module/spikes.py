@@ -90,7 +90,7 @@ def get_smoothed_spike_rate(
         else:
             loaded_spks = {"bins": bins, "exp_sd": exp_sd}
 
-    unit_ids = list(sorted(units.keys()))
+    unit_ids = np.array(list(sorted(units.keys())))
     for iu, unit in enumerate(unit_ids):
         spk = units[unit]
         valid_spk = spk[(spk > bins[0]) & (spk < bins[-1])]

@@ -8,6 +8,7 @@ from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
 from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.visstim import get_param_log
+from cottage_analysis.io_module.spikes import load_kilosort_folder
 
 print = partial(print, flush=True)
 
@@ -322,6 +323,60 @@ def generate_trials_df(
     trials_df.recording_name = recording.genealogy[-1]
     # Rename
     trials_df = trials_df.drop(columns=["imaging_blank_start"])
+
+    return trials_df
+
+
+def add_spikes_to_trials_df(
+    trials_df,
+    unit_ids,
+    units_harp,
+    dataset_type="kilosort4",
+    exclude_datasets=None,
+    filter_datasets=None,
+):
+    """Add spikes to trials_df."""
+
+    spike_times_stim = [[] for _ in range(len(trials_df))]
+    spike_times_blank_pre = [[] for _ in range(len(trials_df))]
+    spike_times_blank_post = [[] for _ in range(len(trials_df))]
+
+    # Calculate blank length
+    blank_dur = np.nanmedian(
+        trials_df.imaging_harptime_blank_stop - trials_df.imaging_harptime_blank_start
+    )
+    blank_pre_starttime = np.hstack(
+        [
+            trials_df.imaging_harptime_stim_start.iloc[0] - blank_dur,
+            trials_df.imaging_harptime_stim_stop.iloc[:-1],
+        ]
+    )
+    blank_post_stoptime = np.hstack(
+        [
+            trials_df.imaging_harptime_stim_start.iloc[1:],
+            trials_df.imaging_harptime_stim_stop.iloc[-1] + blank_dur,
+        ]
+    )
+    for cl in unit_ids:
+        harp_spikes = units_harp[cl]
+        stim_beg = harp_spikes.searchsorted(trials_df.imaging_harptime_stim_start)
+        stim_stop = harp_spikes.searchsorted(trials_df.imaging_harptime_stim_stop)
+        blank_pre_start = harp_spikes.searchsorted(blank_pre_starttime)
+        blank_post_stop = harp_spikes.searchsorted(blank_post_stoptime)
+
+        for i in range(len(trials_df)):
+            spike_times_stim[i].append(harp_spikes[stim_beg[i] : stim_stop[i]])
+            spike_times_blank_pre[i].append(
+                harp_spikes[blank_pre_start[i] : stim_beg[i]]
+            )
+            spike_times_blank_post[i].append(
+                harp_spikes[stim_stop[i] : blank_post_stop[i]]
+            )
+
+    trials_df["spike_times_stim"] = spike_times_stim
+    trials_df["spike_times_blank_pre"] = spike_times_blank_pre
+    trials_df["spike_times_blank_post"] = spike_times_blank_post
+    trials_df["unit_ids"] = [list(unit_ids) for _ in range(len(trials_df))]
 
     return trials_df
 
@@ -777,7 +832,7 @@ def _process_single_recording_for_session(
             add_spikes=add_spikes,
         )
     else:  # ephys
-        imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
+        imaging_df, unit_ids, units_harp = synchronisation.generate_spike_rate_df(
             vs_df=vs_df,
             onix_recording=onix_rec,  # Assumes onix_rec is loaded if ephys
             harp_recording=harp_recording,
@@ -815,5 +870,18 @@ def _process_single_recording_for_session(
         vis_stim_recording=recording,
         is_multidepth=is_multidepth_protocol,
     )
+    if unit_ids is not None:
+        # We have an ephys recording, add spk times
+        if ephys_kwargs is None:
+            ephys_kwargs = {}
+
+        trials_df = add_spikes_to_trials_df(
+            trials_df=trials_df,
+            unit_ids=unit_ids,
+            units_harp=units_harp,
+            dataset_type=ephys_kwargs.get("dataset_type", "kilosort4"),
+            exclude_datasets=exclude_datasets,
+            filter_datasets=filter_datasets,
+        )
 
     return vs_df, imaging_df, trials_df, param_log, recording, unit_ids
