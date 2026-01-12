@@ -326,8 +326,8 @@ def load_breakout(
     # Port status might be an empty file, remove userwarning
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        output["port-status"] = np.loadtxt(
-            path_to_folder / f"port-status_{index}.csv", dtype=int, delimiter=","
+        output["port-status"] = pd.read_csv(
+            path_to_folder / f"port-status_{index}.csv", delimiter=",", header=None
         )
 
     # Read harp sync

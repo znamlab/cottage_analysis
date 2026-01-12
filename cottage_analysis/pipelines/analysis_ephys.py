@@ -13,15 +13,20 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
+from znamutils import slurm_it
 
 
+@slurm_it(
+    conda_env="onix-3dvision",
+    slurm_options={"time": "48:00:00", "cpus-per-task": 4, "mem": "64G"},
+)
 def main(
     project: str,
     session_name: str,
     *,
     conflicts: str = "skip",
     photodiode_protocol: int = 5,
-    use_slurm: bool = False,
+    run_rsof_fit_on_separate_slurm_jobs: bool = False,
     run_depth_fit: bool = True,
     run_rf: bool = False,
     run_rsof_fit: bool = True,
@@ -44,7 +49,7 @@ def main(
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
-        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        run_rsof_fit_on_separate_slurm_jobs(bool): whether to use slurm to run the fit in the pipeline. Default False.
         run_depth_fit(bool): whether to run the depth fit. Default True.
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
@@ -86,7 +91,7 @@ def main(
         rate_bin=rate_bin,
         unit_list=unit_list,
     )
-    if use_slurm:
+    if run_rsof_fit_on_separate_slurm_jobs:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
         slurm_folder = Path(slurm_folder / f"{session_name}")
@@ -401,7 +406,7 @@ def main(
             recording_type="behaviour",
             protocol_base=protocol_base,
             filter_datasets=filter_datasets,
-            use_slurm=use_slurm,
+            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
             slurm_folder=slurm_folder,
             ephys_kwargs=ephys_kwargs,
         )
@@ -437,17 +442,17 @@ def main(
                 **common_params,
             )
             outputs.append(out)
-            if use_slurm:
+            if run_rsof_fit_on_separate_slurm_jobs:
                 print(f"Started job {out}")
             else:
                 print("---RS OF fit finished. Neurons_df saved.---")
 
         # Merge fit dataframes
-        job_dependency = outputs if use_slurm else None
+        job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
         out = pipeline_utils.merge_fit_dataframes(
             project,
             session_name,
-            use_slurm=use_slurm,
+            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
             scripts_name=f"{session_name}_merge_fit_dataframes",
@@ -487,14 +492,14 @@ def main(
     if run_plot:
         print("---Start basic vis plotting...---")
         if run_rsof_fit:
-            job_dependency = outputs if use_slurm else None
+            job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
         else:
             job_dependency = None
         out = pipeline_utils.run_basic_plots(
             project,
             session_name,
             photodiode_protocol,
-            use_slurm=use_slurm,
+            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
             filter_datasets=filter_datasets,
@@ -502,7 +507,7 @@ def main(
             protocol_base=protocol_base,
             recording_type="behaviour",
         )
-        if use_slurm:
+        if run_rsof_fit_on_separate_slurm_jobs:
             print(f"Started plottingjob {out}")
         else:
             print("---Plotting finished. ---")

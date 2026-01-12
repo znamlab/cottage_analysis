@@ -536,7 +536,7 @@ def read_from_binaries(
         import harp
     except ImportError:
         raise ImportError("Please install harp-python: pip install harp-python")
-
+    harp_folder = Path(harp_folder).absolute().resolve()
     reader = harp.create_reader(harp_folder)
     output = {}
 
@@ -595,6 +595,7 @@ def read_from_binaries(
                 output.update(bits)
                 output["digital_time"] = di.index
         else:
+            warnings.warn("No digital input found")
             if di_names is not None:
                 for name in di_names:
                     output[name] = np.array([])

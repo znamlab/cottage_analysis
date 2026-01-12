@@ -646,7 +646,7 @@ def generate_spike_rate_df(
     dataset_type="kilosort4",
     filter_datasets=None,
     exclude_datasets=None,
-    return_multiunit=False,
+    return_multiunit=True,
     unit_list=None,
 ):
     """This is the equivalent of generate_imaging_df for spike rate data.
