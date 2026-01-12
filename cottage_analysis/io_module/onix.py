@@ -323,12 +323,12 @@ def load_breakout(
     output["output-clock"] = np.loadtxt(
         path_to_folder / f"output-clock_{index}.csv", dtype=int, delimiter=","
     )
-    # Port status might be an empty file, remove userwarning
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        output["port-status"] = pd.read_csv(
-            path_to_folder / f"port-status_{index}.csv", delimiter=",", header=None
-        )
+    # Port status might be an empty file, handle EmptyDataError
+    file_path = path_to_folder / f"port-status_{index}.csv"
+    try:
+        output["port-status"] = pd.read_csv(file_path, delimiter=",", header=None)
+    except (pd.errors.EmptyDataError, FileNotFoundError):
+        output["port-status"] = pd.DataFrame()
 
     # Read harp sync
     output["harpsync"] = pd.read_csv(
