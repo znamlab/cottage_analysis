@@ -38,6 +38,7 @@ def main(
     exp_sd: float = None,
     rate_bin: float = 0.03,
     rs_thr: float = 0.0002,
+    ephys_dataset_type: str = "aind_pipeline",
     filter_datasets: str = None,
     protocol_base: str = "SphereTube",
 ):
@@ -61,6 +62,7 @@ def main(
         exp_sd(float): expected standard deviation. Default 0.1.
         rate_bin(float): rate bin. Default 0.03.
         rs_thr(float): rs threshold. Default 0.0002.
+        ephys_dataset_type(str): datatype for spikes. Default 'aind_pipeline'
         filter_datasets(str): json string of datasets to filter.
         protocol_base(str): protocol base name. Default "SphereTube".
     """
@@ -80,7 +82,7 @@ def main(
     print("Arguments:")
     for arg, value in locals().items():
         print(f"{arg}: {value}")
-
+    print("")
     if filter_datasets is None:
         filter_datasets = {}
     frame_rate = 1 / rate_bin
@@ -90,6 +92,7 @@ def main(
         exp_sd=exp_sd,
         rate_bin=rate_bin,
         unit_list=unit_list,
+        dataset_type=ephys_dataset_type,
     )
     if run_rsof_fit_on_separate_slurm_jobs:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -114,12 +117,18 @@ def main(
         return
 
     if neurons_ds.path_full.exists():
-        # If there is a neurons_df, load it to overwrite only the parts that we run in
-        # this instance of the pipeline
-        neurons_df = pd.read_pickle(neurons_ds.path_full)
+        if conflicts == "overwrite" and run_depth_fit:
+            print("Overwriting previous neurons_df")
+            neurons_df = None
+        else:
+            # If there is a neurons_df, load it to overwrite only the parts that we run
+            # in this instance of the pipeline
+            print("Reloading neurons_df")
+            neurons_df = pd.read_pickle(neurons_ds.path_full)
     else:
         neurons_df = None
     # Synchronisation
+    print("")
     print("---Start synchronisation...---")
     if protocol_base == "SpheresTubeMotor":
         run_rf = False
@@ -206,6 +215,7 @@ def main(
             special_sfx_base = ""
 
         # Find depth neurons and fit preferred depth
+        print("")
         print("---Start finding depth neurons...---")
         print("Find depth neurons...")
         neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
@@ -469,23 +479,26 @@ def main(
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        # Merge fit dataframes
-        out = pipeline_utils.merge_fit_dataframes(
-            project,
-            session_name,
-            use_slurm=0,
-            slurm_folder=slurm_folder,
-            job_dependency=None,
-            scripts_name=f"{session_name}_merge_fit_dataframes",
-            conflicts=conflicts,
-            prefix="fit_rs_of_tuning_",
-            suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
-            include_keywords=[],
-            target_column_suffix=special_sfx_base,
-            filetype=".pickle",
-            target_filename="neurons_df.pickle",
-        )
+        try:
+            # Merge fit dataframes
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=0,
+                slurm_folder=slurm_folder,
+                job_dependency=None,
+                scripts_name=f"{session_name}_merge_fit_dataframes",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_",
+                suffix=special_sfx_base,
+                exclude_keywords=["recording", "openclosed", "openloop"],
+                include_keywords=[],
+                target_column_suffix=special_sfx_base,
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
+        except TypeError:
+            print("No rsof dataframe to merge. Skipping")
         print("---Analysis finished. Neurons_df saved.---")
 
     # Plot basic plots

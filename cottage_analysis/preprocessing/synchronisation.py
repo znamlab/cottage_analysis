@@ -12,6 +12,7 @@ from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
 from cottage_analysis.io_module.spikes import (
     load_kilosort_folder,
+    load_aind_folder,
     get_smoothed_spike_rate,
 )
 from cottage_analysis.preprocessing import onix as onix_prepro
@@ -107,14 +108,14 @@ def find_monitor_frames(
         )
         breakout = onix_io.load_breakout(raw / onix_recording.path)
         onix_data = onix_prepro.preprocess_onix_recording(
-            dict(breakout_data=breakout), harp_message=harp_message
+            breakout, harp_message=harp_message
         )
-        if "aio_mapping" in onix_ds.extra_attributes:
+        if (onix_ds is not None) and ("aio_mapping" in onix_ds.extra_attributes):
             ch_pd = onix_ds.extra_attributes["aio_mapping"]["photodiode"]
         else:
             ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
-        photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
-        analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
+        photodiode = onix_data["aio"][ch_pd, :]
+        analog_time = onix_data["onix2harp"](onix_data["aio-clock"])
         # to make it faster, decimate the photodiode signal
         photodiode = scipy.signal.decimate(photodiode, 5)
         analog_time = analog_time[::5]
@@ -724,8 +725,16 @@ def generate_spike_rate_df(
         exclude_datasets=exclude_datasets,
         filter_datasets=filter_datasets,
     )
-
-    out = load_kilosort_folder(spike_ds.path_full, return_multiunit=return_multiunit)
+    if spike_ds is None:
+        raise ValueError(f"No spike sorting dataset for {onix_recording.name}")
+    if "kilosort" in spike_ds.dataset_type:
+        out = load_kilosort_folder(
+            spike_ds.path_full, return_multiunit=return_multiunit
+        )
+    elif "aind" in spike_ds.dataset_type:
+        out = load_aind_folder(spike_ds.path_full, return_multiunit=return_multiunit)
+    else:
+        raise IOError(f"Unknow spike_ds type: {spike_ds.dataset_type}")
     if return_multiunit:
         ks_data, good_units, mua_units = out
         units = {**good_units, **mua_units}

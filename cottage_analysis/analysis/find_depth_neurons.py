@@ -254,6 +254,11 @@ def find_depth_neurons(
     depth_list = find_depth_list(trials_df)
     mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
 
+    if "unit_ids" in trials_df:
+        unit_ids = trials_df.unit_ids.iloc[0]
+        assert len(unit_ids) == nrois
+        neurons_df["unit_id"] = [int(ui) for ui in unit_ids]
+
     for roi in tqdm(np.arange(nrois)):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])
 
