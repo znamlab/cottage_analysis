@@ -23,6 +23,29 @@ ACTUAL_MOTOR_SPEED = {64: 61, 32: 61.0 / 2, 16: 61.0 / 4, 8: 61.0 / 8, 4: 61.0 /
 
 
 def compute_response_matrix(neurons_df, trials_df_tread):
+    """
+    Compute the response matrix for motor speeds and optic flows.
+
+    Args:
+        neurons_df (pd.DataFrame): Dataframe containing neuron information.
+        trials_df_tread (pd.DataFrame): Dataframe containing trial information with treadmill data.
+            Must contain 'MotorSpeed', 'expected_optic_flow', and 'dff_stim' columns.
+
+    Returns:
+        tuple: (motor_speeds, optic_flows, tread_responses)
+            - motor_speeds (np.ndarray): Array of motor speeds.
+            - optic_flows (np.ndarray): Array of optic flows.
+            - tread_responses (np.ndarray): Response matrix of shape (n_neurons, n_motor_speeds, n_optic_flows, frame2extract).
+              'frame2extract' (hardcoded as 152) is the number of frames extracted from the end of each stimulus period
+              to ensure a consistent response length across trials. If a trial is shorter than 152 frames,
+              it is zero-padded at the beginning. If longer, it is truncated from the beginning.
+    """
+    warnings.warn(
+        "compute_response_matrix is deprecated and will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     motor_speeds = 2 ** np.arange(2, 7)
     optic_flows = 4 ** np.arange(6)
 
