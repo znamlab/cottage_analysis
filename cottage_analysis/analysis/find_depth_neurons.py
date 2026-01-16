@@ -5,6 +5,7 @@ from tqdm import tqdm
 import scipy
 from scipy.stats import spearmanr
 import flexiznam as flz
+import warnings
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -12,6 +13,8 @@ from cottage_analysis.analysis import common_utils, size_control, fit_gaussian_b
 from functools import partial
 
 print = partial(print, flush=True)
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def find_depth_list(df):
@@ -213,6 +216,7 @@ def find_depth_neurons(
     neurons_ds,
     rs_thr=0.2,
     alpha=0.05,
+    closed_loop=1,
 ):
     """Find depth neurons from all ROIs segmented.
 
@@ -243,7 +247,7 @@ def find_depth_neurons(
     neurons_df["roi"] = np.arange(nrois)
 
     # Find the averaged dFF for each trial in only closed loop recordings
-    trials_df = trials_df[trials_df.closed_loop == 1]
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     # Also remove multi depth recordings
     is_multidepth = trials_df.recording_name.str.contains("multidepth")
     trials_df = trials_df[~is_multidepth]
@@ -456,9 +460,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[
-                roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"
-            ] = np.exp(popt[1])
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
+                np.exp(popt[1])
+            )
             neurons_df.at[
                 roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
             ] = popt
