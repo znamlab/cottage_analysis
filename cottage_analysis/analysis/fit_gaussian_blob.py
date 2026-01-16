@@ -131,6 +131,7 @@ def gaussian_1d(
     g = offset + amplitude * np.exp(-((x - x0) ** 2) / (2 * sigma_x_sq))
     return g
 
+
 def gaussian_2mult(
     xy_tuple,
     log_amplitude,
@@ -141,12 +142,14 @@ def gaussian_2mult(
     offset,
     min_sigma,
 ):
-    (x,y) = xy_tuple
+    (x, y) = xy_tuple
     sigma_x_sq = np.exp(log_sigma_x2) + min_sigma
     sigma_y_sq = np.exp(log_sigma_y2) + min_sigma
     amplitude = np.exp(log_amplitude)
-    g = offset + amplitude * np.exp(-((x-x0) ** 2) / (2*sigma_x_sq) - ((y-y0)**2/ (2*sigma_y_sq)))
-    
+    g = offset + amplitude * np.exp(
+        -((x - x0) ** 2) / (2 * sigma_x_sq) - ((y - y0) ** 2 / (2 * sigma_y_sq))
+    )
+
     return g
 
 
@@ -236,21 +239,22 @@ def gaussian_additive(
     )
     return g
 
+
 def gaussian_multiplicative(
-        xy_tuple,
-        log_amplitude,
-        x0,
-        y0,
-        log_sigma_x2,
-        log_sigma_y2,
-        offset,
-        min_sigma,
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
 ):
     (rs, of) = xy_tuple
     x = rs - of  # ratio of logged rs/of
-    y = rs # just the logged rs
+    y = rs  # just the logged rs
     g = gaussian_2mult(
-        (x,y),
+        (x, y),
         log_amplitude,
         x0,
         y0,
@@ -261,6 +265,7 @@ def gaussian_multiplicative(
     )
 
     return g
+
 
 def gabor_2d(
     xy_tuple,
@@ -608,7 +613,7 @@ def initial_fit_conditions(
                 log_sigma_x2=np.random.normal(),
                 offset=np.random.normal(),
             )
-    
+
     elif model == "gaussian_multiplicative":
         model_sfx = "_g2mult"
         lower_bounds = GaussianMultiplicativeParams(
@@ -638,7 +643,7 @@ def initial_fit_conditions(
                 y0=np.random.uniform(
                     np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
                 ),
-                log_sigma_x2=np.random.normal(),
+                log_sigma_x2=np.random.normal() + 2,
                 log_sigma_y2=np.random.normal(),
                 offset=np.random.normal(),
             )
@@ -866,15 +871,11 @@ def fit_rs_of_tuning(
                         neurons_df_temp.at[
                             roi,
                             f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
-                        ] = np.degrees(
-                            np.exp(popt[1])
-                        )
+                        ] = np.degrees(np.exp(popt[1]))
                         neurons_df_temp.at[
                             roi,
                             f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
-                        ] = np.exp(
-                            popt[2]
-                        )
+                        ] = np.exp(popt[2])
 
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
