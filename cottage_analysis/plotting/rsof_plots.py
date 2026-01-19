@@ -1505,3 +1505,74 @@ def plot_histogram_overlay(
         ax2.yaxis.set_visible(False)
         ax2.xaxis.set_visible(False)
     sns.despine(ax=ax2)
+
+
+def plot_treadmill_vs_closedloop_matrix(
+    trials_df_tread,
+    trials_df_sphere,
+    roi,
+    log_range={
+        "rs_bin_log_min": 0,
+        "rs_bin_log_max": 2.5,
+        "rs_bin_num": 6,
+        "of_bin_log_min": -1.5,
+        "of_bin_log_max": 3.5,
+        "of_bin_num": 11,
+        "log_base": 10,
+    },
+    is_closed_loop_tread=1,
+    is_closed_loop_sphere=1,
+    title_tread="Treadmill",
+    title_sphere="Closed-loop",
+    figsize=(12, 5),
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
+    **kwargs,
+):
+    """
+    Plot the RS-OF matrix for treadmill and closed-loop recordings side-by-side.
+
+    Args:
+        trials_df_tread (pd.DataFrame): Dataframe for treadmill trials.
+        trials_df_sphere (pd.DataFrame): Dataframe for sphere (closed-loop) trials.
+        roi (int): ROI index to plot.
+        log_range (dict, optional): Log range for the heatmap. Defaults to None.
+        is_closed_loop_tread (int, optional): 1 for closed loop, 0 for open loop for treadmill. Defaults to 0.
+        is_closed_loop_sphere (int, optional): 1 for closed loop, 0 for open loop for sphere. Defaults to 1.
+        title_tread (str, optional): Title for treadmill plot. Defaults to "Treadmill".
+        title_sphere (str, optional): Title for sphere plot. Defaults to "Closed-loop".
+        figsize (tuple, optional): Figure size. Defaults to (12, 5).
+        fontsize_dict (dict, optional): Dictionary of fontsizes.
+        **kwargs: Additional arguments passed to plot_RS_OF_matrix.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    # Plot treadmill matrix
+    vmin_t, vmax_t = plot_RS_OF_matrix(
+        trials_df_tread,
+        roi,
+        log_range=log_range,
+        is_closed_loop=is_closed_loop_tread,
+        title=title_tread,
+        ax=axes[1],
+        fontsize_dict=fontsize_dict,
+        **kwargs,
+    )
+    axes[1].set_ylabel("")
+    # Plot sphere matrix
+    # Note: We use the same vmin/vmax for consistent comparison
+    plot_RS_OF_matrix(
+        trials_df_sphere,
+        roi,
+        log_range=log_range,
+        is_closed_loop=is_closed_loop_sphere,
+        title=title_sphere,
+        vmin=vmin_t,
+        vmax=vmax_t,
+        ax=axes[0],
+        fontsize_dict=fontsize_dict,
+        cbar_width=None,
+        **kwargs,
+    )
+
+    plt.tight_layout()
+    return fig, axes
