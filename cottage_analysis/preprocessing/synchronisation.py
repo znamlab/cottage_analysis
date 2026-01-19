@@ -691,7 +691,7 @@ def generate_spike_rate_df(
     flexilims_session,
     rate_bin=0.03,
     exp_sd=None,
-    dataset_type="kilosort4",
+    dataset_type="aind_pipeline",
     filter_datasets=None,
     exclude_datasets=None,
     return_multiunit=True,
@@ -709,7 +709,7 @@ def generate_spike_rate_df(
         rate_bin (int): bin size in s.
         exp_sd (float): standard deviation of the exponential filter to apply on the
             spike rate.
-        dataset_type (str): dataset type. Defaults to "kilosort4".
+        dataset_type (str): dataset type. Defaults to "aind_pipeline".
         filter_datasets (dict, optional): filters to apply on choosing onix datasets.
             Defaults to None.
         return_multiunit (bool): if True, process multiunits as well. Defaults to False.
