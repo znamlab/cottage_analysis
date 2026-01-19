@@ -856,6 +856,11 @@ def generate_spike_rate_df(
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
 
+    # Add RS_volume for compatibility with 2p
+    imaging_df["RS_volume"] = (
+            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+        )
+
     return imaging_df, unit_ids, units_harp
 
 
