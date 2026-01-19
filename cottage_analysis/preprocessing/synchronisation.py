@@ -215,6 +215,8 @@ def generate_vs_df(
             None.
         project (str, optional): project name. Defaults to None. Must be provided if
             flexilims_session is None.
+        protocol_base (str, optional): base protocol name. Used only for KellerTubes
+            Defaults to "SpheresPermTubeReward".
         harp_recording (str or pandas.Series, optional): recording name or recording
             entry if different from (vis stim) recording. Defaults to None.
         onix_recording (str or pandas.Series, optional): recording name or recording
