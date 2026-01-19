@@ -42,12 +42,13 @@ def main(
     print(
         f"------------------------------- \n \
         Start analysing {session_name}   \n \
-        -------------------------------"
+        -------------------------------",
+        flush=True,
     )
     params = {
         "trial_average": False,
-        "rolling_window": 0.5,
-        "downsample_window": 0.5,
+        "rolling_window": None,
+        "downsample_window": None,
         "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
@@ -155,6 +156,7 @@ def main(
             still_thr=params["still_thr"],
             still_time=params["still_time"],
             frame_rate=frame_rate,
+            add_errors=True,
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",

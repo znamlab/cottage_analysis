@@ -156,6 +156,8 @@ def get_psth_crossval_all_sessions(
     corridor_length=6,
     blank_length=0,
     overwrite=False,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Calculate the PSTH for all sessions in session_list.
     Also calculate running speed PSTH; the correlation between actual and virtual running speeds for openloop sessions.
@@ -185,7 +187,10 @@ def get_psth_crossval_all_sessions(
             session_name=session_name,
             flexilims_session=flexilims_session,
             conflicts="skip",
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
         )
+        print(f"Loading {neurons_ds.path_full}", flush=True)
         psth_path = neurons_ds.path_full.parent / "psth_crossval.pkl"
         if psth_path.exists() and not overwrite:
             results_all.append(pd.read_pickle(psth_path))
@@ -199,6 +204,8 @@ def get_psth_crossval_all_sessions(
             flexilims_session=flexilims_session,
             origin_name=session_name,
             dataset_type="suite2p_traces",
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
         )
         fs = list(suite2p_ds.values())[0][-1].extra_attributes["fs"]
         try:
@@ -216,7 +223,8 @@ def get_psth_crossval_all_sessions(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets={"anatomical_only": 3, "ast_neuropil": False},
+                filter_datasets=filter_datasets,
+                exclude_datasets=exclude_datasets,
                 recording_type="two_photon",
                 protocol_base="SpheresPermTubeReward",
                 photodiode_protocol=photodiode_protocol,
@@ -234,7 +242,8 @@ def get_psth_crossval_all_sessions(
                 flexilims_session=flexilims_session,
                 origin_name=exp_session.name,
                 dataset_type="suite2p_rois",
-                filter_datasets={"anatomical_only": 3},
+                filter_datasets=filter_datasets,
+                exclude_datasets=exclude_datasets,
                 allow_multiple=False,
                 return_dataseries=False,
             )

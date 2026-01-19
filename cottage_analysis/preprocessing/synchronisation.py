@@ -541,11 +541,7 @@ def generate_imaging_df(
     imaging_df["imaging_volume"] = (
         (imaging_df.imaging_frame / nplanes).apply(np.floor).astype(int)
     )
-    # if return_volumes is True, select rows where imaging_volume changes
-    if return_volumes:
-        volume_starts = imaging_df.imaging_volume.diff()
-        volume_starts.iloc[0] = 1
-        imaging_df = imaging_df[volume_starts != 0].copy()
+
     # add a column for the harptime at end the imaging volume
     imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
     # set the last value of imaging_harptime_end to the last value of imaging_harptime +
@@ -555,16 +551,27 @@ def generate_imaging_df(
         + imaging_df["imaging_harptime"].diff().median()
     )
     # select the last monitor frame before the end of each imaging volume / frame
-    imaging_df = pd.merge_asof(
-        left=imaging_df,
-        right=vs_df,
-        left_on="imaging_harptime_end",
-        right_on="monitor_harptime",
-        direction="backward",
-        allow_exact_matches=True,
-    )
-    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime
-    # of frame)
+    try:
+        imaging_df = pd.merge_asof(
+            left=imaging_df,
+            right=vs_df,
+            left_on="imaging_harptime_end",
+            right_on="monitor_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    except ValueError:
+        print("Sorting values to make imaging_df...")
+        imaging_df = pd.merge_asof(
+            left=imaging_df.sort_values(by="imaging_harptime_end"),
+            right=vs_df,
+            left_on="imaging_harptime_end",
+            right_on="monitor_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
         {
@@ -573,14 +580,52 @@ def generate_imaging_df(
         }
     )
     # select the last mouse z before the end of each imaging volume / frame
-    imaging_df = pd.merge_asof(
-        left=imaging_df,
-        right=mouse_z_harp_df,
-        left_on="imaging_harptime_end",
-        right_on="mouse_z_harptime",
-        direction="backward",
-        allow_exact_matches=True,
-    )
+    try:
+        imaging_df = pd.merge_asof(
+            left=imaging_df,
+            right=mouse_z_harp_df,
+            left_on="imaging_harptime_end",
+            right_on="mouse_z_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    except ValueError:
+        imaging_df = pd.merge_asof(
+            left=imaging_df.sort_values(by="imaging_harptime_end"),
+            right=mouse_z_harp_df.sort_values(by="mouse_z_harptime"),
+            left_on="imaging_harptime_end",
+            right_on="mouse_z_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
+    # if return_volumes, calculate the running speed by frame and aggregate across volumes
+    if return_volumes:
+        imaging_df["RS"] = (
+            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+        )
+        running_speeds = []
+
+        for i in range(imaging_df["imaging_volume"].max() + 1):
+            tmp = imaging_df[imaging_df["imaging_volume"] == i].RS.values
+            if len(tmp) != nplanes:
+                tmp = np.append(tmp, np.full(int(nplanes - len(tmp)), np.nan))
+            running_speeds.append(tmp)
+
+        # make sure frames and volumes are sorted in the correct order
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
+        imaging_df["RS_volume"] = running_speeds
+
+    imaging_df = imaging_df.set_index("imaging_volume", drop=False)
+
+    if return_volumes:
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
+
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )

@@ -119,6 +119,7 @@ def generate_trials_df(
     param_log=None,
     acceleration_time=0.5,
     add_spikes=False,
+    return_volumes=True,
 ):
     """Generate a DataFrame that contains information for each trial.
 
@@ -162,6 +163,19 @@ def generate_trials_df(
             "mouse_z_harp_blank_pre",
         ]
     )
+
+    # If return_volumes, keep all running speed and mouse z position values for each
+    # volume in the trial epoch
+    if return_volumes:
+        extra_df = pd.DataFrame(
+            columns=[
+                "RS_volume_stim",
+                "RS_volume_blank",
+                "RS_volume_blank_pre",
+            ]
+        )
+        trials_df = pd.concat([trials_df, extra_df], axis=1)
+
     # Find the change of depth
     # Diagnostics folder used only for multidepth experiements
     diagnostics_folder = flz.get_processed_path(recording.path) / "diagnostics"
@@ -265,12 +279,25 @@ def generate_trials_df(
         trials_df.closed_loop = 1
 
     def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
-        trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-            lambda x: imaging_df[column_name]
-            .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
-            .values,
-            axis=1,
-        )
+        if "_volume" in column_name:
+            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+                lambda x: np.stack(
+                    imaging_df[column_name].loc[
+                        int(x[f"imaging_{epoch}_start"]) : int(
+                            x[f"imaging_{epoch}_stop"]
+                        )
+                    ]
+                ),
+                axis=1,
+            )
+        else:
+            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+                lambda x: imaging_df[column_name]
+                .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
+                .values,
+                axis=1,
+            )
+
         return trials_df
 
     columns_to_assign = [
@@ -292,6 +319,8 @@ def generate_trials_df(
         "max_abs_rs2motor_diff_ratio",
         "mean_rs2motor_diff",
     ]
+    if return_volumes:
+        columns_to_assign += ["RS_volume"]
     for column in optional_columns:
         if column in imaging_df.columns:
             columns_to_assign.append(column)
@@ -859,6 +888,7 @@ def _process_single_recording_for_session(
         is_multidepth=is_multidepth_protocol,
         param_log=param_log,
         add_spikes=add_spikes,
+        return_volumes=return_volumes,
     )
     trials_df["recording"] = recording.name
 

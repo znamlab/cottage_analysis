@@ -39,6 +39,8 @@ def create_neurons_ds(
     project=None,
     conflicts="skip",
     base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Create a neurons_df dataset from flexilims.
 
@@ -59,14 +61,27 @@ def create_neurons_ds(
         datatype="session", name=session_name, flexilims_session=flexilims_session
     )
 
-    # Create a neurons_df dataset from flexilism
-    neurons_ds = flz.Dataset.from_origin(
+    neurons_ds = flz.get_datasets(
         origin_id=exp_session.id,
         dataset_type="neurons_df",
         flexilims_session=flexilims_session,
-        base_name=base_name,
-        conflicts=conflicts,
+        allow_multiple=True,
+        filter_datasets=None,
+        exclude_datasets=exclude_datasets,
     )
+
+    if (type(neurons_ds) is not flz.Dataset) and (len(neurons_ds) == 0):
+        # Create a neurons_df dataset from flexilism
+        neurons_ds = flz.Dataset.from_origin(
+            origin_id=exp_session.id,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            base_name=base_name,
+            conflicts=conflicts,
+        )
+    else:
+        neurons_ds = neurons_ds[0]
+
     fname = base_name if base_name else "neurons_df"
     neurons_ds.path = neurons_ds.path.parent / f"{fname}.pickle"
 
@@ -181,6 +196,8 @@ def load_session(
         project=project,
         conflicts="skip",
         base_name=base_name,
+        filter_datasets=None,
+        exclude_datasets=exclude_datasets,
     )
     if neurons_ds.get_flexilims_entry() is None:
         raise flz.FlexilimsError(f"Session {session_name} not processed...")

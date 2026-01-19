@@ -18,5 +18,5 @@ cottage_analysis/depth_analysis/*
 
 
 cottage_analysis_debug.code-workspace
-sbatch/run_remaining_mice.py
+*/slurm-*
 slurm-*

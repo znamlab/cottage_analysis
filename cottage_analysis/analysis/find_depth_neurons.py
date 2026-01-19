@@ -5,6 +5,7 @@ from tqdm import tqdm
 import scipy
 from scipy.stats import spearmanr
 import flexiznam as flz
+import warnings
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -12,6 +13,8 @@ from cottage_analysis.analysis import common_utils, size_control, fit_gaussian_b
 from functools import partial
 
 print = partial(print, flush=True)
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def find_depth_list(df):
@@ -214,6 +217,7 @@ def find_depth_neurons(
     neurons_df=None,
     rs_thr=0.2,
     alpha=0.05,
+    closed_loop=1,
     special_sfx="",
 ):
     """Find depth neurons from all ROIs segmented.
@@ -245,7 +249,7 @@ def find_depth_neurons(
     neurons_df[f"best_depth{special_sfx}"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
-    trials_df = trials_df[trials_df.closed_loop == 1]
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     # Also remove multi depth recordings
     is_multidepth = trials_df.recording_name.str.contains("multidepth")
     trials_df = trials_df[~is_multidepth]
