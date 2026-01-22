@@ -663,7 +663,7 @@ def load_npx_onix(
     if bonsai_path.exists():
         probe_info, _ = get_probe_info(bonsai_path, probe=probe)
         json_dict = dict(probe_info["json"]["probes"][prb_index])
-        if "contact_annotations" not in json_dict:
+        if json_dict.get("contact_annotations", None) is None:
             json_dict["contact_annotations"] = {}
         npx_mapping = probeinterface.Probe.from_dict(json_dict)
         raw_rec = raw_rec.set_probe(npx_mapping)
