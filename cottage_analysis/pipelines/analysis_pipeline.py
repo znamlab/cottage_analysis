@@ -61,17 +61,19 @@ def main(
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
-    filter_datasets = {}
+    filter_rois = {}
     if anatomical_only:
         print("Only using anatomical datasets...")
-        filter_datasets["anatomical_only"] = 3
+        filter_rois["anatomical_only"] = 3
     if use_annotated:
-        filter_datasets["annotated"] = True
+        filter_rois["annotated"] = True
+    # Traces can be filtered by the same attributes as rois but have ASt too
+    filter_traces = dict(**filter_rois)
     if ast_neuropil:
         print("Using ASt neuropil correction...")
-        filter_datasets["ast_neuropil"] = True
+        filter_traces["ast_neuropil"] = True
     else:
-        filter_datasets["ast_neuropil"] = False
+        filter_traces["ast_neuropil"] = False
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -100,7 +102,7 @@ def main(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=project,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
             conflicts=conflicts,
             recording_type="two_photon",
             photodiode_protocol=photodiode_protocol,
@@ -111,7 +113,7 @@ def main(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=project,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
             conflicts=conflicts,
             recording_type="two_photon",
             protocol_base=protocol_base,
@@ -153,7 +155,7 @@ def main(
         project_id=project,
         flexilims_session=flexilims_session,
         return_dataseries=False,
-        filter_datasets=filter_datasets,
+        filter_datasets=filter_rois,
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]
@@ -288,7 +290,7 @@ def main(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_traces,
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
                 is_multidepth=is_multidepth,
@@ -408,7 +410,7 @@ def main(
                 slurm_folder=slurm_folder,
                 scripts_name=name,
                 k_folds=k_folds,
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_traces,
                 protocol_base=protocol_base,
                 **common_params,
             )
@@ -470,7 +472,7 @@ def main(
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
             scripts_name=f"{session_name}_basic_vis_plots",
         )
         print("---Plotting finished. ---")
