@@ -8,7 +8,7 @@ def load_is_cell(suite2p_path: Path) -> np.ndarray:
 
     If a `combined` directory exists, the function loads the iscell array from it.
     Otherwise, it loads the iscell array from each plane directory and concatenates them
-    
+
     Args:
         suite2p_path: Path to the Suite2p output directory.
 
@@ -17,11 +17,11 @@ def load_is_cell(suite2p_path: Path) -> np.ndarray:
     """
     suite2p_path = Path(suite2p_path)
     is_cell = []
-
-    if suite2p_path.joinpath("combined").exists():
-        folder = suite2p_path.joinpath("combined")
+    folder = suite2p_path / "combined"
+    if folder.exists() and ((folder / "iscell.npy").exists()):
         is_cell.append(np.load(folder / "iscell.npy"))
     else:
+        print("No combined folder found, loading iscell from individual planes.")
         plane_idx = 0
         folder = suite2p_path / f"plane{plane_idx}"
         while folder.exists():

@@ -5,6 +5,7 @@ from tqdm import tqdm
 import scipy
 from scipy.stats import spearmanr
 import flexiznam as flz
+import warnings
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -12,6 +13,8 @@ from cottage_analysis.analysis import common_utils, size_control, fit_gaussian_b
 from functools import partial
 
 print = partial(print, flush=True)
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def find_depth_list(df):
@@ -211,8 +214,11 @@ def average_dff_for_all_trials(
 def find_depth_neurons(
     trials_df,
     neurons_ds,
+    neurons_df=None,
     rs_thr=0.2,
     alpha=0.05,
+    closed_loop=1,
+    special_sfx="",
 ):
     """Find depth neurons from all ROIs segmented.
 
@@ -220,9 +226,11 @@ def find_depth_neurons(
         trials_df (DataFrame): trials_df dataframe for this session that describes the
             parameters for each trial.
         neurons_ds (Series): flexilims dataset for neurons_df.
+        neurons_df (DataFrame, optional): neurons_df to add columns to. Defaults to None.
         rs_thr (float, optional): threshold of running speed to be counted into depth
             tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
+        special_sfx (str, optional): special suffix to add to column names. Defaults to "".
 
     Returns:
         (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the
@@ -230,31 +238,37 @@ def find_depth_neurons(
 
 
     """
-    # Create an empty datafrom for neurons_df
-    neurons_df = pd.DataFrame(
-        columns=[
-            "roi",  # ROI number
-            "is_depth_neuron",  # bool, is it a depth-selective neuron or not
-            "depth_neuron_anova_p",  # float, p value for depth neuron anova test
-            "best_depth",  # #, depth with the maximum average response
-        ]
-    )
     nrois = trials_df.dff_stim.iloc[0].shape[1]
-    neurons_df["roi"] = np.arange(nrois)
+    if neurons_df is None:
+        # Create an empty datafrom for neurons_df
+        neurons_df = pd.DataFrame()
+        neurons_df["roi"] = np.arange(nrois)
+
+    neurons_df[f"is_depth_neuron{special_sfx}"] = False
+    neurons_df[f"depth_neuron_anova_p{special_sfx}"] = np.nan
+    neurons_df[f"best_depth{special_sfx}"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
-    trials_df = trials_df[trials_df.closed_loop == 1]
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    # Also remove multi depth recordings
+    is_multidepth = trials_df.recording_name.str.contains("multidepth")
+    trials_df = trials_df[~is_multidepth]
 
     # Anova test to determine which neurons are depth neurons
     depth_list = find_depth_list(trials_df)
     mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
 
+    if "unit_ids" in trials_df:
+        unit_ids = trials_df.unit_ids.iloc[0]
+        assert len(unit_ids) == nrois
+        neurons_df["unit_id"] = [int(ui) for ui in unit_ids]
+
     for roi in tqdm(np.arange(nrois)):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])
 
-        neurons_df.loc[roi, "depth_neuron_anova_p"] = p
-        neurons_df.loc[roi, "is_depth_neuron"] = p < alpha
-        neurons_df.loc[roi, "best_depth"] = depth_list[
+        neurons_df.loc[roi, f"depth_neuron_anova_p{special_sfx}"] = p
+        neurons_df.loc[roi, f"is_depth_neuron{special_sfx}"] = p < alpha
+        neurons_df.loc[roi, f"best_depth{special_sfx}"] = depth_list[
             np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
         ]
 
@@ -294,7 +308,7 @@ def fit_preferred_depth(
             list: a list of trial numbers.
         depth_min (float, optional): min boundary of preferred depth in m. Defaults to
             0.02.
-        depth_max (float, optional): min boundary of preferred depth in m. Defaults to
+        depth_max (float, optional): max boundary of preferred depth in m. Defaults to
             20.
         rs_thr (float, optional): Running speed threshold for fiting preferred depth in
             m. Defaults to 0.2.
@@ -318,12 +332,16 @@ def fit_preferred_depth(
 
     # Function to initialize depth tuning parameters
     if param == "depth":
+        if "treadmill" in special_sfx:
+            p0_depth = "best_depth_treadmill"
+        else:
+            p0_depth = "best_depth"
 
         def p0_func():
             return np.concatenate(
                 (
                     np.random.normal(size=1),
-                    np.atleast_1d(np.log(neurons_df.loc[roi, "best_depth"])),
+                    np.atleast_1d(np.log(neurons_df.loc[roi, p0_depth])),
                     np.random.normal(size=1),
                     np.random.normal(size=1),
                 )
@@ -358,6 +376,10 @@ def fit_preferred_depth(
     # Choose trials
     depth_list = find_depth_list(trials_df)
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    # remove multi depth recordings
+    is_multidepth = trials_df.recording_name.str.contains("multidepth")
+    trials_df = trials_df[~is_multidepth]
+
     trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
         trials_df, choose_trials
     )
@@ -440,10 +462,13 @@ def fit_preferred_depth(
         ] * len(neurons_df)
 
         for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
+            y = np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten()
+            if np.all(np.isnan(y)):
+                continue
             popt, rsq = common_utils.iterate_fit(
                 func=gaussian_func_,
                 X=np.log(np.array(X)),
-                y=np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten(),
+                y=y,
                 lower_bounds=lower_bounds,
                 upper_bounds=upper_bounds,
                 niter=niter,
@@ -469,6 +494,9 @@ def fit_preferred_depth(
 
         # Loop through each roi
         for roi in tqdm(range(Y.dff_stim.iloc[0].shape[1])):
+            y = np.array(np.stack(Y["trial_mean_dff"])[:, roi]).flatten()
+            if np.all(np.isnan(y)):
+                continue
             # loop through the folds
             y_pred_all = []
             y_test_all = []

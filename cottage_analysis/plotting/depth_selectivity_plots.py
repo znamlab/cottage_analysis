@@ -11,16 +11,17 @@ import seaborn as sns
 import flexiznam as flz
 from scipy.stats import pearsonr
 from cottage_analysis.analysis import (
-    spheres,
     find_depth_neurons,
     common_utils,
     size_control,
     fit_gaussian_blob,
+    roi_location,
+    common_utils,
 )
+from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import rf_plots
-from cottage_analysis.analysis import roi_location, common_utils
 
 
 def plot_raster_all_depths(
@@ -172,6 +173,7 @@ def plot_depth_tuning_curve(
     ylim_precision_base=1,
     ylim_precision=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    ax=None,
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -201,7 +203,12 @@ def plot_depth_tuning_curve(
         ylim_precision_base (int, optional): base for setting y-axis limits. Defaults to 1.
         ylim_precision (int, optional): precision for setting y-axis limits. Defaults to 1.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        ax (plt.Axes, optional): axes to plot the depth tuning curve. Defaults to None.
     """
+    if ax is None:
+        ax = plt.gca()
+    else:
+        plt.sca(ax)
 
     # Load average activity and confidence interval for this roi
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
@@ -225,7 +232,9 @@ def plot_depth_tuning_curve(
     )[:, :, roi]
     CI_low, CI_high = common_utils.get_bootstrap_ci(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
-    ax = plt.gca()
+    if np.all(np.isnan(mean_arr)):
+        print("All NaN dff. Not plotting")
+        return
     ax.errorbar(
         log_param_list,
         mean_arr,
@@ -249,7 +258,7 @@ def plot_depth_tuning_curve(
         for i, x in enumerate(xs):
             weights = np.exp(-((log_param_list - x) ** 2) / (2 * sd**2))
             ys[i] = np.sum(weights * mean_arr) / np.sum(weights)
-        plt.plot(
+        ax.plot(
             xs,
             ys,
             color=linecolor,
@@ -258,6 +267,10 @@ def plot_depth_tuning_curve(
         )
     # Load gaussian fit params for this roi
     if plot_fit:
+        popt = neurons_df.loc[roi, use_col]
+        if np.any(np.isnan(popt)):
+            print("All NaN dff. Not plotting")
+            return
         x = np.geomspace(param_list[0], param_list[-1], num=100)
         if folds is not None:
             for fold in np.arange(folds):
@@ -265,7 +278,7 @@ def plot_depth_tuning_curve(
                 gaussian_arr = fit_gaussian_blob.gaussian_1d(
                     np.log(x), a, x0, log_sigma, b, min_sigma
                 )
-                plt.plot(
+                ax.plot(
                     np.log(x),
                     gaussian_arr,
                     color=linecolor,
@@ -277,7 +290,7 @@ def plot_depth_tuning_curve(
             gaussian_arr = fit_gaussian_blob.gaussian_1d(
                 np.log(x), a, x0, log_sigma, b, min_sigma
             )
-            plt.plot(
+            ax.plot(
                 np.log(x),
                 gaussian_arr,
                 color=linecolor,
@@ -286,10 +299,12 @@ def plot_depth_tuning_curve(
             )
     if ylim is None:
         ylim = [
-            plt.gca().get_ylim()[0],
+            ax.get_ylim()[0],
             common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
         ]
-        plt.ylim(ylim)
+        if np.any(np.isnan(ylim)):
+            ylim = ax.get_ylim()
+        ax.set_ylim(ylim)
         plt.yticks(
             [
                 0,
@@ -318,7 +333,7 @@ def plot_depth_tuning_curve(
     plt.xticks(
         rotation=45,
     )
-    plt.gca().tick_params(axis="both", labelsize=fontsize_dict["tick"])
+    ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
 
 
 def plot_running_stationary_depth_tuning(
@@ -740,19 +755,20 @@ def plot_PSTH(
         fontsize=fontsize_dict["tick"],
     )
     plt.yticks(fontsize=fontsize_dict["tick"])
-    if (ylim[0] is None) and (ylim[1] is None):
-        ylim = plt.gca().get_ylim()
-        ylim = [ylim[0], common_utils.ceil(ylim[1], 1)]
-    elif ylim[0] is not None:
+    current_ylim = np.array(plt.gca().get_ylim())
+
+    if ylim is None:
+        ylim = current_ylim
+    else:
+        # ensure ylim is a list to be mutable
+        ylim = list(ylim)
+        if ylim[0] is None:
+            ylim[0] = current_ylim[0]
         if ylim[1] is None:
-            ylim = (ylim[0], common_utils.ceil(plt.gca().get_ylim()[1], 1))
-            plt.ylim(ylim)
-        else:
-            ylim = ylim
-        plt.ylim(ylim)
-    elif (ylim[1] is not None) and (ylim[0] is None):
-        ylim = (plt.gca().get_ylim()[0], ylim[1])
-        plt.ylim(ylim)
+            ylim[1] = current_ylim[1]
+
+    ylim[1] = np.max([ylim[1], 1])
+    plt.ylim(ylim)
     plt.yticks([ylim[0], ylim[1]], fontsize=fontsize_dict["tick"])
     plt.plot([0, 0], ylim, "k", linestyle="dotted", linewidth=0.5, label="_nolegend_")
     plt.plot(
@@ -865,7 +881,7 @@ def plot_psth_raster(
     results_df,
     depth_list,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
-    vmax=2,
+    vmax=1,
 ):
     """Plot PSTH raster for all neurons.
 
@@ -875,7 +891,9 @@ def plot_psth_raster(
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
         vmax (int, optional): maximum value for the colorbar. Defaults to 2.
     """
-    psths = np.stack(results_df["psth_crossval"])[:, :-1, 10:-10]  # exclude blank
+    psths = np.stack(results_df["psth_crossval"])
+    psths -= np.nanmean(psths[:, :, :15], axis=2)[:, :, np.newaxis]
+    psths = psths[:, :-1, 10:-10]  # exclude blank
     ndepths = psths.shape[1]
     nbins = psths.shape[2]
     # Sort neurons by preferred depth
@@ -883,9 +901,7 @@ def plot_psth_raster(
     psths = psths[preferred_depths.argsort()]
     psths = psths.reshape(psths.shape[0], -1)
     # zscore each row
-    normed_psth = (psths - np.nanmean(psths, axis=1)[:, np.newaxis]) / (
-        np.nanstd(psths, axis=1)[:, np.newaxis]
-    )
+    normed_psth = psths / np.nanstd(psths, axis=1)[:, np.newaxis]
     # Plot PSTHs
     ax = plt.gca()
     im = ax.imshow(
@@ -956,9 +972,7 @@ def plot_depth_neuron_perc_hist(
     ax.set_xlim([0, xlim[1]])
     if ylim is not None:
         ax.set_ylim(ylim)
-    ax.set_xlabel(
-        "Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"]
-    )
+    ax.set_xlabel("Proportion of depth-tuned neurons", fontsize=fontsize_dict["label"])
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
     # plot median proportion as a triangle along the top of the histogram
@@ -1014,7 +1028,7 @@ def plot_example_fov(
     else:
         coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
         coef_ipsi = np.stack(neurons_df[f"rf_coef_ipsi_closedloop"].values)
-        sig, _ = spheres.find_sig_rfs(
+        sig, _ = rf_fitting.find_sig_rfs(
             np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
             np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
             n_std=n_std,
@@ -1117,11 +1131,13 @@ def plot_example_fov(
     return im
 
 
-def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
-    plt.imshow(np.flip(im, axis=1), vmax=vmax, cmap="gray")
-    plt.axis("off")
-    cbar = plt.colorbar()
-    cbar_pos = np.array(plt.gca().get_position().bounds)
+def plot_fov_mean_img(im, vmax=700, fov_width=572.867, ax=None):
+    if ax is None:
+        fig, ax = plt.subplots()
+    mappable = ax.imshow(np.flip(im, axis=1), vmax=vmax, cmap="gray")
+    ax.axis("off")
+    cbar = plt.colorbar(mappable=mappable, ax=ax)
+    cbar_pos = np.array(ax.get_position().bounds)
     cbar_pos[0] = cbar_pos[0] + cbar_pos[2] + 0.005
     cbar_pos[2] = 0.15
     cbar_pos[3] = cbar_pos[3] * 0.3
@@ -1131,9 +1147,10 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867):
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
     rect = plt.Rectangle(
-        (40, im.shape[0] * 0.93), scalebar_length_px, 5, color="white"
+        (40, im.shape[0] * 0.93), scalebar_length_px, 10, color="white"
     )
-    plt.gca().add_patch(rect)
+    ax.add_patch(rect)
+    return ax
 
 
 def plot_mean_running_speed_alldepths(

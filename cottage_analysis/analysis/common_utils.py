@@ -7,6 +7,7 @@ from scipy.optimize import curve_fit
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from scipy import stats
+import warnings
 
 from cottage_analysis.analysis import find_depth_neurons, common_utils
 import flexiznam as flz
@@ -85,14 +86,37 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if y.ndim == 1:
-        valid = ~np.isnan(X) & ~np.isnan(y.values[np.newaxis,:])
+    if isinstance(X, tuple):
+        valid = ~np.any(np.isnan(np.asarray(X)), axis=0) & ~np.isnan(y)
     else:
-        valid = ~np.isnan(X) & ~np.isnan(y)
-    if np.any(~valid):
-        print(f"Warning: {np.sum(~valid)} NaN values in X or y")
-        X = X[valid]
+        if X.ndim == y.ndim:
+            valid = ~np.isnan(X) & ~np.isnan(y)
+        elif y.ndim == 1 and X.ndim > 1:
+            valid = ~np.isnan(X) & ~np.isnan(y[np.newaxis, :])
+        else:
+            valid = ~np.isnan(X) & ~np.isnan(y)
+    # if X.shape != y.shape:
+    #     warnings.warn(
+    #         f"Shape mismatch between X and y, they are supposed to have the same shape"
+    #     )
+    # else:
+    #     valid = ~np.isnan(X) & ~np.isnan(
+    #         y
+    #     )  # We ignore points for which either dff or depth is NaN
+    if np.any(~valid) and not isinstance(X, tuple):
+        if verbose:
+            print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        if X.ndim > 1:
+            X = X[:, valid]
+        else:
+            X = X[valid]
         y = y[valid]
+    elif np.any(~valid) and isinstance(X, tuple):
+        if verbose:
+            print(f"Warning: {np.sum(~valid)} NaN values in X or y")
+        X = tuple(x[valid] for x in X)
+        y = y[valid]
+
     np.random.seed(42)
     for i_iter in range(niter):
         if p0_func is not None:
@@ -220,6 +244,11 @@ def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
         if choose_trials is not None and isinstance(
             choose_trials, list
         ):  # if choose_trials is a given list
+            # check that the list is not longer than the number of trials of each type per depth
+            choose_trial_threshold = min(trials_df.depth.value_counts())
+            choose_trials = [
+                trial for trial in choose_trials if trial < choose_trial_threshold
+            ]
             if by_depth:
                 trials_df_chosen = pd.DataFrame(columns=trials_df.columns)
                 for depth in depth_list:
@@ -234,6 +263,28 @@ def choose_trials_subset(trials_df, choose_trials, sfx="", by_depth=False):
             choose_trial_nums = choose_trials
 
     return trials_df_chosen, choose_trial_nums, sfx
+
+
+def choose_rois_subset(
+    trials_df, iscell=None, n_rois=None, random_state=42, roi_vector=None
+):
+    """Subset trials_df by selected ROIs either by n random ROIs or by numerical index."""
+    if roi_vector is None:
+        assert iscell is not None and None not in (n_rois, random_state)
+        rng = np.random.RandomState(random_state)
+        valid = np.arange(trials_df.iloc[0].dff_stim.shape[1])[iscell]
+        roi_vector = rng.choice(valid, size=n_rois, replace=False)
+
+    subset_df = trials_df.loc[:, ~trials_df.columns.str.contains("dff_")].copy()
+
+    for col in trials_df.columns[trials_df.columns.str.contains("dff_")]:
+        subset_df[col] = trials_df[col].apply(
+            lambda x: x[:, roi_vector],
+        )
+    if n_rois is None:
+        return subset_df
+    else:
+        return subset_df, roi_vector
 
 
 def find_thresh_sequence(
@@ -425,6 +476,7 @@ def hierarchical_bootstrap_stats(
     ratio=False,
 ):
     np.random.seed(0)
+    data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
         data["mouse"] = data["session"].str.split("_").str[0]
     distribution = np.zeros((n_boots, len(xcol)))
@@ -476,3 +528,17 @@ def calculate_pval_from_bootstrap(distribution, value):
     distribution = np.array(distribution)
     q_min = np.min([np.mean(distribution > value), np.mean(distribution < value)])
     return q_min * 2
+
+
+def get_n_seeds(n=10):
+    """Choose n random seeds for reproducibility.
+
+    Args:
+        n (int, optional): number of seeds to choose. Defaults to 10.
+    Returns:
+        list: list of n random seeds.
+    """
+
+    rng = np.random.RandomState(0)
+    seeds = rng.randint(0, 1000, n)
+    return seeds.tolist()

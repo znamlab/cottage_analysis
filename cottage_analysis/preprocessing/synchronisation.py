@@ -4,14 +4,15 @@ import pandas as pd
 import scipy.signal
 import flexiznam as flz
 from functools import partial
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 from cottage_analysis.utilities.misc import get_str_or_recording
 
-from cottage_analysis.io_module.harp import load_harpmessage
+from cottage_analysis.io_module.harp import load_harpmessage, get_harp_dataset
 from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
 from cottage_analysis.io_module.spikes import (
     load_kilosort_folder,
+    load_aind_folder,
     get_smoothed_spike_rate,
 )
 from cottage_analysis.preprocessing import onix as onix_prepro
@@ -107,14 +108,14 @@ def find_monitor_frames(
         )
         breakout = onix_io.load_breakout(raw / onix_recording.path)
         onix_data = onix_prepro.preprocess_onix_recording(
-            dict(breakout_data=breakout), harp_message=harp_message
+            breakout, harp_message=harp_message
         )
-        if "aio_mapping" in onix_ds.extra_attributes:
+        if (onix_ds is not None) and ("aio_mapping" in onix_ds.extra_attributes):
             ch_pd = onix_ds.extra_attributes["aio_mapping"]["photodiode"]
         else:
             ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
-        photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
-        analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
+        photodiode = onix_data["aio"][ch_pd, :]
+        analog_time = onix_data["onix2harp"](onix_data["aio-clock"])
         # to make it faster, decimate the photodiode signal
         photodiode = scipy.signal.decimate(photodiode, 5)
         analog_time = analog_time[::5]
@@ -214,6 +215,8 @@ def generate_vs_df(
             None.
         project (str, optional): project name. Defaults to None. Must be provided if
             flexilims_session is None.
+        protocol_base (str, optional): base protocol name. Used only for KellerTubes
+            Defaults to "SpheresPermTubeReward".
         harp_recording (str or pandas.Series, optional): recording name or recording
             entry if different from (vis stim) recording. Defaults to None.
         onix_recording (str or pandas.Series, optional): recording name or recording
@@ -252,22 +255,15 @@ def generate_vs_df(
     ].copy()
     monitor_frames_df = find_frames.remove_frames_in_wrong_order(monitor_frames_df)
     monitor_frames_df.closest_frame = monitor_frames_df.closest_frame.astype("int")
-    harp_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=harp_recording.name,
-        dataset_type="harp",
-        allow_multiple=False,
-        return_dataseries=False,
+
+    harp_ds = get_harp_dataset(
+        flexilims_session=flexilims_session, recording_name=harp_recording.name
     )
-    if type(harp_ds.extra_attributes["csv_files"]) == str:
-        harp_files = eval(harp_ds.extra_attributes["csv_files"])
-    else:
-        harp_files = harp_ds.extra_attributes["csv_files"]
 
     if photodiode_protocol == 5:
         # Merge MouseZ and EyeZ from FrameLog.csv to frame_df according to FrameIndex
         frame_log = get_frame_log(
-            harp_ds.flexilims_session,
+            flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
         )
@@ -309,9 +305,11 @@ def generate_vs_df(
                 rename_dict["EyeZ"] = "eye_z"
 
             frame_log_z.rename(columns=rename_dict, inplace=True)
-
         else:
+            # same for SpherePermTubeReward and SpherePermTubeReward_multidepth
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
+            if "MotorSps" in frame_log:
+                frame_log_z["MotorSps"] = frame_log.MotorSps.copy()
             frame_log_z.rename(
                 columns={
                     "FrameIndex": "closest_frame",
@@ -324,7 +322,9 @@ def generate_vs_df(
 
         if frame_log_z.closest_frame.isna().any():
             print(
-                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are missing from FrameLog.csv. This is likely due to bonsai crash at the end."
+                f"WARNING: {np.sum(frame_log_z.closest_frame.isna())} frames are "
+                + "missing from FrameLog.csv. This is likely due to bonsai crash at "
+                + "the end."
             )
             frame_log_z = frame_log_z[frame_log_z.closest_frame.notnull()]
             frame_log_z.closest_frame = frame_log_z.closest_frame.astype("int")
@@ -335,6 +335,11 @@ def generate_vs_df(
         monitor_frames_df = monitor_frames_df.rename(
             columns={"peak_time": "onset_time"}
         )
+        if type(harp_ds.extra_attributes["csv_files"]) == str:
+            harp_files = eval(harp_ds.extra_attributes["csv_files"])
+        else:
+            harp_files = harp_ds.extra_attributes["csv_files"]
+
         encoder_path = harp_ds.path_full / harp_files["RotaryEncoder"]
         frame_log_z = pd.read_csv(encoder_path)[["Frame", "HarpTime", "MouseZ", "EyeZ"]]
         frame_log_z = frame_log_z[frame_log_z.Frame.diff() != 0].copy()
@@ -395,12 +400,14 @@ def generate_vs_df(
             errors="ignore",
             inplace=True,
         )
+
     else:  # Stimuli that are not KellerTube do have a ParamLog
         # Align paramLog with vs_df
         param_log = get_param_log(
             flexilims_session=flexilims_session,
             harp_recording=harp_recording,
             vis_stim_recording=recording,
+            multidepth="multidepth" in recording.protocol,
         )
         # TODO COPY FROM RAW AND READ FROM PROCESSED INSTEAD
         param_log = param_log.rename(columns={"HarpTime": "stimulus_harptime"})
@@ -536,27 +543,36 @@ def generate_imaging_df(
     imaging_df["imaging_volume"] = (
         (imaging_df.imaging_frame / nplanes).apply(np.floor).astype(int)
     )
-    # if return_volumes is True, select rows where imaging_volume changes
-    if return_volumes:
-        volume_starts = imaging_df.imaging_volume.diff()
-        volume_starts.iloc[0] = 1
-        imaging_df = imaging_df[volume_starts != 0].copy()
+
     # add a column for the harptime at end the imaging volume
     imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
-    # set the last value of imaging_harptime_end to the last value of imaging_harptime + median frame period
+    # set the last value of imaging_harptime_end to the last value of imaging_harptime +
+    #  median frame period
     imaging_df.at[imaging_df.index[-1], "imaging_harptime_end"] = (
         imaging_df["imaging_harptime"].iloc[-1]
         + imaging_df["imaging_harptime"].diff().median()
     )
     # select the last monitor frame before the end of each imaging volume / frame
-    imaging_df = pd.merge_asof(
-        left=imaging_df,
-        right=vs_df,
-        left_on="imaging_harptime_end",
-        right_on="monitor_harptime",
-        direction="backward",
-        allow_exact_matches=True,
-    )
+    try:
+        imaging_df = pd.merge_asof(
+            left=imaging_df,
+            right=vs_df,
+            left_on="imaging_harptime_end",
+            right_on="monitor_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    except ValueError:
+        print("Sorting values to make imaging_df...")
+        imaging_df = pd.merge_asof(
+            left=imaging_df.sort_values(by="imaging_harptime_end"),
+            right=vs_df,
+            left_on="imaging_harptime_end",
+            right_on="monitor_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
     # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
@@ -566,14 +582,52 @@ def generate_imaging_df(
         }
     )
     # select the last mouse z before the end of each imaging volume / frame
-    imaging_df = pd.merge_asof(
-        left=imaging_df,
-        right=mouse_z_harp_df,
-        left_on="imaging_harptime_end",
-        right_on="mouse_z_harptime",
-        direction="backward",
-        allow_exact_matches=True,
-    )
+    try:
+        imaging_df = pd.merge_asof(
+            left=imaging_df,
+            right=mouse_z_harp_df,
+            left_on="imaging_harptime_end",
+            right_on="mouse_z_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+    except ValueError:
+        imaging_df = pd.merge_asof(
+            left=imaging_df.sort_values(by="imaging_harptime_end"),
+            right=mouse_z_harp_df.sort_values(by="mouse_z_harptime"),
+            left_on="imaging_harptime_end",
+            right_on="mouse_z_harptime",
+            direction="backward",
+            allow_exact_matches=True,
+        )
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
+    # if return_volumes, calculate the running speed by frame and aggregate across volumes
+    if return_volumes:
+        imaging_df["RS"] = (
+            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+        )
+        running_speeds = []
+
+        for i in range(imaging_df["imaging_volume"].max() + 1):
+            tmp = imaging_df[imaging_df["imaging_volume"] == i].RS.values
+            if len(tmp) != nplanes:
+                tmp = np.append(tmp, np.full(int(nplanes - len(tmp)), np.nan))
+            running_speeds.append(tmp)
+
+        # make sure frames and volumes are sorted in the correct order
+        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
+        imaging_df["RS_volume"] = running_speeds
+
+    imaging_df = imaging_df.set_index("imaging_volume", drop=False)
+
+    if return_volumes:
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
+
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )
@@ -635,10 +689,12 @@ def generate_spike_rate_df(
     onix_recording,
     harp_recording,
     flexilims_session,
-    rate_bin=1 / 30.0,
-    exp_sd=0.1,
+    rate_bin=0.03,
+    exp_sd=None,
+    dataset_type="aind_pipeline",
     filter_datasets=None,
-    return_multiunit=False,
+    exclude_datasets=None,
+    return_multiunit=True,
     unit_list=None,
 ):
     """This is the equivalent of generate_imaging_df for spike rate data.
@@ -651,7 +707,9 @@ def generate_spike_rate_df(
         harp_recording (pandas.Series or str): recording entry from flexilims.
         flexilims_session (flexilims.Flexilims): flexilims session.
         rate_bin (int): bin size in s.
-        exp_sd (float): standard deviation of the exponential filter to apply on the spike rate.
+        exp_sd (float): standard deviation of the exponential filter to apply on the
+            spike rate.
+        dataset_type (str): dataset type. Defaults to "aind_pipeline".
         filter_datasets (dict, optional): filters to apply on choosing onix datasets.
             Defaults to None.
         return_multiunit (bool): if True, process multiunits as well. Defaults to False.
@@ -660,52 +718,6 @@ def generate_spike_rate_df(
     Returns:
         DataFrame: contains information for each neuron / frame.
     """
-    onix_recording = get_str_or_recording(onix_recording, flexilims_session)
-    harp_recording = get_str_or_recording(harp_recording, flexilims_session)
-    spike_ds = flz.get_datasets(
-        origin_id=onix_recording.id,
-        dataset_type="kilosort2",
-        allow_multiple=False,
-        flexilims_session=flexilims_session,
-    )
-
-    out = load_kilosort_folder(spike_ds.path_full, return_multiunit=return_multiunit)
-    if return_multiunit:
-        ks_data, good_units, mua_units = out
-        units = {**good_units, **mua_units}
-    else:
-        ks_data, units = out
-    if unit_list is not None:
-        print(f"Filtering {len(units)} units to {unit_list}")
-        units = {k: v for k, v in units.items() if k in unit_list}
-        print(f"Filtered to {len(units)} units")
-
-    # Express spikes in harptime
-    harp_message, harp_ds = load_harpmessage(
-        recording=harp_recording,
-        flexilims_session=flexilims_session,
-        conflicts="skip",
-    )
-    onix_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=onix_recording.name,
-        dataset_type="onix",
-        allow_multiple=False,
-    )
-    breakout = onix_io.load_breakout(onix_ds.path_full)
-    rhd = onix_io.load_rhd2164(onix_ds.path_full, cut_if_not_multiple=True)
-    onix_data = onix_prepro.preprocess_onix_recording(
-        dict(breakout_data=breakout), harp_message=harp_message, cut_onix=True
-    )
-    onix_data.keys()
-    units_harp = {}
-    for cl, spike_index in units.items():
-        # if the recording has been interupted we can have spike_index further than
-        # clock. Cut them
-        spike_index = spike_index[spike_index < len(rhd["clock"])]
-        spike_clock = rhd["clock"][spike_index]
-        units_harp[cl] = onix_data["onix2harp"](spike_clock)
-
     # create a dataframe that looks like the imaging df, but using bins of rate_bin
     bins = np.arange(
         vs_df.monitor_harptime.min() - 10,
@@ -717,6 +729,7 @@ def generate_spike_rate_df(
             imaging_harptime=bins[:-1],
             imaging_harptime_end=bins[1:],
             imaging_frame=np.arange(len(bins) - 1),
+            imaging_volume=np.arange(len(bins) - 1),
         )
     )
 
@@ -748,6 +761,92 @@ def generate_spike_rate_df(
         allow_exact_matches=True,
     )
 
+    # Load spike data
+    onix_recording = get_str_or_recording(onix_recording, flexilims_session)
+    harp_recording = get_str_or_recording(harp_recording, flexilims_session)
+    spike_ds = flz.get_datasets(
+        origin_id=onix_recording.id,
+        dataset_type=dataset_type,
+        allow_multiple=False,
+        flexilims_session=flexilims_session,
+        exclude_datasets=exclude_datasets,
+        filter_datasets=filter_datasets,
+    )
+    if spike_ds is None:
+        raise ValueError(f"No spike sorting dataset for {onix_recording.name}")
+    if "kilosort" in spike_ds.dataset_type:
+        out = load_kilosort_folder(
+            spike_ds.path_full, return_multiunit=return_multiunit
+        )
+    elif "aind" in spike_ds.dataset_type:
+        out = load_aind_folder(spike_ds.path_full, return_multiunit=return_multiunit)
+    else:
+        raise IOError(f"Unknow spike_ds type: {spike_ds.dataset_type}")
+    if return_multiunit:
+        ks_data, good_units, mua_units = out
+        units = {**good_units, **mua_units}
+    else:
+        ks_data, units = out
+    if unit_list is not None:
+        print(f"Filtering {len(units)} units to {unit_list}")
+        units = {k: v for k, v in units.items() if k in unit_list}
+        print(f"Filtered to {len(units)} units")
+
+    # Express spikes in harptime
+    harp_message, harp_ds = load_harpmessage(
+        recording=harp_recording,
+        flexilims_session=flexilims_session,
+        conflicts="skip",
+    )
+    try:
+        onix_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=onix_recording.name,
+            dataset_type="onix",
+            allow_multiple=False,
+        )
+        assert onix_ds is not None
+        onix_data = onix_io.load_rhd2164(onix_ds.path_full, cut_if_not_multiple=True)
+        ephys_clock = onix_data["clock"]
+    except AssertionError:
+        # we have a neuropixel recording
+        onix_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=onix_recording.name,
+            dataset_type="neuropixel",
+            allow_multiple=False,
+        )
+        onix_data = onix_io.load_neuropixel(onix_ds.path_full, cut_if_not_multiple=True)
+        # TODO: add probe info into spikesorting dataset and use it here
+        ephys_clock = onix_data["np2-a"]["clock"]
+
+    if onix_ds is None:
+        raise ValueError(f"No onix or neuropixel dataset for {onix_recording.name}")
+
+    breakout = onix_io.load_breakout(onix_ds.path_full)
+    onix_data.update(breakout)
+
+    onix_data = onix_prepro.preprocess_onix_recording(
+        data=onix_data, harp_message=harp_message, cut_onix=True
+    )
+    onix_data.keys()
+    units_harp = {}
+    for cl, spike_index in units.items():
+        # if the recording has been interupted we can have spike_index further than
+        # clock. Cut them
+        spike_index = spike_index[spike_index < len(ephys_clock)]
+        spike_clock = ephys_clock[spike_index]
+        units_harp[cl] = onix_data["onix2harp"](spike_clock)
+
+    if "harp_sync" in onix_ds.extra_attributes:
+        harp_sync_file = onix_ds.extra_attributes["harp_sync"]
+        harp_sync = pd.read_csv(
+            onix_ds.path_full / harp_sync_file, names=["onix_clock", "harp_time"]
+        )
+
+    if onix_ds is None:
+        raise ValueError(f"No onix or neuropixel dataset for {onix_recording.name}")
+
     # get the spike rate for each units
     spks, unit_ids = get_smoothed_spike_rate(
         units_harp, bins, exp_sd=exp_sd, save_folder=spike_ds.path_full
@@ -757,7 +856,12 @@ def generate_spike_rate_df(
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
 
-    return imaging_df, unit_ids
+    # Add RS_volume for compatibility with 2p
+    imaging_df["RS_volume"] = (
+            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+        )
+
+    return imaging_df, unit_ids, units_harp
 
 
 def fill_missing_imaging_volumes(df, nan_col="RS"):

@@ -7,6 +7,7 @@ from pathlib import Path
 from scipy import signal
 import matplotlib.pyplot as plt
 import numpy as np
+import cottage_analysis.analysis.spheres.stimulus_reconstruction
 from cottage_analysis.preprocessing import find_frames as ff
 from cottage_analysis.io_module import harp
 import pandas as pd
@@ -63,18 +64,20 @@ def test_recreate_stimulus():
         print("big image: %.2f Gb" % outsize)
     output = np.zeros(out_shape, dtype="int16")
     start_time = time.time()
-    frames = stu.regenerate_frames(
-        frame_times,
-        params,
-        mouse_pos_cm,
-        mouse_pos_time=harp_messages["analog_time"],
-        corridor_df=corridor_df,
-        time_column="HarpTime",
-        resolution=resolution,
-        sphere_size=sphere_size,
-        azimuth_limits=(-120, 120),
-        elevation_limits=(-40, 40),
-        output=output,
+    frames = (
+        cottage_analysis.analysis.spheres.stimulus_reconstruction.regenerate_frames(
+            frame_times,
+            params,
+            mouse_pos_cm,
+            mouse_pos_time=harp_messages["analog_time"],
+            corridor_df=corridor_df,
+            time_column="HarpTime",
+            resolution=resolution,
+            sphere_size=sphere_size,
+            azimuth_limits=(-120, 120),
+            elevation_limits=(-40, 40),
+            output=output,
+        )
     )
     end_time = time.time()
     print("That took %s s" % (end_time - start_time))

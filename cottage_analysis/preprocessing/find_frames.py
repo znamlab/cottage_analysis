@@ -121,6 +121,8 @@ def sync_by_correlation(
     correlation_threshold=0.9,
     relative_corr_thres=0.03,
     minimum_lag=5e-3,
+    residuals_threshold=0.08,
+    minimum_consensus=3,
     do_plot=False,
     verbose=True,
     debug=False,
@@ -158,6 +160,10 @@ def sync_by_correlation(
                                      `relative_corr_thres` away from max corr
         minimum_lag (float): Minimum possible lag. Anything below is considered a
                              failure to fit
+        residual_threshold (float): Maximum allowed residual to consider a fit
+           for interpolation. Default to 0.08
+        minimum_consensus (int): Minimum number of consensus to consider a fit
+            for interpolation. Default to 3
         do_plot (bool): If True generate some quality measure plots during run and
                         return the figure handles
         verbose (bool): Print progress and general info.
@@ -274,7 +280,12 @@ def sync_by_correlation(
         frames_df.loc[frames_df["lag"] < 0, "sync_reason"] = "closest to photodiode"
         frames_df["residuals"] = 0
     # Then interpolate the missing frames
-    interpolate_sync(frames_df, verbose=verbose)
+    sync_kwargs = {
+        "residuals_threshold": residuals_threshold,
+        "verbose": verbose,
+        "minimum_consensus": minimum_consensus,
+    }
+    interpolate_sync(frames_df, **sync_kwargs)
     # and remove the last double detected frames
     frames_df = _remove_double_frames(frames_df, verbose=True)
 
@@ -1212,12 +1223,16 @@ def _match_fit_to_logger(
     return frames_df
 
 
-def interpolate_sync(frames_df, residuals_threshold=0.08, verbose=True):
+def interpolate_sync(
+    frames_df, residuals_threshold=0.08, verbose=True, minimum_consensus=3
+):
     """Interpolate closest_frame and lag for frames that could not be sync'ed
 
     Args:
         frames_df (pd.DataFrame): the dataframe with the initial match
         verbose (bool, optional): print progress. Defaults to True.
+        minimum_consensus (int, optional): minimum number of consensus to be considered.
+            Defaults to 3.
     """
     # move initial value to other column
     frames_df["closest_frame_initital_guess"] = frames_df.closest_frame
@@ -1226,7 +1241,7 @@ def interpolate_sync(frames_df, residuals_threshold=0.08, verbose=True):
     # remove double detected frames to avoid diff==0 later
     _remove_double_frames(frames_df, verbose=True)
 
-    consensus_frames = frames_df.sync_reason == "consensus of 3"
+    consensus_frames = frames_df.sync_reason == f"consensus of {minimum_consensus}"
     ok_res = frames_df.residuals < residuals_threshold
     non_nan = frames_df.closest_frame.notna()
     good_frames = consensus_frames & ok_res & non_nan

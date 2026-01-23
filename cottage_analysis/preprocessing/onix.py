@@ -1,8 +1,14 @@
 import numpy as np
+import warnings
 from cottage_analysis.io_module import onix
 
 DIGITAL_INPUTS = dict(DI0="fm_cam_trig", DI1="oni_clock_di", DI2="hf_cam_trig")
-ANALOG_INPUTS = ["none", "wehrcam", "photodiode", "none"]
+# ANALOG_INPUTS = ["none", "wehrcam", "photodiode", "none"]
+ANALOG_INPUTS = [
+    "photodiode",
+    "none",
+    "none",
+]
 MAPPING = [
     39,
     37,
@@ -89,15 +95,39 @@ def preprocess_onix_recording(
     Returns:
         dict: The preprocessed ONIX recording data. (same as input)
     """
-    data["breakout_data"] = clean_breakout(
-        data["breakout_data"], breakout_di_names, debounce_window=debounce_window
-    )
-    h2o, o2h = sync_harp2onix(
-        harp_message,
-        data["breakout_data"]["digital_inputs"]["oni_clock_di"],
-        cut_onix=cut_onix,
-    )
-    data["harp2onix"], data["onix2harp"] = h2o, o2h
+
+    # make a onix2harp and harp2onix function that convert with linear interpolation
+    harpsync = data["harpsync"]
+
+    def onix2harp(onix_sample):
+        # warn if sample is out of range, with a 2s buffer
+        clk = data["acq_clk_hz"]
+        if np.any(onix_sample < harpsync.onix_sample.min() - clk * 2) or np.any(
+            onix_sample > harpsync.onix_sample.max() + clk * 2
+        ):
+            warnings.warn("Some samples are out of range")
+        return np.interp(onix_sample, harpsync.onix_sample, harpsync.harp_timestamp)
+
+    def harp2onix(harp_timestamp):
+        if np.any(harp_timestamp < harpsync.harp_timestamp.min() - 2) or np.any(
+            harp_timestamp > harpsync.harp_timestamp.max() + 2
+        ):
+            warnings.warn("Some timestamps are out of range")
+        return np.interp(harp_timestamp, harpsync.harp_timestamp, harpsync.onix_sample)
+
+    data["onix2harp"] = onix2harp
+    data["harp2onix"] = harp2onix
+
+    if False:
+        # remove for now
+        data = clean_breakout(data, breakout_di_names, debounce_window=debounce_window)
+
+        h2o, o2h = sync_harp2onix(
+            harp_message,
+            data["digital_inputs"]["oni_clock_di"],
+            cut_onix=cut_onix,
+        )
+
     return data
 
 
