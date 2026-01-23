@@ -422,7 +422,7 @@ def read_message(
                 )  # ignore the fields I have already read
                 try:
                     payload = unpack_payload(msg_end, payload_type)
-                except (ValueError, AssertionError) as e:
+                except ValueError as e:
                     # We failed to unpack the payload, this is probably a checksum error
                     percentage_skip = (1 - step / filesize) * 100
                     warnings.warn(
@@ -536,7 +536,7 @@ def read_from_binaries(
         import harp
     except ImportError:
         raise ImportError("Please install harp-python: pip install harp-python")
-    harp_folder = Path(harp_folder).absolute().resolve()
+
     reader = harp.create_reader(harp_folder)
     output = {}
 
@@ -595,7 +595,6 @@ def read_from_binaries(
                 output.update(bits)
                 output["digital_time"] = di.index
         else:
-            warnings.warn("No digital input found")
             if di_names is not None:
                 for name in di_names:
                     output[name] = np.array([])

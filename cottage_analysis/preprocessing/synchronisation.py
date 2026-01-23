@@ -12,7 +12,6 @@ from cottage_analysis.io_module import onix as onix_io
 from cottage_analysis.io_module.visstim import get_frame_log, get_param_log
 from cottage_analysis.io_module.spikes import (
     load_kilosort_folder,
-    load_aind_folder,
     get_smoothed_spike_rate,
 )
 from cottage_analysis.preprocessing import onix as onix_prepro
@@ -108,14 +107,14 @@ def find_monitor_frames(
         )
         breakout = onix_io.load_breakout(raw / onix_recording.path)
         onix_data = onix_prepro.preprocess_onix_recording(
-            breakout, harp_message=harp_message
+            dict(breakout_data=breakout), harp_message=harp_message
         )
-        if (onix_ds is not None) and ("aio_mapping" in onix_ds.extra_attributes):
+        if "aio_mapping" in onix_ds.extra_attributes:
             ch_pd = onix_ds.extra_attributes["aio_mapping"]["photodiode"]
         else:
             ch_pd = onix_prepro.ANALOG_INPUTS.index("photodiode")
-        photodiode = onix_data["aio"][ch_pd, :]
-        analog_time = onix_data["onix2harp"](onix_data["aio-clock"])
+        photodiode = onix_data["breakout_data"]["aio"][ch_pd, :]
+        analog_time = onix_data["onix2harp"](onix_data["breakout_data"]["aio-clock"])
         # to make it faster, decimate the photodiode signal
         photodiode = scipy.signal.decimate(photodiode, 5)
         analog_time = analog_time[::5]
@@ -215,8 +214,6 @@ def generate_vs_df(
             None.
         project (str, optional): project name. Defaults to None. Must be provided if
             flexilims_session is None.
-        protocol_base (str, optional): base protocol name. Used only for KellerTubes
-            Defaults to "SpheresPermTubeReward".
         harp_recording (str or pandas.Series, optional): recording name or recording
             entry if different from (vis stim) recording. Defaults to None.
         onix_recording (str or pandas.Series, optional): recording name or recording
@@ -543,7 +540,11 @@ def generate_imaging_df(
     imaging_df["imaging_volume"] = (
         (imaging_df.imaging_frame / nplanes).apply(np.floor).astype(int)
     )
-
+    # if return_volumes is True, select rows where imaging_volume changes
+    if return_volumes:
+        volume_starts = imaging_df.imaging_volume.diff()
+        volume_starts.iloc[0] = 1
+        imaging_df = imaging_df[volume_starts != 0].copy()
     # add a column for the harptime at end the imaging volume
     imaging_df["imaging_harptime_end"] = imaging_df.imaging_harptime.shift(-1)
     # set the last value of imaging_harptime_end to the last value of imaging_harptime +
@@ -553,27 +554,16 @@ def generate_imaging_df(
         + imaging_df["imaging_harptime"].diff().median()
     )
     # select the last monitor frame before the end of each imaging volume / frame
-    try:
-        imaging_df = pd.merge_asof(
-            left=imaging_df,
-            right=vs_df,
-            left_on="imaging_harptime_end",
-            right_on="monitor_harptime",
-            direction="backward",
-            allow_exact_matches=True,
-        )
-    except ValueError:
-        print("Sorting values to make imaging_df...")
-        imaging_df = pd.merge_asof(
-            left=imaging_df.sort_values(by="imaging_harptime_end"),
-            right=vs_df,
-            left_on="imaging_harptime_end",
-            right_on="monitor_harptime",
-            direction="backward",
-            allow_exact_matches=True,
-        )
-        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
-    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime of frame)
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=vs_df,
+        left_on="imaging_harptime_end",
+        right_on="monitor_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
+    # Align mouse z extracted from harpmessage with frame (mouse z before the harptime
+    # of frame)
     harpmessage = np.load(harp_npz_path)
     mouse_z_harp_df = pd.DataFrame(
         {
@@ -582,52 +572,14 @@ def generate_imaging_df(
         }
     )
     # select the last mouse z before the end of each imaging volume / frame
-    try:
-        imaging_df = pd.merge_asof(
-            left=imaging_df,
-            right=mouse_z_harp_df,
-            left_on="imaging_harptime_end",
-            right_on="mouse_z_harptime",
-            direction="backward",
-            allow_exact_matches=True,
-        )
-    except ValueError:
-        imaging_df = pd.merge_asof(
-            left=imaging_df.sort_values(by="imaging_harptime_end"),
-            right=mouse_z_harp_df.sort_values(by="mouse_z_harptime"),
-            left_on="imaging_harptime_end",
-            right_on="mouse_z_harptime",
-            direction="backward",
-            allow_exact_matches=True,
-        )
-        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
-    # if return_volumes, calculate the running speed by frame and aggregate across volumes
-    if return_volumes:
-        imaging_df["RS"] = (
-            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
-        )
-        running_speeds = []
-
-        for i in range(imaging_df["imaging_volume"].max() + 1):
-            tmp = imaging_df[imaging_df["imaging_volume"] == i].RS.values
-            if len(tmp) != nplanes:
-                tmp = np.append(tmp, np.full(int(nplanes - len(tmp)), np.nan))
-            running_speeds.append(tmp)
-
-        # make sure frames and volumes are sorted in the correct order
-        imaging_df = imaging_df.sort_values(by="imaging_frame").copy()
-        volume_starts = imaging_df.imaging_volume.diff()
-        volume_starts.iloc[0] = 1
-        imaging_df = imaging_df[volume_starts != 0].copy()
-        imaging_df["RS_volume"] = running_speeds
-
-    imaging_df = imaging_df.set_index("imaging_volume", drop=False)
-
-    if return_volumes:
-        volume_starts = imaging_df.imaging_volume.diff()
-        volume_starts.iloc[0] = 1
-        imaging_df = imaging_df[volume_starts != 0].copy()
-
+    imaging_df = pd.merge_asof(
+        left=imaging_df,
+        right=mouse_z_harp_df,
+        left_on="imaging_harptime_end",
+        right_on="mouse_z_harptime",
+        direction="backward",
+        allow_exact_matches=True,
+    )
     dff_fname = (
         "dff_ast.npy" if suite2p_ds.extra_attributes["ast_neuropil"] else "dff.npy"
     )
@@ -689,12 +641,12 @@ def generate_spike_rate_df(
     onix_recording,
     harp_recording,
     flexilims_session,
-    rate_bin=0.03,
+    rate_bin=0.1,
     exp_sd=None,
-    dataset_type="aind_pipeline",
+    dataset_type="kilosort4",
     filter_datasets=None,
     exclude_datasets=None,
-    return_multiunit=True,
+    return_multiunit=False,
     unit_list=None,
 ):
     """This is the equivalent of generate_imaging_df for spike rate data.
@@ -709,7 +661,7 @@ def generate_spike_rate_df(
         rate_bin (int): bin size in s.
         exp_sd (float): standard deviation of the exponential filter to apply on the
             spike rate.
-        dataset_type (str): dataset type. Defaults to "aind_pipeline".
+        dataset_type (str): dataset type. Defaults to "kilosort4".
         filter_datasets (dict, optional): filters to apply on choosing onix datasets.
             Defaults to None.
         return_multiunit (bool): if True, process multiunits as well. Defaults to False.
@@ -772,16 +724,8 @@ def generate_spike_rate_df(
         exclude_datasets=exclude_datasets,
         filter_datasets=filter_datasets,
     )
-    if spike_ds is None:
-        raise ValueError(f"No spike sorting dataset for {onix_recording.name}")
-    if "kilosort" in spike_ds.dataset_type:
-        out = load_kilosort_folder(
-            spike_ds.path_full, return_multiunit=return_multiunit
-        )
-    elif "aind" in spike_ds.dataset_type:
-        out = load_aind_folder(spike_ds.path_full, return_multiunit=return_multiunit)
-    else:
-        raise IOError(f"Unknow spike_ds type: {spike_ds.dataset_type}")
+
+    out = load_kilosort_folder(spike_ds.path_full, return_multiunit=return_multiunit)
     if return_multiunit:
         ks_data, good_units, mua_units = out
         units = {**good_units, **mua_units}
@@ -856,12 +800,7 @@ def generate_spike_rate_df(
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
 
-    # Add RS_volume for compatibility with 2p
-    imaging_df["RS_volume"] = (
-            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
-        )
-
-    return imaging_df, unit_ids, units_harp
+    return imaging_df, unit_ids
 
 
 def fill_missing_imaging_volumes(df, nan_col="RS"):

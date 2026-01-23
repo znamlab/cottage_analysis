@@ -6,7 +6,7 @@ setup(
     packages=find_packages(),
     url="https://github.com/znamlab/cottage_analysis",
     license="MIT",
-    author="Antonin Blot, Yiran He, Petr Znamenskiy",
+    author="Antonin Blot, Yiran He, Petr Znamenskyi",
     author_email="antonin.blot@crick.ac.uk",
     description="Common functions for analysis",
     install_requires=[
@@ -27,13 +27,7 @@ setup(
         "plotly",
         "natsort",
         "roifile",
-        "probeinterface",
-        "spikeinterface",
-        "lxml",
-        "pyarrow",
-        "fastparquet",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
-        "floras_helpers @ git+ssh://git@github.com/takacsflora/floras-helpers.git",
     ],
 )

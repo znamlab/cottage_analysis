@@ -5,7 +5,6 @@ from tqdm import tqdm
 import scipy
 from scipy.stats import spearmanr
 import flexiznam as flz
-import warnings
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -13,8 +12,6 @@ from cottage_analysis.analysis import common_utils, size_control, fit_gaussian_b
 from functools import partial
 
 print = partial(print, flush=True)
-
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
 def find_depth_list(df):
@@ -217,7 +214,6 @@ def find_depth_neurons(
     neurons_df=None,
     rs_thr=0.2,
     alpha=0.05,
-    closed_loop=1,
     special_sfx="",
 ):
     """Find depth neurons from all ROIs segmented.
@@ -249,7 +245,7 @@ def find_depth_neurons(
     neurons_df[f"best_depth{special_sfx}"] = np.nan
 
     # Find the averaged dFF for each trial in only closed loop recordings
-    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    trials_df = trials_df[trials_df.closed_loop == 1]
     # Also remove multi depth recordings
     is_multidepth = trials_df.recording_name.str.contains("multidepth")
     trials_df = trials_df[~is_multidepth]
@@ -257,11 +253,6 @@ def find_depth_neurons(
     # Anova test to determine which neurons are depth neurons
     depth_list = find_depth_list(trials_df)
     mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
-
-    if "unit_ids" in trials_df:
-        unit_ids = trials_df.unit_ids.iloc[0]
-        assert len(unit_ids) == nrois
-        neurons_df["unit_id"] = [int(ui) for ui in unit_ids]
 
     for roi in tqdm(np.arange(nrois)):
         _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])

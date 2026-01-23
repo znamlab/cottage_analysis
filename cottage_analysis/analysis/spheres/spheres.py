@@ -8,7 +8,6 @@ from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
 from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.visstim import get_param_log
-from cottage_analysis.io_module.spikes import load_kilosort_folder
 
 print = partial(print, flush=True)
 
@@ -119,7 +118,6 @@ def generate_trials_df(
     param_log=None,
     acceleration_time=0.5,
     add_spikes=False,
-    return_volumes=True,
 ):
     """Generate a DataFrame that contains information for each trial.
 
@@ -163,19 +161,6 @@ def generate_trials_df(
             "mouse_z_harp_blank_pre",
         ]
     )
-
-    # If return_volumes, keep all running speed and mouse z position values for each
-    # volume in the trial epoch
-    if return_volumes:
-        extra_df = pd.DataFrame(
-            columns=[
-                "RS_volume_stim",
-                "RS_volume_blank",
-                "RS_volume_blank_pre",
-            ]
-        )
-        trials_df = pd.concat([trials_df, extra_df], axis=1)
-
     # Find the change of depth
     # Diagnostics folder used only for multidepth experiements
     diagnostics_folder = flz.get_processed_path(recording.path) / "diagnostics"
@@ -279,25 +264,12 @@ def generate_trials_df(
         trials_df.closed_loop = 1
 
     def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
-        if "_volume" in column_name:
-            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-                lambda x: np.stack(
-                    imaging_df[column_name].loc[
-                        int(x[f"imaging_{epoch}_start"]) : int(
-                            x[f"imaging_{epoch}_stop"]
-                        )
-                    ]
-                ),
-                axis=1,
-            )
-        else:
-            trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-                lambda x: imaging_df[column_name]
-                .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
-                .values,
-                axis=1,
-            )
-
+        trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
+            lambda x: imaging_df[column_name]
+            .loc[int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])]
+            .values,
+            axis=1,
+        )
         return trials_df
 
     columns_to_assign = [
@@ -319,8 +291,6 @@ def generate_trials_df(
         "max_abs_rs2motor_diff_ratio",
         "mean_rs2motor_diff",
     ]
-    if return_volumes:
-        columns_to_assign += ["RS_volume"]
     for column in optional_columns:
         if column in imaging_df.columns:
             columns_to_assign.append(column)
@@ -352,60 +322,6 @@ def generate_trials_df(
     trials_df.recording_name = recording.genealogy[-1]
     # Rename
     trials_df = trials_df.drop(columns=["imaging_blank_start"])
-
-    return trials_df
-
-
-def add_spikes_to_trials_df(
-    trials_df,
-    unit_ids,
-    units_harp,
-    dataset_type="kilosort4",
-    exclude_datasets=None,
-    filter_datasets=None,
-):
-    """Add spikes to trials_df."""
-
-    spike_times_stim = [[] for _ in range(len(trials_df))]
-    spike_times_blank_pre = [[] for _ in range(len(trials_df))]
-    spike_times_blank_post = [[] for _ in range(len(trials_df))]
-
-    # Calculate blank length
-    blank_dur = np.nanmedian(
-        trials_df.imaging_harptime_blank_stop - trials_df.imaging_harptime_blank_start
-    )
-    blank_pre_starttime = np.hstack(
-        [
-            trials_df.imaging_harptime_stim_start.iloc[0] - blank_dur,
-            trials_df.imaging_harptime_stim_stop.iloc[:-1],
-        ]
-    )
-    blank_post_stoptime = np.hstack(
-        [
-            trials_df.imaging_harptime_stim_start.iloc[1:],
-            trials_df.imaging_harptime_stim_stop.iloc[-1] + blank_dur,
-        ]
-    )
-    for cl in unit_ids:
-        harp_spikes = units_harp[cl]
-        stim_beg = harp_spikes.searchsorted(trials_df.imaging_harptime_stim_start)
-        stim_stop = harp_spikes.searchsorted(trials_df.imaging_harptime_stim_stop)
-        blank_pre_start = harp_spikes.searchsorted(blank_pre_starttime)
-        blank_post_stop = harp_spikes.searchsorted(blank_post_stoptime)
-
-        for i in range(len(trials_df)):
-            spike_times_stim[i].append(harp_spikes[stim_beg[i] : stim_stop[i]])
-            spike_times_blank_pre[i].append(
-                harp_spikes[blank_pre_start[i] : stim_beg[i]]
-            )
-            spike_times_blank_post[i].append(
-                harp_spikes[stim_stop[i] : blank_post_stop[i]]
-            )
-
-    trials_df["spike_times_stim"] = spike_times_stim
-    trials_df["spike_times_blank_pre"] = spike_times_blank_pre
-    trials_df["spike_times_blank_post"] = spike_times_blank_post
-    trials_df["unit_ids"] = [list(unit_ids) for _ in range(len(trials_df))]
 
     return trials_df
 
@@ -861,7 +777,7 @@ def _process_single_recording_for_session(
             add_spikes=add_spikes,
         )
     else:  # ephys
-        imaging_df, unit_ids, units_harp = synchronisation.generate_spike_rate_df(
+        imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
             vs_df=vs_df,
             onix_recording=onix_rec,  # Assumes onix_rec is loaded if ephys
             harp_recording=harp_recording,
@@ -888,7 +804,6 @@ def _process_single_recording_for_session(
         is_multidepth=is_multidepth_protocol,
         param_log=param_log,
         add_spikes=add_spikes,
-        return_volumes=return_volumes,
     )
     trials_df["recording"] = recording.name
 
@@ -900,18 +815,5 @@ def _process_single_recording_for_session(
         vis_stim_recording=recording,
         is_multidepth=is_multidepth_protocol,
     )
-    if unit_ids is not None:
-        # We have an ephys recording, add spk times
-        if ephys_kwargs is None:
-            ephys_kwargs = {}
-
-        trials_df = add_spikes_to_trials_df(
-            trials_df=trials_df,
-            unit_ids=unit_ids,
-            units_harp=units_harp,
-            dataset_type=ephys_kwargs.get("dataset_type", "kilosort4"),
-            exclude_datasets=exclude_datasets,
-            filter_datasets=filter_datasets,
-        )
 
     return vs_df, imaging_df, trials_df, param_log, recording, unit_ids

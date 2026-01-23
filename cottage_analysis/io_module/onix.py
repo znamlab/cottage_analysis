@@ -1,15 +1,9 @@
 import warnings
-import os
 from pathlib import Path
-from typing import Union
 import numpy as np
 import pandas as pd
 import flexiznam as flz
-import probeinterface
-import spikeinterface.extractors as se
-from spikeinterface import preprocessing as spre
 from cottage_analysis.preprocessing import synchronisation
-from cottage_analysis.utilities.xml_decoder import XMLBase64JSONDecoder
 
 ONIX_DATA_FORMAT = dict(
     ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="float32"
@@ -323,12 +317,12 @@ def load_breakout(
     output["output-clock"] = np.loadtxt(
         path_to_folder / f"output-clock_{index}.csv", dtype=int, delimiter=","
     )
-    # Port status might be an empty file, handle EmptyDataError
-    file_path = path_to_folder / f"port-status_{index}.csv"
-    try:
-        output["port-status"] = pd.read_csv(file_path, delimiter=",", header=None)
-    except (pd.errors.EmptyDataError, FileNotFoundError):
-        output["port-status"] = pd.DataFrame()
+    # Port status might be an empty file, remove userwarning
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        output["port-status"] = np.loadtxt(
+            path_to_folder / f"port-status_{index}.csv", dtype=int, delimiter=","
+        )
 
     # Read harp sync
     output["harpsync"] = pd.read_csv(
@@ -539,12 +533,10 @@ def _find_files(folder, timestamp, prefix, ignore_wrong_timestamps=False):
 
 def _load_binary_file(file_path, dtype, nchan, order="F", cut_if_not_multiple=False):
     file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File {file_path} does not exist")
     n_pts = file_path.stat().st_size / np.dtype(dtype).itemsize
     if np.mod(n_pts, nchan) != 0:
         if cut_if_not_multiple:
-            warnings.warn(f"Data in {file_path} is not a multiple of {nchan}. Cutting.")
+            print(f"Warning: Data in {file_path} is not a multiple of {nchan}. Cutting")
             n_pts = int(n_pts // nchan * nchan)
         else:
             raise IOError("Data in %s is not a multiple of %d" % (file_path, nchan))
@@ -552,123 +544,3 @@ def _load_binary_file(file_path, dtype, nchan, order="F", cut_if_not_multiple=Fa
     shape = (nchan, n_time) if nchan != 1 else None
     data = np.memmap(file_path, dtype=dtype, mode="r", order=order, shape=shape)
     return data
-
-
-def get_probe_info(bonsai_file_path: Union[str, Path], probe: str = "ProbeA"):
-    """Parse a Bonsai file to extract probe configuration and recorded electrodes.
-
-    This function reads a .bonsai XML file, searches for a 'ProbeGroup' element,
-    and decodes its Base64-encoded JSON content to extract probe information.
-
-    Args:
-        bonsai_file_path: The path to the .bonsai file.
-        probe: The probe to extract info for ("ProbeA" or "ProbeB").
-
-    Returns:
-        A tuple containing:
-        - result (dict): Decoded JSON content of the ProbeGroup.
-        - recorded_electrodes (list[int]): Indices for recorded electrodes.
-    """
-    decoder = XMLBase64JSONDecoder(bonsai_file_path)
-    results_local = decoder.search_field("ProbeGroup", "local_name")
-
-    if probe == "ProbeA":
-        result = results_local[0]
-    elif probe == "ProbeB":
-        result = results_local[1]
-    else:
-        raise ValueError('Probe must be either "ProbeA" or "ProbeB".')
-
-    probe_group = result["json"]
-
-    recorded_electrodes = [
-        ind
-        for ind, channel in enumerate(
-            probe_group["probes"][0]["device_channel_indices"]
-        )
-        if channel >= 0
-    ]
-
-    return result, recorded_electrodes
-
-
-def load_npx_onix(
-    data_directory: Union[str, Path],
-    bonsai_workflow: str = "NpxData.bonsai",
-    suffix: int = 0,
-    probe: str = "ProbeA",
-    fs_hz: float = 30e3,
-    gain_to_uV: float = 3.05176,
-    bit_depth: int = 12,
-    return_signed: bool = True,
-    num_channels: int = 384,
-) -> se.BinaryRecordingExtractor:
-    """Load Neuropixels data from an ONIX directory into SpikeInterface.
-
-    Args:
-        data_directory: Path to raw data directory.
-        bonsai_workflow: Name of the .bonsai file.
-        suffix: Suffix for data files (e.g., 0).
-        probe: "ProbeA" or "ProbeB".
-        fs_hz: Sampling frequency.
-        gain_to_uV: Gain conversion.
-        bit_depth: Bit depth.
-        return_signed: Whether to return signed voltage.
-        num_channels: Number of channels.
-
-    Returns:
-        SpikeInterface recording object.
-    """
-    data_directory = Path(data_directory)
-    if not data_directory.exists():
-        raise FileNotFoundError(f"Data directory {data_directory} does not exist")
-
-    if return_signed:
-        offset_to_uV = 0
-    else:
-        offset_to_uV = -(2**bit_depth) / 2 * gain_to_uV
-
-    if probe == "ProbeA":
-        prb_suffix, prb_index = "a", 0
-    elif probe == "ProbeB":
-        prb_suffix, prb_index = "b", 1
-    else:
-        raise ValueError('Probe must be either "ProbeA" or "ProbeB".')
-
-    # Load binary data
-    raw_rec = se.read_binary(
-        data_directory / f"np2-{prb_suffix}-ephys_{suffix}.raw",
-        sampling_frequency=fs_hz,
-        dtype=np.uint16,
-        num_channels=num_channels,
-        gain_to_uV=gain_to_uV,
-        offset_to_uV=offset_to_uV,
-    )
-
-    # Attach clock times if available
-    dt = {
-        "names": ("time", "acq_clk_hz", "block_read_sz", "block_write_sz"),
-        "formats": ("datetime64[us]", "u4", "u4", "u4"),
-    }
-    meta_file = data_directory / f"start-time_{suffix}.csv"
-    clock_file = data_directory / f"np2-{prb_suffix}-clock_{suffix}.raw"
-
-    if meta_file.exists() and clock_file.exists():
-        meta = np.genfromtxt(fname=meta_file, delimiter=",", dtype=dt, skip_header=1)
-        clock_data = np.fromfile(clock_file, dtype=np.uint64).astype(np.double)
-        raw_rec.set_times(clock_data / meta["acq_clk_hz"], with_warning=False)
-
-    # Attach probe info
-    bonsai_path = data_directory / bonsai_workflow
-    if bonsai_path.exists():
-        probe_info, _ = get_probe_info(bonsai_path, probe=probe)
-        json_dict = dict(probe_info["json"]["probes"][prb_index])
-        if "contact_annotations" not in json_dict:
-            json_dict["contact_annotations"] = {}
-        npx_mapping = probeinterface.Probe.from_dict(json_dict)
-        raw_rec = raw_rec.set_probe(npx_mapping)
-
-    if return_signed:
-        raw_rec = spre.unsigned_to_signed(raw_rec, bit_depth=bit_depth)
-
-    return raw_rec

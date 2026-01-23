@@ -353,7 +353,7 @@ def sync_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
-            imaging_df, unit_ids, units_harp = synchronisation.generate_spike_rate_df(
+            imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
                 harp_recording=harp_recording,

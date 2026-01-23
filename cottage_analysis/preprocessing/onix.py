@@ -3,12 +3,7 @@ import warnings
 from cottage_analysis.io_module import onix
 
 DIGITAL_INPUTS = dict(DI0="fm_cam_trig", DI1="oni_clock_di", DI2="hf_cam_trig")
-# ANALOG_INPUTS = ["none", "wehrcam", "photodiode", "none"]
-ANALOG_INPUTS = [
-    "photodiode",
-    "none",
-    "none",
-]
+ANALOG_INPUTS = ["none", "wehrcam", "photodiode", "none"]
 MAPPING = [
     39,
     37,

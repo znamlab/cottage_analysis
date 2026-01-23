@@ -17,5 +17,4 @@ from cottage_analysis import (
     plotting,
     preprocessing,
     summary_analysis,
-    utilities,
 )

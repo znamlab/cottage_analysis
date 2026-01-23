@@ -387,21 +387,17 @@ def plot_decoder_err_by_speeds(
     )
 
     # add chance level error
-    for ax in axes:
-        ax.axhline(
-            np.nanmean(decoder_df[f"error_chance_{sfx}"]),
-            color=linecolor_chance,
-            linestyle="dotted",
-            linewidth=linewidth,
-            alpha=alpha_chance,
-        )
+    axes[1].axhline(
+        np.nanmean(decoder_df[f"error_chance_{sfx}"]),
+        color=linecolor_chance,
+        linestyle="dotted",
+        linewidth=linewidth,
+        alpha=alpha_chance,
+    )
 
     # set axis of the stationary plot
     axes[0].set_xlim([-0.5, 0.5])
-    ylim = [*axes[0].get_ylim()]
-    print(ylim)
-    if ylim[1] < np.nanmean(decoder_df[f"error_chance_{sfx}"]):
-        ylim[1] = np.nanmean(decoder_df[f"error_chance_{sfx}"]) * 1.1
+    ylim = axes[0].get_ylim()
     axes[0].set_ylim([0, ylim[1]])
     axes[0].set_xticks([0])
     axes[0].set_xticklabels(["stationary"], rotation=60)
@@ -428,7 +424,7 @@ def plot_decoder_err_by_speeds(
     axes[1].spines["right"].set_visible(False)
     axes[1].spines["top"].set_visible(False)
     axes[1].set_yticks([])
-    return axes, err_speed_bins
+    return err_speed_bins
 
 
 def plot_decoder_acc_by_speeds(

@@ -141,7 +141,7 @@ def plot_rf(
                 ]
             )
             cbar = plt.colorbar(mappable=im, cax=ax2)
-            cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
+            # cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
             cbar.ax.tick_params(labelsize=fontsize_dict["legend"], length=2, pad=1)
             cbar.set_ticks([-np.round(coef_max, 1), 0, np.round(coef_max, 1)])
     return axes

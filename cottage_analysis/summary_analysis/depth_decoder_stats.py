@@ -45,31 +45,6 @@ def calculate_error(conmat):
             mean_error = mean_error * np.log2(np.sqrt(10))
     return mean_error
 
-def create_chance_matrix(conmat, y_test, labels=None):
-    """Create chance level confusion matrix based on the number of frames for each depth.
-    
-    Args:
-        conmat (np.ndarray): Confusion matrix from the decoder.
-        y_test (np.ndarray): True labels for the test set.
-        labels (list, optional): List of unique labels. If None, will be inferred from y_test.
-    Returns:
-        np.ndarray: A matrix with the number of frames for each combination of true/predicted labels at chance level.
-    """
-
-    chance_matrix = np.full_like(conmat, np.nan)
-    # get the number of frames for each trial type
-    if labels is None:
-        labels = np.arange(conmat.shape[0])
-
-    frame_counts = np.array([np.sum(y_test == label) for label in labels]).astype(float)
-    frame_counts[frame_counts == 0.] = np.nan
-    # divide the number of frames across all possible prediction labels
-    for i in range(chance_matrix.shape[0]):
-        chance_matrix[i,:] = frame_counts[i] // len(labels)
-    
-    return chance_matrix
-     
-
 
 def make_change_level_conmat(conmat):
     conmat = np.array(conmat)

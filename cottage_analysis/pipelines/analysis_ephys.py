@@ -13,20 +13,15 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
-from znamutils import slurm_it
 
 
-@slurm_it(
-    conda_env="onix-3dvision",
-    slurm_options={"time": "48:00:00", "cpus-per-task": 4, "mem": "64G"},
-)
 def main(
     project: str,
     session_name: str,
     *,
     conflicts: str = "skip",
     photodiode_protocol: int = 5,
-    run_rsof_fit_on_separate_slurm_jobs: bool = False,
+    use_slurm: bool = False,
     run_depth_fit: bool = True,
     run_rf: bool = False,
     run_rsof_fit: bool = True,
@@ -36,9 +31,8 @@ def main(
     return_multiunit: bool = False,
     harp_is_in_recording: bool = True,
     exp_sd: float = None,
-    rate_bin: float = 0.03,
+    rate_bin: float = 0.1,
     rs_thr: float = 0.0002,
-    ephys_dataset_type: str = "aind_pipeline",
     filter_datasets: str = None,
     protocol_base: str = "SphereTube",
 ):
@@ -50,7 +44,7 @@ def main(
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
-        run_rsof_fit_on_separate_slurm_jobs(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
         run_depth_fit(bool): whether to run the depth fit. Default True.
         run_rf(bool): whether to run the rf fit. Default True.
         run_rsof_fit(bool): whether to run the rsof fit. Default True.
@@ -60,9 +54,8 @@ def main(
         return_multiunit(bool): whether to return multiunit. Default False.
         harp_is_in_recording(bool): whether harp is in recording. Default True.
         exp_sd(float): expected standard deviation. Default 0.1.
-        rate_bin(float): rate bin. Default 0.03.
+        rate_bin(float): rate bin. Default 0.01.
         rs_thr(float): rs threshold. Default 0.0002.
-        ephys_dataset_type(str): datatype for spikes. Default 'aind_pipeline'
         filter_datasets(str): json string of datasets to filter.
         protocol_base(str): protocol base name. Default "SphereTube".
     """
@@ -82,7 +75,7 @@ def main(
     print("Arguments:")
     for arg, value in locals().items():
         print(f"{arg}: {value}")
-    print("")
+
     if filter_datasets is None:
         filter_datasets = {}
     frame_rate = 1 / rate_bin
@@ -92,9 +85,8 @@ def main(
         exp_sd=exp_sd,
         rate_bin=rate_bin,
         unit_list=unit_list,
-        dataset_type=ephys_dataset_type,
     )
-    if run_rsof_fit_on_separate_slurm_jobs:
+    if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
         slurm_folder = Path(slurm_folder / f"{session_name}")
@@ -117,18 +109,12 @@ def main(
         return
 
     if neurons_ds.path_full.exists():
-        if conflicts == "overwrite" and run_depth_fit:
-            print("Overwriting previous neurons_df")
-            neurons_df = None
-        else:
-            # If there is a neurons_df, load it to overwrite only the parts that we run
-            # in this instance of the pipeline
-            print("Reloading neurons_df")
-            neurons_df = pd.read_pickle(neurons_ds.path_full)
+        # If there is a neurons_df, load it to overwrite only the parts that we run in
+        # this instance of the pipeline
+        neurons_df = pd.read_pickle(neurons_ds.path_full)
     else:
         neurons_df = None
     # Synchronisation
-    print("")
     print("---Start synchronisation...---")
     if protocol_base == "SpheresTubeMotor":
         run_rf = False
@@ -215,7 +201,6 @@ def main(
             special_sfx_base = ""
 
         # Find depth neurons and fit preferred depth
-        print("")
         print("---Start finding depth neurons...---")
         print("Find depth neurons...")
         neurons_df, neurons_ds = find_depth_neurons.find_depth_neurons(
@@ -416,7 +401,7 @@ def main(
             recording_type="behaviour",
             protocol_base=protocol_base,
             filter_datasets=filter_datasets,
-            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
+            use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             ephys_kwargs=ephys_kwargs,
         )
@@ -452,17 +437,17 @@ def main(
                 **common_params,
             )
             outputs.append(out)
-            if run_rsof_fit_on_separate_slurm_jobs:
+            if use_slurm:
                 print(f"Started job {out}")
             else:
                 print("---RS OF fit finished. Neurons_df saved.---")
 
         # Merge fit dataframes
-        job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
+        job_dependency = outputs if use_slurm else None
         out = pipeline_utils.merge_fit_dataframes(
             project,
             session_name,
-            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
+            use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
             scripts_name=f"{session_name}_merge_fit_dataframes",
@@ -479,40 +464,37 @@ def main(
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        try:
-            # Merge fit dataframes
-            out = pipeline_utils.merge_fit_dataframes(
-                project,
-                session_name,
-                use_slurm=0,
-                slurm_folder=slurm_folder,
-                job_dependency=None,
-                scripts_name=f"{session_name}_merge_fit_dataframes",
-                conflicts=conflicts,
-                prefix="fit_rs_of_tuning_",
-                suffix=special_sfx_base,
-                exclude_keywords=["recording", "openclosed", "openloop"],
-                include_keywords=[],
-                target_column_suffix=special_sfx_base,
-                filetype=".pickle",
-                target_filename="neurons_df.pickle",
-            )
-        except TypeError:
-            print("No rsof dataframe to merge. Skipping")
+        # Merge fit dataframes
+        out = pipeline_utils.merge_fit_dataframes(
+            project,
+            session_name,
+            use_slurm=0,
+            slurm_folder=slurm_folder,
+            job_dependency=None,
+            scripts_name=f"{session_name}_merge_fit_dataframes",
+            conflicts=conflicts,
+            prefix="fit_rs_of_tuning_",
+            suffix=special_sfx_base,
+            exclude_keywords=["recording", "openclosed", "openloop"],
+            include_keywords=[],
+            target_column_suffix=special_sfx_base,
+            filetype=".pickle",
+            target_filename="neurons_df.pickle",
+        )
         print("---Analysis finished. Neurons_df saved.---")
 
     # Plot basic plots
     if run_plot:
         print("---Start basic vis plotting...---")
         if run_rsof_fit:
-            job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
+            job_dependency = outputs if use_slurm else None
         else:
             job_dependency = None
         out = pipeline_utils.run_basic_plots(
             project,
             session_name,
             photodiode_protocol,
-            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
+            use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
             filter_datasets=filter_datasets,
@@ -520,7 +502,7 @@ def main(
             protocol_base=protocol_base,
             recording_type="behaviour",
         )
-        if run_rsof_fit_on_separate_slurm_jobs:
+        if use_slurm:
             print(f"Started plottingjob {out}")
         else:
             print("---Plotting finished. ---")

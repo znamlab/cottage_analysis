@@ -3,7 +3,6 @@ import numpy as np
 import warnings
 import pandas as pd
 from cottage_analysis.utilities import time_series_analysis as tsa
-from cottage_analysis.ephys import aind_utils
 
 
 def load_kilosort_folder(kilosort_folder, return_multiunit=True):
@@ -55,62 +54,6 @@ def load_kilosort_folder(kilosort_folder, return_multiunit=True):
     return ks_data, good_units, mua_units
 
 
-def load_aind_folder(aind_folder, return_multiunit=True):
-    """Return aind_data, good_units and mua_units from aind sorting
-
-    Args:
-        aind_folder (str): main folder containing the output of the AIND pipeline
-        return_multiunit (bool, optional): return only 'good' or 'SUA' if True,
-            otherwise return everything but 'noise' in mua_units
-
-    Returns:
-        pd.DataFrame: kilosort data
-        dict: good units
-        dict: multiunits
-    """
-
-    analyzer = aind_utils.load_aind_analyzer(aind_folder)
-    _ = aind_utils.get_aind_curation_labels(aind_folder, analyzer=analyzer)
-
-    all_spikes = analyzer.sorting.to_spike_vector()
-    unit_ids = analyzer.unit_ids
-
-    aind_data = {
-        "analyzer": analyzer,
-        "times": all_spikes["sample_index"],
-        "clusters": unit_ids[all_spikes["unit_index"]],
-    }
-
-    # info
-    info = pd.DataFrame({"cluster_id": unit_ids})
-    if "label" in analyzer.sorting.get_property_keys():
-        labels = analyzer.sorting.get_property("label")
-        # Map AIND labels to KS-like groups
-        # aind labels are usually 'sua', 'mua', 'noise', 'unsorted'
-        group_map = {"sua": "good", "mua": "mua", "noise": "noise", "good": "good"}
-        info["group"] = [group_map.get(l, "unsorted") for l in labels]
-    else:
-        info["group"] = "unsorted"
-    aind_data["info"] = info
-
-    # good units (SUA)
-    good_ids = info[info.group == "good"].cluster_id.values
-    good_units = {}
-    for uid in good_ids:
-        good_units[uid] = analyzer.sorting.get_unit_spike_train(uid)
-
-    if not return_multiunit:
-        return aind_data, good_units
-
-    # mua units (MUA)
-    mua_ids = info[info.group == "mua"].cluster_id.values
-    mua_units = {}
-    for uid in mua_ids:
-        mua_units[uid] = analyzer.sorting.get_unit_spike_train(uid)
-
-    return aind_data, good_units, mua_units
-
-
 def get_smoothed_spike_rate(
     units, bins, exp_sd=0.1, conflicts="skip", save_folder=None
 ):
@@ -147,7 +90,7 @@ def get_smoothed_spike_rate(
         else:
             loaded_spks = {"bins": bins, "exp_sd": exp_sd}
 
-    unit_ids = np.array(list(sorted(units.keys())))
+    unit_ids = list(sorted(units.keys()))
     for iu, unit in enumerate(unit_ids):
         spk = units[unit]
         valid_spk = spk[(spk > bins[0]) & (spk < bins[-1])]
