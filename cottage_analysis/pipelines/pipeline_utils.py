@@ -7,7 +7,6 @@ import pandas as pd
 from pathlib import Path
 from functools import partial, reduce
 import warnings
-from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
 from znamutils.decorators import slurm_it
 from cottage_analysis.analysis import (
@@ -516,10 +515,6 @@ def run_basic_plots(
         do_basic_vis (bool, optional): whether to run basic visualisation plots.
             Defaults to True.
     """
-
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
-
     (
         neurons_ds,
         neurons_df,
