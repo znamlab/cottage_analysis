@@ -390,6 +390,8 @@ def main(
             ("gaussian_ratio", None, 5),
             ("gaussian_RS", None, 1),
             ("gaussian_RS", None, 5),
+            ("gaussian_multiplicative", None, 1),
+            ("gaussian_multiplicative", None, 5),
         ]
 
         for model, trials, k_folds in to_do:
