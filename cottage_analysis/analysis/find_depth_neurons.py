@@ -243,6 +243,12 @@ def find_depth_neurons(
         # Create an empty datafrom for neurons_df
         neurons_df = pd.DataFrame()
         neurons_df["roi"] = np.arange(nrois)
+    else:
+        if len(neurons_df) != nrois:
+            # Create an empty datafrom for neurons_df
+            neurons_df = pd.DataFrame()
+            neurons_df["roi"] = np.arange(nrois)
+            print("Erasing old neurons_df")
 
     neurons_df[f"is_depth_neuron{special_sfx}"] = False
     neurons_df[f"depth_neuron_anova_p{special_sfx}"] = np.nan

@@ -116,15 +116,11 @@ def main(
         print(f"Session {session_name} already processed... reading saved data...")
         return
 
-    if neurons_ds.path_full.exists():
-        if conflicts == "overwrite" and run_depth_fit:
-            print("Overwriting previous neurons_df")
-            neurons_df = None
-        else:
-            # If there is a neurons_df, load it to overwrite only the parts that we run
-            # in this instance of the pipeline
-            print("Reloading neurons_df")
-            neurons_df = pd.read_pickle(neurons_ds.path_full)
+    if neurons_ds.path_full.exists() and (not run_depth_fit):
+        # If there is a neurons_df, load it to overwrite only the parts that we run
+        # in this instance of the pipeline
+        print("Reloading neurons_df")
+        neurons_df = pd.read_pickle(neurons_ds.path_full)
     else:
         neurons_df = None
     # Synchronisation
