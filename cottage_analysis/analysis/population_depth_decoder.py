@@ -29,10 +29,11 @@ import flexiznam as flz
 from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.io_module import suite2p as s2p_io
+from cottage_analysis.summary_analysis.depth_decoder_stats import calculate_error, create_chance_matrix
 
 from znamutils import slurm_it
 
-CONDA_ENV = "2p_analysis_cottage2"
+CONDA_ENV = "v1_depth_seq"
 
 
 def rolling_average(arr, window, axis=0):
@@ -344,6 +345,7 @@ def preprocess_data(
         origin_name=session_name,
         dataset_type="suite2p_rois",
         filter_datasets={"anatomical_only": 3},
+        exclude_datasets={"annotated": "yes"},
         allow_multiple=False,
         return_dataseries=False,
     )
@@ -437,7 +439,7 @@ def preprocess_data(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "12:00:00",
+        "time": "72:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },
@@ -581,7 +583,7 @@ def fit_each_fold(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "4:00:00",
+        "time": "24:00:00",
         "partition": "ncpu",
     },
     print_job_id=True,
@@ -611,6 +613,7 @@ def calculate_acc_conmat(
             file = Path(decoder_inputs_path).parent / "decoder_subsets" / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
         )['roi_vector']
         decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
+        decoder_dict["roi_vector"] = roi_vector
 
     # concatenate results from all folds
     for i in range(k_folds):
@@ -840,7 +843,7 @@ def depth_decoder(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "8:00:00",
+        "time": "24:00:00",
         "partition": "ncpu",
     },
     print_job_id=True,
@@ -853,7 +856,7 @@ def find_acc_speed_bins(
     still_thr=0.05,
     still_time=1,
     frame_rate=15,
-    add_errors=False,
+    add_errors=True,
 ):
     speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
@@ -936,10 +939,19 @@ def find_acc_speed_bins(
         if add_errors:
             # calculating the error of the confusion matrix in the last speed bin
             error_speed_bins.append(calculate_error(conmat))
+
     decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
     decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
     decoder_dict[f"error_speed_bins{recording_type}"] = error_speed_bins if add_errors else None
     decoder_dict[f"error{recording_type}"] = calculate_error(decoder_dict[f"conmat{recording_type}"]) if add_errors else None
+    if add_errors:
+        conmat_chance = decoder_dict[f"conmat{recording_type}"]
+        sum = np.sum(decoder_dict[f"conmat{recording_type}"])
+        each = sum // (decoder_dict[f"conmat{recording_type}"].shape[0] ** 2)
+        conmat_chance = np.ones_like(decoder_dict[f"conmat{recording_type}"]) * each
+        decoder_dict[f"conmat_chance{recording_type}"] = conmat_chance
+        decoder_dict[f"error_chance{recording_type}"] = calculate_error(conmat_chance)
+
     with open(decoder_dict_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict

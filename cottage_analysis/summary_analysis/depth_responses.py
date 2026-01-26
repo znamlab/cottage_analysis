@@ -250,7 +250,7 @@ def get_psth_crossval_all_sessions(
             iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
-
+            neurons_df.loc[:, "session"] = session_name
             # Calculate dff psth crossval
             # Get the responses for this session that are not included for calculating the cross-validated preferred depth
             choose_trials_resp = list(

@@ -1122,19 +1122,20 @@ def plot_example_fov(
     return im
 
 
-def plot_fov_mean_img(im, vmax=700, fov_width=572.867, ax=None):
+def plot_fov_mean_img(im, vmax=700, fov_width=572.867, ax=None, cbar=True):
     if ax is None:
         fig, ax = plt.subplots()
     mappable = ax.imshow(np.flip(im, axis=1), vmax=vmax, cmap="gray")
     ax.axis("off")
-    cbar = plt.colorbar(mappable=mappable, ax=ax)
-    cbar_pos = np.array(ax.get_position().bounds)
-    cbar_pos[0] = cbar_pos[0] + cbar_pos[2] + 0.005
-    cbar_pos[2] = 0.15
-    cbar_pos[3] = cbar_pos[3] * 0.3
-    cbar.ax.set_position(cbar_pos)
-    cbar.ax.tick_params(axis="y", length=1.5)
-    cbar.remove()
+    if cbar:
+        cbar = plt.colorbar(mappable=mappable, ax=ax)
+        cbar_pos = np.array(ax.get_position().bounds)
+        cbar_pos[0] = cbar_pos[0] + cbar_pos[2] + 0.005
+        cbar_pos[2] = 0.15
+        cbar_pos[3] = cbar_pos[3] * 0.3
+        cbar.ax.set_position(cbar_pos)
+        cbar.ax.tick_params(axis="y", length=1.5)
+        # cbar.remove()
     # Add scalebar
     scalebar_length_px = im.shape[0] / fov_width * 100  # Scale bar length in pixels
     rect = plt.Rectangle(
@@ -1142,6 +1143,7 @@ def plot_fov_mean_img(im, vmax=700, fov_width=572.867, ax=None):
     )
     ax.add_patch(rect)
     return ax
+
 
 def plot_mean_running_speed_alldepths(
     results,

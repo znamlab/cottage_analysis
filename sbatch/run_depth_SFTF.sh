@@ -13,7 +13,7 @@ ml purge
 ml Anaconda3/2020.07
 source activate base
 
-conda activate v1_depth_map
+conda activate v1_depth_seq
 
 echo Processing ${SESSION_NAME} in project ${PROJECT}...
 cd "/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/cottage_analysis/pipelines/"

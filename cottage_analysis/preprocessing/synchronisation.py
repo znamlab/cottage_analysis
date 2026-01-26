@@ -19,11 +19,11 @@ from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
-
+CONDA_ENV="v1_depth_seq"
 print = partial(print, flush=True)
 
 
-@slurm_it(conda_env="cottage_analysis")
+@slurm_it(conda_env=CONDA_ENV)
 def find_monitor_frames(
     vis_stim_recording,
     flexilims_session=None,

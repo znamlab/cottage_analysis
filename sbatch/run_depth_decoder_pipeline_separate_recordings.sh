@@ -13,8 +13,8 @@ ml purge
 ml Anaconda3/2020.07
 source activate base
 
-conda activate v1_depth_map
+conda activate v1_depth_seq
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
-cd "/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/cottage_analysis/pipelines/"
+cd "/camp/lab/znamenskiyp/home/users/cypranc/cottage_analysis/cottage_analysis/pipelines/"
 python depth_decoder_pipeline_separate_recordings.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} 

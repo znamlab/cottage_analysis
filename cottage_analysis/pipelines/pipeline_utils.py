@@ -14,8 +14,7 @@ from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neu
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
-
-CONDA_ENV = "v1_depth_map"
+CONDA_ENV = "v1_depth_seq"
 
 
 def get_current_time():
@@ -219,7 +218,7 @@ def load_session(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "7-00:00:00",
+        "time": "3-00:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },

@@ -17,7 +17,7 @@ from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.summary_analysis import depth_decoder_stats
 
-CONDA_ENV = "2p_analysis_cottage2"
+CONDA_ENV = "v1_depth_seq"
 
 
 def bar_plot_ttest(

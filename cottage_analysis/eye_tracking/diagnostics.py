@@ -17,6 +17,7 @@ from cottage_analysis.utilities.plot_utils import get_img_from_fig, write_fig_to
 from cottage_analysis.eye_tracking import eye_io
 from cottage_analysis.eye_tracking import utils
 
+CONDA_ENV = "v1_depth_seq"
 
 def check_cropping(dlc_ds, camera_ds, rotate180=False, conflicts="skip"):
     """Check cropping of DLC dataset
@@ -112,7 +113,7 @@ def plot_dlc_tracking(camera_ds, dlc_ds, likelihood_threshold=None):
 
 
 @slurm_it(
-    conda_env="cottage_analysis",
+    conda_env=CONDA_ENV,
     slurm_options=dict(
         ntasks=1,
         time="72:00:00",
