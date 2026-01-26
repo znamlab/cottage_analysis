@@ -231,7 +231,10 @@ def generate_vs_df(
 
     """
     assert flexilims_session is not None or project is not None
-    assert photodiode_protocol in [2, 5]
+    assert photodiode_protocol in [
+        2,
+        5,
+    ], f"Invalid photodiode protocol: {photodiode_protocol}."
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
 
@@ -490,15 +493,28 @@ def generate_imaging_df(
 
     """
     # get the suite2p dataset to check the frame number, frame rate and number of planes
-    suite2p_ds = flz.get_datasets(
-        flexilims_session=flexilims_session,
-        origin_name=recording.name,
-        dataset_type="suite2p_traces",
-        filter_datasets=filter_datasets,
-        exclude_datasets=exclude_datasets,
-        allow_multiple=False,
-        return_dataseries=False,
-    )
+    try:
+        suite2p_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="suite2p_traces",
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+    except AssertionError:
+        datasets = suite2p_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=recording.name,
+            dataset_type="suite2p_traces",
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            allow_multiple=True,
+            return_dataseries=False,
+        )
+        ds_names = [ds.full_name for ds in datasets]
+        raise AssertionError(f"Got multiple datasets: {ds_names}")
     if suite2p_ds is None:
         raise FileNotFoundError(
             f"Suite2p dataset not found for recording {recording.name}."
@@ -856,10 +872,10 @@ def generate_spike_rate_df(
     imaging_df["dffs"] = np.split(spks, spks.shape[0], axis=0)
     imaging_df["unit_ids"] = [unit_ids] * len(imaging_df)
 
-    # Add RS_volume for compatibility with 2p
+    # Add RS_volume for compatibility with 2p
     imaging_df["RS_volume"] = (
-            imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
-        )
+        imaging_df.mouse_z_harp.diff() / imaging_df.mouse_z_harptime.diff()
+    )
 
     return imaging_df, unit_ids, units_harp
 
