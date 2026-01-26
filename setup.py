@@ -34,6 +34,5 @@ setup(
         "fastparquet",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
-        "floras_helpers @ git+ssh://git@github.com/takacsflora/floras-helpers.git",
     ],
 )
