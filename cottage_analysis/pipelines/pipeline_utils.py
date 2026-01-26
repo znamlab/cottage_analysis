@@ -155,6 +155,7 @@ def load_session(
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
     ephys_kwargs=None,
+    return_neurons_df=True,
 ):
     """Load data from a single session.
 
@@ -175,6 +176,9 @@ def load_session(
         recording_type (str, optional): recording type. Defaults to "two_photon".
         ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
             Defaults to None.
+        return_neurons_df (bool, optional): Whether to load and return neurons_df.
+            Will slowly become True as results are saved in intermediate files. Defaults
+            to True.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -201,8 +205,10 @@ def load_session(
     )
     if neurons_ds.get_flexilims_entry() is None:
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
-
-    neurons_df = pd.read_pickle(neurons_ds.path_full)
+    if return_neurons_df:
+        neurons_df = pd.read_pickle(neurons_ds.path_full)
+    else:
+        neurons_df = None
     if protocol_base == "SpheresTubeMotor":
         vs_df_all, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
