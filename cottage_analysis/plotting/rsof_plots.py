@@ -1545,14 +1545,61 @@ def plot_treadmill_vs_closedloop_matrix(
         **kwargs: Additional arguments passed to plot_RS_OF_matrix.
     """
     fig, axes = plt.subplots(1, 2, figsize=figsize)
+    max_acc_ratio = kwargs.get("max_acc_ratio", None)
+    vmin, vmax = 0, 1e-3
+    for trials_df in [trials_df_tread, trials_df_sphere]:
+        rs_bins = (
+            np.logspace(
+                log_range["rs_bin_log_min"],
+                log_range["rs_bin_log_max"],
+                num=log_range["rs_bin_num"],
+                base=log_range["log_base"],
+            )
+            # / 100
+        )
+        rs_bins = np.insert(rs_bins, 0, 0)
+
+        of_bins = np.logspace(
+            log_range["of_bin_log_min"],
+            log_range["of_bin_log_max"],
+            num=log_range["of_bin_num"],
+            base=log_range["log_base"],
+        )
+        of_bins = np.insert(of_bins, 0, 0)
+
+        rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
+        of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
+        acc_max_ratio = np.array(
+            [j for i in trials_df.acceleration_ratio_max_stim.values for j in i]
+        )
+        dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
+
+        if max_acc_ratio is not None:
+            idx = acc_max_ratio < max_acc_ratio
+            rs_arr = rs_arr[idx]
+            of_arr = of_arr[idx]
+            dff_arr = dff_arr[idx]
+
+        bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
+            x=rs_arr,
+            y=of_arr,
+            values=dff_arr,
+            statistic="mean",
+            bins=[rs_bins, of_bins],
+        )
+        vmax = max(vmax, np.round(np.nanmax(bin_means[1:-1, 1:-1]), 1))
+        vmin = min(vmin, np.round(np.nanmin(bin_means[1:-1, 1:-1].flatten()), 1))
+    vmin = max(0, vmin)
 
     # Plot treadmill matrix
-    vmin_t, vmax_t = plot_RS_OF_matrix(
+    plot_RS_OF_matrix(
         trials_df_tread,
         roi,
         log_range=log_range,
         is_closed_loop=is_closed_loop_tread,
         title=title_tread,
+        vmin=vmin,
+        vmax=vmax,
         ax=axes[1],
         fontsize_dict=fontsize_dict,
         **kwargs,
@@ -1566,8 +1613,8 @@ def plot_treadmill_vs_closedloop_matrix(
         log_range=log_range,
         is_closed_loop=is_closed_loop_sphere,
         title=title_sphere,
-        vmin=vmin_t,
-        vmax=vmax_t,
+        vmin=vmin,
+        vmax=vmax,
         ax=axes[0],
         fontsize_dict=fontsize_dict,
         cbar_width=None,
