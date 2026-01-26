@@ -271,6 +271,12 @@ def generate_vs_df(
             vis_stim_recording=recording,
         )
 
+        # find_monitor_frames returns row index of the frame_log, but we want FrameIndex
+        # so that the merge works
+        monitor_frames_df.closest_frame = frame_log.FrameIndex.iloc[
+            monitor_frames_df.closest_frame.values
+        ].values
+
         if protocol_base == "KellerTube":
             # Define the columns to extract from the frame_log dataframe
             columns_to_extract = ["FrameIndex", "HarpTime", "MouseZ"]
