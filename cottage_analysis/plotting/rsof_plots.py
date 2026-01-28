@@ -303,6 +303,11 @@ def plot_RS_OF_matrix(
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     ax=None,
     max_acc_ratio=None,
+    max_abs_rs2motor_diff_ratio=0.3,
+    of_bins=None,
+    rs_bins=None,
+    tick_dict=None,
+    extent=None,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -325,6 +330,11 @@ def plot_RS_OF_matrix(
         fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick
             and legend. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
         ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
+        max_acc_ratio (float, optional): max acceleration ratio. Defaults to None.
+        max_abs_rs2motor_diff_ratio (float, optional): max absolute running speed to
+            motor speed difference ratio. Defaults to 0.3.
+        of_bins (np.ndarray, optional): optical flow bins. Defaults to None.
+        rs_bins (np.ndarray, optional): running speed bins. Defaults to None.
 
     Returns:
         float: min value of the heatmap.
@@ -337,24 +347,25 @@ def plot_RS_OF_matrix(
         plt.sca(ax)
     fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
-    rs_bins = (
-        np.logspace(
-            log_range["rs_bin_log_min"],
-            log_range["rs_bin_log_max"],
-            num=log_range["rs_bin_num"],
+    if rs_bins is None:
+        rs_bins = (
+            np.logspace(
+                log_range["rs_bin_log_min"],
+                log_range["rs_bin_log_max"],
+                num=log_range["rs_bin_num"],
+                base=log_range["log_base"],
+            )
+            # / 100
+        )
+        rs_bins = np.insert(rs_bins, 0, 0)
+    if of_bins is None:
+        of_bins = np.logspace(
+            log_range["of_bin_log_min"],
+            log_range["of_bin_log_max"],
+            num=log_range["of_bin_num"],
             base=log_range["log_base"],
         )
-        # / 100
-    )
-    rs_bins = np.insert(rs_bins, 0, 0)
-
-    of_bins = np.logspace(
-        log_range["of_bin_log_min"],
-        log_range["of_bin_log_max"],
-        num=log_range["of_bin_num"],
-        base=log_range["log_base"],
-    )
-    of_bins = np.insert(of_bins, 0, 0)
+        of_bins = np.insert(of_bins, 0, 0)
 
     rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
     of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
@@ -369,14 +380,29 @@ def plot_RS_OF_matrix(
         of_arr = of_arr[idx]
         dff_arr = dff_arr[idx]
 
+    if (
+        max_abs_rs2motor_diff_ratio is not None
+    ) and "max_abs_rs2motor_diff_ratio_stim" in trials_df.columns:
+        rs2motor_diff_ratio = np.array(
+            [j for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values for j in i]
+        )
+        idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+        rs_arr = rs_arr[idx]
+        of_arr = of_arr[idx]
+        dff_arr = dff_arr[idx]
+        valid = ~(np.isnan(dff_arr) | np.isinf(dff_arr))
+        rs_arr = rs_arr[valid]
+        of_arr = of_arr[valid]
+        dff_arr = dff_arr[valid]
+
     bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
         x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]
     )
 
     if vmin is None:
-        vmin = np.nanmax([0, np.percentile(bin_means[1:, 1:].flatten(), 1)])
+        vmin = np.nanmax([0, np.nanmin(bin_means[1:-1, 1:-1].flatten())])
     if vmax is None:
-        vmax = np.nanmax([0, np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)])
+        vmax = np.nanmax([0, np.nanmax(bin_means[1:-1, 1:-1].flatten())])
 
     im = ax.imshow(
         bin_means[1:, 1:].T,
@@ -385,6 +411,7 @@ def plot_RS_OF_matrix(
         cmap="Reds",
         vmin=vmin,
         vmax=vmax,
+        extent=extent,
     )
     ax.set_title(title, fontsize=fontsize_dict["title"])
     plot_x, plot_y, plot_width, plot_height = (
@@ -394,16 +421,36 @@ def plot_RS_OF_matrix(
         ax.get_position().height,
     )
 
-    ticks_select1, ticks_select2, bin_edges1, bin_edges2 = get_RS_OF_heatmap_axis_ticks(
-        log_range=log_range, fontsize_dict=fontsize_dict
-    )
-    plt.xticks(
-        ticks_select1[0::2],
-        bin_edges1[0::2],
-        fontsize=fontsize_dict["tick"],
-    )
+    if tick_dict is None:
+        (
+            ticks_select1,
+            ticks_select2,
+            bin_edges1,
+            bin_edges2,
+        ) = get_RS_OF_heatmap_axis_ticks(
+            log_range=log_range,
+            fontsize_dict=fontsize_dict,
+        )
+        plt.xticks(
+            ticks_select1[0::2],
+            bin_edges1[0::2],
+            fontsize=fontsize_dict["tick"],
+        )
 
-    plt.yticks(ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"])
+        plt.yticks(
+            ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"]
+        )
+    else:
+        plt.xticks(
+            tick_dict["rs_tick_select"],
+            tick_dict["rs_tick_values"],
+            fontsize=fontsize_dict["tick"],
+        )
+        plt.yticks(
+            tick_dict["of_tick_select"],
+            tick_dict["of_tick_values"],
+            fontsize=fontsize_dict["tick"],
+        )
 
     if is_closed_loop:
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
@@ -1526,6 +1573,8 @@ def plot_treadmill_vs_closedloop_matrix(
     title_sphere="Closed-loop",
     figsize=(12, 5),
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
+    max_abs_rs2motor_diff_ratio=0.3,
+    split_tread_half=False,
     **kwargs,
 ):
     """
@@ -1542,12 +1591,19 @@ def plot_treadmill_vs_closedloop_matrix(
         title_sphere (str, optional): Title for sphere plot. Defaults to "Closed-loop".
         figsize (tuple, optional): Figure size. Defaults to (12, 5).
         fontsize_dict (dict, optional): Dictionary of fontsizes.
+        max_abs_rs2motor_diff_ratio (float, optional): Maximum absolute rs2motor diff
+            ratio to consider. Defaults to 0.3.
+        split_tread_half (bool, optional): Whether to split the treadmill into two halves. Defaults to False.
         **kwargs: Additional arguments passed to plot_RS_OF_matrix.
     """
-    fig, axes = plt.subplots(1, 2, figsize=figsize)
+    if split_tread_half:
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+
     max_acc_ratio = kwargs.get("max_acc_ratio", None)
-    vmin, vmax = 0, 1e-3
-    for trials_df in [trials_df_tread, trials_df_sphere]:
+    vmin, vmax = 0, 1e-4
+    for idx_df, trials_df in enumerate([trials_df_tread, trials_df_sphere]):
         rs_bins = (
             np.logspace(
                 log_range["rs_bin_log_min"],
@@ -1579,6 +1635,19 @@ def plot_treadmill_vs_closedloop_matrix(
             rs_arr = rs_arr[idx]
             of_arr = of_arr[idx]
             dff_arr = dff_arr[idx]
+        if (not idx_df) and max_abs_rs2motor_diff_ratio is not None:
+            # apply filter on treadmill only
+            rs2motor_diff_ratio = np.array(
+                [
+                    j
+                    for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values
+                    for j in i
+                ]
+            )
+            idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+            rs_arr = rs_arr[idx]
+            of_arr = of_arr[idx]
+            dff_arr = dff_arr[idx]
 
         bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
             x=rs_arr,
@@ -1587,24 +1656,10 @@ def plot_treadmill_vs_closedloop_matrix(
             statistic="mean",
             bins=[rs_bins, of_bins],
         )
-        vmax = max(vmax, np.round(np.nanmax(bin_means[1:-1, 1:-1]), 1))
-        vmin = min(vmin, np.round(np.nanmin(bin_means[1:-1, 1:-1].flatten()), 1))
+        vmax = max(vmax, np.round(np.nanmax(bin_means[1:-1, 1:-1]), 2))
+        vmin = min(vmin, np.round(np.nanmin(bin_means[1:-1, 1:-1].flatten()), 2))
     vmin = max(0, vmin)
 
-    # Plot treadmill matrix
-    plot_RS_OF_matrix(
-        trials_df_tread,
-        roi,
-        log_range=log_range,
-        is_closed_loop=is_closed_loop_tread,
-        title=title_tread,
-        vmin=vmin,
-        vmax=vmax,
-        ax=axes[1],
-        fontsize_dict=fontsize_dict,
-        **kwargs,
-    )
-    axes[1].set_ylabel("")
     # Plot sphere matrix
     # Note: We use the same vmin/vmax for consistent comparison
     plot_RS_OF_matrix(
@@ -1621,5 +1676,66 @@ def plot_treadmill_vs_closedloop_matrix(
         **kwargs,
     )
 
+    # Plot treadmill matrix
+    if split_tread_half:
+        trials_df_tread_first_half = trials_df_tread.copy()
+        trials_df_tread_second_half = trials_df_tread.copy()
+        for idx in trials_df_tread.index:
+            dff = trials_df_tread.loc[idx, "dff_stim"]
+            npts = len(dff)
+            # put nan in either the first or second half
+            dff_first_half = dff.copy()
+            dff_first_half[npts // 2 :] = np.nan
+            trials_df_tread_first_half.at[idx, "dff_stim"] = dff_first_half
+            dff_second_half = dff.copy()
+            dff_second_half[: npts // 2] = np.nan
+            trials_df_tread_second_half.at[idx, "dff_stim"] = dff_second_half
+
+        plot_RS_OF_matrix(
+            trials_df_tread_first_half,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread + " first half",
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[1],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            cbar_width=None,
+            **kwargs,
+        )
+        axes[1].set_ylabel("")
+        axes[1].set_yticklabels([])
+        plot_RS_OF_matrix(
+            trials_df_tread_second_half,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread + " second half",
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[2],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            **kwargs,
+        )
+        axes[2].set_ylabel("")
+        axes[2].set_yticklabels([])
+    else:
+        plot_RS_OF_matrix(
+            trials_df_tread,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread,
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[1],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            **kwargs,
+        )
+        axes[1].set_ylabel("")
     plt.tight_layout()
     return fig, axes
