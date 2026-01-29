@@ -163,7 +163,7 @@ def load_session(
     Args:
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str, optional): photodiode protocol. Defaults to None.
+        photodiode_protocol (int, optional): photodiode protocol. Defaults to None.
         regenerate_frames (bool, optional): whether to regenerate frames. Defaults to
             False.
         base_name (str, optional): base name for the dataset. Defaults to None.
@@ -287,37 +287,60 @@ def load_and_fit(
     max_rs2motor_diff=None,
     max_acc=None,
 ):
-    """Load and fit a model to a session.
+    """Load data for a session and fit a running speed and optic flow tuning model.
+
+    Note:
+        The results are saved as pickle files with names following the pattern:
+        `fit_rs_of_tuning_{model}[_crossval]_k{k_folds}{file_special_sfx}.pickle`.
+        Crossval is added if k_folds > 1. These files are later merged into the main
+        `neurons_df` by `merge_fit_dataframes`.
+        To avoid column name conflicts during merging, ensure that `trial_sfx` or
+        `model` (which determines `model_sfx`) is unique for each fit performed on the
+        same session.
 
     Args:
-        project (str): project name.
-        session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str): photodiode protocol.
-        model (str): model name for the fit.
-        choose_trials (str or list): trials to be chosen for the fit.
-        rs_thr (float): rs threshold.
-        param_range (dict): parameter range for the fit.
-        niter (int): number of iterations.
-        min_sigma (float): minimum sigma.
-        k_folds (int, optional): number of k-folds. Defaults to 1.
-        trial_sfx (str, optional): trial suffix. Defaults to "". Example: "_crossval".
-        file_special_sfx (str, optional): file special suffix. Defaults to "". Example:
-            "_openclosed0".
-        run_closedloop_only (bool, optional): run closedloop only. Defaults to False.
-        run_openloop_only (bool, optional): run openloop only. Defaults to False.
-        base_name (str, optional): base name for the dataset. Defaults to None.
-        filter_datasets (dict, optional): filter datasets. Defaults to
-            {"anatomical_only": 3}.
-        exclude_datasets (dict, optional): exclude datasets. Defaults to None.
-        protocol_base (str, optional): protocol base name. Defaults to
-            "SpheresPermTubeReward".
-        recording_type (str, optional): recording type. Defaults to "two_photon".
-        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+        project (str): Project name in flexilims.
+        session_name (str): Session name in the format {Mouse}_{Session}.
+        photodiode_protocol (int): Photodiode protocol used for syncing.
+        model (str): Model to fit. One of "gaussian_2d",
+            "gaussian_additive", "gaussian_OF", "gaussian_RS", "gaussian_ratio".
+        choose_trials (str or list): Trials to include in the fit. Can be a list of
+            trial indices or a string (e.g., "even", "odd").
+        rs_thr (float): Running speed threshold (m/s) to include frames.
+        param_range (dict): Range of parameters for the fit. Usually contains
+            "rs_min", "rs_max", "of_min", "of_max".
+        niter (int): Number of iterations for stochastic fit optimization.
+        min_sigma (float): Minimum sigma value for the gaussian model.
+        k_folds (int, optional): Number of folds for cross-validation. If > 1, the model
+            will be evaluated using cross-validation. Defaults to 1.
+        trial_sfx (str, optional): Suffix for saved column names in the output dataframe.
+            Defaults to "". Example: "_crossval".
+        file_special_sfx (str, optional): Suffix added to the saved pickle filename.
+            Defaults to "". Example: "_openclosed0".
+        run_closedloop_only (bool, optional): Whether to fit only closed-loop protocols.
+            Defaults to False.
+        run_openloop_only (bool, optional): Whether to fit only open-loop protocols.
+            Defaults to False.
+        base_name (str, optional): Base name for the neurons_df dataset in flexilims.
             Defaults to None.
-
+        filter_datasets (dict, optional): Dictionary to filter datasets from flexilims.
+            Defaults to {"anatomical_only": 3}.
+        exclude_datasets (dict, optional): Dictionary to exclude datasets from flexilims.
+            Defaults to None.
+        protocol_base (str, optional): Base protocol name (e.g., "SpheresPermTubeReward").
+            Defaults to "SpheresPermTubeReward".
+        recording_type (str, optional): Type of recording (e.g., "two_photon").
+            Defaults to "two_photon".
+        ephys_kwargs (dict, optional): Additional arguments for ephys data processing.
+            Defaults to None.
+        max_rs2motor_diff (float, optional): Maximum absolute ratio of
+            (rs - motor_speed)/rs for frame selection. Defaults to None.
+        max_acc (float, optional): Maximum acceleration ratio threshold for frame
+            selection. Defaults to None.
 
     Returns:
-        pd.DataFrame: result dataframe for the fit.
+        pd.DataFrame: A dataframe containing the fitted parameters and performance
+            metrics for each ROI. The result is also saved as a pickle file.
     """
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
@@ -510,7 +533,7 @@ def run_basic_plots(
     Args:
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str): photodiode protocol.
+        photodiode_protocol (int): photodiode protocol.
         do_sta (bool, optional): whether to run sta plots. Defaults to True.
         do_basic_vis (bool, optional): whether to run basic visualisation plots.
             Defaults to True.

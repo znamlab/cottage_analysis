@@ -696,6 +696,57 @@ def fit_rs_of_tuning(
     max_acc=None,
     max_rs2motor_diff=None,
 ):
+    """Fit running speed and optic flow tuning with a specified model.
+
+    In the output dataframe the columns will be named:
+    `{metric}_{protocol}{rs_type}{trial_sfx}{model_sfx}`
+
+    - `metric`: e.g., `preferred_RS`, `preferred_OF`, `rsof_popt`, `rsof_rsq`, etc.
+    - `protocol`: `closedloop` or `openloop`.
+    - `rs_type`: `_actual` or `_virtual` (only for `openloop`).
+    - `trial_sfx`: user-defined suffix.
+    - `model_sfx`: `_g2d`, `_gadd`, `_gof`, `_grs`, or `_gratio` depending on the model.
+
+    Args:
+        trials_df (pd.DataFrame): Dataframe containing trial information, including:
+            - RS_stim: Actual running speed.
+            - OF_stim: Optic flow speed.
+            - dff_stim: Delta F/F neural responses.
+            - depth_labels: Labels for each depth.
+            - closed_loop: Boolean indicating closed-loop vs open-loop protocols.
+        model (str, optional): Model name to fit. One of "gaussian_2d",
+            "gaussian_additive", "gaussian_OF", "gaussian_RS", "gaussian_ratio".
+            Defaults to "gaussian_2d".
+        choose_trials (list or str, optional): Trials to include in the fit. Can be a
+            list of trial indices or a string (e.g., "even", "odd"). Defaults to None.
+        trial_sfx (str, optional): Suffix for saved column names in the output dataframe
+            Defaults to "".
+        rs_thr (float, optional): Running speed threshold (m/s) to include frames.
+            Defaults to 0.01.
+        param_range (dict, optional): Range of parameters for the fit.
+            Defaults to {"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000}.
+        niter (int, optional): Number of iterations for stochastic fit optimization.
+            Defaults to 5.
+        min_sigma (float, optional): Minimum sigma value for the gaussian model.
+            Defaults to 0.25.
+        k_folds (int, optional): Number of folds for cross-validation. If > 1, the model
+            will be evaluated using cross-validation. Defaults to 1.
+        random_state (int, optional): Random state for cross-validation split.
+            Defaults to 42.
+        run_closedloop_only (bool, optional): Whether to fit only closed-loop protocols.
+            Defaults to False.
+        run_openloop_only (bool, optional): Whether to fit only open-loop protocols.
+            Defaults to False.
+        max_acc (float, optional): Maximum acceleration ratio threshold for frame
+            selection. Defaults to None.
+        max_rs2motor_diff (float, optional): Maximum absolute ratio of
+            (rs - motor_speed)/rs for frame selection. Defaults to None.
+
+    Returns:
+        pd.DataFrame: A dataframe containing the fitted parameters and performance
+            metrics (e.g., r-squared, spearman rho) for each ROI.
+    """
+
     def process_rs_of_for_fit(
         trials_df, trial_list=[], rs_thr=0.01, max_acc=None, max_rs2motor_diff=None
     ):
