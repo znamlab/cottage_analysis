@@ -1252,7 +1252,7 @@ def interpolate_sync(
         print(f"{np.sum(good_frames)}/{len(good_frames)} frames left for interpolation")
 
     # interpolate closest_frame
-    closest_frame = frames_df.closest_frame.values
+    closest_frame = np.copy(frames_df.closest_frame.values)
     out_of_order = 1
     while np.sum(out_of_order):
         goodi = np.where(good_frames)[0]
