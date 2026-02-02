@@ -795,10 +795,11 @@ def run_cross_correlation(
         # to find the match between photiodiode and frame log, we want to look at what
         # is the value of the lag-shifed sequence index in during the real frame.
         # The sync is made the closest computer frame log time
-        time_of_match = (
+        time_of_match = np.array(
             frame_log["ideal_switch_times"]
             .iloc[frames_df.closest_frame_log_index]
-            .values
+            .values,
+            copy=True,
         )
         # we remove the lag to frames_df instead of adding it to frame_log
         time_of_match -= frames_df["lag_%s" % which].values

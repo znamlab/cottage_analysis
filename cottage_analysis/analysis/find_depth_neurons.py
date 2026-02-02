@@ -29,7 +29,7 @@ def find_depth_list(df):
         depth_list (list): list of depth values occurred in a session
 
     """
-    depth_list = df["depth"].unique()
+    depth_list = df["depth"].unique().astype(float)
     depth_list = depth_list[~np.isnan(depth_list)].tolist()
     depth_list.sort()
 
@@ -473,7 +473,7 @@ def fit_preferred_depth(
                 continue
             popt, rsq = common_utils.iterate_fit(
                 func=gaussian_func_,
-                X=np.log(np.array(X)),
+                X=np.log(np.array(X).astype(float)),
                 y=y,
                 lower_bounds=lower_bounds,
                 upper_bounds=upper_bounds,
@@ -519,14 +519,14 @@ def fit_preferred_depth(
                 # Fit gaussian function to the average dffs for each trial
                 popt, _ = common_utils.iterate_fit(
                     gaussian_func_,
-                    np.log(np.array(X_train)).flatten(),
+                    np.log(np.array(X_train).astype(float)).flatten(),
                     np.array(np.stack(y_train["trial_mean_dff"])[:, roi]).flatten(),
                     lower_bounds=lower_bounds,
                     upper_bounds=upper_bounds,
                     niter=niter,
                     p0_func=p0_func,
                 )
-                y_pred = gaussian_func_(np.log(X_test), *popt)
+                y_pred = gaussian_func_(np.log(X_test.astype(float)), *popt)
                 y_pred_all.append(y_pred)
             rsq = common_utils.calculate_r_squared(
                 np.concatenate(y_test_all), np.concatenate(y_pred_all)
