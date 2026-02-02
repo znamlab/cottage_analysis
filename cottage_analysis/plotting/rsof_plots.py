@@ -308,6 +308,7 @@ def plot_RS_OF_matrix(
     rs_bins=None,
     tick_dict=None,
     extent=None,
+    use_full_range=False,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -400,9 +401,15 @@ def plot_RS_OF_matrix(
     )
 
     if vmin is None:
-        vmin = np.nanmax([0, np.nanmin(bin_means[1:-1, 1:-1].flatten())])
+        if use_full_range:
+            vmin = np.nanmin(bin_means[1:-1, 1:-1].flatten())
+        else:
+            vmin = np.nanmax([0, np.nanmin(bin_means[1:-1, 1:-1].flatten())])
     if vmax is None:
-        vmax = np.nanmax([0, np.nanmax(bin_means[1:-1, 1:-1].flatten())])
+        if use_full_range:
+            vmax = np.nanmax(bin_means[1:-1, 1:-1].flatten())
+        else:
+            vmax = np.nanmax([0, np.nanmax(bin_means[1:-1, 1:-1].flatten())])
 
     im = ax.imshow(
         bin_means[1:, 1:].T,
@@ -1602,26 +1609,29 @@ def plot_treadmill_vs_closedloop_matrix(
         fig, axes = plt.subplots(1, 2, figsize=figsize)
 
     max_acc_ratio = kwargs.get("max_acc_ratio", None)
+    rs_bins = kwargs.get("rs_bins", None)
+    of_bins = kwargs.get("of_bins", None)
     vmin, vmax = 0, 1e-4
     for idx_df, trials_df in enumerate([trials_df_tread, trials_df_sphere]):
-        rs_bins = (
-            np.logspace(
-                log_range["rs_bin_log_min"],
-                log_range["rs_bin_log_max"],
-                num=log_range["rs_bin_num"],
+        if rs_bins is None:
+            rs_bins = (
+                np.logspace(
+                    log_range["rs_bin_log_min"],
+                    log_range["rs_bin_log_max"],
+                    num=log_range["rs_bin_num"],
+                    base=log_range["log_base"],
+                )
+                # / 100
+            )
+            rs_bins = np.insert(rs_bins, 0, 0)
+        if of_bins is None:
+            of_bins = np.logspace(
+                log_range["of_bin_log_min"],
+                log_range["of_bin_log_max"],
+                num=log_range["of_bin_num"],
                 base=log_range["log_base"],
             )
-            # / 100
-        )
-        rs_bins = np.insert(rs_bins, 0, 0)
-
-        of_bins = np.logspace(
-            log_range["of_bin_log_min"],
-            log_range["of_bin_log_max"],
-            num=log_range["of_bin_num"],
-            base=log_range["log_base"],
-        )
-        of_bins = np.insert(of_bins, 0, 0)
+            of_bins = np.insert(of_bins, 0, 0)
 
         rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
         of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
