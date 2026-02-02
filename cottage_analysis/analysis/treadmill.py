@@ -301,8 +301,8 @@ def process_imaging_df(
 
     # Find trial ends, defined as last frame of motor running
     trial_ends_bool = (imaging_df.MotorSps > 0).astype(int).diff() == -1
-    # Shifting adds a NaN and astype(int) makes it True, fill it with False
-    shifted = trial_ends_bool.shift(-1).fillna(False)
+    # Shifting adds a NaN and astype(int) would make it True, fill it with False
+    shifted = trial_ends_bool.shift(-1, fill_value=False)
     trial_ends = imaging_df.loc[shifted, "imaging_harptime"].values
 
     # 2. Apply acceleration_time (modifies start)
