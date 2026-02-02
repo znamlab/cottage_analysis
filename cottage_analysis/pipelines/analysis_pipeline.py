@@ -452,7 +452,7 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
+            exclude_keywords=["recording", "openclosed"],
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
