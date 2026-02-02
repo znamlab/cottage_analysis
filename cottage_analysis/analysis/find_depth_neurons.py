@@ -105,6 +105,7 @@ def average_dff_for_all_trials(
     frame_rate=15,
     closed_loop=1,
     param="depth",
+    max_rs2motor_diff=None,
 ):
     """Generate an array (ndepths x ntrials x ncells) for average dffs across each trial.
 
@@ -115,8 +116,18 @@ def average_dff_for_all_trials(
         still_only (bool, optional): whether to only use the frames when the mouse is not running. Defaults to False.
         still_time (int, optional): Number of seconds to use when the mouse stay still. Defaults to 0.
         frame_rate (float, optional): frame rate of the recording. Defaults to 15.
+        closed_loop (int, optional): closed loop condition. Defaults to 1.
+        param (str, optional): parameter to be used for grouping. Defaults to "depth".
+        max_rs2motor_diff (float, optional): maximum difference between running speed
+            and motor speed to be counted into depth tuning analysis. Defaults to None.
     """
-    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+    trials_df = trials_df[trials_df.closed_loop == closed_loop].copy()
+
+    if max_rs2motor_diff is not None:
+        trials_df = common_utils.filter_trials_by_rs2motor(
+            trials_df, max_rs2motor_diff=max_rs2motor_diff, col2filter=[use_col, rs_col]
+        )
+
     depth_list = find_depth_list(trials_df)
     if still_only:
         if rs_thr_max is None:
@@ -219,6 +230,7 @@ def find_depth_neurons(
     alpha=0.05,
     closed_loop=1,
     special_sfx="",
+    max_rs2motor_diff=None,
 ):
     """Find depth neurons from all ROIs segmented.
 
@@ -231,6 +243,8 @@ def find_depth_neurons(
             tuning analysis. Defaults to 0.2 m/s.
         alpha (float, optional): significance level for anova test. Defaults to 0.05.
         special_sfx (str, optional): special suffix to add to column names. Defaults to "".
+        max_rs2motor_diff (float, optional): maximum difference between running speed
+            and motor speed to be counted into depth tuning analysis. Defaults to None.
 
     Returns:
         (DataFrame, Series): (neurons_df, neurons_ds) A dataframe that contains the
@@ -262,7 +276,9 @@ def find_depth_neurons(
 
     # Anova test to determine which neurons are depth neurons
     depth_list = find_depth_list(trials_df)
-    mean_dff_arr = average_dff_for_all_trials(trials_df, rs_thr=rs_thr)
+    mean_dff_arr = average_dff_for_all_trials(
+        trials_df, rs_thr=rs_thr, max_rs2motor_diff=max_rs2motor_diff
+    )
 
     if "unit_ids" in trials_df:
         unit_ids = trials_df.unit_ids.iloc[0]
@@ -299,6 +315,7 @@ def fit_preferred_depth(
     k_folds=1,
     param="depth",
     special_sfx="",
+    max_rs2motor_diff=None,
 ):
     """Function to fit depth tuning with gaussian function
 
@@ -331,6 +348,8 @@ def fit_preferred_depth(
             to 1.
         param (str, optional): "depth" or "size". Defaults to "depth".
         special_sfx (str, optional): Special suffix for the column names. Defaults to ""
+        max_rs2motor_diff (float, optional): maximum difference between running speed
+            and motor speed to be counted into depth tuning analysis. Defaults to None.
 
     Returns:
         (pd.DataFrame, Series): neurons_df, neurons_df
@@ -381,7 +400,11 @@ def fit_preferred_depth(
 
     # Choose trials
     depth_list = find_depth_list(trials_df)
-    trials_df = trials_df[trials_df.closed_loop == closed_loop]
+
+    if max_rs2motor_diff is not None:
+        trials_df = common_utils.filter_trials_by_rs2motor(
+            trials_df, max_rs2motor_diff=max_rs2motor_diff
+        )
     # remove multi depth recordings
     is_multidepth = trials_df.recording_name.str.contains("multidepth")
     trials_df = trials_df[~is_multidepth]

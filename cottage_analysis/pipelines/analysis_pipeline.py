@@ -165,6 +165,9 @@ def main(
         run_depth_fit = False
         run_rsof_fit = False
 
+    # Treadmill only parameter
+    max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
+
     if run_depth_fit:
         # finished = pipeline_utils.save_finish_time(finished,
         # col="depth_fit_started")
@@ -192,6 +195,7 @@ def main(
             rs_thr=None,
             alpha=0.05,
             special_sfx=special_sfx_base,
+            max_rs2motor_diff=max_rs2motor_diff,
         )
 
         print("Fit preferred depth...")
@@ -223,6 +227,7 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # Find preferred depth of closed loop with half the data for plotting
@@ -244,6 +249,7 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # Find r-squared of k-fold cross validation
@@ -264,10 +270,17 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=5,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
+        # Save a copy with special_sfx_base in the name
+        target_file = neurons_ds.path_full.with_name(
+            f"neurons_df_for_depthfit{special_sfx_base}.pickle"
+        )
+        print(f"Saving separate depth tuning fitting files in {target_file}...")
+        neurons_df.to_pickle(target_file)
 
         # Update neurons_ds on flexilims
         neurons_ds.update_flexilims(mode="update")
@@ -354,6 +367,12 @@ def main(
 
         # Save neurons_df
         neurons_df.to_pickle(neurons_ds.path_full)
+        # Also save a copy with special_sfx_base in the name
+        target_file = neurons_ds.path_full.with_name(
+            f"neurons_df_for_rf{special_sfx_base}.pickle"
+        )
+        print(f"Saving separate RF tuning fitting files in {target_file}...")
+        neurons_df.to_pickle(target_file)
 
         # Update neurons_ds on flexilims
         # neurons_ds.update_flexilims(mode="update")
@@ -364,7 +383,6 @@ def main(
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
         common_params = dict(
             rs_thr=0.01,
             param_range={
