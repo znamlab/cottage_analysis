@@ -103,7 +103,7 @@ def main(
             flexilims_session=flexilims_session,
             project=project,
             filter_datasets=filter_traces,
-            conflicts=conflicts,
+            conflicts="skip",
             recording_type="two_photon",
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
@@ -114,7 +114,7 @@ def main(
             flexilims_session=flexilims_session,
             project=project,
             filter_datasets=filter_traces,
-            conflicts=conflicts,
+            conflicts="skip",
             recording_type="two_photon",
             protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
@@ -148,6 +148,31 @@ def main(
             },
             flexilims_session=flexilims_session,
         )
+
+    # Check that neurons_df matches the number of ROIs in traces
+    if len(trials_df_all) > 0 and "dff_stim" in trials_df_all.columns:
+        nrois = trials_df_all.dff_stim.iloc[0].shape[1]
+        if neurons_df is not None and len(neurons_df) != nrois:
+            print(
+                f"   WARNING: neurons_df has {len(neurons_df)} ROIs, but traces have {nrois} ROIs."
+            )
+            print(
+                f"   Re-initializing neurons_df to match traces (overwriting previous state)."
+            )
+            neurons_df = None
+
+        if neurons_df is None:
+            print(f"   Initializing neurons_df with {nrois} ROIs.")
+            neurons_df = pd.DataFrame({"roi": np.arange(nrois)})
+
+        # Enforce that index and ROI array positions match perfectly
+        neurons_df.index = np.arange(len(neurons_df))
+        print(
+            f"   Saving neurons_df (ensuring 0-based contiguous index) to {neurons_ds.path_full}"
+        )
+        neurons_df.to_pickle(neurons_ds.path_full)
+    else:
+        print("   WARNING: No trials or traces found to verify ROI count.")
 
     suite2p_datasets = flz.get_datasets(
         origin_name=session_name,
@@ -348,7 +373,9 @@ def main(
             )
 
             if not run_depth_fit:
-                neurons_df = pd.read_pickle(neurons_ds.path_full)
+                assert (
+                    len(neurons_df) == coef.shape[2]
+                ), f"neurons_df count {len(neurons_df)} does not match coef count {coef.shape[2]}"
             for col in [
                 f"rf_coef{sfx}",
                 f"rf_rsq{sfx}",
@@ -356,6 +383,10 @@ def main(
                 f"rf_rsq_ipsi{sfx}",
             ]:
                 neurons_df[col] = [[np.nan]] * len(neurons_df)
+
+            # Enforce that index and ROI array positions match perfectly
+            assert np.all(np.diff(neurons_df.index) == 1), "Index is not contiguous"
+            assert neurons_df.index[0] == 0, "Index does not start at 0"
 
             for i, _ in neurons_df.iterrows():
                 neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i]
