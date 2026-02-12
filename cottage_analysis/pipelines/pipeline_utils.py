@@ -9,8 +9,13 @@ from functools import partial, reduce
 import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
-from znamutils import slurm_it
-from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neurons
+from znamutils.decorators import slurm_it
+from cottage_analysis.analysis import (
+    spheres,
+    fit_gaussian_blob,
+    find_depth_neurons,
+    treadmill,
+)
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
@@ -34,6 +39,8 @@ def create_neurons_ds(
     project=None,
     conflicts="skip",
     base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
 ):
     """Create a neurons_df dataset from flexilims.
 
@@ -54,14 +61,27 @@ def create_neurons_ds(
         datatype="session", name=session_name, flexilims_session=flexilims_session
     )
 
-    # Create a neurons_df dataset from flexilism
-    neurons_ds = flz.Dataset.from_origin(
+    neurons_ds = flz.get_datasets(
         origin_id=exp_session.id,
         dataset_type="neurons_df",
         flexilims_session=flexilims_session,
-        base_name=base_name,
-        conflicts=conflicts,
+        allow_multiple=True,
+        filter_datasets=None,
+        exclude_datasets=exclude_datasets,
     )
+
+    if (type(neurons_ds) is not flz.Dataset) and (len(neurons_ds) == 0):
+        # Create a neurons_df dataset from flexilism
+        neurons_ds = flz.Dataset.from_origin(
+            origin_id=exp_session.id,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            base_name=base_name,
+            conflicts=conflicts,
+        )
+    else:
+        neurons_ds = neurons_ds[0]
+
     fname = base_name if base_name else "neurons_df"
     neurons_ds.path = neurons_ds.path.parent / f"{fname}.pickle"
 
@@ -104,12 +124,17 @@ def sbatch_session(
         log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
+    # Handle other kwargs for export
     for key, value in kwargs.items():
-        if key not in ["log_fname", "log_path"]:
+        if key == "protocol_base":
+            args += f",PROTOCOL_BASE={value}"
+        elif key == "use_annotated":
+            args += f",USE_ANNOTATED={value}"
+        elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
-
+    args = args + f" --job-name={session_name}_{pipeline_filename.split('.')[0]}"
     command = f"sbatch {args} {script_path}"
     print(command)
     subprocess.Popen(
@@ -127,6 +152,9 @@ def load_session(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Load data from a single session.
 
@@ -142,6 +170,11 @@ def load_session(
         filter_datasets (dict, optional): filter datasets. Defaults to
             {"anatomical_only": 3}.
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+        protocol_base (str, optional): protocol base name. Defaults to
+            "SpheresPermTubeReward".
+        recording_type (str, optional): recording type. Defaults to "two_photon".
+        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+            Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -163,22 +196,38 @@ def load_session(
         project=project,
         conflicts="skip",
         base_name=base_name,
+        filter_datasets=None,
+        exclude_datasets=exclude_datasets,
     )
     if neurons_ds.get_flexilims_entry() is None:
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
 
     neurons_df = pd.read_pickle(neurons_ds.path_full)
-    vs_df_all, trials_df_all = spheres.sync_all_recordings(
-        session_name=session_name,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets=filter_datasets,
-        exclude_datasets=exclude_datasets,
-        recording_type="two_photon",
-        protocol_base="SpheresPermTubeReward",
-        photodiode_protocol=photodiode_protocol,
-        return_volumes=True,
-    )
+    if protocol_base == "SpheresTubeMotor":
+        vs_df_all, trials_df_all = treadmill.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
+    else:
+        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
         frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
@@ -187,11 +236,13 @@ def load_session(
             project=None,
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
-            recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
+            recording_type=recording_type,
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
+            verbose=False,
+            ephys_kwargs=ephys_kwargs,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)
@@ -225,6 +276,11 @@ def load_and_fit(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
+    max_rs2motor_diff=None,
+    max_acc=None,
 ):
     """Load and fit a model to a session.
 
@@ -248,6 +304,11 @@ def load_and_fit(
         filter_datasets (dict, optional): filter datasets. Defaults to
             {"anatomical_only": 3}.
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+        protocol_base (str, optional): protocol base name. Defaults to
+            "SpheresPermTubeReward".
+        recording_type (str, optional): recording type. Defaults to "two_photon".
+        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+            Defaults to None.
 
 
     Returns:
@@ -270,12 +331,19 @@ def load_and_fit(
         base_name=base_name,
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
     if isinstance(choose_trials, str):
         suffix = suffix + f"_crossval"
     suffix = suffix + f"_k{k_folds}"
+
+    # remove any multidepth experiment
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
 
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
@@ -290,6 +358,8 @@ def load_and_fit(
         k_folds=k_folds,
         run_closedloop_only=run_closedloop_only,
         run_openloop_only=run_openloop_only,
+        max_rs2motor_diff=max_rs2motor_diff,
+        max_acc=max_acc,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
@@ -328,9 +398,9 @@ def merge_fit_dataframes(
         prefix (str, optional): prefix of the files to merge. Defaults to
             "fit_rs_of_tuning_".
         suffix (str, optional): suffix of the files to merge. Defaults to ""
-        column_suffix (int, optional): digits for the source filename, which becomes the
-            special suffix to append to each column name of the dataframe to be merged.
-                Defaults to None.
+        column_suffix (int | str, optional): digits for the source filename, which
+            becomes the special suffix to append to each column name of the dataframe to
+            be merged. If str, will directly be used as sfx. Defaults to None.
         filetype (str, optional): filetype of the files to merge. Defaults to ".pickle".
         target_filename (str, optional): target filename. Defaults to
             "neurons_df.pickle".
@@ -379,13 +449,17 @@ def merge_fit_dataframes(
     ), "ROIs in dataframes do not match neurons_df."
 
     if target_column_suffix is not None:
-        suffix = f"{target_column_prefix}_" + "_".join(
-            str(df_name.stem).split("_")[target_column_suffix:]
-        )
+        if isinstance(target_column_suffix, str):
+            suffix_to_add = target_column_suffix
+        else:
+            suffix_to_add = f"{target_column_prefix}_" + "_".join(
+                str(df_name.stem).split("_")[target_column_suffix:]
+            )
+
         # rename all columns before merging
         for df in dfs_to_merge:
             df.columns = [
-                f"{col}{suffix}" if col != "roi" else "roi" for col in df.columns
+                f"{col}{suffix_to_add}" if col != "roi" else "roi" for col in df.columns
             ]
     rsof_df = reduce(lambda x, y: pd.merge(x, y, on="roi", how="inner"), dfs_to_merge)
 
@@ -415,8 +489,27 @@ def merge_fit_dataframes(
     conda_env=CONDA_ENV,
     slurm_options={"mem": "16G", "time": "6:00:00", "partition": "ncpu"},
 )
-def run_basic_plots(project, session_name, photodiode_protocol):
-    """Run basic plots on a session."""
+def run_basic_plots(
+    project,
+    session_name,
+    photodiode_protocol,
+    do_sta=True,
+    do_basic_vis=True,
+    filter_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
+):
+    """Run basic plots on a session.
+
+    Args:
+        project (str): project name.
+        session_name (str): session name. {Mouse}_{Session}.
+        photodiode_protocol (str): photodiode protocol.
+        do_sta (bool, optional): whether to run sta plots. Defaults to True.
+        do_basic_vis (bool, optional): whether to run basic visualisation plots.
+            Defaults to True.
+    """
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
@@ -428,7 +521,20 @@ def run_basic_plots(project, session_name, photodiode_protocol):
         trials_df_all,
         frames_all,
         _,
-    ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
+    ) = load_session(
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=True,
+        filter_datasets=filter_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
+    )
+
+    # Remove multidepth if there are any
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
 
     kwargs = {
         "RS_OF_matrix_log_range": {
@@ -441,11 +547,16 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             "log_base": 10,
         }
     }
+    if do_basic_vis:
+        basic_vis_plots.basic_vis_session(
+            neurons_df=neurons_df,
+            trials_df=trials_df_all,
+            neurons_ds=neurons_ds,
+            **kwargs,
+        )
 
-    basic_vis_plots.basic_vis_session(
-        neurons_df=neurons_df, trials_df=trials_df_all, neurons_ds=neurons_ds, **kwargs
-    )
-
+    if not do_sta:
+        return
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
         if is_closedloop:
@@ -461,5 +572,70 @@ def run_basic_plots(project, session_name, photodiode_protocol):
             frames=frames_all,
             is_closedloop=is_closedloop,
             save_dir=neurons_ds.path_full.parent,
-            fontsize_dict={"title": 10, "tick": 10, "label": 10},
         )
+
+
+def load_treadmill_and_sphere_datasets(
+    project,
+    mouse,
+    session,
+    photodiode_protocol=5,
+    filter_datasets=None,
+    recording_type="two_photon",
+    protocol_base_sphere="SpheresPermTubeReward",
+    **kwargs,
+):
+    """
+    Load neurons_df and trials_dfs for treadmill and sphere recordings of a session.
+
+    Args:
+        project (str): project name.
+        mouse (str): mouse name.
+        session (str): session date (e.g. S20250401).
+        photodiode_protocol (int): photodiode protocol. Defaults to 5.
+        filter_datasets (dict): filter datasets for suite2p.
+        recording_type (str): recording type. Defaults to "two_photon".
+        protocol_base_sphere (str): protocol base for sphere recordings.
+        **kwargs: additional arguments for sync_all_recordings.
+
+    Returns:
+        tuple: (neurons_df, trials_df_tread, trials_df_sphere)
+    """
+    session_name = f"{mouse}_{session}"
+    flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    # Load neurons_df
+    neurons_ds = create_neurons_ds(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+    )
+    if neurons_ds.get_flexilims_entry() is None:
+        raise flz.FlexilimsError(f"Session {session_name} not processed...")
+
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+
+    # Load treadmill trials
+    _, trials_df_tread = treadmill.sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        photodiode_protocol=photodiode_protocol,
+        filter_datasets=filter_datasets,
+        recording_type=recording_type,
+        **kwargs,
+    )
+
+    # Load sphere (closed-loop) trials
+    _, trials_df_sphere = spheres.sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        photodiode_protocol=photodiode_protocol,
+        filter_datasets=filter_datasets,
+        recording_type=recording_type,
+        protocol_base=protocol_base_sphere,
+        **kwargs,
+    )
+
+    return neurons_df, trials_df_tread, trials_df_sphere

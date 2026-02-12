@@ -29,6 +29,11 @@ GaussianAdditiveParams = namedtuple(
     ],
 )
 
+GaussianMultiplicativeParams = namedtuple(
+    "GaussianMultiplicativeParams",
+    ["log_amplitude", "x0", "y0", "log_sigma_x2", "log_sigma_y2", "offset"],
+)
+
 Gaussian1DParams = namedtuple(
     "Gaussian1DParams",
     ["log_amplitude", "x0", "log_sigma_x2", "offset"],
@@ -125,6 +130,27 @@ def gaussian_1d(
     return g
 
 
+def gaussian_2mult(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
+):
+    (x, y) = xy_tuple
+    sigma_x_sq = np.exp(log_sigma_x2) + min_sigma
+    sigma_y_sq = np.exp(log_sigma_y2) + min_sigma
+    amplitude = np.exp(log_amplitude)
+    g = offset + amplitude * np.exp(
+        -((x - x0) ** 2) / (2 * sigma_x_sq) - ((y - y0) ** 2 / (2 * sigma_y_sq))
+    )
+
+    return g
+
+
 def gaussian_OF(
     xy_tuple,
     log_amplitude,
@@ -209,6 +235,33 @@ def gaussian_additive(
         + amplitude_x * np.exp(-((x - x0) ** 2) / (2 * sigma_x_sq))
         + amplitude_y * np.exp(-((y - y0) ** 2) / (2 * sigma_y_sq))
     )
+    return g
+
+
+def gaussian_multiplicative(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
+):
+    (rs, of) = xy_tuple
+    x = rs - of  # ratio of logged rs/of
+    y = rs  # just the logged rs
+    g = gaussian_2mult(
+        (x, y),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+    )
+
     return g
 
 
@@ -560,6 +613,40 @@ def initial_fit_conditions(
                 offset=np.random.normal(),
             )
 
+    elif model == "gaussian_multiplicative":
+        model_sfx = "_g2mult"
+        lower_bounds = GaussianMultiplicativeParams(
+            log_amplitude=-np.inf,
+            x0=np.log(param_range["rs_min"] / param_range["of_max"]),
+            y0=np.log(param_range["rs_min"]),
+            log_sigma_x2=-np.inf,
+            log_sigma_y2=-np.inf,
+            offset=-np.inf,
+        )
+        upper_bounds = GaussianMultiplicativeParams(
+            log_amplitude=np.inf,
+            x0=np.log(param_range["rs_max"] / param_range["of_min"]),
+            y0=np.log(param_range["rs_max"]),
+            log_sigma_x2=np.inf,
+            log_sigma_y2=np.inf,
+            offset=np.inf,
+        )
+
+        def p0_func():
+            return GaussianMultiplicativeParams(
+                log_amplitude=np.random.normal(),
+                x0=np.random.uniform(
+                    np.log(param_range["rs_min"] / param_range["of_max"]),
+                    np.log(param_range["rs_max"] / param_range["of_min"]),
+                ),
+                y0=np.random.uniform(
+                    np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
+                ),
+                log_sigma_x2=np.random.normal() + 2,
+                log_sigma_y2=np.random.normal(),
+                offset=np.random.normal(),
+            )
+
     return model_sfx, lower_bounds, upper_bounds, p0_func
 
 
@@ -605,8 +692,12 @@ def fit_rs_of_tuning(
     random_state=42,
     run_closedloop_only=False,
     run_openloop_only=False,
+    max_acc=None,
+    max_rs2motor_diff=None,
 ):
-    def process_rs_of_for_fit(trials_df, trial_list=[], rs_thr=0.01):
+    def process_rs_of_for_fit(
+        trials_df, trial_list=[], rs_thr=0.01, max_acc=None, max_rs2motor_diff=None
+    ):
         # take a subset of trials
         trials_df_part = (
             trials_df.iloc[trial_list] if len(trial_list) > 0 else trials_df
@@ -614,6 +705,7 @@ def fit_rs_of_tuning(
 
         # take the rs, of, dff, depth_labels from those trials
         rs = np.concatenate(trials_df_part["RS_stim"].values)
+
         rs_eye = np.concatenate(trials_df_part["RS_eye_stim"].values)
         of = np.concatenate(trials_df_part["OF_stim"].values)
         dff = np.concatenate(trials_df_part["dff_stim"].values, axis=0)
@@ -621,6 +713,14 @@ def fit_rs_of_tuning(
 
         # choose frames that are above a certain running speed threshold
         running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of))
+        if max_acc is not None:
+            acc = np.concatenate(trials_df_part["acceleration_ratio_max_stim"].values)
+            running = running & (acc < max_acc)
+        if max_rs2motor_diff is not None:
+            rs2motor_diff = np.concatenate(
+                trials_df_part["max_abs_rs2motor_diff_ratio_stim"].values
+            )
+            running = running & (rs2motor_diff < max_rs2motor_diff)
         rs = np.log(rs[running])
         rs_eye = np.log(rs_eye[running])
         of = np.log(np.degrees(of[running]))  # fit using of in deg
@@ -644,12 +744,14 @@ def fit_rs_of_tuning(
     if choose_trials is not None and isinstance(
         choose_trials, list
     ):  # choose a list of trials from all trials (including openloop and closed loop)
-        trials_df_select, choose_trial_nums, trial_sfx = (
-            common_utils.choose_trials_subset(
-                trials_df,
-                choose_trials,
-                sfx=trial_sfx,
-            )
+        (
+            trials_df_select,
+            choose_trial_nums,
+            trial_sfx,
+        ) = common_utils.choose_trials_subset(
+            trials_df,
+            choose_trials,
+            sfx=trial_sfx,
         )
     else:  # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol below
         trials_df_select = trials_df
@@ -683,12 +785,14 @@ def fit_rs_of_tuning(
             # choose only closed loop or open loop trials
             trials_df_fit = trials_df_fit
         else:  # Otherwise, if choose_trials is "even" or "odd", choose trials within a certain protocol
-            trials_df_fit, choose_trial_nums, trial_sfx = (
-                common_utils.choose_trials_subset(
-                    trials_df_fit,
-                    choose_trials,
-                    sfx=trial_sfx,
-                )
+            (
+                trials_df_fit,
+                choose_trial_nums,
+                trial_sfx,
+            ) = common_utils.choose_trials_subset(
+                trials_df_fit,
+                choose_trials,
+                sfx=trial_sfx,
             )
 
         # give class labels to each depth
@@ -704,19 +808,19 @@ def fit_rs_of_tuning(
         if k_folds == 1:
             # process data for fitting (rs, rs_eye, of are all logged)
             rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(
-                trials_df_fit, trial_list=[], rs_thr=rs_thr
+                trials_df_fit,
+                trial_list=[],
+                rs_thr=rs_thr,
+                max_acc=max_acc,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # loop between actual and virtual running speeds
-            # rs_arrays = [rs] if ((is_closedloop) or model == "gaussian_OF") else [rs, rs_eye] # only use virtual running speed if it's openloop and fits for models other than gaussian_OF
-            rs_arrays = [
-                rs
-            ]  # don't fit with virtual running speed as it's never been used
+            rs_arrays = [rs]
 
             for i_rs, rs_to_use in enumerate(rs_arrays):
                 rs_type = "" if is_closedloop else rs_types_openloop[i_rs]
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
-
                 # initialize columns to save
                 neurons_df_temp[
                     f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
@@ -724,13 +828,10 @@ def fit_rs_of_tuning(
                 neurons_df_temp[
                     f"rsof_minSigma_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                 ] = min_sigma
-                # if choose_trials is not None:
-                #     neurons_df_temp[
-                #         f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                #     ] = choose_trials
-
                 # fit for each neuron
                 for roi in tqdm(range(dff.shape[1])):
+                    if np.all(np.isnan(dff[:, roi])):
+                        continue
                     popt, rsq = common_utils.iterate_fit(
                         model_func_,
                         (rs_to_use, of),
@@ -740,29 +841,23 @@ def fit_rs_of_tuning(
                         niter=niter,
                         p0_func=p0_func,
                     )
-
                     # Assign values to neurons_df_temp
                     if (model == "gaussian_additive") or (model == "gaussian_2d"):
                         neurons_df_temp.at[
                             roi,
                             f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = np.exp(popt[1])
-
+                        # rad/s
                         neurons_df_temp.at[
                             roi,
                             f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
-                        ] = np.radians(
-                            np.exp(popt[2])
-                        )  # rad/s
-
+                        ] = np.radians(np.exp(popt[2]))
                     elif model == "gaussian_OF":
+                        # rad/s
                         neurons_df_temp.at[
                             roi,
                             f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
-                        ] = np.radians(
-                            np.exp(popt[1])
-                        )  # rad/s
-
+                        ] = np.radians(np.exp(popt[1]))
                     elif model == "gaussian_RS":
                         neurons_df_temp.at[
                             roi,
@@ -770,14 +865,22 @@ def fit_rs_of_tuning(
                         ] = np.exp(
                             popt[1]
                         )  # m/s
-
                     elif model == "gaussian_ratio":
+                        # m/deg --> m/deg * deg/rad = m/rad
                         neurons_df_temp.at[
                             roi,
                             f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
-                        ] = np.degrees(
-                            np.exp(popt[1])
-                        )  # m/deg --> m/deg * deg/rad = m/rad
+                        ] = np.degrees(np.exp(popt[1]))
+
+                    elif model == "gaussian_multiplicative":
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RSOFratio_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.degrees(np.exp(popt[1]))
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.exp(popt[2])
 
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
@@ -806,7 +909,6 @@ def fit_rs_of_tuning(
                 shuffle=True,
                 random_state=random_state,
             )
-
             # make a list of arrays for all folds
             data_all = {
                 "train": {
@@ -832,7 +934,10 @@ def fit_rs_of_tuning(
                     ("test", test_index),
                 ]:
                     rs, rs_eye, of, dff, depth_labels = process_rs_of_for_fit(
-                        trials_df_fit, trial_list=data_idx, rs_thr=rs_thr
+                        trials_df_fit,
+                        trial_list=data_idx,
+                        rs_thr=rs_thr,
+                        max_acc=max_acc,
                     )
                     data_all[data_type]["rs"].append(rs)
                     data_all[data_type]["rs_eye"].append(rs_eye)
@@ -841,21 +946,14 @@ def fit_rs_of_tuning(
                     data_all[data_type]["depth_labels"].append(depth_labels)
 
             # take actual or virtual running speeds
-            # rs_arrays_train = [data_all["train"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["train"]["rs"], data_all["train"]["rs_eye"]]
-            # rs_arrays_test = [data_all["test"]["rs"]] if ((is_closedloop) or model == "gaussian_OF") else [data_all["test"]["rs"], data_all["test"]["rs_eye"]]
-            rs_arrays_train = [
-                data_all["train"]["rs"]
-            ]  # don't fit with virtual running speed as it's never been used
-            rs_arrays_test = [
-                data_all["test"]["rs"]
-            ]  # don't fit with virtual running speed as it's never been used
+            rs_arrays_train = [data_all["train"]["rs"]]
+            rs_arrays_test = [data_all["test"]["rs"]]
 
             for i_rs, (rs_to_use_train_all, rs_to_use_test_all) in enumerate(
                 zip(rs_arrays_train, rs_arrays_test)
             ):
                 rs_type = "" if is_closedloop else rs_types_openloop[i_rs]
                 print(f"Fitting {protocol_sfx}{rs_type} running...")
-
                 # initialize columns to save with nan
                 for param in ["rsq", "spearmanr_rval", "spearmanr_pval"]:
                     neurons_df_temp[
@@ -873,13 +971,10 @@ def fit_rs_of_tuning(
                 neurons_df_temp[
                     f"rsof_kFolds_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                 ] = k_folds
-                # if choose_trials is not None:
-                #     neurons_df_temp[
-                #         f"rsof_chooseTrials_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
-                #     ] = choose_trials
-
                 # Loop through each roi
                 for roi in tqdm(range(dff.shape[1])):
+                    if np.all(np.isnan(dff[:, roi])):
+                        continue
                     # loop through the folds
                     dff_pred_all, rsq_train, rval_train, pval_train, popt_train = (
                         [],
@@ -888,7 +983,6 @@ def fit_rs_of_tuning(
                         [],
                         [],
                     )
-
                     # Loop through each fold of cross validation
                     for (
                         rs_to_use_train,
@@ -903,7 +997,6 @@ def fit_rs_of_tuning(
                         data_all["test"]["of"],
                         data_all["train"]["dff"],
                     ):
-
                         popt, rsq = common_utils.iterate_fit(
                             model_func_,
                             (rs_to_use_train, of_train),
@@ -932,7 +1025,6 @@ def fit_rs_of_tuning(
                         np.concatenate(data_all["test"]["dff"])[:, roi],
                         np.concatenate(dff_pred_all),
                     )
-
                     # Save values to neurons_df_temp
                     for param, value in zip(
                         [

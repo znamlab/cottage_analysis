@@ -1,23 +1,19 @@
 import numpy as np
 import pandas as pd
-import matplotlib.patheffects as PathEffects
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
 import pickle
 import os
 from pathlib import Path
-from scipy import stats
 from scipy.stats import wilcoxon, ttest_rel
 
 import flexiznam as flz
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 from cottage_analysis.analysis import spheres, common_utils
-from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.plotting import plotting_utils
-from cottage_analysis.summary_analysis import depth_decoder_stats
 
-CONDA_ENV = "2p_analysis_cottage2"
+CONDA_ENV = "v1_depth_map"
 
 
 def bar_plot_ttest(
@@ -210,7 +206,7 @@ def calculate_average_confusion_matrix(
             print(f"Using {col} for confusion matrix")
             col_new = col
         conmat_mean[recording_type] = np.nanmean(
-            np.stack(decoder_results[f"conmat_{recording_type}"]), axis=0
+            np.stack(decoder_results[col_new]), axis=0
         )
     return conmat_mean
 
@@ -391,17 +387,21 @@ def plot_decoder_err_by_speeds(
     )
 
     # add chance level error
-    axes[1].axhline(
-        np.nanmean(decoder_df[f"error_chance_{sfx}"]),
-        color=linecolor_chance,
-        linestyle="dotted",
-        linewidth=linewidth,
-        alpha=alpha_chance,
-    )
+    for ax in axes:
+        ax.axhline(
+            np.nanmean(decoder_df[f"error_chance_{sfx}"]),
+            color=linecolor_chance,
+            linestyle="dotted",
+            linewidth=linewidth,
+            alpha=alpha_chance,
+        )
 
     # set axis of the stationary plot
     axes[0].set_xlim([-0.5, 0.5])
-    ylim = axes[0].get_ylim()
+    ylim = [*axes[0].get_ylim()]
+    print(ylim)
+    if ylim[1] < np.nanmean(decoder_df[f"error_chance_{sfx}"]):
+        ylim[1] = np.nanmean(decoder_df[f"error_chance_{sfx}"]) * 1.1
     axes[0].set_ylim([0, ylim[1]])
     axes[0].set_xticks([0])
     axes[0].set_xticklabels(["stationary"], rotation=60)
@@ -428,7 +428,7 @@ def plot_decoder_err_by_speeds(
     axes[1].spines["right"].set_visible(False)
     axes[1].spines["top"].set_visible(False)
     axes[1].set_yticks([])
-    return err_speed_bins
+    return axes, err_speed_bins
 
 
 def plot_decoder_acc_by_speeds(
@@ -556,16 +556,17 @@ def plot_decoder_session(
     project,
     photodiode_protocol,
     speed_bins,
+    filter_datasets=None,
 ):
     flexilims_session = flz.get_flexilims_session(project)
     _, trials_df_all = spheres.sync_all_recordings(
         session_name=session_name,
         flexilims_session=flexilims_session,
-        filter_datasets={"anatomical_only": 3},
         recording_type="two_photon",
         protocol_base="SpheresPermTubeReward",
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
+        filter_datasets=filter_datasets,
     )
     with open(decoder_dict_path, "rb") as f:
         decoder_dict = pickle.load(f)
@@ -577,11 +578,11 @@ def plot_decoder_session(
             sfx = "_closedloop"
         else:
             sfx = "_openloop"
-        plt.subplot(1, 2, i + 1)
+        ax = plt.subplot(1, 2, i + 1)
         plot_confusion_matrix(
             decoder_dict[f"conmat{sfx}"],
-            decoder_dict[f"accuracy{sfx}"],
-            normalize=True,
+            ax,
+            vmax=None,
             fontsize_dict={"text": 10, "label": 10, "title": 10, "tick": 5},
         )
         plt.title(sfx[1:], fontsize=10)
@@ -604,25 +605,25 @@ def plot_decoder_session(
             else:
                 title_sfx = f"speed{sfx} {speed_bins[ispeed-1]:.1f}-{speed_bin:.1f} m/s"
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][ispeed]) > 0:
-                plt.subplot2grid((len(speed_bins) + 1, 2), (ispeed, i))
+                ax = plt.subplot2grid((len(speed_bins) + 1, 2), (ispeed, i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][ispeed],
-                    decoder_dict[f"acc_speed_bins{sfx}"][ispeed],
-                    normalize=True,
+                    ax,
+                    vmax=None,
                     fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-                    title_sfx=title_sfx,
                 )
+                plt.title(title_sfx, fontsize=10)
         for speed_bin in [speed_bins[-1]]:
             if len(decoder_dict[f"conmat_speed_bins{sfx}"][-1]) > 0:
                 title_sfx = f"speed > {speed_bin:.1f} m/s"
-                plt.subplot2grid((len(speed_bins) + 1, 2), (len(speed_bins), i))
+                ax = plt.subplot2grid((len(speed_bins) + 1, 2), (len(speed_bins), i))
                 plot_confusion_matrix(
                     decoder_dict[f"conmat_speed_bins{sfx}"][-1],
-                    decoder_dict[f"acc_speed_bins{sfx}"][-1],
-                    normalize=True,
+                    ax,
+                    vmax=None,
                     fontsize_dict={"text": 5, "label": 5, "title": 10, "tick": 5},
-                    title_sfx=title_sfx,
                 )
+                plt.title(title_sfx, fontsize=10)
     plt.tight_layout()
     plt.savefig(
         Path(save_path)

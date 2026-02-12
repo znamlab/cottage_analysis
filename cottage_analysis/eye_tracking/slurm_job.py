@@ -6,7 +6,7 @@ from pathlib import Path
 import flexiznam as flz
 from cottage_analysis.eye_tracking import eye_model_fitting
 from znamutils import slurm_helper
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 
 
 def slurm_dlc_pupil(

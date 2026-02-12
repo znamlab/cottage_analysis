@@ -18,7 +18,13 @@ from cottage_analysis.pipelines import pipeline_utils
 
 
 def main(
-    project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
+    project,
+    session_name,
+    conflicts="skip",
+    photodiode_protocol=5,
+    use_slurm=False,
+    anatomical_only=True,
+    ast_neuropil=False,
 ):
     """
     Main function to analyze a session.
@@ -29,16 +35,20 @@ def main(
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
         use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
+        anatomical_only(bool): whether to only use anatomical datasets. Default True.
+        ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
+
     """
     print(
         f"------------------------------- \n \
         Start analysing {session_name}   \n \
-        -------------------------------"
+        -------------------------------",
+        flush=True,
     )
     params = {
         "trial_average": False,
-        "rolling_window": 0.5,
-        "downsample_window": 0.5,
+        "rolling_window": None,
+        "downsample_window": None,
         "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
@@ -46,7 +56,15 @@ def main(
         "speed_bins": np.array([0.05, 0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2]),
         "special_sfx": "",
     }
-
+    filter_datasets = {}
+    if anatomical_only:
+        print("Only using anatomical datasets...")
+        filter_datasets["anatomical_only"] = 3
+    if ast_neuropil:
+        print("Using ASt neuropil correction...")
+        filter_datasets["ast_neuropil"] = True
+    else:
+        filter_datasets["ast_neuropil"] = False
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
         slurm_folder.mkdir(exist_ok=True)
@@ -82,7 +100,7 @@ def main(
         session_name=session_name,
         flexilims_session=flexilims_session,
         project=project,
-        filter_datasets={"anatomical_only": 3},
+        filter_datasets=filter_datasets,
         recording_type="two_photon",
         protocol_base="SpheresPermTubeReward",
         photodiode_protocol=photodiode_protocol,
@@ -138,10 +156,12 @@ def main(
             still_thr=params["still_thr"],
             still_time=params["still_time"],
             frame_rate=frame_rate,
+            add_errors=True,
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
             job_dependency=job_dependency,
+            job_name=f"decoder_speedbins_{session_name}{sfx}",
         )
         outputs_all.append(out)
 
@@ -158,6 +178,8 @@ def main(
         slurm_folder=slurm_folder,
         scripts_name=f"decoder_plots{params['special_sfx']}",
         job_dependency=job_dependency,
+        filter_datasets=filter_datasets,
+        job_name=f"decoder_plots_{session_name}_{params['special_sfx']}",
     )
 
 
