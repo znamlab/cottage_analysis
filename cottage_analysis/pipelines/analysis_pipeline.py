@@ -192,7 +192,10 @@ def main(
 
     # Treadmill only parameter
     max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
-
+    if protocol_base == "SpheresTubeMotor":
+        special_sfx_base = "_treadmill"
+    else:
+        special_sfx_base = ""
     if run_depth_fit:
         # finished = pipeline_utils.save_finish_time(finished,
         # col="depth_fit_started")
@@ -203,12 +206,9 @@ def main(
             "min_sigma": 0.5,
         }
         if protocol_base == "SpheresTubeMotor":
-            special_sfx_base = "_treadmill"
             # With treadmill, depth min and max can be lot smaller/larger
             depth_fit_params["depth_max"] = np.ceil(trials_df_all.depth.max())
             depth_fit_params["depth_min"] = np.round(trials_df_all.depth.min(), 4)
-        else:
-            special_sfx_base = ""
 
         # Find depth neurons and fit preferred depth
         print("---Start finding depth neurons...---")
