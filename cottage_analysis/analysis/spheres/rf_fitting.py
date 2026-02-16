@@ -519,7 +519,7 @@ def fit_3d_rfs_ipsi(
     return coef, r2
 
 
-def find_sig_rfs(coef, coef_ipsi, n_std=5):
+def find_sig_rfs(coef, coef_ipsi, n_std=6):
     """Find the neurons with a significant RF (compared to ipsi side)
 
     Args:
