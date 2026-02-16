@@ -475,6 +475,7 @@ def merge_fit_dataframes(
     assert all(
         [df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge]
     ), "ROIs in dataframes do not match neurons_df."
+    assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
 
     if target_column_suffix is not None:
         if isinstance(target_column_suffix, str):

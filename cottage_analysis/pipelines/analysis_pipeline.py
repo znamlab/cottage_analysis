@@ -166,10 +166,11 @@ def main(
             neurons_df = pd.DataFrame({"roi": np.arange(nrois)})
 
         # Enforce that index and ROI array positions match perfectly
-        neurons_df.index = np.arange(len(neurons_df))
+        neurons_df.index = np.arange(len(neurons_df), dtype=int)
         print(
             f"   Saving neurons_df (ensuring 0-based contiguous index) to {neurons_ds.path_full}"
         )
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
     else:
         print("   WARNING: No trials or traces found to verify ROI count.")
@@ -299,6 +300,7 @@ def main(
             )
 
         # Save neurons_df
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
         # Save a copy with special_sfx_base in the name
         target_file = neurons_ds.path_full.with_name(
@@ -397,6 +399,7 @@ def main(
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
         # Save neurons_df
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
         # Also save a copy with special_sfx_base in the name
         target_file = neurons_ds.path_full.with_name(
