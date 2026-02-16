@@ -224,13 +224,13 @@ def find_rf_centers(
     coef_mean = np.nanmean(coef_, axis=1)
 
     # Find the center (index of maximum value of fitted RF)
-    max_idx = [
-        np.unravel_index(
-            np.nanargmax(coef_mean[i, :, :, :]), coef_mean[0, :, :, :].shape
-        )
-        for i in range(coef_mean.shape[0])
-    ]
-    max_idx = np.array(max_idx)
+    is_all_nan = np.all(np.isnan(coef_mean), axis=(1, 2, 3))
+    max_idx = np.zeros((coef_mean.shape[0], 3), dtype=int)
+    for i in range(coef_mean.shape[0]):
+        if not is_all_nan[i]:
+            max_idx[i] = np.unravel_index(
+                np.nanargmax(coef_mean[i, :, :, :]), coef_mean[0, :, :, :].shape
+            )
 
     def index_to_deg(idx, resolution=resolution, n_ele=80):
         azi = (idx[:, 2] + 0.5) * resolution
@@ -238,7 +238,10 @@ def find_rf_centers(
         return azi, ele
 
     azi, ele = index_to_deg(max_idx, n_ele=frame_shape[0])
-    idepth = max_idx[:, 0]
+    idepth = max_idx[:, 0].astype(float)
+    azi[is_all_nan] = np.nan
+    ele[is_all_nan] = np.nan
+    idepth[is_all_nan] = np.nan
     neurons_df["rf_azi"] = azi
     neurons_df["rf_ele"] = ele
     return azi, ele, idepth, coef
@@ -251,7 +254,7 @@ def plot_rf_centers(
     colors=["r", "b"],
     ndepths=8,
     frame_shape=(16, 24),
-    n_stds=5,
+    n_stds=6,
     plot_x=0,
     plot_y=1,
     plot_width=1,
@@ -330,7 +333,7 @@ def load_sig_rf(
         "rsof_rsq_closedloop_g2d",
         "rsof_popt_closedloop_g2d",
     ],
-    n_std=5,
+    n_std=6,
     verbose=1,
     filter_datasets=None,
     use_multidepth=False,
