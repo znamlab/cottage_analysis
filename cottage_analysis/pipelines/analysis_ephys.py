@@ -18,7 +18,7 @@ from znamutils import slurm_it
 
 @slurm_it(
     conda_env="onix-3dvision",
-    slurm_options={"time": "48:00:00", "cpus-per-task": 4, "mem": "64G"},
+    slurm_options={"time": "48:00:00", "cpus-per-task": 16, "mem": "128G"},
 )
 def main(
     project: str,
@@ -302,6 +302,87 @@ def main(
         neurons_ds.update_flexilims(mode="update")
         print("Depth tuning fitting finished. Neurons_df saved.")
 
+    # Fit gaussian blob to neuronal activity
+    if run_rsof_fit:
+        print("---Start fitting 2D gaussian blob...---")
+        outputs = []
+        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        common_params = dict(
+            rs_thr=0.01,
+            param_range={
+                "rs_min": 0.005,
+                "rs_max": 5,
+                "of_min": 0.03,
+                "of_max": 3000,
+            },
+            niter=10,
+            min_sigma=0.25,
+            run_openloop_only=False,
+            file_special_sfx=special_sfx_base,
+            recording_type="behaviour",
+            protocol_base=protocol_base,
+            filter_datasets=filter_datasets,
+            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
+            slurm_folder=slurm_folder,
+            ephys_kwargs=ephys_kwargs,
+        )
+
+        to_do = [
+            ("gaussian_2d", None, 1),
+            ("gaussian_2d", "even", 1),
+            ("gaussian_additive", None, 1),
+            ("gaussian_OF", None, 1),
+            ("gaussian_2d", None, 5),
+            ("gaussian_additive", None, 5),
+            ("gaussian_OF", None, 5),
+            ("gaussian_ratio", None, 1),
+            ("gaussian_ratio", None, 5),
+            ("gaussian_RS", None, 1),
+            ("gaussian_RS", None, 5),
+        ]
+
+        for model, trials, k_folds in to_do:
+            name = f"{session_name}_{model}"
+            if trials is not None:
+                name += "_crossval"
+            name += f"_k{k_folds}"
+            print(f"Fitting {model}...")
+            out = pipeline_utils.load_and_fit(
+                project,
+                session_name,
+                photodiode_protocol,
+                model=model,
+                choose_trials=trials,
+                scripts_name=name,
+                k_folds=k_folds,
+                **common_params,
+            )
+            outputs.append(out)
+            if run_rsof_fit_on_separate_slurm_jobs:
+                print(f"Started job {out}")
+            else:
+                print("---RS OF fit finished. Neurons_df saved.---")
+
+        # Merge fit dataframes
+        job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
+        out = pipeline_utils.merge_fit_dataframes(
+            project,
+            session_name,
+            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
+            slurm_folder=slurm_folder,
+            job_dependency=job_dependency,
+            scripts_name=f"{session_name}_merge_fit_dataframes",
+            conflicts=conflicts,
+            prefix="fit_rs_of_tuning_",
+            suffix=special_sfx_base,
+            exclude_keywords=["recording", "openclosed", "openloop"],
+            include_keywords=[],
+            target_column_suffix=special_sfx_base,
+            filetype=".pickle",
+            target_filename="neurons_df.pickle",
+        )
+        print("---Analysis finished. Neurons_df saved.---")
+
     # Regenerate sphere stimuli
     if run_rf:
         print("---RF analysis...---")
@@ -391,87 +472,6 @@ def main(
         # Update neurons_ds on flexilims
         # neurons_ds.update_flexilims(mode="update")
         print("RF fitting finished. Neurons_df saved.")
-
-    # Fit gaussian blob to neuronal activity
-    if run_rsof_fit:
-        print("---Start fitting 2D gaussian blob...---")
-        outputs = []
-        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        common_params = dict(
-            rs_thr=0.01,
-            param_range={
-                "rs_min": 0.005,
-                "rs_max": 5,
-                "of_min": 0.03,
-                "of_max": 3000,
-            },
-            niter=10,
-            min_sigma=0.25,
-            run_openloop_only=False,
-            file_special_sfx=special_sfx_base,
-            recording_type="behaviour",
-            protocol_base=protocol_base,
-            filter_datasets=filter_datasets,
-            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
-            slurm_folder=slurm_folder,
-            ephys_kwargs=ephys_kwargs,
-        )
-
-        to_do = [
-            ("gaussian_2d", None, 1),
-            ("gaussian_2d", "even", 1),
-            ("gaussian_additive", None, 1),
-            ("gaussian_OF", None, 1),
-            ("gaussian_2d", None, 5),
-            ("gaussian_additive", None, 5),
-            ("gaussian_OF", None, 5),
-            ("gaussian_ratio", None, 1),
-            ("gaussian_ratio", None, 5),
-            ("gaussian_RS", None, 1),
-            ("gaussian_RS", None, 5),
-        ]
-
-        for model, trials, k_folds in to_do:
-            name = f"{session_name}_{model}"
-            if trials is not None:
-                name += "_crossval"
-            name += f"_k{k_folds}"
-            print(f"Fitting {model}...")
-            out = pipeline_utils.load_and_fit(
-                project,
-                session_name,
-                photodiode_protocol,
-                model=model,
-                choose_trials=trials,
-                scripts_name=name,
-                k_folds=k_folds,
-                **common_params,
-            )
-            outputs.append(out)
-            if run_rsof_fit_on_separate_slurm_jobs:
-                print(f"Started job {out}")
-            else:
-                print("---RS OF fit finished. Neurons_df saved.---")
-
-        # Merge fit dataframes
-        job_dependency = outputs if run_rsof_fit_on_separate_slurm_jobs else None
-        out = pipeline_utils.merge_fit_dataframes(
-            project,
-            session_name,
-            use_slurm=run_rsof_fit_on_separate_slurm_jobs,
-            slurm_folder=slurm_folder,
-            job_dependency=job_dependency,
-            scripts_name=f"{session_name}_merge_fit_dataframes",
-            conflicts=conflicts,
-            prefix="fit_rs_of_tuning_",
-            suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
-            include_keywords=[],
-            target_column_suffix=special_sfx_base,
-            filetype=".pickle",
-            target_filename="neurons_df.pickle",
-        )
-        print("---Analysis finished. Neurons_df saved.---")
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
