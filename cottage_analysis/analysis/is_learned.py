@@ -691,6 +691,8 @@ def match_two_sessions(roicat_neuronsdf, sessionids=None):
                 "pref_depth_session1": row1["preferred_depth_closedloop"],
                 "is_depth_neuron_session0": row0["is_depth_neuron"],
                 "is_depth_neuron_session1": row1["is_depth_neuron"],
+                'depth_tuning_test_rsq_closedloop_running': row0['depth_tuning_test_rsq_closedloop_running'],
+                'depth_tuning_test_rsq_closedloop_running': row1['depth_tuning_test_rsq_closedloop_running']
             }
         )
 
@@ -901,7 +903,7 @@ def plot_pref_depth_scatter(useful_matched, use_log=True, show=False):
         x,
         y,
         alpha=0.5,
-        c=useful_matched.loc[mask, "cluster_silhouette"],
+        c=useful_matched.loc[mask, 'depth_tuning_test_rsq_closedloop_running'],
         cmap="viridis",
         s=20,
     )
@@ -931,7 +933,7 @@ def plot_pref_depth_scatter(useful_matched, use_log=True, show=False):
 
     # Add colorbar
     cbar = fig.colorbar(sc, ax=ax)
-    cbar.set_label("Cluster Silhouette")
+    cbar.set_label("Depth fit R²")
 
     fig.tight_layout()
     if show:
