@@ -75,6 +75,52 @@ _PAYLOAD_STRUCT = {
 _PAYLOAD_STRUCT = {k: "<" + v for k, v in _PAYLOAD_STRUCT.items()}
 
 
+def get_harp_dataset(
+    recording_name,
+    flexilims_session,
+):
+    """Find the harp dataset for a given recording.
+
+    This function first attempts to find a 'harp' dataset directly associated with the
+    recording. If not found, it performs a recursive search. If a single harp dataset
+    is found recursively, it is returned.
+
+    Args:
+        recording (str): Full recording name
+        flexilims_session (flz.Flexilims): An active flexilims session.
+
+    Returns:
+        flz.Dataset: The harp dataset associated with the recording.
+
+    Raises:
+        IOError: If no unique harp dataset can be found for the recording.
+    """
+
+    harp_ds = flz.get_datasets(
+        flexilims_session=flexilims_session,
+        origin_name=recording_name,
+        dataset_type="harp",
+        allow_multiple=False,
+        return_dataseries=False,
+    )
+    if harp_ds is None:
+        # Try recursive
+        ds = flz.get_datasets_recursively(
+            flexilims_session=flexilims_session,
+            origin_name=recording_name,
+            dataset_type="harp",
+        )
+        if len(ds) == 1:
+            ds = list(ds.values())[0]
+            if len(ds) == 1:
+                harp_ds = ds[0]
+        if harp_ds is None:
+            raise IOError(
+                "Could not find harp dataset for recording %s" % recording_name
+            )
+    return harp_ds
+
+
 def load_harpmessage(
     recording,
     flexilims_session,
@@ -119,9 +165,20 @@ def load_harpmessage(
         return_dataseries=False,
     )
     if harp_ds is None:
-        raise IOError(
-            "Could not find harp dataset for recording %s" % recording["name"]
+        # Try recursive
+        ds = flz.get_datasets_recursively(
+            flexilims_session=flexilims_session,
+            origin_name=recording["name"],
+            dataset_type="harp",
         )
+        if len(ds) == 1:
+            ds = list(ds.values())[0]
+            if len(ds) == 1:
+                harp_ds = ds[0]
+        if harp_ds is None:
+            raise IOError(
+                "Could not find harp dataset for recording %s" % recording["name"]
+            )
     if (npz_ds.flexilims_status() != "not online") and (conflicts == "skip"):
         print("Loading existing harp_npz file...")
         return np.load(npz_ds.path_full), harp_ds
@@ -137,11 +194,15 @@ def load_harpmessage(
 
     # parse harp message
     print("Saving harp messages into npz...")
-    params = dict(
-        harp_bin=harp_ds.path_full / harp_ds.extra_attributes["binary_file"],
-        di_names=di_names,
-    )
-    harp_message = harp.read_harp_binary(**params)
+    params = dict(di_names=di_names)
+    if "binary_file" in harp_ds.extra_attributes:
+        params["harp_bin"] = harp_ds.path_full / harp_ds.extra_attributes["binary_file"]
+        harp_message = harp.read_harp_binary(**params)
+    else:
+        # This should be a new style dataset with a binary per register
+        params["harp_folder"] = harp_ds.path_full
+        assert "binary_files" in harp_ds.extra_attributes
+        harp_message = harp.read_from_binaries(**params)
 
     # save npz
     npz_ds.path = npz_ds.path.parent / f"harpmessage.npz"
@@ -181,7 +242,16 @@ def read_harp_binary(
                                     readable name for the 3 DIs
 
     Returns:
-        harp_output (pd.DataFrame)
+        output (dict): A dictionary containing the parsed harp data with the
+            following keys:
+            - 'reward_times': np.array of reward times in seconds
+            - 'outputs': dict of other digital outputs
+            - 'analog_time': np.array of timestamps for analog data
+            - 'rotary': np.array of raw rotary encoder values
+            - 'photodiode': np.array of photodiode values
+            - 'digital_time': np.array of timestamps for digital inputs
+            - 'rotary_meter': np.array of wheel displacement in meters
+            - and keys from `di_names` with corresponding boolean arrays.
     """
     # Harp
     harp_message = read_message(path_to_file=harp_bin)
@@ -384,6 +454,19 @@ def unpack_payload(msg_end, payload_type):
     The variable length part of the message contains the payload and an extra byte for the
     checksum.
     This function unpack this into a dictionary
+
+    Args:
+        msg_end (bytes): The end of the harp message
+        payload_type (int): The type of the payload
+
+    Returns:
+        out_dict (dict): A dictionary containing the unpacked payload with the
+            following keys:
+            - 'inner_timestamp_part_s': timestamp in seconds (if timestamped)
+            - 'inner_timestamp_part_us': timestamp in microseconds (if timestamped)
+            - 'timestamp_s': full timestamp in seconds (if timestamped)
+            - 'data': the data
+            - 'checksum': the checksum
     """
     # find how many data element I have
     payload_struct = _PAYLOAD_STRUCT[payload_type]
@@ -438,3 +521,90 @@ def _validate_arguments(valid_addresses, valid_msg_type):
         if not hasattr(valid_addresses, "__contains__"):
             valid_addresses = (int(valid_addresses),)
     return valid_addresses, valid_msg_type
+
+
+def read_from_binaries(
+    harp_folder,
+    di_names,
+    reward_port="SupplyPort2",
+    wheel_diameter=WHEEL_DIAMETER,
+    ecoder_cpr=ENCODER_CPR,
+    inverse_rotary=True,
+):
+    """Read harp messages from a set of binary files and format output"""
+    try:
+        import harp
+    except ImportError:
+        raise ImportError("Please install harp-python: pip install harp-python")
+
+    reader = harp.create_reader(harp_folder)
+    output = {}
+
+    # Rewards are on OutputSet
+    if "OutputSet" in reader.registers:
+        reward_messages = reader.OutputSet.read()
+        reward_times = reward_messages.query(f"{reward_port}==True").index
+        if not len(reward_times):
+            warnings.warn("Could not find any reward!")
+        output["reward_times"] = reward_times
+    else:
+        warnings.warn("Could not find Reward register!")
+        output["reward_times"] = np.array([])
+
+    # Analog data
+    if "AnalogData" in reader.registers:
+        analog = reader.AnalogData.read()
+        if not analog.empty:
+            output["analog_time"] = analog.index
+            output["rotary"] = analog["Encoder"].values
+            output["photodiode"] = analog["AnalogInput0"].values
+
+            # make a speed out of rotary increment
+            mvt = np.diff(output["rotary"].astype(float))
+            rollover = np.abs(mvt) > 40000
+            mvt[rollover] -= 2**16 * np.sign(mvt[rollover])
+            # The rotary count decreases when the mouse goes forward
+            if inverse_rotary:
+                mvt *= -1
+            # 0-padding to keep constant length
+            dst = np.array(np.hstack([0, mvt]), dtype=float)
+            wheel_gain = wheel_diameter / 2 * np.pi * 2 / ecoder_cpr
+            output["rotary_meter"] = dst * wheel_gain
+        else:
+            output["analog_time"] = np.array([])
+            output["rotary"] = np.array([])
+            output["photodiode"] = np.array([])
+            output["rotary_meter"] = np.array([])
+    else:
+        warnings.warn("Could not find AnalogData register!")
+        output["analog_time"] = np.array([])
+        output["rotary"] = np.array([])
+        output["photodiode"] = np.array([])
+        output["rotary_meter"] = np.array([])
+
+    # Digital input
+    if "DigitalInputState" in reader.registers:
+        di = reader.DigitalInputState.read()
+        if not di.empty:
+            # keep only digital input
+            if di_names is not None:
+                names = list(di_names)
+                if len(names) != 3:
+                    raise IOError("Behaviour devices have 3 DIs, provide 3 names")
+                bits = {names[n]: di[f"DIPort{n}"].values for n in range(3)}
+                output.update(bits)
+                output["digital_time"] = di.index
+        else:
+            if di_names is not None:
+                for name in di_names:
+                    output[name] = np.array([])
+            output["digital_time"] = np.array([])
+
+    else:
+        warnings.warn("Could not find DigitalInput register!")
+        if di_names is not None:
+            for name in di_names:
+                output[name] = np.array([])
+        output["digital_time"] = np.array([])
+
+    return output

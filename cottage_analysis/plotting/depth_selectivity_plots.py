@@ -232,7 +232,9 @@ def plot_depth_tuning_curve(
     )[:, :, roi]
     CI_low, CI_high = common_utils.get_bootstrap_ci(mean_dff_arr)
     mean_arr = np.nanmean(mean_dff_arr, axis=1)
-
+    if np.all(np.isnan(mean_arr)):
+        print("All NaN dff. Not plotting")
+        return
     ax.errorbar(
         log_param_list,
         mean_arr,
@@ -265,6 +267,10 @@ def plot_depth_tuning_curve(
         )
     # Load gaussian fit params for this roi
     if plot_fit:
+        popt = neurons_df.loc[roi, use_col]
+        if np.any(np.isnan(popt)):
+            print("All NaN dff. Not plotting")
+            return
         x = np.geomspace(param_list[0], param_list[-1], num=100)
         if folds is not None:
             for fold in np.arange(folds):
@@ -296,6 +302,8 @@ def plot_depth_tuning_curve(
             ax.get_ylim()[0],
             common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
         ]
+        if np.any(np.isnan(ylim)):
+            ylim = ax.get_ylim()
         ax.set_ylim(ylim)
         plt.yticks(
             [
@@ -873,7 +881,7 @@ def plot_psth_raster(
     results_df,
     depth_list,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
-    vmax=2,
+    vmax=1,
 ):
     """Plot PSTH raster for all neurons.
 
@@ -883,7 +891,9 @@ def plot_psth_raster(
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
         vmax (int, optional): maximum value for the colorbar. Defaults to 2.
     """
-    psths = np.stack(results_df["psth_crossval"])[:, :-1, 10:-10]  # exclude blank
+    psths = np.stack(results_df["psth_crossval"])
+    psths -= np.nanmean(psths[:, :, :15], axis=2)[:, :, np.newaxis]
+    psths = psths[:, :-1, 10:-10]  # exclude blank
     ndepths = psths.shape[1]
     nbins = psths.shape[2]
     # Sort neurons by preferred depth
@@ -891,9 +901,7 @@ def plot_psth_raster(
     psths = psths[preferred_depths.argsort()]
     psths = psths.reshape(psths.shape[0], -1)
     # zscore each row
-    normed_psth = (psths - np.nanmean(psths, axis=1)[:, np.newaxis]) / (
-        np.nanstd(psths, axis=1)[:, np.newaxis]
-    )
+    normed_psth = psths / np.nanstd(psths, axis=1)[:, np.newaxis]
     # Plot PSTHs
     ax = plt.gca()
     im = ax.imshow(

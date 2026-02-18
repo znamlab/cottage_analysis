@@ -209,7 +209,8 @@ def regenerate_frames(
                 [log_ends[frame_index], corridor.param_log_start + 1]
             )
         ]
-        for depth, logger in full_logger.groupby("Radius"):
+        depth_col = "Radius" if "Radius" in full_logger.columns else "Depth"
+        for depth, logger in full_logger.groupby(depth_col):
             if separate_depths is not None:
                 if depth == -9999:
                     continue

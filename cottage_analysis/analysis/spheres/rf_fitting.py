@@ -298,7 +298,7 @@ def fit_3d_rfs_multidepth(
             validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
         train_idx = np.isin(imaging_df.trial_idx, train_trials)
         test_idx = np.isin(imaging_df.trial_idx, test_trials)
-        
+
         X_train = np.concatenate(
             [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
         )
@@ -519,7 +519,7 @@ def fit_3d_rfs_ipsi(
     return coef, r2
 
 
-def find_sig_rfs(coef, coef_ipsi, n_std=5):
+def find_sig_rfs(coef, coef_ipsi, n_std=6):
     """Find the neurons with a significant RF (compared to ipsi side)
 
     Args:
@@ -530,14 +530,14 @@ def find_sig_rfs(coef, coef_ipsi, n_std=5):
     Returns:
         _type_: _description_
     """
-    coef_mean = np.mean(np.stack(coef, axis=2), axis=2)
-    coef_ipsi_mean = np.mean(np.stack(coef_ipsi, axis=2), axis=2)
+    coef_mean = np.nanmean(np.stack(coef, axis=2), axis=2)
+    coef_ipsi_mean = np.nanmean(np.stack(coef_ipsi, axis=2), axis=2)
 
-    threshold = n_std * np.std(coef_ipsi_mean[:-1, :], axis=0) + np.mean(
+    threshold = n_std * np.nanstd(coef_ipsi_mean[:-1, :], axis=0) + np.nanmean(
         coef_ipsi_mean[:-1, :], axis=0
     )
-    sig = np.max(coef_mean[:-1, :], axis=0) > threshold
-    sig_ipsi = np.max(coef_ipsi_mean[:-1, :], axis=0) > threshold
+    sig = np.nanmax(coef_mean[:-1, :], axis=0) > threshold
+    sig_ipsi = np.nanmax(coef_ipsi_mean[:-1, :], axis=0) > threshold
 
     return sig, sig_ipsi
 

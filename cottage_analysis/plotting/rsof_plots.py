@@ -98,6 +98,9 @@ def plot_speed_tuning(
     """
     if ax is None:
         ax = plt.gca()
+    if np.all([np.all(np.isnan(v[:, roi])) for v in trials_df.dff_stim.values]):
+        print("All NaN dff. Not plotting")
+        return
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     depth_list = find_depth_neurons.find_depth_list(trials_df)
     grouped_trials = trials_df.groupby(by="depth")
@@ -299,6 +302,13 @@ def plot_RS_OF_matrix(
     cbar_width=0.01,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     ax=None,
+    max_acc_ratio=None,
+    max_abs_rs2motor_diff_ratio=0.3,
+    of_bins=None,
+    rs_bins=None,
+    tick_dict=None,
+    extent=None,
+    use_full_range=False,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -321,6 +331,11 @@ def plot_RS_OF_matrix(
         fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick
             and legend. Defaults to {"title": 20, "label": 15, "tick": 15, "legend": 5}.
         ax (matplotlib.axes.Axes, optional): axes to plot on. Defaults to None.
+        max_acc_ratio (float, optional): max acceleration ratio. Defaults to None.
+        max_abs_rs2motor_diff_ratio (float, optional): max absolute running speed to
+            motor speed difference ratio. Defaults to 0.3.
+        of_bins (np.ndarray, optional): optical flow bins. Defaults to None.
+        rs_bins (np.ndarray, optional): running speed bins. Defaults to None.
 
     Returns:
         float: min value of the heatmap.
@@ -329,39 +344,72 @@ def plot_RS_OF_matrix(
 
     if ax is None:
         ax = plt.gca()
+    else:
+        plt.sca(ax)
     fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
-    rs_bins = (
-        np.logspace(
-            log_range["rs_bin_log_min"],
-            log_range["rs_bin_log_max"],
-            num=log_range["rs_bin_num"],
+    if rs_bins is None:
+        rs_bins = (
+            np.logspace(
+                log_range["rs_bin_log_min"],
+                log_range["rs_bin_log_max"],
+                num=log_range["rs_bin_num"],
+                base=log_range["log_base"],
+            )
+            # / 100
+        )
+        rs_bins = np.insert(rs_bins, 0, 0)
+    if of_bins is None:
+        of_bins = np.logspace(
+            log_range["of_bin_log_min"],
+            log_range["of_bin_log_max"],
+            num=log_range["of_bin_num"],
             base=log_range["log_base"],
         )
-        # / 100
-    )
-    rs_bins = np.insert(rs_bins, 0, 0)
-
-    of_bins = np.logspace(
-        log_range["of_bin_log_min"],
-        log_range["of_bin_log_max"],
-        num=log_range["of_bin_num"],
-        base=log_range["log_base"],
-    )
-    of_bins = np.insert(of_bins, 0, 0)
+        of_bins = np.insert(of_bins, 0, 0)
 
     rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
     of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
+    acc_max_ratio = np.array(
+        [j for i in trials_df.acceleration_ratio_max_stim.values for j in i]
+    )
     dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
+
+    if max_acc_ratio is not None:
+        idx = acc_max_ratio < max_acc_ratio
+        rs_arr = rs_arr[idx]
+        of_arr = of_arr[idx]
+        dff_arr = dff_arr[idx]
+
+    if (
+        max_abs_rs2motor_diff_ratio is not None
+    ) and "max_abs_rs2motor_diff_ratio_stim" in trials_df.columns:
+        rs2motor_diff_ratio = np.array(
+            [j for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values for j in i]
+        )
+        idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+        rs_arr = rs_arr[idx]
+        of_arr = of_arr[idx]
+        dff_arr = dff_arr[idx]
+        valid = ~(np.isnan(dff_arr) | np.isinf(dff_arr))
+        rs_arr = rs_arr[valid]
+        of_arr = of_arr[valid]
+        dff_arr = dff_arr[valid]
 
     bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
         x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]
     )
 
     if vmin is None:
-        vmin = np.nanmax([0, np.percentile(bin_means[1:, 1:].flatten(), 1)])
+        if use_full_range:
+            vmin = np.nanmin(bin_means[1:-1, 1:-1].flatten())
+        else:
+            vmin = np.nanmax([0, np.nanmin(bin_means[1:-1, 1:-1].flatten())])
     if vmax is None:
-        vmax = np.nanmax([0, np.round(np.nanmax(bin_means[1:, 1:].flatten()), 1)])
+        if use_full_range:
+            vmax = np.nanmax(bin_means[1:-1, 1:-1].flatten())
+        else:
+            vmax = np.nanmax([0, np.nanmax(bin_means[1:-1, 1:-1].flatten())])
 
     im = ax.imshow(
         bin_means[1:, 1:].T,
@@ -370,6 +418,7 @@ def plot_RS_OF_matrix(
         cmap="Reds",
         vmin=vmin,
         vmax=vmax,
+        extent=extent,
     )
     ax.set_title(title, fontsize=fontsize_dict["title"])
     plot_x, plot_y, plot_width, plot_height = (
@@ -379,16 +428,36 @@ def plot_RS_OF_matrix(
         ax.get_position().height,
     )
 
-    ticks_select1, ticks_select2, bin_edges1, bin_edges2 = get_RS_OF_heatmap_axis_ticks(
-        log_range=log_range, fontsize_dict=fontsize_dict
-    )
-    plt.xticks(
-        ticks_select1[0::2],
-        bin_edges1[0::2],
-        fontsize=fontsize_dict["tick"],
-    )
+    if tick_dict is None:
+        (
+            ticks_select1,
+            ticks_select2,
+            bin_edges1,
+            bin_edges2,
+        ) = get_RS_OF_heatmap_axis_ticks(
+            log_range=log_range,
+            fontsize_dict=fontsize_dict,
+        )
+        plt.xticks(
+            ticks_select1[0::2],
+            bin_edges1[0::2],
+            fontsize=fontsize_dict["tick"],
+        )
 
-    plt.yticks(ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"])
+        plt.yticks(
+            ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"]
+        )
+    else:
+        plt.xticks(
+            tick_dict["rs_tick_select"],
+            tick_dict["rs_tick_values"],
+            fontsize=fontsize_dict["tick"],
+        )
+        plt.yticks(
+            tick_dict["of_tick_select"],
+            tick_dict["of_tick_values"],
+            fontsize=fontsize_dict["tick"],
+        )
 
     if is_closed_loop:
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
@@ -501,6 +570,7 @@ def plot_RS_OF_fit(
     ylabel="Optical flow speed \n(degrees/s)",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
     ax=None,
+    sfx="",
 ):
     """
     Plot the fitted tuning of a neuron.
@@ -533,9 +603,13 @@ def plot_RS_OF_fit(
         "gratio": fit_gaussian_blob.gaussian_1d,
         "grs": fit_gaussian_blob.gaussian_1d,
     }
+    popt = neurons_df[f"rsof_popt_closedloop_{model}{sfx}"].iloc[roi]
+    if np.all(np.isnan(popt)):
+        print("All NaN roi, not plotting. ")
+        return
     resp_pred = funcs[model](
         params,
-        *neurons_df[f"rsof_popt_closedloop_{model}"].iloc[roi],
+        *popt,
         min_sigma=min_sigma,
     ).reshape((len(of), len(rs)))
 
@@ -584,7 +658,7 @@ def plot_RS_OF_fit(
     plt.text(
         x=log_range["rs_bin_log_min"] + 0.2,
         y=log_range["of_bin_log_max"] - 0.7,
-        s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}'].iloc[roi]:.2f}",
+        s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}{sfx}'].iloc[roi]:.2f}",
         fontsize=fontsize_dict["tick"],
     )
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
@@ -1485,3 +1559,193 @@ def plot_histogram_overlay(
         ax2.yaxis.set_visible(False)
         ax2.xaxis.set_visible(False)
     sns.despine(ax=ax2)
+
+
+def plot_treadmill_vs_closedloop_matrix(
+    trials_df_tread,
+    trials_df_sphere,
+    roi,
+    log_range={
+        "rs_bin_log_min": 0,
+        "rs_bin_log_max": 2.5,
+        "rs_bin_num": 6,
+        "of_bin_log_min": -1.5,
+        "of_bin_log_max": 3.5,
+        "of_bin_num": 11,
+        "log_base": 10,
+    },
+    is_closed_loop_tread=1,
+    is_closed_loop_sphere=1,
+    title_tread="Treadmill",
+    title_sphere="Closed-loop",
+    figsize=(12, 5),
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
+    max_abs_rs2motor_diff_ratio=0.3,
+    split_tread_half=False,
+    **kwargs,
+):
+    """
+    Plot the RS-OF matrix for treadmill and closed-loop recordings side-by-side.
+
+    Args:
+        trials_df_tread (pd.DataFrame): Dataframe for treadmill trials.
+        trials_df_sphere (pd.DataFrame): Dataframe for sphere (closed-loop) trials.
+        roi (int): ROI index to plot.
+        log_range (dict, optional): Log range for the heatmap. Defaults to None.
+        is_closed_loop_tread (int, optional): 1 for closed loop, 0 for open loop for treadmill. Defaults to 0.
+        is_closed_loop_sphere (int, optional): 1 for closed loop, 0 for open loop for sphere. Defaults to 1.
+        title_tread (str, optional): Title for treadmill plot. Defaults to "Treadmill".
+        title_sphere (str, optional): Title for sphere plot. Defaults to "Closed-loop".
+        figsize (tuple, optional): Figure size. Defaults to (12, 5).
+        fontsize_dict (dict, optional): Dictionary of fontsizes.
+        max_abs_rs2motor_diff_ratio (float, optional): Maximum absolute rs2motor diff
+            ratio to consider. Defaults to 0.3.
+        split_tread_half (bool, optional): Whether to split the treadmill into two halves. Defaults to False.
+        **kwargs: Additional arguments passed to plot_RS_OF_matrix.
+    """
+    if split_tread_half:
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    max_acc_ratio = kwargs.get("max_acc_ratio", None)
+    rs_bins = kwargs.get("rs_bins", None)
+    of_bins = kwargs.get("of_bins", None)
+    vmin, vmax = 0, 1e-4
+    for idx_df, trials_df in enumerate([trials_df_tread, trials_df_sphere]):
+        if rs_bins is None:
+            rs_bins = (
+                np.logspace(
+                    log_range["rs_bin_log_min"],
+                    log_range["rs_bin_log_max"],
+                    num=log_range["rs_bin_num"],
+                    base=log_range["log_base"],
+                )
+                # / 100
+            )
+            rs_bins = np.insert(rs_bins, 0, 0)
+        if of_bins is None:
+            of_bins = np.logspace(
+                log_range["of_bin_log_min"],
+                log_range["of_bin_log_max"],
+                num=log_range["of_bin_num"],
+                base=log_range["log_base"],
+            )
+            of_bins = np.insert(of_bins, 0, 0)
+
+        rs_arr = np.array([j for i in trials_df.RS_stim.values for j in i]) * 100
+        of_arr = np.degrees([j for i in trials_df.OF_stim.values for j in i])
+        acc_max_ratio = np.array(
+            [j for i in trials_df.acceleration_ratio_max_stim.values for j in i]
+        )
+        dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
+
+        if max_acc_ratio is not None:
+            idx = acc_max_ratio < max_acc_ratio
+            rs_arr = rs_arr[idx]
+            of_arr = of_arr[idx]
+            dff_arr = dff_arr[idx]
+        if (not idx_df) and max_abs_rs2motor_diff_ratio is not None:
+            # apply filter on treadmill only
+            rs2motor_diff_ratio = np.array(
+                [
+                    j
+                    for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values
+                    for j in i
+                ]
+            )
+            idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+            rs_arr = rs_arr[idx]
+            of_arr = of_arr[idx]
+            dff_arr = dff_arr[idx]
+
+        bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
+            x=rs_arr,
+            y=of_arr,
+            values=dff_arr,
+            statistic="mean",
+            bins=[rs_bins, of_bins],
+        )
+        vmax = max(vmax, np.round(np.nanmax(bin_means[1:-1, 1:-1]), 2))
+        vmin = min(vmin, np.round(np.nanmin(bin_means[1:-1, 1:-1].flatten()), 2))
+    vmin = max(0, vmin)
+
+    # Plot sphere matrix
+    # Note: We use the same vmin/vmax for consistent comparison
+    plot_RS_OF_matrix(
+        trials_df_sphere,
+        roi,
+        log_range=log_range,
+        is_closed_loop=is_closed_loop_sphere,
+        title=title_sphere,
+        vmin=vmin,
+        vmax=vmax,
+        ax=axes[0],
+        fontsize_dict=fontsize_dict,
+        cbar_width=None,
+        **kwargs,
+    )
+
+    # Plot treadmill matrix
+    if split_tread_half:
+        trials_df_tread_first_half = trials_df_tread.copy()
+        trials_df_tread_second_half = trials_df_tread.copy()
+        for idx in trials_df_tread.index:
+            dff = trials_df_tread.loc[idx, "dff_stim"]
+            npts = len(dff)
+            # put nan in either the first or second half
+            dff_first_half = dff.copy()
+            dff_first_half[npts // 2 :] = np.nan
+            trials_df_tread_first_half.at[idx, "dff_stim"] = dff_first_half
+            dff_second_half = dff.copy()
+            dff_second_half[: npts // 2] = np.nan
+            trials_df_tread_second_half.at[idx, "dff_stim"] = dff_second_half
+
+        plot_RS_OF_matrix(
+            trials_df_tread_first_half,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread + " first half",
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[1],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            cbar_width=None,
+            **kwargs,
+        )
+        axes[1].set_ylabel("")
+        axes[1].set_yticklabels([])
+        plot_RS_OF_matrix(
+            trials_df_tread_second_half,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread + " second half",
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[2],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            **kwargs,
+        )
+        axes[2].set_ylabel("")
+        axes[2].set_yticklabels([])
+    else:
+        plot_RS_OF_matrix(
+            trials_df_tread,
+            roi,
+            log_range=log_range,
+            is_closed_loop=is_closed_loop_tread,
+            title=title_tread,
+            vmin=vmin,
+            vmax=vmax,
+            ax=axes[1],
+            fontsize_dict=fontsize_dict,
+            max_abs_rs2motor_diff_ratio=max_abs_rs2motor_diff_ratio,
+            **kwargs,
+        )
+        axes[1].set_ylabel("")
+    plt.tight_layout()
+    return fig, axes

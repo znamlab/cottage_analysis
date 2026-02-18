@@ -86,19 +86,18 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
-    if X.shape != y.shape:
-        warnings.warn(
-            f"Shape mismatch between X and y, they are supposed to have the same shape"
-        )
-
-    else:
-        valid = ~np.isnan(X) & ~np.isnan(
-            y
-        )  # We ignore points for which either dff or depth is NaN
+    if type(X) is tuple:
+        X = np.array(X)
+    valid = ~np.isnan(X) & ~np.isnan(y)
+    if valid.ndim > 1:
+        valid = np.all(valid, axis=0)
     if np.any(~valid):
         if verbose:
             print(f"Warning: {np.sum(~valid)} NaN values in X or y")
-        X = X[valid]
+        if X.ndim > 1:
+            X = X[:, valid]
+        else:
+            X = X[valid]
         y = y[valid]
     np.random.seed(42)
     for i_iter in range(niter):
@@ -484,3 +483,36 @@ def calculate_pval_from_bootstrap(distribution, value):
     distribution = np.array(distribution)
     q_min = np.min([np.mean(distribution > value), np.mean(distribution < value)])
     return q_min * 2
+
+
+def filter_trials_by_rs2motor(
+    trials_df, max_rs2motor_diff, col2filter=["dff_stim", "RS_stim", "OF_stim"]
+):
+    """Filter trials_df columns by setting frames with high motor-sensor discrepancy to NaN.
+
+    Args:
+        trials_df (pd.DataFrame): Dataframe containing trial information.
+        max_rs2motor_diff (float): Maximum absolute ratio of (rs - motor_speed)/rs.
+        use_col (str): Column name for neural data to filter. Defaults to "dff_stim".
+        rs_col (str): Column name for running speed data to filter. Defaults to "RS_stim".
+
+    Returns:
+        pd.DataFrame: Modified trials_df (on a copy).
+    """
+    trials_df = trials_df.copy()
+    if "max_abs_rs2motor_diff_ratio_stim" not in trials_df.columns:
+        raise ValueError(
+            "max_abs_rs2motor_diff_ratio_stim not in trials_df. "
+            "Needed for max_rs2motor_diff filtering."
+        )
+
+    for i_trial, trial_series in trials_df.iterrows():
+        bad_frames = (
+            trial_series["max_abs_rs2motor_diff_ratio_stim"] > max_rs2motor_diff
+        )
+
+        for col in col2filter:
+            data2use = trial_series[col].astype(float).copy()
+            data2use[bad_frames] = np.nan
+            trials_df.at[i_trial, col] = data2use
+    return trials_df

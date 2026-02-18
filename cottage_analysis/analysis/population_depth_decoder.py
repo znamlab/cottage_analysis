@@ -8,17 +8,11 @@ import pandas as pd
 import matplotlib
 
 matplotlib.rcParams["pdf.fonttype"] = 42  # for pdfs
-import matplotlib.pyplot as plt
-from matplotlib import cm
 from pathlib import Path
 import pickle
-from tqdm import tqdm
-import scipy
-import itertools
+
 
 from sklearn.model_selection import (
-    train_test_split,
-    GridSearchCV,
     StratifiedKFold,
     StratifiedShuffleSplit,
 )
@@ -26,13 +20,12 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 import flexiznam as flz
-from cottage_analysis.analysis import spheres, common_utils, find_depth_neurons
-from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.analysis import common_utils, find_depth_neurons
 from cottage_analysis.io_module import suite2p as s2p_io
 
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 
-CONDA_ENV = "2p_analysis_cottage2"
+CONDA_ENV = "v1_depth_map"
 
 
 def rolling_average(arr, window, axis=0):
@@ -304,12 +297,6 @@ def preprocess_data(
     kernel="linear",
     k_folds=5,
 ):
-    # set test_size:
-    if k_folds == 1:
-        test_size = 0.2
-    else:
-        test_size = 1 / k_folds
-
     # add iscell
     suite2p_ds = flz.get_datasets(
         flexilims_session=flexilims_session,
@@ -377,7 +364,7 @@ def preprocess_data(
     conda_env=CONDA_ENV,
     slurm_options={
         "mem": "32G",
-        "time": "12:00:00",
+        "time": "7-00:00:00",
         "partition": "ncpu",
         "cpus-per-task": 8,
     },
@@ -390,7 +377,6 @@ def fit_each_fold(
     decoder_inputs_path=None,
     decoder_dict_path=None,
     special_sfx="",
-    k_folds=5,
 ):
     print(f"Fitting fold {i+1}...")
     # load decoder inputs and results
@@ -433,18 +419,6 @@ def fit_each_fold(
         decoder_inputs["Cs"],
         decoder_inputs["gammas"],
         decoder_inputs["y_test_all"],
-    )
-
-    (
-        best_params_all,
-        # y_test_all,
-        y_preds_all,
-        # trials_df,
-    ) = (
-        decoder_dict[f"best_params_all_{recording_type}"],
-        # decoder_dict[f"y_test_all_{recording_type}"],
-        decoder_dict[f"y_preds_all_{recording_type}"],
-        # decoder_dict[f"trials_df_{recording_type}"],
     )
 
     # only select current fold and cells
@@ -689,7 +663,6 @@ def depth_decoder(
             / f"decoder_results{special_sfx}.pickle",
             recording_type=recording_type,
             special_sfx=special_sfx,
-            k_folds=k_folds,
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_{recording_type}{special_sfx}_fold{i}",

@@ -6,7 +6,7 @@ import flexiznam as flz
 from cottage_analysis.preprocessing import synchronisation
 
 ONIX_DATA_FORMAT = dict(
-    ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="uint16"
+    ephys="uint16", clock="uint64", aux="uint16", hubsynccounter="uint64", aio="float32"
 )
 ONIX_SAMPLING = 250e6
 
@@ -126,6 +126,51 @@ def load_rhd2164(
     return output
 
 
+def load_neuropixel(path_to_folder, index=None, cut_if_not_multiple=True):
+    """
+    Load neuropixel data from the onix folder
+
+    Args:
+        path_to_folder (str or Path): path to the folder containing neuropixel data
+        index (int or None): index of the neuropixel probe
+        cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
+            of the number of channels. if False, will load only if the data is a
+            multiple of the number of channels. Default True.
+
+    Returns:
+        data dict: a dictionary of memmap
+    """
+    path_to_folder = Path(path_to_folder)
+    if index is not None:
+        index = int(index)
+    else:
+        ephys_files = list(path_to_folder.glob("np2-*.raw"))
+        indices = [int(f.stem.split("_")[1]) for f in ephys_files]
+        indices = list(set(indices))
+        if len(indices) > 1:
+            raise OSError("Multiple neuropixel index files found")
+        index = indices[0]
+    output = dict()
+    for probe in ["np2-a", "np2-b"]:
+        ephys_file = path_to_folder / f"{probe}-ephys_{index}.raw"
+        if not ephys_file.exists():
+            continue
+        data = _load_binary_file(
+            ephys_file,
+            dtype="uint16",
+            nchan=384,
+            cut_if_not_multiple=cut_if_not_multiple,
+        )
+        clock = _load_binary_file(
+            path_to_folder / f"{probe}-clock_{index}.raw",
+            dtype=ONIX_DATA_FORMAT["clock"],
+            nchan=1,
+            cut_if_not_multiple=cut_if_not_multiple,
+        )
+        output[probe] = dict(ephys=data, clock=clock)
+    return output
+
+
 def reorder_array(ephys_data):
     """
     Reorder the rows of the ephys data based on a predefined mapping. This is useful because data does not come
@@ -178,80 +223,114 @@ def load_ts4231(path_to_folder, timestamp=None, ignore_wrong_timestamps=False):
 
 def load_breakout(
     path_to_folder,
-    timestamp=None,
-    num_ai_chan=None,
+    index=None,
     cut_if_not_multiple=False,
-    ignore_wrong_timestamps=False,
+    verbose=True,
 ):
     """Load data from the breakout board, ie AI and DI
 
     Args:
         path_to_folder (str or Path): path to the folder containing breakout board data
-        timestamp (str or None): timestamp used in save name
-        num_ai_chan(int, optional): number of analog input-output channels recorded.
-            It is read from the breakout-aio-channels.csv file. If the file does not
-            exist, use num_ai_chan and revert to `2` if None. Defaults to None.
+        index (int, None): index of the acquistion
         cut_if_not_multiple (bool): if True, will cut the data if it is not a multiple
             of the number of channels if False, will load only if the data is a multiple
             of the number of channels. Default False.
-        ignore_wrong_timestamps (bool): if True and timestamp is None, will keep all
-            files with the prefix without looking at timestamps, if False, will raise an
-            error if multiple timestamps are found. Default False.
+        verbose (bool): if True, print information about the data being loaded. Default True.
 
     Returns:
         data dict: a dictionary of memmap
     """
-    breakout_files = _find_files(
-        path_to_folder, timestamp, "breakout", ignore_wrong_timestamps
-    )
-    output = dict()
+    path_to_folder = Path(path_to_folder)
 
+    if index is None:
+        # Match all analog-data files to find indices
+        indices = []
+        for match in path_to_folder.glob("analog-data_*.raw"):
+            indices.append(match.stem.split("_")[1])
+        if len(indices) == 0:
+            raise IOError("No analog-data files found in %s" % path_to_folder)
+        elif len(indices) > 1:
+            raise IOError("Multiple analog-data files found in %s" % path_to_folder)
+        index = int(indices[0])
+
+    meta = pd.read_csv(
+        path_to_folder / f"start-time_{index}.csv",
+        names=["start_time", "acq_clk_hz", "block_read_sz", "block_write_sz"],
+        skiprows=1,
+        converters=dict(start_time=pd.to_datetime),
+        dtype=dict(
+            acq_clk_hz=np.uint32, block_read_sz=np.uint32, block_write_sz=np.uint32
+        ),
+    ).iloc[0]
+
+    if verbose:
+        print(f"Recording was started at {meta['start_time']} GMT")
+
+    output = dict(meta)
     # first I need to find aio-channels to count the number of channels
-    what_are_they = [e.stem.split("_")[0][len("breakout-") :] for e in breakout_files]
-    if "aio-channels" in what_are_they:
-        if num_ai_chan is not None:
-            warnings.warn(
-                "num_ai_chan is provided but aio-channels file exists. Using aio-channels"
-            )
-        breakout_file = breakout_files.pop(what_are_they.index("aio-channels"))
-        channels = np.loadtxt(breakout_file, delimiter=",", dtype=np.uint8)
-        output["aio-channels"] = channels
-        num_ai_chan = len(channels)
-    else:
-        warnings.warn(f"Could not find aio-channels file. ")
-        if num_ai_chan is None:
-            warnings.warn("num_ai_chan is not provided. Assuming 2 channels.")
-            num_ai_chan = 2
+    analog_channels = np.loadtxt(
+        path_to_folder / f"analog-channels_{index}.csv", dtype="int8", delimiter=","
+    )
+    output["aio-channels"] = analog_channels
+    num_ai_chan = len(analog_channels)
+    output["aio"] = _load_binary_file(
+        path_to_folder / f"analog-data_{index}.raw",
+        dtype=ONIX_DATA_FORMAT["aio"],
+        nchan=num_ai_chan,
+        cut_if_not_multiple=cut_if_not_multiple,
+    )
+    output["aio-clock"] = _load_binary_file(
+        path_to_folder / f"analog-clock_{index}.raw",
+        dtype=ONIX_DATA_FORMAT["clock"],
+        nchan=1,
+        cut_if_not_multiple=cut_if_not_multiple,
+    )
+    if verbose:
+        print(f"{num_ai_chan} AI channels found")
 
-    for breakout_file in breakout_files:
-        what = breakout_file.stem.split("_")[0][len("breakout-") :]
-        if breakout_file.suffix == ".csv":
-            if what == "dio":
-                dio = pd.read_csv(breakout_file)
-                port = np.array(dio.Port.values, dtype="uint8")
-                bits = np.unpackbits(port, bitorder="little")
-                bits = bits.reshape((len(port), 8))
-                for i in range(8):
-                    dio["DI%d" % i] = bits[:, i]
-                output["dio"] = dio
-            if what == "analog":
-                nchan = pd.read_csv(breakout_file)
-                num_ai_chan = len(list(nchan))
-        else:
-            assert breakout_file.suffix == ".raw"
-            if what == "aio-clock":
-                nchan = 1
-                dtype = ONIX_DATA_FORMAT["clock"]
-            elif what == "aio":
-                nchan = num_ai_chan
-                dtype = ONIX_DATA_FORMAT["aio"]
-            data = _load_binary_file(
-                breakout_file,
-                dtype=dtype,
-                nchan=nchan,
-                cut_if_not_multiple=cut_if_not_multiple,
-            )
-            output[what] = data
+    digital_input = dict()
+    digital_input["time"] = (
+        np.fromfile(path_to_folder / f"digital-clock_{index}.raw", dtype=np.uint64)
+        / meta["acq_clk_hz"]
+    )
+    digital_input["pins"] = np.fromfile(
+        path_to_folder / f"digital-pins_{index}.raw", dtype=np.uint8
+    )
+    digital_input["buttons"] = np.fromfile(
+        path_to_folder / f"digital-buttons_{index}.raw", dtype=np.uint16
+    )
+    digital_input["pins_b"] = (
+        np.unpackbits(digital_input["pins"], bitorder="little")
+        .reshape(-1, 8)
+        .astype(bool)
+    )
+    digital_input["buttons_b"] = (
+        np.unpackbits(digital_input["buttons"].astype(np.uint8), bitorder="little")
+        .reshape(-1, 8)
+        .astype(bool)
+    )
+    output["digital_input"] = digital_input
+    if verbose:
+        print(f"{len(digital_input['pins'])} digital input found")
+
+    # Add clock info and port status
+    output["output-clock"] = np.loadtxt(
+        path_to_folder / f"output-clock_{index}.csv", dtype=int, delimiter=","
+    )
+    # Port status might be an empty file, remove userwarning
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        output["port-status"] = np.loadtxt(
+            path_to_folder / f"port-status_{index}.csv", dtype=int, delimiter=","
+        )
+
+    # Read harp sync
+    output["harpsync"] = pd.read_csv(
+        path_to_folder / f"harp-sync_{index}.csv",
+        dtype=int,
+        delimiter=",",
+        names=["onix_sample", "harp_timestamp"],
+    )
     return output
 
 

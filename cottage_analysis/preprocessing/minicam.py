@@ -1,13 +1,10 @@
 """Function to preprocess minicam data."""
 
-from functools import partial
-from pathlib import Path
-import shutil
 import pandas as pd
 import numpy as np
 import flexiznam as flz
 from flexiznam.schema import CameraData
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 from cottage_analysis.io_module import video
 import yaml
 

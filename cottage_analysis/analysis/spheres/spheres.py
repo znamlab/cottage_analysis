@@ -62,7 +62,11 @@ def format_imaging_df(recording, imaging_df):
     return imaging_df
 
 
-def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
+def find_stim_time(
+    imaging_df, is_multidepth=False, param_log=None, diagnostics_folder=None
+):
+    if "stim" in imaging_df.columns and imaging_df.stim.isin([0, 1]).any():
+        return imaging_df
     imaging_df["stim"] = np.nan
     if not is_multidepth:
         # easy, just find when depth is changing
@@ -73,17 +77,48 @@ def find_stim_time(imaging_df, is_multidepth=False, param_log=None):
         # first put all stim during protocol to 0
         imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 0
         # then get trial start and stop, in frame logger time
-        harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
-        onset_index = imaging_df.stimulus_harptime.values.searchsorted(harpstim_time[0])
-        offset_index = imaging_df.stimulus_harptime.values.searchsorted(
-            harpstim_time[1]
+        if diagnostics_folder is not None:
+            diagnostics_folder.mkdir(parents=True, exist_ok=True)
+            (
+                harpstim_time,
+                param_log_index,
+                all_onsets,
+                all_offsets,
+                closest_offset,
+            ) = multidepth.find_trial_times(param_log, debug=True)
+            fig = multidepth.trial_diagnostic(
+                param_log, harpstim_time, all_offsets, all_onsets
+            )
+            fig.savefig(diagnostics_folder / "trial_diagnostic.png")
+        else:
+            harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
+        # We know when are trial in the frame logger, find where it fits in the
+        # imaging_df
+        imaging_df_frame_log = np.array(imaging_df.stimulus_harptime)
+        half = len(imaging_df_frame_log) // 2
+        imaging_df_frame_log[:half] = np.nan_to_num(imaging_df_frame_log[:half])
+        imaging_df_frame_log[half:] = np.nan_to_num(
+            imaging_df_frame_log[half:], nan=imaging_df_frame_log.max() + 1
         )
+        # replace the initial NaN to be put first onset at stim time
+        onset_index = imaging_df_frame_log.searchsorted(harpstim_time[0])
+        if onset_index[0] == 0:
+            print("WARNING: stim started before imaging")
+            onset_index[0] += 1  # shift by 1 frame otherwise crash at find blank-pre
+        offset_index = imaging_df_frame_log.searchsorted(harpstim_time[1])
         for on, off in zip(onset_index, offset_index):
             imaging_df.loc[on:off, "stim"] = 1
     return imaging_df
 
 
-def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=None):
+def generate_trials_df(
+    recording,
+    imaging_df,
+    is_multidepth=False,
+    param_log=None,
+    acceleration_time=0.5,
+    add_spikes=False,
+):
     """Generate a DataFrame that contains information for each trial.
 
     Args:
@@ -95,8 +130,8 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
 
     Returns:
         DataFrame: contains information for each trial.
-    """
 
+    """
     trials_df = pd.DataFrame(
         columns=[
             "trial_no",
@@ -126,14 +161,34 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
             "mouse_z_harp_blank_pre",
         ]
     )
-
     # Find the change of depth
-    imaging_df = find_stim_time(imaging_df, is_multidepth, param_log)
+    # Diagnostics folder used only for multidepth experiements
+    diagnostics_folder = flz.get_processed_path(recording.path) / "diagnostics"
+    imaging_df = find_stim_time(
+        imaging_df, is_multidepth, param_log, diagnostics_folder=diagnostics_folder
+    )
+    frame_rate = 1 / np.median(np.diff(imaging_df.imaging_harptime))
+    n_acc_frames = int(acceleration_time * frame_rate)
+    # acceleration is the difference in RS between current frame and n_acc_frames ago
+    imaging_df["acceleration_abs"] = imaging_df.RS.diff(n_acc_frames)
+    # acceleration ratio is the ratio between current RS and RS n_acc_frames ago
+    imaging_df["acceleration_ratio"] = imaging_df.RS / imaging_df.RS.shift(n_acc_frames)
+    # max acceleration in the past n_acc_frames
+    imaging_df["acceleration_abs_max"] = imaging_df.RS.rolling(n_acc_frames).apply(
+        lambda x: np.abs(np.max(x) - np.min(x)), raw=True
+    )
+    imaging_df["acceleration_ratio_max"] = imaging_df.RS.rolling(n_acc_frames).apply(
+        lambda x: (
+            np.abs(np.log2(np.max(x) / np.min(x)))
+            if np.min(x) > 0 and np.max(x) > 0
+            else np.nan
+        ),
+        raw=True,
+    )
     imaging_df_simple = imaging_df[
         (imaging_df["stim"].diff() != 0) & (imaging_df["stim"]).notnull()
     ].copy()
     imaging_df_simple.depth = np.round(imaging_df_simple.depth, 2)
-
     # Find frame or volume of imaging_df for trial start and stop
     # (depending on whether return_volume=True in generate_imaging_df)
     blank_time = 10
@@ -217,8 +272,25 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
         )
         return trials_df
 
-    columns_to_assign = ["mouse_z_harp", "mouse_z_harp", "RS", "RS_eye", "OF"]
-    optional_columns = ["expected_optic_flow", "MotorSps"]
+    columns_to_assign = [
+        "mouse_z_harp",
+        "mouse_z_harp",
+        "RS",
+        "RS_eye",
+        "OF",
+        "acceleration_abs",
+        "acceleration_ratio",
+        "acceleration_abs_max",
+        "acceleration_ratio_max",
+    ]
+    optional_columns = [
+        "expected_optic_flow",
+        "MotorSps",
+        "MotorSpeed",
+        "max_abs_rs2motor_diff",
+        "max_abs_rs2motor_diff_ratio",
+        "mean_rs2motor_diff",
+    ]
     for column in optional_columns:
         if column in imaging_df.columns:
             columns_to_assign.append(column)
@@ -234,6 +306,17 @@ def generate_trials_df(recording, imaging_df, is_multidepth=False, param_log=Non
             ).squeeze(),
             axis=1,
         )
+        if add_spikes and "spks" in imaging_df.columns:
+            trials_df[f"spks_{epoch}"] = trials_df.apply(
+                lambda x: np.stack(
+                    imaging_df.spks.loc[
+                        int(x[f"imaging_{epoch}_start"]) : int(
+                            x[f"imaging_{epoch}_stop"]
+                        )
+                    ]
+                ).squeeze(),
+                axis=1,
+            )
 
     # Add recording name
     trials_df.recording_name = recording.genealogy[-1]
@@ -317,6 +400,7 @@ def sync_all_recordings(
     harp_is_in_recording=True,
     use_onix=False,
     conflicts="skip",
+    add_spikes=False,
     sync_kwargs=None,
     ephys_kwargs=None,
 ):
@@ -411,6 +495,7 @@ def sync_all_recordings(
             return_volumes,
             ephys_kwargs,
             verbose=True,
+            add_spikes=add_spikes,
         )
 
         if i == 0:
@@ -594,11 +679,14 @@ def get_relevant_recordings(
     Args:
         recording_name (str): name of the recording.
         flexilims_session (flexilims_session): flexilims session.
-        harp_is_in_recording (bool): if True, harp is in the same recording as the imaging. Defaults to True.
-        use_onix (bool): if True, use onix recording for synchronisation. Defaults to False.
+        harp_is_in_recording (bool): if True, harp is in the same recording as the
+            imaging. Defaults to True.
+        use_onix (bool): if True, use onix recording for synchronisation. Defaults to
+            False.
 
     Returns:
-        (recording, harp_recording, onix_rec): tuple of recording, harp recording and onix recording.
+        (recording, harp_recording, onix_rec): tuple of recording, harp recording and
+            onix recording.
     """
     recording = flz.get_entity(
         datatype="recording",
@@ -652,6 +740,7 @@ def _process_single_recording_for_session(
     return_volumes,
     ephys_kwargs,
     verbose=True,
+    add_spikes=False,
 ):
     """
     Processes a single recording to generate vs_df, imaging_df, trials_df,
@@ -685,6 +774,7 @@ def _process_single_recording_for_session(
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
             return_volumes=return_volumes,
+            add_spikes=add_spikes,
         )
     else:  # ephys
         imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
@@ -713,6 +803,7 @@ def _process_single_recording_for_session(
         imaging_df=imaging_df,
         is_multidepth=is_multidepth_protocol,
         param_log=param_log,
+        add_spikes=add_spikes,
     )
     trials_df["recording"] = recording.name
 

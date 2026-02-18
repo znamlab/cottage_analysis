@@ -11,7 +11,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from skimage.measure import EllipseModel
 
 import flexiznam as flz
-from znamutils import slurm_it
+from znamutils.decorators import slurm_it
 
 from cottage_analysis.utilities.plot_utils import get_img_from_fig, write_fig_to_video
 from cottage_analysis.eye_tracking import eye_io

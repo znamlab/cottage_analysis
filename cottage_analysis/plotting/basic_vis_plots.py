@@ -11,7 +11,6 @@ from cottage_analysis.analysis import (
     fit_gaussian_blob,
     size_control,
 )
-from v1_depth_map.figure_utils import utils as ut
 
 
 # REPLACE?
@@ -285,7 +284,7 @@ def basic_vis_session(neurons_df, trials_df, neurons_ds, **kwargs):
                     neurons_ds.path_full.parent
                     / "plots"
                     / f"basic_vis_{sfx}"
-                    / f"roi{rois[i*10]}- {np.min([(i+1)*10, len(rois)])}.png",
+                    / f"roi{rois[i*10]}-{np.min([(i+1)*10, len(rois)])}.png",
                     dpi=100,
                 )
 

@@ -9,8 +9,13 @@ from functools import partial, reduce
 import warnings
 from pandas.errors import SettingWithCopyWarning
 import flexiznam as flz
-from znamutils import slurm_it
-from cottage_analysis.analysis import spheres, fit_gaussian_blob, find_depth_neurons
+from znamutils.decorators import slurm_it
+from cottage_analysis.analysis import (
+    spheres,
+    fit_gaussian_blob,
+    find_depth_neurons,
+    treadmill,
+)
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
 
 print = partial(print, flush=True)
@@ -104,14 +109,17 @@ def sbatch_session(
         log_path = str(Path(__file__).parent.parent.parent / "logs" / f"{log_fname}")
 
     args = f"--export=PROJECT={project},SESSION_NAME={session_name},CONFLICTS={conflicts},PHOTODIODE_PROTOCOL={photodiode_protocol},USE_SLURM={int(use_slurm)}"
+    # Handle other kwargs for export
     for key, value in kwargs.items():
         if key == "protocol_base":
             args += f",PROTOCOL_BASE={value}"
+        elif key == "use_annotated":
+            args += f",USE_ANNOTATED={value}"
         elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
 
     args = args + f" --output={log_path}"
-
+    args = args + f" --job-name={session_name}_{pipeline_filename.split('.')[0]}"
     command = f"sbatch {args} {script_path}"
     print(command)
     subprocess.Popen(
@@ -129,6 +137,9 @@ def load_session(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Load data from a single session.
 
@@ -137,13 +148,18 @@ def load_session(
     Args:
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str, optional): photodiode protocol. Defaults to None.
+        photodiode_protocol (int, optional): photodiode protocol. Defaults to None.
         regenerate_frames (bool, optional): whether to regenerate frames. Defaults to
             False.
         base_name (str, optional): base name for the dataset. Defaults to None.
         filter_datasets (dict, optional): filter datasets. Defaults to
             {"anatomical_only": 3}.
         exclude_datasets (dict, optional): exclude datasets. Defaults to None.
+        protocol_base (str, optional): protocol base name. Defaults to
+            "SpheresPermTubeReward".
+        recording_type (str, optional): recording type. Defaults to "two_photon".
+        ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
+            Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -170,17 +186,31 @@ def load_session(
         raise flz.FlexilimsError(f"Session {session_name} not processed...")
 
     neurons_df = pd.read_pickle(neurons_ds.path_full)
-    vs_df_all, trials_df_all = spheres.sync_all_recordings(
-        session_name=session_name,
-        flexilims_session=flexilims_session,
-        project=project,
-        filter_datasets=filter_datasets,
-        exclude_datasets=exclude_datasets,
-        recording_type="two_photon",
-        protocol_base="SpheresPermTubeReward",
-        photodiode_protocol=photodiode_protocol,
-        return_volumes=True,
-    )
+    if protocol_base == "SpheresTubeMotor":
+        vs_df_all, trials_df_all = treadmill.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
+    else:
+        vs_df_all, trials_df_all = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=project,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type=recording_type,
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            ephys_kwargs=ephys_kwargs,
+        )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
         frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
@@ -189,12 +219,13 @@ def load_session(
             project=None,
             filter_datasets=filter_datasets,
             exclude_datasets=exclude_datasets,
-            recording_type="two_photon",
-            protocol_base="SpheresPermTubeReward",
+            recording_type=recording_type,
+            protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             resolution=5,
             verbose=False,
+            ephys_kwargs=ephys_kwargs,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)
@@ -228,33 +259,66 @@ def load_and_fit(
     base_name=None,
     filter_datasets=None,
     exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
+    max_rs2motor_diff=None,
+    max_acc=None,
 ):
-    """Load and fit a model to a session.
+    """Load data for a session and fit a running speed and optic flow tuning model.
+
+    Note:
+        The results are saved as pickle files with names following the pattern:
+        `fit_rs_of_tuning_{model}[_crossval]_k{k_folds}{file_special_sfx}.pickle`.
+        Crossval is added if k_folds > 1. These files are later merged into the main
+        `neurons_df` by `merge_fit_dataframes`.
+        To avoid column name conflicts during merging, ensure that `trial_sfx` or
+        `model` (which determines `model_sfx`) is unique for each fit performed on the
+        same session.
 
     Args:
-        project (str): project name.
-        session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str): photodiode protocol.
-        model (str): model name for the fit.
-        choose_trials (str or list): trials to be chosen for the fit.
-        rs_thr (float): rs threshold.
-        param_range (dict): parameter range for the fit.
-        niter (int): number of iterations.
-        min_sigma (float): minimum sigma.
-        k_folds (int, optional): number of k-folds. Defaults to 1.
-        trial_sfx (str, optional): trial suffix. Defaults to "". Example: "_crossval".
-        file_special_sfx (str, optional): file special suffix. Defaults to "". Example:
-            "_openclosed0".
-        run_closedloop_only (bool, optional): run closedloop only. Defaults to False.
-        run_openloop_only (bool, optional): run openloop only. Defaults to False.
-        base_name (str, optional): base name for the dataset. Defaults to None.
-        filter_datasets (dict, optional): filter datasets. Defaults to
-            {"anatomical_only": 3}.
-        exclude_datasets (dict, optional): exclude datasets. Defaults to None.
-
+        project (str): Project name in flexilims.
+        session_name (str): Session name in the format {Mouse}_{Session}.
+        photodiode_protocol (int): Photodiode protocol used for syncing.
+        model (str): Model to fit. One of "gaussian_2d",
+            "gaussian_additive", "gaussian_OF", "gaussian_RS", "gaussian_ratio".
+        choose_trials (str or list): Trials to include in the fit. Can be a list of
+            trial indices or a string (e.g., "even", "odd").
+        rs_thr (float): Running speed threshold (m/s) to include frames.
+        param_range (dict): Range of parameters for the fit. Usually contains
+            "rs_min", "rs_max", "of_min", "of_max".
+        niter (int): Number of iterations for stochastic fit optimization.
+        min_sigma (float): Minimum sigma value for the gaussian model.
+        k_folds (int, optional): Number of folds for cross-validation. If > 1, the model
+            will be evaluated using cross-validation. Defaults to 1.
+        trial_sfx (str, optional): Suffix for saved column names in the output dataframe.
+            Defaults to "". Example: "_crossval".
+        file_special_sfx (str, optional): Suffix added to the saved pickle filename.
+            Defaults to "". Example: "_openclosed0".
+        run_closedloop_only (bool, optional): Whether to fit only closed-loop protocols.
+            Defaults to False.
+        run_openloop_only (bool, optional): Whether to fit only open-loop protocols.
+            Defaults to False.
+        base_name (str, optional): Base name for the neurons_df dataset in flexilims.
+            Defaults to None.
+        filter_datasets (dict, optional): Dictionary to filter datasets from flexilims.
+            Defaults to {"anatomical_only": 3}.
+        exclude_datasets (dict, optional): Dictionary to exclude datasets from flexilims.
+            Defaults to None.
+        protocol_base (str, optional): Base protocol name (e.g., "SpheresPermTubeReward").
+            Defaults to "SpheresPermTubeReward".
+        recording_type (str, optional): Type of recording (e.g., "two_photon").
+            Defaults to "two_photon".
+        ephys_kwargs (dict, optional): Additional arguments for ephys data processing.
+            Defaults to None.
+        max_rs2motor_diff (float, optional): Maximum absolute ratio of
+            (rs - motor_speed)/rs for frame selection. Defaults to None.
+        max_acc (float, optional): Maximum acceleration ratio threshold for frame
+            selection. Defaults to None.
 
     Returns:
-        pd.DataFrame: result dataframe for the fit.
+        pd.DataFrame: A dataframe containing the fitted parameters and performance
+            metrics for each ROI. The result is also saved as a pickle file.
     """
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
@@ -273,6 +337,9 @@ def load_and_fit(
         base_name=base_name,
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -297,6 +364,8 @@ def load_and_fit(
         k_folds=k_folds,
         run_closedloop_only=run_closedloop_only,
         run_openloop_only=run_openloop_only,
+        max_rs2motor_diff=max_rs2motor_diff,
+        max_acc=max_acc,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
@@ -335,9 +404,9 @@ def merge_fit_dataframes(
         prefix (str, optional): prefix of the files to merge. Defaults to
             "fit_rs_of_tuning_".
         suffix (str, optional): suffix of the files to merge. Defaults to ""
-        column_suffix (int, optional): digits for the source filename, which becomes the
-            special suffix to append to each column name of the dataframe to be merged.
-                Defaults to None.
+        column_suffix (int | str, optional): digits for the source filename, which
+            becomes the special suffix to append to each column name of the dataframe to
+            be merged. If str, will directly be used as sfx. Defaults to None.
         filetype (str, optional): filetype of the files to merge. Defaults to ".pickle".
         target_filename (str, optional): target filename. Defaults to
             "neurons_df.pickle".
@@ -384,15 +453,20 @@ def merge_fit_dataframes(
     assert all(
         [df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge]
     ), "ROIs in dataframes do not match neurons_df."
+    assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
 
     if target_column_suffix is not None:
-        suffix = f"{target_column_prefix}_" + "_".join(
-            str(df_name.stem).split("_")[target_column_suffix:]
-        )
+        if isinstance(target_column_suffix, str):
+            suffix_to_add = target_column_suffix
+        else:
+            suffix_to_add = f"{target_column_prefix}_" + "_".join(
+                str(df_name.stem).split("_")[target_column_suffix:]
+            )
+
         # rename all columns before merging
         for df in dfs_to_merge:
             df.columns = [
-                f"{col}{suffix}" if col != "roi" else "roi" for col in df.columns
+                f"{col}{suffix_to_add}" if col != "roi" else "roi" for col in df.columns
             ]
     rsof_df = reduce(lambda x, y: pd.merge(x, y, on="roi", how="inner"), dfs_to_merge)
 
@@ -423,14 +497,22 @@ def merge_fit_dataframes(
     slurm_options={"mem": "16G", "time": "6:00:00", "partition": "ncpu"},
 )
 def run_basic_plots(
-    project, session_name, photodiode_protocol, do_sta=True, do_basic_vis=True
+    project,
+    session_name,
+    photodiode_protocol,
+    do_sta=True,
+    do_basic_vis=True,
+    filter_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
 ):
     """Run basic plots on a session.
 
     Args:
         project (str): project name.
         session_name (str): session name. {Mouse}_{Session}.
-        photodiode_protocol (str): photodiode protocol.
+        photodiode_protocol (int): photodiode protocol.
         do_sta (bool, optional): whether to run sta plots. Defaults to True.
         do_basic_vis (bool, optional): whether to run basic visualisation plots.
             Defaults to True.
@@ -446,7 +528,16 @@ def run_basic_plots(
         trials_df_all,
         frames_all,
         _,
-    ) = load_session(project, session_name, photodiode_protocol, regenerate_frames=True)
+    ) = load_session(
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=True,
+        filter_datasets=filter_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
+    )
 
     # Remove multidepth if there are any
     is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
