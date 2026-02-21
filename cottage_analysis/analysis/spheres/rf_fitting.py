@@ -182,7 +182,7 @@ def fit_3d_rfs(
     # calculate R2
     r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
     for isplit in range(n_splits):
-        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        use_idx = np.any(np.isfinite(Y_pred[:, :, isplit]), axis=1)
         residual_var = np.sum(
             (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
             axis=0,
@@ -324,7 +324,7 @@ def fit_3d_rfs_multidepth(
     # calculate R2
     r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
     for isplit in range(n_splits):
-        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        use_idx = np.any(np.isfinite(Y_pred[:, :, isplit]), axis=1)
         residual_var = np.sum(
             (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
             axis=0,
