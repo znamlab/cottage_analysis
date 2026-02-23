@@ -520,24 +520,44 @@ def fit_3d_rfs_ipsi(
 
 
 def find_sig_rfs(coef, coef_ipsi, n_std=6):
-    """Find the neurons with a significant RF (compared to ipsi side)
+    """Find neurons with a significant RF compared to the ipsilateral side.
+
+    A neuron is significant if the peak of its mean contralateral RF exceeds
+    n_std standard deviations above the mean of the ipsilateral RF.
+    ROIs that are all-NaN across folds are marked as not significant.
 
     Args:
-        coef (_type_): _description_
-        coef_ipsi (_type_): _description_
-        n_std (int, optional): _description_. Defaults to 5.
+        coef (list of np.ndarray): Contralateral RF coefficients per fold,
+            each of shape (n_features, n_rois).
+        coef_ipsi (list of np.ndarray): Ipsilateral RF coefficients per fold,
+            each of shape (n_features, n_rois).
+        n_std (float, optional): Number of standard deviations above the
+            ipsilateral mean to use as the significance threshold. Defaults to 6.
 
     Returns:
-        _type_: _description_
+        sig (np.ndarray): Boolean array of shape (n_rois,), True if the
+            contralateral RF is significant.
+        sig_ipsi (np.ndarray): Boolean array of shape (n_rois,), True if the
+            ipsilateral RF exceeds its own threshold (sanity check).
     """
-    coef_mean = np.nanmean(np.stack(coef, axis=2), axis=2)
-    coef_ipsi_mean = np.nanmean(np.stack(coef_ipsi, axis=2), axis=2)
+    coef_stacked = np.stack(coef, axis=2)
+    coef_ipsi_stacked = np.stack(coef_ipsi, axis=2)
+    nrois = coef_stacked.shape[1]
 
-    threshold = n_std * np.nanstd(coef_ipsi_mean[:-1, :], axis=0) + np.nanmean(
-        coef_ipsi_mean[:-1, :], axis=0
-    )
-    sig = np.nanmax(coef_mean[:-1, :], axis=0) > threshold
-    sig_ipsi = np.nanmax(coef_ipsi_mean[:-1, :], axis=0) > threshold
+    # ROIs that are all-NaN across folds get False
+    valid = ~np.all(np.isnan(coef_stacked), axis=(0, 2))
+    sig = np.zeros(nrois, dtype=bool)
+    sig_ipsi = np.zeros(nrois, dtype=bool)
+
+    if np.any(valid):
+        coef_mean = np.nanmean(coef_stacked[:, valid, :], axis=2)
+        coef_ipsi_mean = np.nanmean(coef_ipsi_stacked[:, valid, :], axis=2)
+
+        threshold = n_std * np.nanstd(coef_ipsi_mean[:-1, :], axis=0) + np.nanmean(
+            coef_ipsi_mean[:-1, :], axis=0
+        )
+        sig[valid] = np.nanmax(coef_mean[:-1, :], axis=0) > threshold
+        sig_ipsi[valid] = np.nanmax(coef_ipsi_mean[:-1, :], axis=0) > threshold
 
     return sig, sig_ipsi
 
