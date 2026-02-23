@@ -398,6 +398,18 @@ def main(
                 neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
+        # Fit RF preferred depth using Gaussian fit across depths
+        from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
+
+        depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+        print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
+        fit_rf_preferred_depth(
+            neurons_df,
+            depths=depth_list,
+            is_closed_loop=1,
+            suffix=sfx,
+        )
+
         # Save neurons_df
         assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
