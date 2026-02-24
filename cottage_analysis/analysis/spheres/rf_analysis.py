@@ -25,6 +25,29 @@ def find_rf_centers(
     resolution=5,
     coef=None,
 ):
+    """Find the spatial center and best depth of receptive fields.
+
+    Calculates the azimuth, elevation, and depth index corresponding to the
+    maximum value of the fitted RF coefficients averaged across folds.
+
+    Args:
+        neurons_df (pd.DataFrame): DataFrame containing RF coefficients.
+        ndepths (int, optional): Number of depths used in stimulus. Defaults to 8.
+        frame_shape (tuple, optional): (n_ele, n_azi) shape of stimulus frames.
+            Defaults to (16, 24).
+        is_closed_loop (int, optional): Whether to use closed-loop coefficients.
+            Defaults to 1.
+        resolution (int, optional): Degrees per pixel. Defaults to 5.
+        coef (np.ndarray, optional): Pre-stacked coefficients (n_neurons, n_folds,
+            n_features). If None, loaded from neurons_df.
+
+    Returns:
+        tuple: (rf_azi, rf_ele, rf_idepth, coef)
+            - rf_azi: Array of azimuth centers in degrees.
+            - rf_ele: Array of elevation centers in degrees.
+            - rf_idepth: Array of best depth indices.
+            - coef: Staked coefficient array used for calculation.
+    """
     if is_closed_loop:
         sfx = "_closedloop"
     else:
@@ -68,11 +91,10 @@ def fit_rf_preferred_depth(
     depths,
     frame_shape=(16, 24),
     is_closed_loop=1,
-    coef=None,
     niter=10,
     min_sigma=0.5,
     depth_bounds=(np.log(0.02), np.log(20)),
-    suffix="",
+    use_multidepth=False,
 ):
     """Fit a 1D Gaussian across depths at the best azimuth/elevation pixel.
 
@@ -89,15 +111,13 @@ def fit_rf_preferred_depth(
         frame_shape (tuple): (n_ele, n_azi) spatial shape. Default (16, 24).
         is_closed_loop (int): Whether to use closed loop coefficients.
             Default 1.
-        coef (np.ndarray, optional): Pre-stacked coefficient array of shape
-            (n_neurons, n_folds, n_features). If None, loaded from neurons_df.
         niter (int): Number of fitting iterations to avoid local minima.
             Default 10.
         min_sigma (float): Minimum sigma for the Gaussian. Default 0.5.
         depth_bounds (tuple): Tuple of (min_depth, max_depth) in meters.
             Default (np.log(0.02), np.log(20)).
-        suffix (str): Suffix appended to output column names in neurons_df
-            (e.g. "_closedloop", "_closedloop_multidepth"). Default "".
+        use_multidepth (bool): Whether to use multidepth coefficients.
+            Default False.
 
     Returns:
         tuple: (rf_preferred_depth, rf_depth_popt, rf_depth_rsq)
@@ -109,11 +129,13 @@ def fit_rf_preferred_depth(
     ndepths = len(depths)
     log_depths = np.log(depths)
 
-    # Load coef from neurons_df if not provided: (n_neurons, n_folds, n_features)
+    # Load coef from neurons_df (n_neurons, n_folds, n_features)
     # with n_features = ndepths * n_ele * n_azi + 1 (bias term)
-    if coef is None:
-        sfx = "_closedloop" if is_closed_loop else "_openloop"
-        coef = np.stack(neurons_df[f"rf_coef{sfx}"].values)
+
+    suffix = "_closedloop" if is_closed_loop else "_openloop"
+    if use_multidepth:
+        suffix += "_multidepth"
+    coef = np.stack(neurons_df[f"rf_coef{suffix}"].values)
 
     # Drop bias term and reshape to (n_neurons, n_folds, ndepths, n_ele, n_azi)
     coef_ = (coef[:, :, :-1]).reshape(
@@ -189,6 +211,18 @@ def fit_rf_preferred_depth(
 
 
 def get_rf_results(project, sessions, is_closed_loop=1):
+    """Load and aggregate RF results from specified sessions.
+
+    Args:
+        project (str): Flexilims project ID.
+        sessions (list): List of session names.
+        is_closed_loop (int, optional): Whether to load closed-loop coefficients.
+            Defaults to 1.
+
+    Returns:
+        pd.DataFrame: Aggregated results DataFrame with ROI, session, preferred
+            depth, and coefficients.
+    """
     import flexiznam as flz
     from cottage_analysis.pipelines import pipeline_utils
     from cottage_analysis.io_module import suite2p as s2p_io
@@ -453,6 +487,21 @@ def calculate_rf_gradient(
     session_name,
     n_std=6,
 ):
+    """Calculate spatial gradients for azimuth, elevation, and depth.
+
+    Computes the linear regression slope of RF parameters against ROI
+    spatial coordinates (center_x, center_y).
+
+    Args:
+        flexilims_session (FlexilimsSession): Flexilims session object.
+        neurons_ds (DataSeries): DataSeries for the neurons file.
+        neurons_df (pd.DataFrame): DataFrame containing ROI data and RF centers.
+        session_name (str): Name of the session.
+        n_std (int, optional): Significance threshold for RFs. Defaults to 6.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the calculated slopes.
+    """
     import flexiznam as flz
     from cottage_analysis.io_module import suite2p as s2p_io
 
@@ -510,6 +559,21 @@ def calculate_rf_gradient_all_sessions(
     conflicts="skip",
     verbose=False,
 ):
+    """Aggregate RF gradient calculations across multiple sessions.
+
+    Args:
+        flexilims_session (FlexilimsSession): Flexilims session object.
+        session_list (list): List of session names.
+        neurons_df_all_aligned (pd.DataFrame): DataFrame with data from all sessions.
+        filename (str, optional): Name of the pickle file to save/load.
+            Defaults to "rf_gradients.pkl".
+        conflicts (str, optional): Handling of existing files ("skip", "overwrite").
+            Defaults to "skip".
+        verbose (bool, optional): Whether to print progress. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Concatenated gradients from all sessions.
+    """
     from cottage_analysis.pipelines import pipeline_utils
 
     for isess, session in enumerate(session_list):

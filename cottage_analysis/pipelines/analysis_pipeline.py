@@ -407,7 +407,7 @@ def main(
             neurons_df,
             depths=depth_list,
             is_closed_loop=1,
-            suffix=sfx,
+            use_multidepth=is_multidepth,
         )
 
         # Save neurons_df
