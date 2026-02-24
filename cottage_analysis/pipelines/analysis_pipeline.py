@@ -391,10 +391,10 @@ def main(
             assert neurons_df.index[0] == 0, "Index does not start at 0"
 
             for i, _ in neurons_df.iterrows():
-                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i]
-                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i]
-                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :]
-                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :]
+                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i].copy()
+                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i].copy()
+                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :].copy()
+                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :].copy()
                 neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 

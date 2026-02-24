@@ -92,7 +92,7 @@ def plot_rf(
         sfx += "_openloop"
     if use_multidepth:
         sfx += "_multidepth"
-    coef = neurons_df.loc[roi, f"rf_coef{sfx}"][:, :-1]
+    coef = neurons_df.loc[roi, f"rf_coef{sfx}"][:, :-1].copy()
     coef = coef.reshape(coef.shape[0], ndepths, frame_shape[0], frame_shape[1])
     coef_mean = np.nanmean(coef, axis=0)
     coef_max = np.nanmax(coef_mean)
@@ -289,7 +289,7 @@ def plot_rf_3d(neurons_df, rois, depths, savepath, fontsize_dict):
     for roi, rf_color, line_color in zip(
         rois, ["Reds", "Greens", "Blues"], ["red", "green", "blue"]
     ):
-        coef = neurons_df.loc[roi, f"rf_coef_closedloop"][:, :-1]
+        coef = neurons_df.loc[roi, f"rf_coef_closedloop"][:, :-1].copy()
         coef = coef.reshape(coef.shape[0], len(depths), 16, 24)
         coef_mean = np.mean(coef, axis=0)
         data.append(
