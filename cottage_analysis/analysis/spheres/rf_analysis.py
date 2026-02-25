@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import scipy
+from tqdm import tqdm
 
 from cottage_analysis.analysis import common_utils
 import cottage_analysis.analysis.fit_gaussian_blob as fit_gaussian_blob
@@ -114,7 +115,7 @@ def fit_rf_preferred_depth(
         niter (int): Number of fitting iterations to avoid local minima.
             Default 10.
         min_sigma (float): Minimum sigma for the Gaussian. Default 0.5.
-        depth_bounds (tuple): Tuple of (min_depth, max_depth) in meters.
+        depth_bounds (tuple): Tuple of (min_depth, max_depth) in log(meters).
             Default (np.log(0.02), np.log(20)).
         use_multidepth (bool): Whether to use multidepth coefficients.
             Default False.
@@ -165,7 +166,7 @@ def fit_rf_preferred_depth(
     lower_bounds = [-np.inf, depth_bounds[0], -np.inf, -np.inf]
     upper_bounds = [np.inf, depth_bounds[1], np.inf, np.inf]
 
-    for i in range(n_neurons):
+    for i in tqdm(range(n_neurons), desc="Fitting RF depth tuning"):
         if is_all_nan[i]:
             continue
 
