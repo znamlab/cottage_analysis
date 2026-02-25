@@ -580,3 +580,69 @@ def run_basic_plots(
             is_closedloop=is_closedloop,
             save_dir=neurons_ds.path_full.parent,
         )
+
+
+def load_treadmill_and_sphere_datasets(
+    project,
+    mouse,
+    session,
+    photodiode_protocol=5,
+    filter_datasets=None,
+    recording_type="two_photon",
+    protocol_base_sphere="SpheresPermTubeReward",
+    **kwargs,
+):
+    """
+    Load neurons_df and trials_dfs for treadmill and sphere recordings of a session.
+
+    Args:
+        project (str): project name.
+        mouse (str): mouse name.
+        session (str): session date (e.g. S20250401).
+        photodiode_protocol (int): photodiode protocol. Defaults to 5.
+        filter_datasets (dict): filter datasets for suite2p.
+        recording_type (str): recording type. Defaults to "two_photon".
+        protocol_base_sphere (str): protocol base for sphere recordings.
+        **kwargs: additional arguments for sync_all_recordings.
+
+    Returns:
+        tuple: (neurons_df, trials_df_tread, trials_df_sphere)
+    """
+    session_name = f"{mouse}_{session}"
+    flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    # Load neurons_df
+    neurons_ds = create_neurons_ds(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+    )
+    if neurons_ds.get_flexilims_entry() is None:
+        raise flz.FlexilimsError(f"Session {session_name} not processed...")
+
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+
+    # Load treadmill trials
+    _, trials_df_tread = treadmill.sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        photodiode_protocol=photodiode_protocol,
+        filter_datasets=filter_datasets,
+        recording_type=recording_type,
+        **kwargs,
+    )
+
+    # Load sphere (closed-loop) trials
+    _, trials_df_sphere = spheres.sync_all_recordings(
+        session_name=session_name,
+        flexilims_session=flexilims_session,
+        project=project,
+        photodiode_protocol=photodiode_protocol,
+        filter_datasets=filter_datasets,
+        recording_type=recording_type,
+        protocol_base=protocol_base_sphere,
+        **kwargs,
+    )
+
+    return neurons_df, trials_df_tread, trials_df_sphere
