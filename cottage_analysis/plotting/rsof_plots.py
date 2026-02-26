@@ -726,7 +726,7 @@ def plot_r2_comparison(
         # calculate the proportion of neurons that have the best model for each session
         for i, model in enumerate(model_cols):
             prop = (
-                neurons_df.groupby("session")
+                neurons_df.groupby("session")[["best_model", "roi"]]
                 .apply(lambda x: x[x["best_model"] == model][["roi"]].agg(["count"]))
                 .values.flatten()
             ) / neuron_sum
