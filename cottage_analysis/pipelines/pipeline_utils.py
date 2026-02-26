@@ -608,6 +608,7 @@ def load_treadmill_and_sphere_datasets(
     filter_datasets=None,
     recording_type="two_photon",
     protocol_base_sphere="SpheresPermTubeReward",
+    tread_kwargs=None,
     **kwargs,
 ):
     """
@@ -641,6 +642,9 @@ def load_treadmill_and_sphere_datasets(
     neurons_df = pd.read_pickle(neurons_ds.path_full)
 
     # Load treadmill trials
+    if tread_kwargs is None:
+        tread_kwargs = {}
+
     _, trials_df_tread = treadmill.sync_all_recordings(
         session_name=session_name,
         flexilims_session=flexilims_session,
@@ -648,7 +652,7 @@ def load_treadmill_and_sphere_datasets(
         photodiode_protocol=photodiode_protocol,
         filter_datasets=filter_datasets,
         recording_type=recording_type,
-        **kwargs,
+        **dict(tread_kwargs, **kwargs),
     )
 
     # Load sphere (closed-loop) trials
