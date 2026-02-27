@@ -411,11 +411,14 @@ def plot_RS_OF_matrix(
         else:
             vmax = np.nanmax([0, np.nanmax(bin_means[1:-1, 1:-1].flatten())])
 
+    cmap = matplotlib.cm.Reds.copy()
+    cmap.set_bad(color="lightgrey")
+
     im = ax.imshow(
         bin_means[1:, 1:].T,
         origin="lower",
         aspect="equal",
-        cmap="Reds",
+        cmap=cmap,
         vmin=vmin,
         vmax=vmax,
         extent=extent,
@@ -479,7 +482,7 @@ def plot_RS_OF_matrix(
             bin_means[0, 1:].reshape(1, -1).T,
             origin="lower",
             aspect="equal",
-            cmap="Reds",
+            cmap=cmap,
             vmin=vmin,
             vmax=vmax,
         )
@@ -500,7 +503,7 @@ def plot_RS_OF_matrix(
             bin_means[1:, 0].reshape(-1, 1).T,
             origin="lower",
             aspect="equal",
-            cmap="Reds",
+            cmap=cmap,
             vmin=vmin,
             vmax=vmax,
         )
@@ -520,7 +523,7 @@ def plot_RS_OF_matrix(
             bin_means[0, 0].reshape(1, 1),
             origin="lower",
             aspect="equal",
-            cmap="Reds",
+            cmap=cmap,
             vmin=vmin,
             vmax=vmax,
         )
