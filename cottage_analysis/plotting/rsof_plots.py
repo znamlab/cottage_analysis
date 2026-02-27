@@ -1166,9 +1166,10 @@ def plot_speed_trace(
         param_trace = param_trace * 100
     elif "OF" in param:
         if f"{param}_merged" not in trials_df.columns:
+            # Use RS_blank to pad NaN as OF might not be defined in blanks
             trials_df[f"{param}_merged"] = trials_df.apply(
                 lambda x: np.concatenate(
-                    [x[f"{param}_stim"], np.full(len(x[f"{param}_blank"]), np.nan)]
+                    [x[f"{param}_stim"], np.full(len(x["RS_blank"]), np.nan)]
                 ),
                 axis=1,
             )
