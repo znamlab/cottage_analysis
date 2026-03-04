@@ -393,7 +393,7 @@ def fit_preferred_depth(
     # remove multi depth recordings
     is_multidepth = trials_df.recording_name.str.contains("multidepth")
     trials_df = trials_df[~is_multidepth]
-
+    trials_df = trials_df[trials_df.closed_loop == closed_loop]
     trials_df_fit, choose_trial_nums, sfx = common_utils.choose_trials_subset(
         trials_df, choose_trials
     )
@@ -488,9 +488,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[
-                roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"
-            ] = np.exp(popt[1])
+            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
+                np.exp(popt[1])
+            )
             neurons_df.at[
                 roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
             ] = popt
