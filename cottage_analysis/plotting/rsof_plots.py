@@ -571,7 +571,7 @@ def plot_RS_OF_fit(
     cbar_width=0.01,
     xlabel="Running speed (cm/s)",
     ylabel="Optical flow speed \n(degrees/s)",
-    fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
     ax=None,
     sfx="",
 ):
@@ -1583,6 +1583,7 @@ def plot_treadmill_vs_closedloop_matrix(
     title_tread="Treadmill",
     title_sphere="Closed-loop",
     figsize=(12, 5),
+    axes=None,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
     max_abs_rs2motor_diff_ratio=0.3,
     split_tread_half=False,
@@ -1601,16 +1602,20 @@ def plot_treadmill_vs_closedloop_matrix(
         title_tread (str, optional): Title for treadmill plot. Defaults to "Treadmill".
         title_sphere (str, optional): Title for sphere plot. Defaults to "Closed-loop".
         figsize (tuple, optional): Figure size. Defaults to (12, 5).
+        axes (np.ndarray, optional): Axes object to plot the heatmap. Defaults to None.
         fontsize_dict (dict, optional): Dictionary of fontsizes.
         max_abs_rs2motor_diff_ratio (float, optional): Maximum absolute rs2motor diff
             ratio to consider. Defaults to 0.3.
         split_tread_half (bool, optional): Whether to split the treadmill into two halves. Defaults to False.
         **kwargs: Additional arguments passed to plot_RS_OF_matrix.
     """
-    if split_tread_half:
-        fig, axes = plt.subplots(1, 3, figsize=figsize)
+    if axes is None:
+        if split_tread_half:
+            fig, axes = plt.subplots(1, 3, figsize=figsize)
+        else:
+            fig, axes = plt.subplots(1, 2, figsize=figsize)
     else:
-        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        fig = axes[0].get_figure()
 
     max_acc_ratio = kwargs.get("max_acc_ratio", None)
     rs_bins = kwargs.get("rs_bins", None)
