@@ -677,7 +677,7 @@ def fit_rs_of_tuning(
         depth_labels = np.concatenate(trials_df_part["depth_labels"].values)
 
         # choose frames that are above a certain running speed threshold
-        running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of))
+        running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of)) & (of > 0)
         if max_acc is not None:
             acc = np.concatenate(trials_df_part["acceleration_ratio_max_stim"].values)
             running = running & (acc < max_acc)
