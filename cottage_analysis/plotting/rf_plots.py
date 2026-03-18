@@ -15,6 +15,18 @@ def plot_stimulus_frame(
     plot_prop=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
+    """
+    Plot the stimulus reconstruction across depths.
+
+    Parameters:
+    - frame: 2D or 3D array of shape (height, width) or (ndepths, height, width)
+    - idepth: int or None, index of the presented depth (if None, assume multidepth stimulus)
+    - depths: list of depths corresponding to the frames
+    - position: tuple, position of the plot [x, y, width, height]
+    - plot_prop: float, proportion of the plot height to use
+    - fontsize_dict: dict, font sizes for title, label, and tick
+
+    """
     plot_x, plot_y, plot_width, plot_height = position
     ndepths = len(depths)
     for i in range(ndepths):
@@ -26,7 +38,18 @@ def plot_stimulus_frame(
                 plot_height / ndepths * plot_prop,
             ]
         )
-        if i == idepth:
+        if idepth is None:
+            # multidepth stimulus
+            ax.imshow(
+                frame[i].squeeze(),
+                cmap="gray_r",
+                origin="lower",
+                extent=(0, 120, -40, 40),
+                aspect="equal",
+                vmin=-1,
+                vmax=1,
+            )
+        elif i == idepth:
             frame = frame.astype(float)
             frame[frame == 0] = 0.5
             ax.imshow(
@@ -77,10 +100,11 @@ def plot_rf(
     plot_prop=0.9,
     xlabel="Azimuth (deg)",
     ylabel="Elevation (deg)",
-    fontsize_dict={"title": 15, "label": 10, "tick": 5},
+    fontsize_dict={"title": 15, "label": 10, "tick": 5, "legend": 8},
     use_ipsi=False,
     use_multidepth=False,
     extent=(0, 120, -40, 40),
+    clim=None,
 ):
     if use_ipsi:
         sfx = "_ipsi"
@@ -96,7 +120,8 @@ def plot_rf(
     coef = coef.reshape(coef.shape[0], ndepths, frame_shape[0], frame_shape[1])
     coef_mean = np.nanmean(coef, axis=0)
     coef_max = np.nanmax(coef_mean)
-    clim = max(np.round(coef_max, 1), 0.1)
+    if clim is None:
+        clim = max(np.round(coef_max, 1), 0.1)
     plot_x, plot_y, plot_width, plot_height = position
     axes = []
     for i in range(ndepths):
