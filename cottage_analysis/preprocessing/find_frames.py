@@ -62,8 +62,8 @@ def sync_by_frame_alternating(
 
     # Get rid of framedrops
     photodiode_df["FramePeak"] = None
-    photodiode_df.FramePeak.iloc[high_peaks] = 1
-    photodiode_df.FramePeak.iloc[low_peaks] = 0
+    photodiode_df.loc[high_peaks, "FramePeak"] = 1
+    photodiode_df.loc[low_peaks, "FramePeak"] = 0
     frames_df = photodiode_df[photodiode_df.FramePeak.notnull()]
     frames_df = frames_df[frames_df.FramePeak.diff() != 0]
     frames_df["closest_frame"] = np.arange(len(frames_df))
