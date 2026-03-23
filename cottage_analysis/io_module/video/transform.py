@@ -10,6 +10,7 @@ Transform the shape of data
 import numpy as np
 import os
 import cottage_analysis.imaging.common.chunk_data as chunk_data
+from tqdm import tqdm
 
 
 def transpose(
@@ -19,6 +20,7 @@ def transpose(
     save_folder,
     save_filename,
     chunk_size,
+    order="C",
     dtype=np.uint16,
     verbose=1,
 ):
@@ -38,7 +40,9 @@ def transpose(
     save_filename : string
         Save filename, can be in .bin or .npy
     chunk_size : int or None
-        Bumber of frames for each chunk
+        Number of frames for each chunk
+    order: 'C' or 'F', optional
+        
     dtype : string, optional
         Data type. The default is 'float32'.
     verbose : 1 or 0, optional
@@ -71,7 +75,7 @@ def transpose(
     if chunk_size is not None:
         chunk_list = chunk_data.chunk_data(arr=np.arange(frames), chunk_size=chunk_size)
 
-        for ichunk in range(0, len(chunk_list)):
+        for ichunk in tqdm(range(0, len(chunk_list))):
             start_frame = chunk_list[ichunk][0]
             stop_frame = chunk_list[ichunk][-1] + 1
             new_fp[:, :, start_frame:stop_frame] = data[:, :, start_frame:stop_frame]
@@ -87,4 +91,4 @@ def transpose(
         new_fp[:, :, :] = data[:, :, :]
         new_fp.flush()
 
-    print("---Transpose finished.---", flush=True)
+    print("TRANSPOSITION complete", flush=True)

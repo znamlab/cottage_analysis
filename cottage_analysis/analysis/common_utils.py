@@ -180,8 +180,8 @@ def get_confidence_interval(
         CI_low = np.nanmean(arr, axis=axis) - z * sem
         CI_high = np.nanmean(arr, axis=axis) + z * sem
     elif len(mean_arr) > 0 and len(sem_arr) > 0:
-        CI_low = mean_arr - z * sem
-        CI_high = mean_arr + z * sem
+        CI_low = mean_arr - z * sem_arr
+        CI_high = mean_arr + z * sem_arr
     else:
         print("Error: you need to input either [arr] or [mean_arr and sem_arr]")
         CI_low = []
