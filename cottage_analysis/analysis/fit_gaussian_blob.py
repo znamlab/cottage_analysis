@@ -1090,3 +1090,107 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
     neurons_df = pd.DataFrame(params)
     neurons_df["rsq"] = rsqs
     return neurons_df
+
+
+## UTILITIES
+# Small functions to interpret the fit parameters
+# Given that popt can be NaN if the fit fails, we need to handle this
+
+
+def get_gaussian_angle(popt):
+    """Calculate the angle of the major axis of the Gaussian.
+
+    This wraps the angle on the [-45, 135] range to avoid splitting cells with theta
+    along the RS axis between 0 and 180 degrees.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Angle in degrees.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
+        return np.nan
+    log_sigma_x2 = popt[3]
+    log_sigma_y2 = popt[4]
+    theta = popt[5]
+    if log_sigma_x2 < log_sigma_y2:
+        angle = theta + np.pi / 2
+    else:
+        angle = theta
+    angle_deg = np.degrees(angle)
+    return (angle_deg + 45) % 180 - 45
+
+
+def get_gaussian_eccentricity(popt, min_sigma=0.25):
+    """Calculate the eccentricity of the Gaussian (1 - minor/major).
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Eccentricity value.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    # Log-variances (popt[3] and popt[4])
+    # The actual standard deviations used in the fit are sqrt(exp(log_sigma_i2) + min_sigma)
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+
+    # Major and minor axes
+    major = max(sigma_x, sigma_y)
+    minor = min(sigma_x, sigma_y)
+
+    # Eccentricity defined as 1 - (minor/major)
+    return 1 - (minor / major)
+
+
+def get_preferred_rs(popt):
+    """Calculate preferred running speed in cm/s.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Preferred RS in cm/s.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 2:
+        return np.nan
+    # x0 (popt[1]) is log(RS) in m/s, convert to cm/s
+    return np.exp(popt[1]) * 100
+
+
+def get_semimajor_length(popt, min_sigma=0.25):
+    """Get the length of the semi-major axis
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Length of the semi-major axis
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    return max(sigma_x, sigma_y)
+
+
+def get_semiminor_length(popt, min_sigma=0.25):
+    """Get the length of the semi-major axis
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Length of the semi-major axis
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    return min(sigma_x, sigma_y)
