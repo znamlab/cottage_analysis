@@ -574,6 +574,7 @@ def plot_RS_OF_fit(
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
     ax=None,
     sfx="",
+    label_r2=True,
 ):
     """
     Plot the fitted tuning of a neuron.
@@ -643,6 +644,7 @@ def plot_RS_OF_fit(
     if cbar_width is not None:
         rect = ax.get_position()
         fig = ax.get_figure()
+
         ax2 = fig.add_axes(
             [
                 rect.x0 + rect.width * 0.75,
@@ -658,12 +660,13 @@ def plot_RS_OF_fit(
         model_label,
         fontdict={"fontsize": fontsize_dict["label"]},
     )
-    plt.text(
-        x=log_range["rs_bin_log_min"] + 0.2,
-        y=log_range["of_bin_log_max"] - 0.7,
-        s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}{sfx}'].iloc[roi]:.2f}",
-        fontsize=fontsize_dict["tick"],
-    )
+    if label_r2:
+        plt.text(
+            x=log_range["rs_bin_log_min"] + 0.2,
+            y=log_range["of_bin_log_max"] - 0.7,
+            s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}{sfx}'].iloc[roi]:.2f}",
+            fontsize=fontsize_dict["tick"],
+        )
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
     ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=0)
     return resp_pred.min(), resp_pred.max()
