@@ -9,10 +9,11 @@ import warnings
 import numpy as np
 import pandas as pd
 import flexiznam as flz
+from znamutils import slurm_it
 
 from . import spheres
 from ..preprocessing import synchronisation
-
+from .fit_gaussian_blob import fit_rs_of_tuning
 
 STEPS_PER_REV = 200
 MICROSTEPPING = 1 / 4
@@ -96,6 +97,10 @@ def sync_all_recordings(
     cut_trial_end=None,
     trial_duration=None,
     acceleration_time=0.13,
+    sim_popt_list=None,
+    sim_tau_decay=0.8,
+    sim_tau_rise=0.15,
+    sim_make_circular=True,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -128,6 +133,15 @@ def sync_all_recordings(
             of trial)
         acceleration_time (float or None): Acceleration time in s per cm/s. If not None,
             overrides trial_duration. Default to 0.13 (aka 61cm/s reached in 8s)
+        sim_popt_list (list or None): List of 2D Gaussian fit parameters (arrays), one
+            per ROI. If provided, will simulate calcium responses for the entire
+            recording and add them to the trials_df as fake_dff_stim.
+        sim_tau_decay (float, optional): Exponential decay time constant (in seconds)
+            used for the calcium simulation. Defaults to 0.8.
+        sim_tau_rise (float, optional): Exponential rise time constant (in seconds) used
+            for the calcium simulation. Defaults to 0.15.
+        sim_make_circular (bool, optional): If True, make the Gaussian circular by setting
+            the major axis to the minor axis length. Defaults to True.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -195,6 +209,24 @@ def sync_all_recordings(
         imaging_df = spheres.format_imaging_df(
             imaging_df=imaging_df, recording=recording
         )
+
+        # If simulating, generate continuous calcium trace over the entire recording
+        if sim_popt_list is not None:
+            from cottage_analysis.analysis.spheres.simulation import (
+                simulate_calcium_responses,
+            )
+
+            frame_rate = 1 / np.nanmedian(imaging_df.imaging_harptime.diff())
+            # Generate the continuous fake dff array (shape: n_frames x n_rois)
+            fake_dff_continuous = simulate_calcium_responses(
+                imaging_df=imaging_df,
+                popt_list=sim_popt_list,
+                tau_decay=sim_tau_decay,
+                tau_rise=sim_tau_rise,
+                frame_rate=frame_rate,
+                make_circular=sim_make_circular,
+            )
+
         # Add the treadmill specific part
         imaging_df = process_imaging_df(
             imaging_df,
@@ -206,6 +238,20 @@ def sync_all_recordings(
         trials_df = spheres.generate_trials_df(
             recording=recording, imaging_df=imaging_df
         )
+
+        # Slice the continuous simulated trace correctly into the cropped trials
+        if sim_popt_list is not None:
+            fake_dff_crop = []
+            for tid, trial_crop in trials_df.iterrows():
+                # Use absolute dataframe frame indices to find the exact offset
+                # within the fully simulated continuous array
+                # The continuous array aligns perfectly with imaging_df indices
+                start_offset = int(trial_crop.imaging_stim_start)
+                end_offset = int(trial_crop.imaging_stim_stop) + 1
+
+                # Slicing from continuous array yields (n_trial_frames, n_rois)
+                fake_dff_crop.append(fake_dff_continuous[start_offset:end_offset, :])
+            trials_df["fake_dff_stim"] = fake_dff_crop
 
         trials_df = spheres.search_param_log_trials(
             harp_recording=harp_recording,
@@ -346,18 +392,6 @@ def process_imaging_df(
 
     # 3. Apply trial_duration (modifies start relative to end)
     elif trial_duration is not None:
-        # If trial_duration is set, start is end - duration
-        # We need to match starts and ends first to make sure we have pairs
-        # But actually, the original logic just took ends and subtracted duration
-        # Let's stick to the original logic for trial_duration which was simpler:
-        # trial_starts = trial_ends - trial_duration
-        # But we need to be careful if we have cut_trial_end as well
-        # The original logic applied cut_trial_end AFTER finding starts with trial_duration
-        # Wait, original logic:
-        # 1. Find ends
-        # 2. If trial_duration: starts = ends - duration
-        # 3. If cut_trial_end: ends = ends - cut_trial_end
-        # So trial_duration defines start relative to PHYSICAL end (before cut)
         trial_starts = trial_ends - trial_duration
 
     # 4. Apply cut_trial_end (modifies end)
@@ -412,3 +446,112 @@ def process_imaging_df(
     )
     imaging_df["mean_rs2motor_diff"] = mean_running_speed - imaging_df.MotorSpeed / 100
     return imaging_df
+
+
+@slurm_it(
+    conda_env="v1_depth_map",
+    slurm_options={
+        "mem": "64G",
+        "time": "48:00:00",
+        "partition": "ncpu",
+    },
+    print_job_id=True,
+)
+def simulate_and_fit_session(
+    session_name,
+    decay_tau=0.8,
+    rise_tau=0.15,
+    make_circular=True,
+    flexilims_session=None,
+    project=None,
+):
+    """Run a full continuous simulation and fit for an entire session.
+
+    Args:
+        session_name (str): Session string (format: {Mouse}_{Session})
+        decay_tau (float, optional): Exponential decay time constant (in seconds) used
+            for the calcium simulation. Defaults to 0.8.
+        rise_tau (float, optional): Exponential rise time constant (in seconds) used
+            for the calcium simulation. Defaults to 0.15.
+        flexilims_session (flexilims.session, optional): Flexilims session object.
+            Required if project is None. Defaults to None.
+        project (str, optional): Project name. Required if flexilims_session is None.
+            Defaults to None.
+
+    Returns:
+        pd.DataFrame: A dataframe containing the ground-truth
+            circular parameters, the actual arrays of simulated data,
+            and the parameters recovered by the 2D Gaussian fitting algorithm.
+    """
+    if flexilims_session is None:
+        assert project is not None, "Must provide either flexilims_session or project"
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    neurons_ds = flz.get_datasets(
+        origin_name=session_name,
+        dataset_type="neurons_df",
+        flexilims_session=flexilims_session,
+        allow_multiple=False,
+    )
+    if neurons_ds is None:
+        raise ValueError(f"Neurons dataset not found for session {session_name}")
+
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+    popt_list = [
+        None if (isinstance(popt, float) or np.isnan(popt).any()) else popt.copy()
+        for popt in neurons_df.rsof_popt_closedloop_g2d_treadmill.values
+    ]
+    is_circ = "_circular" if make_circular else "_elliptical"
+    target = neurons_ds.path_full.with_name(
+        f"simulated_responses_fit_{decay_tau}_{rise_tau}{is_circ}.parquet"
+    )
+    # 1. Simulate Responses Continously Over The Session
+    vs_df_test, trials_df_test = sync_all_recordings(
+        session_name=session_name,
+        project=project,
+        filter_datasets={"anatomical_only": 3, "annotated": True},
+        recording_type="two_photon",
+        photodiode_protocol=5,
+        sim_popt_list=popt_list,
+        sim_tau_decay=decay_tau,
+        sim_tau_rise=rise_tau,
+        sim_make_circular=make_circular,
+    )
+
+    # 3. Fit 2D Gaussians to Simulated Responses
+    mock_trials_df = trials_df_test.copy()
+    mock_trials_df["dff_stim"] = mock_trials_df["fake_dff_stim"]
+
+    # Run standard pipeline fit procedure
+    sim_neurons_df = fit_rs_of_tuning(
+        trials_df=mock_trials_df,
+        model="gaussian_2d",
+        trial_sfx="_treadmill",
+        rs_thr=0.01,
+        max_acc=5,
+        max_rs2motor_diff=0.5,
+        niter=5,
+        min_sigma=0.25,
+        k_folds=1,
+    )
+
+    # 3. Construct Outputs
+    results = pd.DataFrame(
+        {
+            "roi": np.arange(len(popt_list)),
+            "popt_groundtruth": popt_list,
+            "popt_simulated": sim_neurons_df["rsof_popt_closedloop_g2d"].values,
+            "rsq_simulated": sim_neurons_df["rsof_rsq_closedloop_g2d"].values,
+        }
+    )
+
+    # Append the raw simulated matrix (as a list of arrays from the trials)
+    # We transpose this logic so that each ROI gets one list containing its whole response array
+    fake_dff_all_trials = np.concatenate(trials_df_test["fake_dff_stim"].values, axis=0)
+    fake_dff_per_roi = [
+        fake_dff_all_trials[:, i] for i in range(fake_dff_all_trials.shape[1])
+    ]
+    results["fake_dff"] = fake_dff_per_roi
+
+    results.to_parquet(target, index=False)
+    return results
