@@ -2,12 +2,14 @@ from functools import partial
 import flexiznam as flz
 import numpy as np
 import pandas as pd
+from znamutils import slurm_it
 
 from cottage_analysis.analysis.spheres import multidepth
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
 from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.visstim import get_param_log
+from cottage_analysis.analysis.fit_gaussian_blob import fit_rs_of_tuning
 
 print = partial(print, flush=True)
 
@@ -817,3 +819,198 @@ def _process_single_recording_for_session(
     )
 
     return vs_df, imaging_df, trials_df, param_log, recording, unit_ids
+
+
+@slurm_it(
+    conda_env="v1_depth_map",
+    slurm_options={
+        "mem": "64G",
+        "time": "48:00:00",
+        "partition": "ncpu",
+    },
+    print_job_id=True,
+)
+def simulate_and_fit_session(
+    session_name,
+    decay_tau=0.8,
+    rise_tau=0.15,
+    make_circular=True,
+    protocol_base="SpheresPermTubeReward",
+    filter_datasets=None,
+    flexilims_session=None,
+    project=None,
+):
+    """Run a full continuous simulation and fit for an entire spheres session.
+
+    Loads ground-truth 2D Gaussian fit parameters from a pre-existing neurons_df,
+    simulates continuous calcium responses across every recording in the session,
+    slices the simulated trace into trials, fits 2D Gaussians to the simulated
+    responses, and saves the results to a parquet file next to the neurons_df.
+
+    Args:
+        session_name (str): Session string (format: {Mouse}_{Session}).
+        decay_tau (float, optional): Exponential decay time constant (in seconds) used
+            for the calcium simulation. Defaults to 0.8.
+        rise_tau (float, optional): Exponential rise time constant (in seconds) used
+            for the calcium simulation. Defaults to 0.15.
+        make_circular (bool, optional): If True, make the Gaussian circular by setting
+            the major axis to the minor axis length. Defaults to True.
+        protocol_base (str, optional): Base string used to filter recordings.
+            Defaults to "SpheresPermTubeReward".
+        filter_datasets (dict, optional): Key/value pairs used to filter the suite2p
+            dataset (e.g. ``{'anatomical_only': 3}``). Defaults to None.
+        flexilims_session (flexilims.session, optional): Flexilims session object.
+            Required if *project* is None. Defaults to None.
+        project (str, optional): Project name. Required if *flexilims_session* is None.
+            Defaults to None.
+
+    Returns:
+        pd.DataFrame: A dataframe containing:
+            - ``roi``: ROI index.
+            - ``popt_groundtruth``: Ground-truth circular Gaussian parameters.
+            - ``popt_simulated``: Parameters recovered by fitting the simulated data.
+            - ``rsq_simulated``: R-squared of the recovered fit.
+            - ``fake_dff``: Concatenated simulated ΔF/F trace, one array per ROI.
+
+        The dataframe is also saved as a parquet file next to the neurons_df dataset.
+    """
+    # Print parameters to have them in slurm logs
+    print(f"Session: {session_name}")
+    print(f"Decay tau: {decay_tau}")
+    print(f"Rise tau: {rise_tau}")
+    print(f"Make circular: {make_circular}")
+    print(f"Filter datasets: {filter_datasets}")
+    print(f"Project: {project}")
+    print("\n")
+    from cottage_analysis.analysis.spheres.simulation import simulate_calcium_responses
+
+    if flexilims_session is None:
+        assert project is not None, "Must provide either flexilims_session or project"
+        flexilims_session = flz.get_flexilims_session(project_id=project)
+
+    neurons_ds = flz.get_datasets(
+        origin_name=session_name,
+        dataset_type="neurons_df",
+        flexilims_session=flexilims_session,
+        allow_multiple=False,
+    )
+    if neurons_ds is None:
+        raise ValueError(f"Neurons dataset not found for session {session_name}")
+
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+    popt_list = [
+        None if (isinstance(popt, float) or np.isnan(popt).any()) else popt.copy()
+        for popt in neurons_df.rsof_popt_closedloop_g2d.values
+    ]
+    is_circ = "_circular" if make_circular else "_elliptical"
+    target = neurons_ds.path_full.with_name(
+        f"simulated_responses_fit_spheres_{decay_tau}_{rise_tau}{is_circ}.parquet"
+    )
+
+    # --- 1. Loop over recordings, simulate continuously, collect trials_df ---
+    exp_session = flz.get_entity(
+        datatype="session", name=session_name, flexilims_session=flexilims_session
+    )
+    if exp_session is None:
+        raise IOError(f"No session called {session_name} found in flexilims.")
+    recordings = flz.get_entities(
+        datatype="recording",
+        origin_id=exp_session["id"],
+        query_key="recording_type",
+        query_value="two_photon",
+        flexilims_session=flexilims_session,
+    )
+    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    # Exclude Playback and multidepth recordings (closed-loop spheres only)
+    recordings = recordings[~recordings.name.str.contains("Playback")]
+    recordings = recordings[~recordings.name.str.contains("multidepth")]
+    if "exclude_reason" in recordings.columns:
+        recordings = recordings[recordings["exclude_reason"].isna()]
+
+    trials_df_all = None
+    for i, recording_name in enumerate(recordings.name):
+        print(f"Processing recording {i + 1}/{len(recordings)}")
+
+        (
+            vs_df,
+            imaging_df,
+            trials_df,
+            _param_log,
+            _recording,
+            _unit_ids,
+        ) = _process_single_recording_for_session(
+            recording_name=recording_name,
+            flexilims_session=flexilims_session,
+            harp_is_in_recording=True,
+            use_onix=False,
+            photodiode_protocol=5,
+            sync_kwargs=None,
+            protocol_base=protocol_base,
+            conflicts="skip",
+            recording_type="two_photon",
+            filter_datasets=filter_datasets,
+            exclude_datasets=None,
+            return_volumes=True,
+            ephys_kwargs=None,
+            verbose=True,
+        )
+
+        # Simulate continuous calcium trace over the entire recording
+        frame_rate = 1 / np.nanmedian(imaging_df.imaging_harptime.diff())
+        fake_dff_continuous = simulate_calcium_responses(
+            imaging_df=imaging_df,
+            popt_list=popt_list,
+            tau_decay=decay_tau,
+            tau_rise=rise_tau,
+            frame_rate=frame_rate,
+            make_circular=make_circular,
+        )
+
+        # Slice the continuous simulated trace into individual trials
+        fake_dff_crop = []
+        for _tid, trial_crop in trials_df.iterrows():
+            start_offset = int(trial_crop.imaging_stim_start)
+            end_offset = int(trial_crop.imaging_stim_stop) + 1
+            fake_dff_crop.append(fake_dff_continuous[start_offset:end_offset, :])
+        trials_df["fake_dff_stim"] = fake_dff_crop
+
+        if trials_df_all is None:
+            trials_df_all = trials_df
+        else:
+            trials_df_all = pd.concat([trials_df_all, trials_df], ignore_index=True)
+
+    print("Finished simulating all recordings")
+
+    # --- 2. Fit 2D Gaussians to simulated responses ---
+    mock_trials_df = trials_df_all.copy()
+    mock_trials_df["dff_stim"] = mock_trials_df["fake_dff_stim"]
+
+    sim_neurons_df = fit_rs_of_tuning(
+        trials_df=mock_trials_df,
+        model="gaussian_2d",
+        trial_sfx="",
+        rs_thr=0.01,
+        niter=5,
+        min_sigma=0.25,
+        k_folds=1,
+    )
+
+    # --- 3. Construct output dataframe ---
+    results = pd.DataFrame(
+        {
+            "roi": np.arange(len(popt_list)),
+            "popt_groundtruth": popt_list,
+            "popt_simulated": sim_neurons_df["rsof_popt_closedloop_g2d"].values,
+            "rsq_simulated": sim_neurons_df["rsof_rsq_closedloop_g2d"].values,
+        }
+    )
+
+    # Concatenate simulated trace across all trials and store one array per ROI
+    fake_dff_all_trials = np.concatenate(trials_df_all["fake_dff_stim"].values, axis=0)
+    fake_dff_per_roi = [
+        fake_dff_all_trials[:, i] for i in range(fake_dff_all_trials.shape[1])
+    ]
+    results["fake_dff"] = fake_dff_per_roi
+
+    results.to_parquet(target, index=False)
+    return results

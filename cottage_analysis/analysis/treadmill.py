@@ -462,6 +462,7 @@ def simulate_and_fit_session(
     decay_tau=0.8,
     rise_tau=0.15,
     make_circular=True,
+    filter_datasets=None,
     flexilims_session=None,
     project=None,
 ):
@@ -473,6 +474,10 @@ def simulate_and_fit_session(
             for the calcium simulation. Defaults to 0.8.
         rise_tau (float, optional): Exponential rise time constant (in seconds) used
             for the calcium simulation. Defaults to 0.15.
+        make_circular (bool, optional): If True, make the Gaussian circular by setting
+            the major axis to the minor axis length. Defaults to True.
+        filter_datasets (dict, optional): Key/value pairs used to filter the suite2p
+            dataset (e.g. ``{'anatomical_only': 3}``). Defaults to ``None``.
         flexilims_session (flexilims.session, optional): Flexilims session object.
             Required if project is None. Defaults to None.
         project (str, optional): Project name. Required if flexilims_session is None.
@@ -483,6 +488,15 @@ def simulate_and_fit_session(
             circular parameters, the actual arrays of simulated data,
             and the parameters recovered by the 2D Gaussian fitting algorithm.
     """
+    # Print parameters to have them in slurm logs
+    print(f"Session: {session_name}")
+    print(f"Decay tau: {decay_tau}")
+    print(f"Rise tau: {rise_tau}")
+    print(f"Make circular: {make_circular}")
+    print(f"Filter datasets: {filter_datasets}")
+    print(f"Project: {project}")
+    print("\n")
+
     if flexilims_session is None:
         assert project is not None, "Must provide either flexilims_session or project"
         flexilims_session = flz.get_flexilims_session(project_id=project)
@@ -503,13 +517,13 @@ def simulate_and_fit_session(
     ]
     is_circ = "_circular" if make_circular else "_elliptical"
     target = neurons_ds.path_full.with_name(
-        f"simulated_responses_fit_{decay_tau}_{rise_tau}{is_circ}.parquet"
+        f"simulated_responses_fit_treadmill_{decay_tau}_{rise_tau}{is_circ}.parquet"
     )
     # 1. Simulate Responses Continously Over The Session
     vs_df_test, trials_df_test = sync_all_recordings(
         session_name=session_name,
         project=project,
-        filter_datasets={"anatomical_only": 3, "annotated": True},
+        filter_datasets=filter_datasets,
         recording_type="two_photon",
         photodiode_protocol=5,
         sim_popt_list=popt_list,
