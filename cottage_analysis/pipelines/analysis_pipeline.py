@@ -67,6 +67,9 @@ def main(
         filter_rois["anatomical_only"] = 3
     if use_annotated:
         filter_rois["annotated"] = True
+        exclude_datasets = None
+    else:
+        exclude_datasets = {"annotated": True}
     # Traces can be filtered by the same attributes as rois but have ASt too
     filter_traces = dict(**filter_rois)
     if ast_neuropil:
@@ -103,7 +106,8 @@ def main(
             flexilims_session=flexilims_session,
             project=project,
             filter_datasets=filter_traces,
-            conflicts="skip",
+            exclude_datasets=exclude_datasets,
+            conflicts=conflicts,
             recording_type="two_photon",
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
@@ -114,7 +118,8 @@ def main(
             flexilims_session=flexilims_session,
             project=project,
             filter_datasets=filter_traces,
-            conflicts="skip",
+            exclude_datasets=exclude_datasets,
+            conflicts=conflicts,
             recording_type="two_photon",
             protocol_base=protocol_base,
             photodiode_protocol=photodiode_protocol,
@@ -182,6 +187,7 @@ def main(
         flexilims_session=flexilims_session,
         return_dataseries=False,
         filter_datasets=filter_rois,
+        exclude_datasets=exclude_datasets,
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]
@@ -331,6 +337,7 @@ def main(
                 flexilims_session=flexilims_session,
                 project=None,
                 filter_datasets=filter_traces,
+                exclude_datasets=exclude_datasets,
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
                 is_multidepth=is_multidepth,
