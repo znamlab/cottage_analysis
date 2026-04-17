@@ -228,6 +228,18 @@ def plot_speed_tuning(
 
 
 def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=True):
+    """Generate tick positions and labels for running speed and optic flow axes.
+
+    Args:
+        log_range (dict): configuration dict specifying bin count and limits.
+        fontsize_dict (dict): dictionary with text styling parameters.
+        playback (bool, optional): whether this is for playback visualization. Defaults to False.
+        log (bool, optional): whether to compute logarithmic bins. Defaults to True.
+
+    Returns:
+        tuple: (ticks_select1, ticks_select2, bin_edges1, bin_edges2) containing
+            arrays for ticking axis selectively and exact bin edges.
+    """
     bin_numbers = [log_range["rs_bin_num"] - 1, log_range["of_bin_num"] - 1]
     bin_edges1 = np.logspace(
         log_range["rs_bin_log_min"],
@@ -262,23 +274,112 @@ def get_RS_OF_heatmap_axis_ticks(log_range, fontsize_dict, playback=False, log=T
         else:
             bin_edges2[ctr] = np.round(it, 2)
         ctr += 1
-    # if log == False:
-    #     _, _ = plt.xticks(np.arange(bin_numbers[0]), bin_centers1, rotation=60, ha='center',
-    #                       fontsize=fontsize_dict['xticks'])
-    #     _, _ = plt.yticks(np.arange(bin_numbers[1]), bin_centers2, fontsize=fontsize_dict['yticks'])
     else:
-        ticks_select1 = (np.arange(-1, bin_numbers[0] * 2, 1) / 2)[0::2]
-        ticks_select2 = (np.arange(-1, bin_numbers[1] * 2, 1) / 2)[0::2]
-        # _, _ = plt.xticks(
-        #     ticks_select1,
-        #     bin_edges1,
-        #     rotation=60,
-        #     ha="center",
-        #     fontsize=fontsize_dict["tick"],
-        # )
-        # _, _ = plt.yticks(ticks_select2, bin_edges2, fontsize=fontsize_dict["tick"])
+        log_base = log_range.get("log_base", 10)
+        # Compute true logarithmic mid-points and boundaries instead of pixel
+        ticks_select1 = []
+        for edge in bin_edges1:
+            if edge <= 0:
+                ticks_select1.append(
+                    log_range["rs_bin_log_min"] - 1
+                )  # Fallback roughly
+            else:
+                ticks_select1.append(np.log(edge) / np.log(log_base))
+
+        ticks_select2 = []
+        for edge in bin_edges2:
+            if edge <= 0:
+                ticks_select2.append(log_range["of_bin_log_min"] - 1)
+            else:
+                ticks_select2.append(np.log(edge) / np.log(log_base))
+
+        # We return the raw log values as tick selectors
+        ticks_select1 = np.array(ticks_select1)
+        ticks_select2 = np.array(ticks_select2)
 
     return ticks_select1, ticks_select2, bin_edges1, bin_edges2
+
+
+def add_rsof_colorbar(fig, ax, im, cbar_width, vmin, vmax, fontsize_dict):
+    """Add a colorbar for the RS-OF heatmap.
+
+    Args:
+        fig (matplotlib.figure.Figure): figure object.
+        ax (matplotlib.axes.Axes): axes of the heatmap.
+        im (matplotlib.image.AxesImage): image returned by imshow.
+        cbar_width (float): width of the colorbar inside the figure.
+        vmin (float): minimum value for the colorbar ticks.
+        vmax (float): maximum value for the colorbar ticks.
+        fontsize_dict (dict): dictionary specifying font sizes.
+    """
+    plot_x, plot_y, plot_width, plot_height = (
+        ax.get_position().x0,
+        ax.get_position().y0,
+        ax.get_position().width,
+        ax.get_position().height,
+    )
+    ax2 = fig.add_axes(
+        [plot_x + plot_width * 1.1, plot_y, plot_width * 0.05, plot_height / 2]
+    )
+    cbar = fig.colorbar(im, cax=ax2, label="\u0394F/F")
+    ax2.tick_params(labelsize=fontsize_dict.get("legend", 10), length=2, pad=2)
+    ax2.set_ylabel(
+        "\u0394F/F", rotation=270, fontsize=fontsize_dict.get("legend", 10), labelpad=4
+    )
+    cbar.set_ticks([vmin, vmax])
+
+
+def set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict):
+    """Configure axis ticks for running speed and optic flow heatmap.
+
+    Args:
+        ax (matplotlib.axes.Axes): axes to configure ticks for.
+        log_range (dict): configuration dict specifying bin count and limits.
+            Expected keys include "log_base" (base for logarithmic scaling, typically 2
+            or 10), "rs_bin_log_min" and "rs_bin_log_max" (min and max limits for the
+            running speed in log space), "rs_bin_num" (number of running speed bins),
+            and similar keys for optic flow: "of_bin_log_min", "of_bin_log_max",
+            and "of_bin_num".
+        tick_dict (dict or None): custom tick mapping containing predefined
+            tick locators and formatting values. It must contain the following keys:
+            "rs_tick_select" (data coordinates for RS ticks, normally log-scaled values)
+            "rs_tick_values" (labels/values to display for RS ticks, e.g. raw cm/s),
+            "of_tick_select" (data coordinates for OF ticks, normally log-scaled values)
+            "of_tick_values" (labels/values to display for OF ticks, e.g. raw deg/s).
+        fontsize_dict (dict): dictionary with text styling parameters.
+    """
+    if tick_dict is None:
+        (
+            ticks_select1,
+            ticks_select2,
+            bin_edges1,
+            bin_edges2,
+        ) = get_RS_OF_heatmap_axis_ticks(
+            log_range=log_range,
+            fontsize_dict=fontsize_dict,
+        )
+        ax.set_xticks(ticks_select1[0::2])
+        ax.set_xticklabels(
+            bin_edges1[0::2],
+            fontsize=fontsize_dict.get("tick", 10),
+        )
+
+        ax.set_yticks(ticks_select2[1::2])
+        ax.set_yticklabels(
+            bin_edges2[1::2],
+            fontsize=fontsize_dict.get("tick", 10),
+        )
+    else:
+        ax.set_xticks(tick_dict["rs_tick_select"])
+        ax.set_xticklabels(
+            tick_dict["rs_tick_values"],
+            fontsize=fontsize_dict.get("tick", 10),
+        )
+        ax.set_yticks(tick_dict["of_tick_select"])
+        ax.set_yticklabels(
+            tick_dict["of_tick_values"],
+            fontsize=fontsize_dict.get("tick", 10),
+        )
 
 
 def plot_RS_OF_matrix(
@@ -297,7 +398,7 @@ def plot_RS_OF_matrix(
     vmin=None,
     vmax=None,
     xlabel="Running speed (cm/s)",
-    ylabel="Optical flow speed \n(degrees/s)",
+    ylabel="Optic flow speed \n(degrees/s)",
     title="",
     cbar_width=0.01,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
@@ -307,7 +408,6 @@ def plot_RS_OF_matrix(
     of_bins=None,
     rs_bins=None,
     tick_dict=None,
-    extent=None,
     use_full_range=False,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
@@ -336,6 +436,10 @@ def plot_RS_OF_matrix(
             motor speed difference ratio. Defaults to 0.3.
         of_bins (np.ndarray, optional): optical flow bins. Defaults to None.
         rs_bins (np.ndarray, optional): running speed bins. Defaults to None.
+        tick_dict (dict, optional): custom tick dictionary to use instead of
+            automatically generated ticks. Defaults to None.
+        use_full_range (bool, optional): whether to use the entire dimension range for
+            visualization. Defaults to False.
 
     Returns:
         float: min value of the heatmap.
@@ -344,8 +448,42 @@ def plot_RS_OF_matrix(
 
     if ax is None:
         ax = plt.gca()
+
+    log_base = log_range.get("log_base", 10)
+
+    # Derive extent directly from the bins
+    if rs_bins is not None and of_bins is not None:
+        # We skip index 0 since we drop the first bin for plotting bin_means[1:, 1:]
+        rs_lower = (
+            np.log(rs_bins[1]) / np.log(log_base)
+            if rs_bins[1] > 0
+            else log_range.get("rs_bin_log_min", 0)
+        )
+        rs_upper = (
+            np.log(rs_bins[-1]) / np.log(log_base)
+            if rs_bins[-1] > 0
+            else log_range.get("rs_bin_log_max", 2.5)
+        )
+        of_lower = (
+            np.log(of_bins[1]) / np.log(log_base)
+            if of_bins[1] > 0
+            else log_range.get("of_bin_log_min", -1.5)
+        )
+        of_upper = (
+            np.log(of_bins[-1]) / np.log(log_base)
+            if of_bins[-1] > 0
+            else log_range.get("of_bin_log_max", 3.5)
+        )
+        extent = [rs_lower, rs_upper, of_lower, of_upper]
     else:
-        plt.sca(ax)
+        # Fallback to logical default log_bounds
+        extent = [
+            log_range.get("rs_bin_log_min", 0),
+            log_range.get("rs_bin_log_max", 2.5),
+            log_range.get("of_bin_log_min", -1.5),
+            log_range.get("of_bin_log_max", 3.5),
+        ]
+    plt.sca(ax)
     fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
     if rs_bins is None:
@@ -431,36 +569,7 @@ def plot_RS_OF_matrix(
         ax.get_position().height,
     )
 
-    if tick_dict is None:
-        (
-            ticks_select1,
-            ticks_select2,
-            bin_edges1,
-            bin_edges2,
-        ) = get_RS_OF_heatmap_axis_ticks(
-            log_range=log_range,
-            fontsize_dict=fontsize_dict,
-        )
-        plt.xticks(
-            ticks_select1[0::2],
-            bin_edges1[0::2],
-            fontsize=fontsize_dict["tick"],
-        )
-
-        plt.yticks(
-            ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"]
-        )
-    else:
-        plt.xticks(
-            tick_dict["rs_tick_select"],
-            tick_dict["rs_tick_values"],
-            fontsize=fontsize_dict["tick"],
-        )
-        plt.yticks(
-            tick_dict["of_tick_select"],
-            tick_dict["of_tick_values"],
-            fontsize=fontsize_dict["tick"],
-        )
+    set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict)
 
     if is_closed_loop:
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
@@ -538,15 +647,7 @@ def plot_RS_OF_matrix(
             axis="both", which="major", labelsize=fontsize_dict["tick"]
         )
     if cbar_width is not None:
-        ax2 = fig.add_axes(
-            [plot_x + plot_width * 1.1, plot_y, plot_width * 0.05, plot_height / 2]
-        )
-        cbar = fig.colorbar(im, cax=ax2, label="\u0394F/F")
-        ax2.tick_params(labelsize=fontsize_dict["legend"], length=2, pad=2)
-        ax2.set_ylabel(
-            "\u0394F/F", rotation=270, fontsize=fontsize_dict["legend"], labelpad=4
-        )
-        cbar.set_ticks([vmin, vmax])
+        add_rsof_colorbar(fig, ax, im, cbar_width, vmin, vmax, fontsize_dict)
 
     return vmin, vmax
 
@@ -575,21 +676,72 @@ def plot_RS_OF_fit(
     ax=None,
     sfx="",
     label_r2=True,
+    of_bins=None,
+    rs_bins=None,
+    tick_dict=None,
 ):
+    """Plot the fitted tuning of a neuron.
+
+    Args:
+        neurons_df (pd.DataFrame): DataFrame containing the fit parameters and R-squared
+            values for neurons.
+        roi (int): Index of the ROI (neuron) to plot.
+        model (str, optional): The model used for fitting (e.g., "g2d", "gadd", "gof",
+            "grs", "gratio"). Defaults to "g2d".
+        model_label (str, optional): Title label for the model plot. Defaults to "".
+        min_sigma (float, optional): Minimum standard deviation constraint for the
+            Gaussian fit. Defaults to 0.25.
+        vmin (float, optional): Minimum value for the heat map color mapping. Defaults
+            to 0.
+        vmax (float, optional): Maximum value for the heat map color mapping. Defaults
+            to None.
+        log_range (dict, optional): Dictionary defining the logarithmic range and bin
+            numbers for running speed and optic flow.
+        cbar_width (float, optional): Width of the colorbar. Defaults to 0.01.
+        xlabel (str, optional): Label for the x-axis. Defaults to "Running speed (cm/s)"
+        ylabel (str, optional): Label for the y-axis. Defaults to "Optical flow speed
+            \n(degrees/s)".
+        fontsize_dict (dict, optional): Dictionary specifying font sizes for title,
+            label, tick, and legend.
+        ax (matplotlib.axes.Axes, optional): Matplotlib axes to plot on. Defaults to
+            None.
+        sfx (str, optional): Suffix to append to the column names when extracting fit
+            parameters. Defaults to "".
+        label_r2 (bool, optional): Whether to display the R-squared value of the fit on
+            the plot. Defaults to True.
+        of_bins (numpy.ndarray, optional): Array of optic flow bin edges in degrees/s.
+            Defaults to None.
+        rs_bins (numpy.ndarray, optional): Array of running speed bin edges in cm/s.
+            Defaults to None.
+        tick_dict (dict, optional): Dictionary containing custom tick locations and
+            labels for both axes. Defaults to None.
+
+    Returns:
+        tuple[float, float]: A tuple containing the minimum and maximum values of the
+            predicted responses (vmin, vmax).
     """
-    Plot the fitted tuning of a neuron.
-    """
+
     if ax is None:
         ax = plt.gca()
-    rs = (
-        np.logspace(
-            log_range["rs_bin_log_min"], log_range["rs_bin_log_max"], 100, base=10
-        )
-        / 100
-    )  # cm/s --> m/s
-    of = np.logspace(
-        log_range["of_bin_log_min"], log_range["of_bin_log_max"], 100, base=10
-    )  # deg/s
+
+    log_base = log_range.get("log_base", 10)
+
+    if rs_bins is not None:
+        rs_min_log = np.log(rs_bins[rs_bins > 0].min()) / np.log(log_base)
+        rs_max_log = np.log(rs_bins.max()) / np.log(log_base)
+    else:
+        rs_min_log = log_range["rs_bin_log_min"]
+        rs_max_log = log_range["rs_bin_log_max"]
+
+    if of_bins is not None:
+        of_min_log = np.log(of_bins[of_bins > 0].min()) / np.log(log_base)
+        of_max_log = np.log(of_bins.max()) / np.log(log_base)
+    else:
+        of_min_log = log_range["of_bin_log_min"]
+        of_max_log = log_range["of_bin_log_max"]
+
+    rs = np.logspace(rs_min_log, rs_max_log, 100, base=log_base) / 100  # cm/s --> m/s
+    of = np.logspace(of_min_log, of_max_log, 100, base=log_base)  # deg/s
 
     rs_grid, of_grid = np.meshgrid(np.log(rs), np.log(of))
     if model == "gof":
@@ -607,7 +759,14 @@ def plot_RS_OF_fit(
         "gratio": fit_gaussian_blob.gaussian_1d,
         "grs": fit_gaussian_blob.gaussian_1d,
     }
-    popt = neurons_df[f"rsof_popt_closedloop_{model}{sfx}"].iloc[roi]
+    if "roi" in neurons_df.columns and (neurons_df.roi == roi).any():
+        popt = neurons_df.loc[
+            neurons_df.roi == roi, f"rsof_popt_closedloop_{model}{sfx}"
+        ].iloc[0]
+    else:
+        print(f"ROI {roi} not found in neurons_df, using iloc!!!!!!")
+        popt = neurons_df[f"rsof_popt_closedloop_{model}{sfx}"].iloc[roi]
+
     if np.all(np.isnan(popt)):
         print("All NaN roi, not plotting. ")
         return
@@ -617,45 +776,44 @@ def plot_RS_OF_fit(
         min_sigma=min_sigma,
     ).reshape((len(of), len(rs)))
 
+    if vmin is None:
+        vmin = np.nanmin(resp_pred)
+    if vmax is None:
+        vmax = np.nanmax(resp_pred)
+
+    extent = [
+        rs_min_log,
+        rs_max_log,
+        of_min_log,
+        of_max_log,
+    ]
     im = ax.imshow(
         resp_pred,
         origin="lower",
-        extent=[
-            log_range["rs_bin_log_min"],
-            log_range["rs_bin_log_max"],
-            log_range["of_bin_log_min"],
-            log_range["of_bin_log_max"],
-        ],
+        extent=extent,
         aspect="equal",
         cmap="Reds",
         vmin=vmin,
         vmax=vmax,
     )
-    plt.xticks(
-        [0, 1, 2],
-        labels=["1", "10", "100"],
-        fontsize=fontsize_dict["tick"],
-    )
-    plt.yticks(
-        [-1, 0, 1, 2, 3],
-        labels=["0.1", "1", "10", "100", "1000"],
-        fontsize=fontsize_dict["tick"],
-    )
-    if cbar_width is not None:
-        rect = ax.get_position()
-        fig = ax.get_figure()
 
-        ax2 = fig.add_axes(
-            [
-                rect.x0 + rect.width * 0.75,
-                rect.y0,
-                cbar_width,
-                rect.height * 0.9,
-            ]
+    if (rs_bins is None) and (of_bins is None):
+        # standard log scale ticks
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels(["1", "10", "100"], fontsize=fontsize_dict["tick"])
+        ax.set_yticks([-1, 0, 1, 2, 3])
+        ax.set_yticklabels(
+            ["0.1", "1", "10", "100", "1000"], fontsize=fontsize_dict["tick"]
         )
-        fig.colorbar(im, cax=ax2, label="\u0394F/F")
-        ax2.tick_params(labelsize=fontsize_dict["legend"])
-        ax2.set_ylabel("\u0394F/F", rotation=270, fontsize=fontsize_dict["legend"])
+    else:
+        # Use custom bins/ticks mechanism
+        set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict)
+
+    if cbar_width is not None:
+        fig = ax.get_figure()
+        add_rsof_colorbar(fig, ax, im, cbar_width, vmin, vmax, fontsize_dict)
+
+    plt.sca(ax)
     plt.title(
         model_label,
         fontdict={"fontsize": fontsize_dict["label"]},
@@ -986,7 +1144,6 @@ def plot_2d_hist(
     # ax.xaxis.set_minor_locator(MultipleLocator(2))
     ax.minorticks_on()
     ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
-    # ax.tick_params(axis='both', which='minor', bottom=True, labelsize=fontsize_dict["tick"])
     if aspect_equal:
         ax.set_aspect("equal")
     plotting_utils.despine()
