@@ -409,6 +409,7 @@ def plot_RS_OF_matrix(
     rs_bins=None,
     tick_dict=None,
     use_full_range=False,
+    return_matrix=False,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -440,6 +441,8 @@ def plot_RS_OF_matrix(
             automatically generated ticks. Defaults to None.
         use_full_range (bool, optional): whether to use the entire dimension range for
             visualization. Defaults to False.
+        return_matrix (bool, optional): whether to return the raw 2D binned matrix
+            alongside the color limits. Defaults to False.
 
     Returns:
         float: min value of the heatmap.
@@ -649,6 +652,8 @@ def plot_RS_OF_matrix(
     if cbar_width is not None:
         add_rsof_colorbar(fig, ax, im, cbar_width, vmin, vmax, fontsize_dict)
 
+    if return_matrix:
+        return vmin, vmax, bin_means[1:, 1:].T
     return vmin, vmax
 
 
@@ -679,6 +684,7 @@ def plot_RS_OF_fit(
     of_bins=None,
     rs_bins=None,
     tick_dict=None,
+    mask=None,
 ):
     """Plot the fitted tuning of a neuron.
 
@@ -715,6 +721,8 @@ def plot_RS_OF_fit(
             Defaults to None.
         tick_dict (dict, optional): Dictionary containing custom tick locations and
             labels for both axes. Defaults to None.
+        mask (numpy.ndarray, optional): Boolean array of True/False values to grey out
+            specific bins of the fit, matching the shape of the extent. Defaults to None.
 
     Returns:
         tuple[float, float]: A tuple containing the minimum and maximum values of the
@@ -796,6 +804,11 @@ def plot_RS_OF_fit(
         vmin=vmin,
         vmax=vmax,
     )
+
+    if mask is not None:
+        mask_rgba = np.zeros((mask.shape[0], mask.shape[1], 4))
+        mask_rgba[mask] = [0.5, 0.5, 0.5, 1.0]
+        ax.imshow(mask_rgba, origin="lower", extent=extent, aspect="equal")
 
     if (rs_bins is None) and (of_bins is None):
         # standard log scale ticks
