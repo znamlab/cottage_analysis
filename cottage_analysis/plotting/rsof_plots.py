@@ -310,6 +310,7 @@ def plot_RS_OF_matrix(
     tick_dict=None,
     extent=None,
     use_full_range=False,
+    return_matrix=False,
 ):
     """Plot the heatmap of the tuning matrix of a neuron.
 
@@ -337,6 +338,12 @@ def plot_RS_OF_matrix(
             motor speed difference ratio. Defaults to 0.3.
         of_bins (np.ndarray, optional): optical flow bins. Defaults to None.
         rs_bins (np.ndarray, optional): running speed bins. Defaults to None.
+        tick_dict (dict, optional): custom tick dictionary to use instead of
+            automatically generated ticks. Defaults to None.
+        use_full_range (bool, optional): whether to use the entire dimension range for
+            visualization. Defaults to False.
+        return_matrix (bool, optional): whether to return the raw 2D binned matrix
+            alongside the color limits. Defaults to False.
 
     Returns:
         float: min value of the heatmap.
@@ -539,16 +546,10 @@ def plot_RS_OF_matrix(
             axis="both", which="major", labelsize=fontsize_dict["tick"]
         )
     if cbar_width is not None:
-        ax2 = fig.add_axes(
-            [plot_x + plot_width * 1.1, plot_y, plot_width * 0.05, plot_height / 2]
-        )
-        cbar = fig.colorbar(im, cax=ax2, label="\u0394F/F")
-        ax2.tick_params(labelsize=fontsize_dict["legend"], length=2, pad=2)
-        ax2.set_ylabel(
-            "\u0394F/F", rotation=270, fontsize=fontsize_dict["legend"], labelpad=4
-        )
-        cbar.set_ticks([vmin, vmax])
+        add_rsof_colorbar(fig, ax, im, cbar_width, vmin, vmax, fontsize_dict)
 
+    if return_matrix:
+        return vmin, vmax, bin_means[1:, 1:].T
     return vmin, vmax
 
 
@@ -576,10 +577,54 @@ def plot_RS_OF_fit(
     ax=None,
     sfx="",
     label_r2=True,
+    of_bins=None,
+    rs_bins=None,
+    tick_dict=None,
+    mask=None,
 ):
+    """Plot the fitted tuning of a neuron.
+
+    Args:
+        neurons_df (pd.DataFrame): DataFrame containing the fit parameters and R-squared
+            values for neurons.
+        roi (int): Index of the ROI (neuron) to plot.
+        model (str, optional): The model used for fitting (e.g., "g2d", "gadd", "gof",
+            "grs", "gratio"). Defaults to "g2d".
+        model_label (str, optional): Title label for the model plot. Defaults to "".
+        min_sigma (float, optional): Minimum standard deviation constraint for the
+            Gaussian fit. Defaults to 0.25.
+        vmin (float, optional): Minimum value for the heat map color mapping. Defaults
+            to 0.
+        vmax (float, optional): Maximum value for the heat map color mapping. Defaults
+            to None.
+        log_range (dict, optional): Dictionary defining the logarithmic range and bin
+            numbers for running speed and optic flow.
+        cbar_width (float, optional): Width of the colorbar. Defaults to 0.01.
+        xlabel (str, optional): Label for the x-axis. Defaults to "Running speed (cm/s)"
+        ylabel (str, optional): Label for the y-axis. Defaults to "Optical flow speed
+            \n(degrees/s)".
+        fontsize_dict (dict, optional): Dictionary specifying font sizes for title,
+            label, tick, and legend.
+        ax (matplotlib.axes.Axes, optional): Matplotlib axes to plot on. Defaults to
+            None.
+        sfx (str, optional): Suffix to append to the column names when extracting fit
+            parameters. Defaults to "".
+        label_r2 (bool, optional): Whether to display the R-squared value of the fit on
+            the plot. Defaults to True.
+        of_bins (numpy.ndarray, optional): Array of optic flow bin edges in degrees/s.
+            Defaults to None.
+        rs_bins (numpy.ndarray, optional): Array of running speed bin edges in cm/s.
+            Defaults to None.
+        tick_dict (dict, optional): Dictionary containing custom tick locations and
+            labels for both axes. Defaults to None.
+        mask (numpy.ndarray, optional): Boolean array of True/False values to grey out
+            specific bins of the fit, matching the shape of the extent. Defaults to None.
+
+    Returns:
+        tuple[float, float]: A tuple containing the minimum and maximum values of the
+            predicted responses (vmin, vmax).
     """
-    Plot the fitted tuning of a neuron.
-    """
+
     if ax is None:
         ax = plt.gca()
     rs = (
@@ -635,7 +680,7 @@ def plot_RS_OF_fit(
 
     if mask is not None:
         mask_rgba = np.zeros((mask.shape[0], mask.shape[1], 4))
-        mask_rgba[mask] = [0.8, 0.8, 0.8, 1.0]
+        mask_rgba[mask] = [0.5, 0.5, 0.5, 1.0]
         ax.imshow(mask_rgba, origin="lower", extent=extent, aspect="equal")
 
     if (rs_bins is None) and (of_bins is None):
