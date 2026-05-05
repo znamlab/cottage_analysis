@@ -9,6 +9,7 @@ import matplotlib.patches as patches
 
 import scipy
 import seaborn as sns
+from functools import partial
 
 import flexiznam as flz
 from cottage_analysis.analysis import (
@@ -631,16 +632,24 @@ def plot_RS_OF_fit(
         vmin=vmin,
         vmax=vmax,
     )
-    plt.xticks(
-        [0, 1, 2],
-        labels=["1", "10", "100"],
-        fontsize=fontsize_dict["tick"],
-    )
-    plt.yticks(
-        [-1, 0, 1, 2, 3],
-        labels=["0.1", "1", "10", "100", "1000"],
-        fontsize=fontsize_dict["tick"],
-    )
+
+    if mask is not None:
+        mask_rgba = np.zeros((mask.shape[0], mask.shape[1], 4))
+        mask_rgba[mask] = [0.8, 0.8, 0.8, 1.0]
+        ax.imshow(mask_rgba, origin="lower", extent=extent, aspect="equal")
+
+    if (rs_bins is None) and (of_bins is None):
+        # standard log scale ticks
+        ax.set_xticks([0, 1, 2])
+        ax.set_xticklabels(["1", "10", "100"], fontsize=fontsize_dict["tick"])
+        ax.set_yticks([-1, 0, 1, 2, 3])
+        ax.set_yticklabels(
+            ["0.1", "1", "10", "100", "1000"], fontsize=fontsize_dict["tick"]
+        )
+    else:
+        # Use custom bins/ticks mechanism
+        set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict)
+
     if cbar_width is not None:
         rect = ax.get_position()
         fig = ax.get_figure()
@@ -1761,3 +1770,130 @@ def plot_treadmill_vs_closedloop_matrix(
         axes[1].set_ylabel("")
     plt.tight_layout()
     return fig, axes
+
+
+def plot_rsof_slice(
+    ax,
+    b_s,
+    b_e,
+    tav_df,
+    of_bins,
+    gaussian_func_=None,
+    lower_bounds=None,
+    upper_bounds=None,
+    niter=10,
+    of_min=2**-8,
+    of_max=2**12,
+    plot_trials=True,
+    fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
+):
+    """
+    Filters data for a specific running speed bin, fits a 1D Gaussian to optic flow responses,
+    and plots the raw data, fit, and binned mean with bootstrap CI.
+    """
+    if gaussian_func_ is None:
+        gaussian_func_ = partial(fit_gaussian_blob.gaussian_1d, min_sigma=0.25)
+    if lower_bounds is None:
+        lower_bounds = [-np.inf, np.log(of_min), -np.inf, -np.inf]
+    if upper_bounds is None:
+        upper_bounds = [np.inf, np.log(of_max), np.inf, np.inf]
+
+    # 1. Filter data
+    mid_val = np.sqrt(b_s * b_e)
+    ax.text(
+        1,
+        0.8,
+        f"RS: {int(mid_val)}",
+        transform=ax.transAxes,
+        horizontalalignment="right",
+        fontsize=fontsize_dict.get("legend", 10),
+    )
+    ok_speed = (tav_df.rs > b_s) & (tav_df.rs < b_e)
+
+    if not np.any(ok_speed):
+        print(f"No trials found for RS {b_s:.1f}-{b_e:.1f}")
+        return
+    of = tav_df[ok_speed].of.values
+    dff = tav_df[ok_speed].dff.values
+
+    # Remove NaNs
+    valid = ~(np.isnan(of) | np.isnan(dff))
+    of = of[valid]
+    dff = dff[valid]
+
+    if len(of) == 0:
+        return
+    if plot_trials:
+        # 2. Scatter raw data
+        ax.scatter(of, dff, color="k", s=20, alpha=0.3, zorder=5, clip_on=False)
+
+    # 3. Perform 1D Gaussian Fit in log-space
+    # Initial guess: centre on the bin with the highest mean response
+    m, _, _ = scipy.stats.binned_statistic(of, dff, bins=of_bins, statistic="mean")
+    bin_mid = np.diff(of_bins) / 2 + of_bins[:-1]
+
+    def p0_func():
+        best_of = bin_mid[np.nanargmax(m)]
+        return np.array(
+            [
+                np.random.normal(),  # log_amplitude
+                np.log(best_of),  # x0 (log OF)
+                np.random.normal(),  # log_sigma_x2
+                np.random.normal(),  # offset
+            ]
+        )
+
+    popt, rsq = common_utils.iterate_fit(
+        func=gaussian_func_,
+        X=np.log(of),
+        y=dff,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        niter=niter,
+        p0_func=p0_func,
+    )
+
+    # Plot the fit
+    x_fine = np.linspace(np.log(of_min), np.log(of_max), 300)
+    resp_pred = gaussian_func_(x_fine, *popt)
+    ax.plot(
+        np.exp(x_fine),
+        resp_pred,
+        color="darkorchid",
+        lw=2,
+        label=f"pref OF={np.exp(popt[1]):.2f}, R²={rsq:.2f}",
+    )
+    # 4. Calculate Binned Stats & Bootstrap CI
+    bin_ids = np.digitize(of, of_bins) - 1
+
+    ci_low = []
+    ci_high = []
+    for i in range(len(bin_mid)):
+        samples = dff[bin_ids == i]
+        if len(samples) > 1:  # Bootstrap requires at least 2 samples
+            low, high = common_utils.get_bootstrap_ci(samples, n_bootstraps=1000)
+            ci_low.append(low[0])
+            ci_high.append(high[0])
+        else:
+            # Fallback for bins with 0 or 1 samples
+            val = samples[0] if len(samples) == 1 else np.nan
+            ci_low.append(val)
+            ci_high.append(val)
+
+    # 5. Plot Errorbars
+    err = [m - ci_low, ci_high - m]
+    ax.errorbar(
+        bin_mid,
+        m,
+        yerr=err,
+        fmt="o",
+        color="darkorchid",
+        label="Binned mean & 95% CI",
+        capsize=3,
+        zorder=10,
+    )
+    # 6. Axis Styling
+    ax.set_xscale("log")
+    ax.set_ylabel(r"$\Delta$F/F", fontsize=fontsize_dict["label"])
+    ax.axhline(0, color="grey", lw=0.5, zorder=-10)
+    ax.set_xlim(of_bins[0], of_bins[-1])
