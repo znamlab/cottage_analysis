@@ -1,5 +1,25 @@
 # Change log
 
+## v2.1.0
+
+### Features
+- **Ephys Pipeline**: Improved ephys pipeline and added `export_onix_to_si` for easier integration with SpikeInterface.
+- **RF Analysis**: Refactored RF analysis into separate fitting and analysis modules. Added support for multidepth fits and masking coefficients.
+- **Plotting Enhancements**:
+    - Added many new options to `RS_OF_matrix` plots (synchronized `vmax`, custom ticks, grey background, toggleable R2 text labels).
+    - Added multidepth options for stimulus reconstruction plots.
+    - Updated `plot_treadmill_vs_closedloop_matrix` for better comparison.
+- **Simulation**: Added functionality to simulate treadmill data as a 2D Gaussian plus an exponential kernel.
+- **Utilities**: Added utility functions to interpret Gaussian fit parameters and added progress bars for long-running tasks like widefield video transformation.
+
+### Bugfixes
+- **Data Alignment**: Fixed a critical mismatch between dataframe index and ROI locations in `neurons_df`.
+- **Fitting**: Excluded negative Optic Flow (OF) in RS/OF fits and fixed `fit_preferred_depth` for open-loop sessions.
+- **Robustness**: Improved NaN handling across RF analysis functions and `neurons_df` generation.
+- **Compatibility**: Fixed several Pandas warnings and adapted the codebase for Pandas 3.0.
+
+### Dependencies
+- Added `seaborn` to `install_requires` in `setup.py`.
 
 ## v2.0.4
 
