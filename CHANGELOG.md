@@ -1,5 +1,13 @@
 # Change log
 
+## v2.1.1
+
+### Features
+- Added `plot_rsof_slice` to `rsof_plots.py` for 1D Gaussian fitting and plotting of optic flow responses in specific running speed bins.
+
+### Minor changes
+- Updated mask color in `plot_RS_OF_fit` for improved visibility.
+
 ## v2.1.0
 
 ### Features
