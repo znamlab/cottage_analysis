@@ -1162,6 +1162,21 @@ def get_preferred_rs(popt):
     return np.exp(popt[1]) * 100
 
 
+def get_preferred_of(popt):
+    """Calculate preferred optic flow in deg/s.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Preferred OF in deg/s.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 3:
+        return np.nan
+    # y0 (popt[2]) is log(OF) in deg/s
+    return np.exp(popt[2])
+
+
 def get_semimajor_length(popt, min_sigma=0.25):
     """Get the length of the semi-major axis
 
