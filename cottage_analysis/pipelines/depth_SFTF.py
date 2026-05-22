@@ -34,7 +34,7 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     trials_df_all_sftf, dff_mean_all_sftf = gratings.analyze_grating_responses(
         project=project,
         session=session_name,
-        filter_datasets={"anatomical_only": 3},
+        filter_datasets={"anatomical_only": 3, "ast_neuropil": False},
         photodiode_protocol=photodiode_protocol,
         protocol_base="SFTF",
     )
