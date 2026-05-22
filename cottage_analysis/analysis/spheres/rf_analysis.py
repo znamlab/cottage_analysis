@@ -25,6 +25,7 @@ def find_rf_centers(
     is_closed_loop=1,
     resolution=5,
     coef=None,
+    use_multidepth=False,
 ):
     """Find the spatial center and best depth of receptive fields.
 
@@ -53,6 +54,8 @@ def find_rf_centers(
         sfx = "_closedloop"
     else:
         sfx = "_openloop"
+    if use_multidepth:
+        sfx += "_multidepth"
     if coef is None:
         coef = np.stack(neurons_df[f"rf_coef{sfx}"].values)
     coef_ = (coef[:, :, :-1]).reshape(
@@ -82,8 +85,14 @@ def find_rf_centers(
     azi[is_all_nan] = np.nan
     ele[is_all_nan] = np.nan
     idepth[is_all_nan] = np.nan
-    neurons_df["rf_azi"] = azi
-    neurons_df["rf_ele"] = ele
+    if use_multidepth:
+        col_azi = f"rf_azi_multidepth"
+        col_ele = f"rf_ele_multidepth"
+    else:
+        col_azi = f"rf_azi"
+        col_ele = f"rf_ele"
+    neurons_df[col_azi] = azi
+    neurons_df[col_ele] = ele
     return azi, ele, idepth, coef
 
 

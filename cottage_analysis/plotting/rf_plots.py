@@ -105,6 +105,7 @@ def plot_rf(
     use_multidepth=False,
     extent=(0, 120, -40, 40),
     clim=None,
+    plot_yticklabels=True,
 ):
     if use_ipsi:
         sfx = "_ipsi"
@@ -149,6 +150,8 @@ def plot_rf(
             ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"])
         ax.tick_params(axis="both", labelsize=fontsize_dict["tick"], length=1.5)
         ax.set_xticks([0, 60, 120])
+        if not plot_yticklabels:
+            ax.set_yticklabels([])
         axes.append(ax)
         if i == ndepths - 1:
             ax_pos = ax.get_position()
@@ -395,8 +398,8 @@ def plot_rf_3d(neurons_df, rois, depths, savepath, fontsize_dict):
             yaxis=dict(
                 title="Azimuth<br>(degrees)",
                 nticks=4,
-                range=[0, 90],
-                tickvals=[0, 45, 90],
+                range=[0, 120],
+                tickvals=[0, 60, 120],
                 **font_params,
             ),
             zaxis=dict(

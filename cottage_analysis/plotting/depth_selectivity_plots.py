@@ -1024,8 +1024,14 @@ def plot_example_fov(
             & (neurons_df["iscell"] == 1)
         ]
     else:
-        coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
-        coef_ipsi = np.stack(neurons_df[f"rf_coef_ipsi_closedloop"].values)
+        if "multidepth" in col:
+            coef = np.stack(neurons_df[f"rf_coef_closedloop_multidepth"].values)
+            coef_ipsi = np.stack(
+                neurons_df[f"rf_coef_ipsi_closedloop_multidepth"].values
+            )
+        else:
+            coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
+            coef_ipsi = np.stack(neurons_df[f"rf_coef_ipsi_closedloop"].values)
         sig, _ = rf_fitting.find_sig_rfs(
             np.swapaxes(np.swapaxes(coef, 0, 2), 0, 1),
             np.swapaxes(np.swapaxes(coef_ipsi, 0, 2), 0, 1),
@@ -1057,7 +1063,7 @@ def plot_example_fov(
                 log=True,
                 cmap=cmap,
             )
-        elif col == "rf_azi":
+        elif "rf_azi" in col:
             rgba_color = plotting_utils.get_color(
                 n[col],
                 azi_min,
@@ -1065,7 +1071,7 @@ def plot_example_fov(
                 log=False,
                 cmap=cmap,
             )
-        elif col == "rf_ele":
+        elif "rf_ele" in col:
             rgba_color = plotting_utils.get_color(
                 n[col],
                 ele_min,
