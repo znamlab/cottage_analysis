@@ -126,7 +126,7 @@ def main(
     # Synchronisation
     print("")
     print("---Start synchronisation...---")
-    if protocol_base == "SpheresTubeMotor":
+    if protocol_base in ["SpheresTubeMotor", "SpheresTubeTreadmill"]:
         run_rf = False
         _, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
