@@ -142,7 +142,6 @@ def main(
             use_onix=use_onix,
             sync_kwargs=sync_kwargs,
             ephys_kwargs=ephys_kwargs,
-            protocol_base=protocol_base,
         )
     else:
         _, trials_df_all = spheres.sync_all_recordings(

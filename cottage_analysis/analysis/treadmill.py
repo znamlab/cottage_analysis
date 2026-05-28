@@ -166,13 +166,15 @@ def sync_all_recordings(
             for the calcium simulation. Defaults to 0.15.
         sim_make_circular (bool, optional): If True, make the Gaussian circular by setting
             the major axis to the minor axis length. Defaults to True.
+        protocol_base (str, optional): Protocol base name. Defaults to
+            "SphereTubeMotor".
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
             for all recordings, one concatenated trials_df for all recordings.
     """
     if protocol_base is None:
-        protocol_base = "SphereTubeTreadmill"
+        protocol_base = "SphereTubeMotor"
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
