@@ -124,6 +124,7 @@ def sync_all_recordings(
     sim_tau_decay=0.8,
     sim_tau_rise=0.15,
     sim_make_circular=True,
+    protocol_base=None,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -170,7 +171,8 @@ def sync_all_recordings(
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
             for all recordings, one concatenated trials_df for all recordings.
     """
-    protocol_base = "SpheresTubeMotor"
+    if protocol_base is None:
+        protocol_base = "SphereTubeTreadmill"
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
