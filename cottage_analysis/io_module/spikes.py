@@ -28,7 +28,7 @@ def load_kilosort_folder(kilosort_folder, return_multiunit=True):
         ks_data[w] = pd.read_csv(target, sep="\t")
     if "info" not in ks_data:
         if "decoder_label" in ks_data:
-            print("Using automatic decoder label")
+            print("Using automatic decoder label for spike sorting")
             lab = ks_data["decoder_label"].copy()
             sua = lab["decoder_label"] == "sua"
             lab.loc[sua, "decoder_label"] = "good"

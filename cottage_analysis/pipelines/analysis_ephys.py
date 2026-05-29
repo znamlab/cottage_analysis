@@ -126,7 +126,7 @@ def main(
     # Synchronisation
     print("")
     print("---Start synchronisation...---")
-    if protocol_base in ["SpheresTubeMotor", "SpheresTubeTreadmill"]:
+    if protocol_base in ["SpheresTubeMotor", "SphereTubeTreadmill"]:
         run_rf = False
         _, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
@@ -161,7 +161,7 @@ def main(
         )
 
     # Add trial number to flexilims
-    if protocol_base == "SpheresTubeMotor":
+    if protocol_base in ["SpheresTubeMotor", "SphereTubeTreadmill"]:
         trial_no = len(trials_df_all)
         flz.update_entity(
             "session",
@@ -202,7 +202,7 @@ def main(
             "niter": 10,
             "min_sigma": 0.5,
         }
-        if protocol_base == "SpheresTubeMotor":
+        if protocol_base in ["SpheresTubeMotor", "SphereTubeTreadmill"]:
             special_sfx_base = "_treadmill"
             # With treadmill, depth min and max can be lot smaller/larger
             depth_fit_params["depth_max"] = np.ceil(trials_df_all.depth.max())
@@ -306,7 +306,10 @@ def main(
     if run_rsof_fit:
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
-        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        if protocol_base in ["SpheresTubeMotor", "SphereTubeTreadmill"]:
+            special_sfx_base = "_treadmill"
+        else:
+            special_sfx_base = ""
         common_params = dict(
             rs_thr=0.01,
             param_range={
