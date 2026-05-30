@@ -41,6 +41,7 @@ def main(
     ephys_dataset_type: str = "aind_pipeline",
     filter_datasets: str = None,
     protocol_base: str = "SphereTube",
+    treadmill_params=None,
 ):
     """
     Main function to analyze a session.
@@ -65,12 +66,17 @@ def main(
         ephys_dataset_type(str): datatype for spikes. Default 'aind_pipeline'
         filter_datasets(str): json string of datasets to filter.
         protocol_base(str): protocol base name. Default "SphereTube".
+        treadmill_params(str or dict): json string (or dict) of treadmill hardware
+            parameters. Keys: ``steps_per_rev``, ``microstepping``, ``wheel_radius``,
+            ``actual_motor_speed``. Defaults to ``DEFAULT_TREADMILL_PARAMS``.
     """
     unit_list = None  # removed option to select specific units
     if isinstance(sync_kwargs, str):
         sync_kwargs = json.loads(sync_kwargs)
     if isinstance(filter_datasets, str):
         filter_datasets = json.loads(filter_datasets)
+    if isinstance(treadmill_params, str):
+        treadmill_params = json.loads(treadmill_params)
     print(
         f"""
         -------------------------------------
@@ -142,6 +148,7 @@ def main(
             use_onix=use_onix,
             sync_kwargs=sync_kwargs,
             ephys_kwargs=ephys_kwargs,
+            treadmill_params=treadmill_params,
         )
     else:
         _, trials_df_all = spheres.sync_all_recordings(
@@ -518,6 +525,8 @@ def main(
             scripts_name=f"{session_name}_basic_vis_plots",
             protocol_base=protocol_base,
             recording_type="behaviour",
+            ephys_kwargs=ephys_kwargs,
+            treadmill_params=treadmill_params,
         )
         if run_rsof_fit_on_separate_slurm_jobs:
             print(f"Started plottingjob {out}")

@@ -155,6 +155,7 @@ def load_session(
     recording_type="two_photon",
     ephys_kwargs=None,
     return_neurons_df=True,
+    treadmill_params=None,
 ):
     """Load data from a single session.
 
@@ -178,6 +179,9 @@ def load_session(
         return_neurons_df (bool, optional): Whether to load and return neurons_df.
             Will slowly become True as results are saved in intermediate files. Defaults
             to True.
+        treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
+            Passed to ``treadmill.sync_all_recordings``. Defaults to
+            ``DEFAULT_TREADMILL_PARAMS``.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -219,6 +223,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
+            treadmill_params=treadmill_params,
         )
     else:
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
