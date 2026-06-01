@@ -358,7 +358,7 @@ def download_full_flexilims_database(flexilims_session, target_file=None):
     return json_data
 
 
-def get_si_metadata(flexilims_session, session):
+def get_si_metadata(flexilims_session, session, filter_datasets):
     recording = flz.get_children(
         parent_name=session,
         flexilims_session=flexilims_session,
@@ -379,7 +379,7 @@ def get_si_metadata(flexilims_session, session):
             flexilims_session=flexilims_session,
             origin_name=recording.name,
             dataset_type="suite2p_traces",
-            filter_datasets={"anatomical_only": 3},
+            filter_datasets=filter_datasets,
             allow_multiple=False,
             return_dataseries=False,
         )
