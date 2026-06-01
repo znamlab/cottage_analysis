@@ -113,10 +113,10 @@ def find_roi_centers(neurons_df, stat):
         neurons_df.at[roi, "center_y"] = np.mean(ypix)
 
 
-def determine_roi_locations(neurons_df, flexilims_session, session, suite2p_ds):
+def determine_roi_locations(neurons_df, flexilims_session, session, suite2p_ds, filter_datasets):
     stat = np.load(suite2p_ds.path_full / "plane0" / "stat.npy", allow_pickle=True)
     ops = np.load(suite2p_ds.path_full / "plane0" / "ops.npy", allow_pickle=True).item()
-    si_metadata = common_utils.get_si_metadata(flexilims_session, session)
+    si_metadata = common_utils.get_si_metadata(flexilims_session, session, filter_datasets)
     if "FrameData" in si_metadata.keys():
         neurons_df["z_position"] = si_metadata["FrameData"][
             "SI.hMotors.samplePosition"

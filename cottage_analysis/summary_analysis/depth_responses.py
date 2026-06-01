@@ -255,7 +255,8 @@ def get_psth_crossval_all_sessions(
             neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
 
             # Calculate dff psth crossval
-            # Get the responses for this session that are not included for calculating the cross-validated preferred depth
+            # Get the responses for this session that are not included for calculating 
+            # the cross-validated preferred depth
             choose_trials_resp = list(
                 set(neurons_df.depth_tuning_trials_closedloop.mode()[0].tolist())
                 - set(
