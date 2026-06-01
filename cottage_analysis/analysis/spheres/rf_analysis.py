@@ -358,6 +358,10 @@ def load_sig_rf(
 
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
+    filter_datasets_rois = filter_datasets.copy()
+    if "ast_neuropil" in filter_datasets.keys():
+        print("Ignoring ast_neuropil filter for ROI selection")
+        filter_datasets_rois.pop("ast_neuropil")
 
     if use_multidepth and use_cols is not None:
         sfx = "_closedloop_multidepth"
@@ -415,10 +419,11 @@ def load_sig_rf(
                 flexilims_session=flexilims_session,
                 origin_name=session,
                 dataset_type="suite2p_rois",
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_datasets_rois,
                 allow_multiple=False,
                 return_dataseries=False,
             )
+            assert suite2p_ds is not None, f"No suite2p ROIs found for session {session}"
             iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["session"] = session
