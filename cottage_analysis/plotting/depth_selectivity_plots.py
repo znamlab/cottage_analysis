@@ -505,6 +505,44 @@ def get_PSTH(
     frame_rate=15,
     compute_ci=True,
 ):
+    """Calculate the Peri-Stimulus Time Histogram (PSTH) / position-binned activity for a given ROI.
+
+    Args:
+        roi (int): ROI number.
+        psth (list or np.ndarray, optional): Pre-computed PSTH data. If empty, PSTH will
+            be calculated from trials_df. Defaults to [].
+        depth_list (list, optional): List of depth values. Defaults to [].
+        is_closed_loop (int, optional): Whether to use closed-loop (1) or open-loop (0) 
+            trials. Defaults to 1.
+        trials_df (pd.DataFrame, optional): Dataframe containing trial information. 
+            Defaults to None.
+        use_col (str, optional): The dataframe column name representing the activity 
+            metric (e.g. "dff"). Defaults to "dff".
+        rs_thr_min (float, optional): Minimum threshold of running speed for imaging 
+            frames (m/s). Defaults to None.
+        rs_thr_max (float, optional): Maximum threshold of running speed for imaging 
+            frames (m/s). Defaults to None.
+        still_only (bool, optional): Whether to only use frames when the mouse is 
+            stationary. Defaults to False.
+        still_time (float or int, optional): Number of seconds the mouse must stay still 
+            before a frame is taken. Defaults to 1.
+        max_distance (float or int, optional): Maximum distance in meters. Defaults to 6
+        min_distance (float or int, optional): Minimum distance in meters. Defaults to 0
+        nbins (int, optional): Number of bins to divide the distance. Defaults to 20.
+        bins (list or np.ndarray, optional): Custom bin edges. If provided, nbins is 
+            ignored. Defaults to [].
+        frame_rate (int, optional): Imaging frame rate in Hz. Defaults to 15.
+        compute_ci (bool, optional): Whether to compute bootstrap confidence intervals. 
+            Defaults to True.
+
+    Returns:
+        tuple: A tuple containing:
+            - all_means (np.ndarray): Binned mean activity of shape (len(depth_list) + 1
+                , nbins).
+            - all_ci (np.ndarray): Confidence intervals (lower, upper) of shape 
+                (2, len(depth_list) + 1, nbins).
+            - bin_centers (np.ndarray): Binned centers of distance of shape (nbins,).
+    """
     # confidence interval z calculation
     ci_range = 0.95
 
