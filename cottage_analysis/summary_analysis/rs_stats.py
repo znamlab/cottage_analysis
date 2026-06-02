@@ -4,7 +4,7 @@ from scipy.stats import pearsonr
 import flexiznam as flz
 from cottage_analysis.analysis import find_depth_neurons, spheres
 from cottage_analysis.pipelines import pipeline_utils
-from cottage_analysis.summary_analysis import depth_responses
+from cottage_analysis.plotting import depth_selectivity_plots
 
 
 def calculate_openloop_rs_correlation(
@@ -59,6 +59,7 @@ def get_rs_stats_all_sessions(
     corridor_length=6,
     blank_length=3,
     overwrite=False,
+    filter_datasets=None,
 ):
     """Calculate the PSTH for all sessions in session_list.
     Also calculate running speed PSTH; the correlation between actual and virtual running speeds for openloop sessions.
@@ -77,6 +78,7 @@ def get_rs_stats_all_sessions(
         corridor_length (float, optional): corridor length for one trial. Defaults to 6.
         blank_length (float, optional): length of blank period at each end of the corridor. Defaults to 0.
         overwrite (bool, optional): whether to overwrite the existing results or not. Defaults to False.
+        filter_datasets (dict, optional): filter datasets. Defaults to None.
 
     Returns:
         pd.DataFrame: concatenated neurons_df dataframe
@@ -144,13 +146,14 @@ def get_rs_stats_all_sessions(
             flexilims_session=flexilims_session,
             origin_name=session_name,
             dataset_type="suite2p_traces",
+            filter_datasets=filter_datasets
         )
         fs = list(suite2p_ds.values())[0][-1].extra_attributes["fs"]
         _, trials_df = spheres.sync_all_recordings(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=None,
-            filter_datasets={"anatomical_only": 3},
+            filter_datasets=filter_datasets,
             recording_type="two_photon",
             protocol_base="SpheresPermTubeReward",
             photodiode_protocol=photodiode_protocol,
@@ -170,7 +173,7 @@ def get_rs_stats_all_sessions(
             # Calculate the running speed psth
             print("Calculating running speed PSTH")
             # just for stim period
-            rs_psth_stim, _, _ = depth_responses.get_PSTH(
+            rs_psth_stim, _, _ = depth_selectivity_plots.get_PSTH(
                 trials_df=trials_df,
                 roi=0,
                 use_col="RS",
@@ -190,7 +193,7 @@ def get_rs_stats_all_sessions(
             )
 
             # stim + some blank period
-            rs_psth, _, _ = depth_responses.get_PSTH(
+            rs_psth, _, _ = depth_selectivity_plots.get_PSTH(
                 trials_df=trials_df,
                 roi=0,
                 use_col="RS",
@@ -231,7 +234,7 @@ def get_rs_stats_all_sessions(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets={"anatomical_only": 3},
+                filter_datasets=filter_datasets,
                 recording_type="two_photon",
                 is_closedloop=0,
                 protocol_base="SpheresPermTubeReward",

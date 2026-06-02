@@ -1185,12 +1185,12 @@ def plot_speed_trace(
         if OF_to_degree:  # to convert OF from rads/s to degrees/s
             param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([np.full(int(fs * 10), np.nan), param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"]
             param_trace = np.concatenate(
                 [np.full(len(blank_start), np.nan), param_trace]
             )
