@@ -241,7 +241,7 @@ def get_rs_stats_all_sessions(
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
                 resolution=5,
-                regenerate_frames=False,
+                do_regenerate_frames=False,
             )
             r, p = calculate_openloop_rs_correlation(
                 imaging_df_openloop, trials_df_original, separate_depths=False
