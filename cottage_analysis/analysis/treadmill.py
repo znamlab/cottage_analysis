@@ -192,7 +192,7 @@ def sync_all_recordings(
         sim_make_circular (bool, optional): If True, make the Gaussian circular by setting
             the major axis to the minor axis length. Defaults to True.
         protocol_base (str, optional): Protocol base name. Defaults to
-            "SphereTubeMotor".
+            "SpheresTubeMotor".
         treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
             Keys: ``steps_per_rev`` (int), ``microstepping`` (float),
             ``wheel_radius`` (float, cm), ``actual_motor_speed`` (dict mapping
@@ -203,7 +203,7 @@ def sync_all_recordings(
             for all recordings, one concatenated trials_df for all recordings.
     """
     if protocol_base is None:
-        protocol_base = "SphereTubeMotor"
+        protocol_base = "SpheresTubeMotor"
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
@@ -324,6 +324,7 @@ def sync_all_recordings(
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
             is_multidepth="multidepth" in recording.protocol,
+            imaging_df=imaging_df,
         )
         trials_df["recording"] = recording_name
 

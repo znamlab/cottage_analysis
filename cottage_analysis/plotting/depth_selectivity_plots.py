@@ -265,6 +265,10 @@ def plot_depth_tuning_curve(
         )
     # Load gaussian fit params for this roi
     if plot_fit:
+        if use_col not in neurons_df.columns:
+            print(f"Column '{use_col}' not found in neurons_df. Skipping fit plot.")
+            plot_fit = False
+    if plot_fit:
         popt = neurons_df.loc[roi, use_col]
         if np.any(np.isnan(popt)):
             print("All NaN dff. Not plotting")

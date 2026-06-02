@@ -533,6 +533,7 @@ def run_basic_plots(
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
     ephys_kwargs=None,
+    treadmill_params=None,
 ):
     """Run basic plots on a session.
 
@@ -543,24 +544,25 @@ def run_basic_plots(
         do_sta (bool, optional): whether to run sta plots. Defaults to True.
         do_basic_vis (bool, optional): whether to run basic visualisation plots.
             Defaults to True.
+        treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
+            Passed through to ``treadmill.sync_all_recordings``. Defaults to
+            ``DEFAULT_TREADMILL_PARAMS``.
     """
-    (
-        neurons_ds,
-        neurons_df,
-        _,
-        trials_df_all,
-        frames_all,
-        _,
-    ) = load_session(
+
+    _needs_frames = do_sta and (protocol_base != "SpheresTubeMotor")
+    session_data = load_session(
         project,
         session_name,
         photodiode_protocol,
-        regenerate_frames=True,
+        regenerate_frames=_needs_frames,
         filter_datasets=filter_datasets,
         protocol_base=protocol_base,
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
+        treadmill_params=treadmill_params,
     )
+    neurons_ds, neurons_df, _, trials_df_all = session_data[:4]
+    frames_all = session_data[4] if _needs_frames else None
 
     # Remove multidepth if there are any
     is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
@@ -578,14 +580,25 @@ def run_basic_plots(
         }
     }
     if do_basic_vis:
-        basic_vis_plots.basic_vis_session(
-            neurons_df=neurons_df,
-            trials_df=trials_df_all,
-            neurons_ds=neurons_ds,
-            **kwargs,
-        )
+        if protocol_base == "SpheresTubeMotor":
+            basic_vis_plots.basic_treadmill_session(
+                neurons_df=neurons_df,
+                trials_df=trials_df_all,
+                neurons_ds=neurons_ds,
+                **kwargs,
+            )
+        else:
+            basic_vis_plots.basic_vis_session(
+                neurons_df=neurons_df,
+                trials_df=trials_df_all,
+                neurons_ds=neurons_ds,
+                **kwargs,
+            )
 
     if not do_sta:
+        return
+    # STA/RF analysis requires sphere recordings with a depth axis – skip for treadmill
+    if protocol_base == "SpheresTubeMotor":
         return
     depth_list = find_depth_neurons.find_depth_list(trials_df_all)
     for is_closedloop in trials_df_all.closed_loop.unique():
@@ -593,7 +606,11 @@ def run_basic_plots(
             sfx = "_closedloop"
         else:
             sfx = "_openloop"
-        coef = np.stack(neurons_df[f"rf_coef{sfx}"], axis=2)
+        col = f"rf_coef{sfx}"
+        if col not in neurons_df.columns:
+            print(f"Column '{col}' not found in neurons_df, skipping STA plots.")
+            continue
+        coef = np.stack(neurons_df[col], axis=2)
         sta_plots.basic_vis_sta_session(
             coef=coef,
             neurons_df=neurons_df,

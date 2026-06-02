@@ -418,6 +418,7 @@ def search_param_log_trials(
     flexilims_session,
     vis_stim_recording=None,
     is_multidepth=False,
+    imaging_df=None,
 ):
     """Add the start param logger row and stop param logger row to each
     trial. This is required for regenerate_spheres.
@@ -430,8 +431,13 @@ def search_param_log_trials(
         vis_stim_recording (Series or str, optional): Visual
             stimulation recording. required if `recording` does not
             contain vis_stim info. Defaults to None.
-        multidepth (bool): if True, the depth is in the param log.
+        is_multidepth (bool): if True, the depth is in the param log.
             Defaults to False.
+        imaging_df (pd.DataFrame, optional): Imaging dataframe. Used as a
+            fallback when neither 'Radius' nor 'Depth' columns are present
+            in the param log. In that case, param log rows are matched to
+            trials by aligning HarpTime (which is shared between param_log
+            and imaging_df). Defaults to None.
 
     Returns:
         Dataframe: Dataframe that contails information for each trial.
@@ -465,6 +471,29 @@ def search_param_log_trials(
         # find the line of param_log at which trials start and stop
         param_log_start = p_log_simple[(p_log_simple["stim"] == 1)].index
         param_log_stop = p_log_simple[(p_log_simple["stim"] == 0)].index
+
+        # Fallback: if no stim column could be derived from param_log (neither
+        # 'Radius' nor 'Depth' present), align param log rows to trials via
+        # HarpTime, which is shared between param_log and imaging_df.
+        if len(param_log_start) == 0 and imaging_df is not None:
+            if "HarpTime" not in param_log.columns:
+                raise ValueError(
+                    "param_log has no 'Radius', 'Depth', or 'HarpTime' column; "
+                    "cannot determine trial boundaries in param_log."
+                )
+            param_log_harptime = param_log["HarpTime"].values
+            stim_starts = trials_df["imaging_harptime_stim_start"].values
+            stim_stops = trials_df["imaging_harptime_stim_stop"].values
+            param_log_start = param_log.index[
+                np.searchsorted(param_log_harptime, stim_starts, side="left").clip(
+                    0, len(param_log) - 1
+                )
+            ]
+            param_log_stop = param_log.index[
+                np.searchsorted(param_log_harptime, stim_stops, side="right").clip(
+                    0, len(param_log) - 1
+                )
+            ]
 
     # trial index for each row of param log
     trials_df["param_log_start"] = param_log_start[: len(trials_df)]
@@ -901,6 +930,7 @@ def _process_single_recording_for_session(
         flexilims_session=flexilims_session,
         vis_stim_recording=recording,
         is_multidepth=is_multidepth_protocol,
+        imaging_df=imaging_df,
     )
     if unit_ids is not None:
         # We have an ephys recording, add spk times
