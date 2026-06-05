@@ -579,6 +579,15 @@ def plot_RS_OF_matrix(
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
         ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=0)
     else:
+        (
+            ticks_select1,
+            ticks_select2,
+            bin_edges1,
+            bin_edges2,
+        ) = get_RS_OF_heatmap_axis_ticks(
+            log_range=log_range,
+            fontsize_dict=fontsize_dict,
+        )
         ax.set_xticks([])
         ax.set_yticks([])
 
