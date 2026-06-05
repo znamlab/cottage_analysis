@@ -40,7 +40,7 @@ def get_sessions(
     # get children is too slow. It's better to get everything and filter
     project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
     project_recordings = flz.get_entities(
-        "recording", flexilims_session=flexilims_session
+        "recording", flexilims_session=flexilims_session,
     )
     for mouse_id in mouse_list["id"].values:
         sessions_mouse = project_sessions[project_sessions.origin_id == mouse_id]
