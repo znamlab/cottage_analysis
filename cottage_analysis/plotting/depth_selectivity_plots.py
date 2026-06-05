@@ -163,6 +163,7 @@ def plot_depth_tuning_curve(
     plot_smooth=False,
     linewidth=3,
     linecolor="k",
+    fit_linecolor=None,
     markersize=5,
     markeredgecolor="k",
     closed_loop=1,
@@ -193,6 +194,7 @@ def plot_depth_tuning_curve(
         plot_smooth (bool, optional): Whether to plot smoothed tuning curve or not. Defaults to False.
         linewidth (int, optional): linewidth. Defaults to 3.
         linecolor (str, optional): linecolor of true data. Defaults to "k".
+        fit_linecolor (str, optional): linecolor of fitted tuning curve. Defaults to None.
         markersize (int, optional): markersize. Defaults to 5.
         markeredgecolor (str, optional): markeredgecolor. Defaults to "k".
         closed_loop (int, optional): whether it's closedloop or openloop. Defaults to 1.
@@ -207,6 +209,9 @@ def plot_depth_tuning_curve(
         ax = plt.gca()
     else:
         plt.sca(ax)
+
+    if fit_linecolor is None:
+        fit_linecolor = linecolor
 
     # Load average activity and confidence interval for this roi
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
@@ -279,7 +284,7 @@ def plot_depth_tuning_curve(
                 ax.plot(
                     np.log(x),
                     gaussian_arr,
-                    color=linecolor,
+                    color=fit_linecolor,
                     linewidth=linewidth,
                     label=label,
                 )
@@ -291,7 +296,7 @@ def plot_depth_tuning_curve(
             ax.plot(
                 np.log(x),
                 gaussian_arr,
-                color=linecolor,
+                color=fit_linecolor,
                 linewidth=linewidth,
                 label=label,
             )
@@ -306,7 +311,7 @@ def plot_depth_tuning_curve(
         plt.yticks(
             [
                 0,
-                common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
+                ylim[1],
             ],
             fontsize=fontsize_dict["tick"],
         )
@@ -512,34 +517,34 @@ def get_PSTH(
         psth (list or np.ndarray, optional): Pre-computed PSTH data. If empty, PSTH will
             be calculated from trials_df. Defaults to [].
         depth_list (list, optional): List of depth values. Defaults to [].
-        is_closed_loop (int, optional): Whether to use closed-loop (1) or open-loop (0) 
+        is_closed_loop (int, optional): Whether to use closed-loop (1) or open-loop (0)
             trials. Defaults to 1.
-        trials_df (pd.DataFrame, optional): Dataframe containing trial information. 
+        trials_df (pd.DataFrame, optional): Dataframe containing trial information.
             Defaults to None.
-        use_col (str, optional): The dataframe column name representing the activity 
+        use_col (str, optional): The dataframe column name representing the activity
             metric (e.g. "dff"). Defaults to "dff".
-        rs_thr_min (float, optional): Minimum threshold of running speed for imaging 
+        rs_thr_min (float, optional): Minimum threshold of running speed for imaging
             frames (m/s). Defaults to None.
-        rs_thr_max (float, optional): Maximum threshold of running speed for imaging 
+        rs_thr_max (float, optional): Maximum threshold of running speed for imaging
             frames (m/s). Defaults to None.
-        still_only (bool, optional): Whether to only use frames when the mouse is 
+        still_only (bool, optional): Whether to only use frames when the mouse is
             stationary. Defaults to False.
-        still_time (float or int, optional): Number of seconds the mouse must stay still 
+        still_time (float or int, optional): Number of seconds the mouse must stay still
             before a frame is taken. Defaults to 1.
         max_distance (float or int, optional): Maximum distance in meters. Defaults to 6
         min_distance (float or int, optional): Minimum distance in meters. Defaults to 0
         nbins (int, optional): Number of bins to divide the distance. Defaults to 20.
-        bins (list or np.ndarray, optional): Custom bin edges. If provided, nbins is 
+        bins (list or np.ndarray, optional): Custom bin edges. If provided, nbins is
             ignored. Defaults to [].
         frame_rate (int, optional): Imaging frame rate in Hz. Defaults to 15.
-        compute_ci (bool, optional): Whether to compute bootstrap confidence intervals. 
+        compute_ci (bool, optional): Whether to compute bootstrap confidence intervals.
             Defaults to True.
 
     Returns:
         tuple: A tuple containing:
             - all_means (np.ndarray): Binned mean activity of shape (len(depth_list) + 1
                 , nbins).
-            - all_ci (np.ndarray): Confidence intervals (lower, upper) of shape 
+            - all_ci (np.ndarray): Confidence intervals (lower, upper) of shape
                 (2, len(depth_list) + 1, nbins).
             - bin_centers (np.ndarray): Binned centers of distance of shape (nbins,).
     """
