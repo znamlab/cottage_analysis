@@ -101,8 +101,7 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
-
+    recordings = recordings[recordings.protocol == protocol_base]
     for i, recording_name in enumerate(recordings.name):
         recording = flz.get_entity(
             datatype="recording",

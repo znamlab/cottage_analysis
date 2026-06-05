@@ -115,6 +115,8 @@ def sbatch_session(
             args += f",PROTOCOL_BASE={value}"
         elif key == "use_annotated":
             args += f",USE_ANNOTATED={value}"
+        elif key == "ast_neuropil":
+            args += f",AST_NEUROPIL={value}"
         elif key not in ["log_fname", "log_path"]:
             args += f",{key.upper()}={int(value)}"
 
