@@ -413,7 +413,7 @@ def process_imaging_df(
     if "actual_motor_speed" in treadmill_params:
         imaging_df["MotorSpeed"] = imaging_df.MotorSpeed.map(
             treadmill_params["actual_motor_speed"]
-        )
+        ).fillna(imaging_df.MotorSpeed)
 
     # 1. Find physical trial starts and ends
     # Find trial starts, defined as first frame of motor running
