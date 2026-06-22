@@ -33,12 +33,13 @@ def rolling_average(arr, window, axis=0):
     if arr.ndim == 1:
         return pd.Series(arr).rolling(window=window, min_periods=1).mean().values
     else:
-        return (
-            pd.DataFrame(arr)
-            .rolling(window=window, axis=axis, min_periods=1)
-            .mean()
-            .values
-        )
+        df = pd.DataFrame(arr)
+        if axis == 1:
+            df = df.T
+        result = df.rolling(window=window, min_periods=1).mean()
+        if axis == 1:
+            result = result.T
+        return result.values
 
 
 def downsample(arr, factor, mode="average"):
