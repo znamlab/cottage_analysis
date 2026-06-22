@@ -247,7 +247,17 @@ def generate_trials_df(
     # Assign trial no, depth, start/stop time, start/stop imaging volume to trials_df
     # harptime are imaging trigger harp time
     trials_df.trial_no = np.arange(len(start_volume_stim))
-    trials_df.depth = pd.Series(imaging_df.loc[start_volume_stim].depth.values)
+
+    # Use median of positive/valid depths during the trial to avoid ITI -99.99 boundary
+    depths = []
+    for start, stop in zip(start_volume_stim, stop_volume_stim):
+        trial_depths = imaging_df.loc[start:stop, "depth"]
+        valid_depths = trial_depths[(trial_depths.notnull()) & (trial_depths > 0)]
+        if len(valid_depths) > 0:
+            depths.append(np.median(valid_depths))
+        else:
+            depths.append(imaging_df.loc[start, "depth"])
+    trials_df.depth = pd.Series(depths)
     trials_df.imaging_harptime_stim_start = imaging_df.loc[
         start_volume_stim
     ].imaging_harptime.values
