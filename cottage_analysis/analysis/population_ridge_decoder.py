@@ -18,7 +18,7 @@ from scipy.stats import pearsonr
 
 from sklearn.model_selection import KFold
 from sklearn.linear_model import Ridge
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 
@@ -283,6 +283,7 @@ def fit_ridge_fold(
     r2 = r2_score(y_test, y_pred)
     r_val, _ = pearsonr(y_test, y_pred)
     mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
 
     return {
         "y_pred": y_pred,
@@ -291,6 +292,7 @@ def fit_ridge_fold(
         "r2": r2,
         "pearson_r": r_val,
         "mse": mse,
+        "mae": mae,
     }
 
 
@@ -458,6 +460,10 @@ def continuous_decoder(
             zscore_dff=zscore_dff,
             verbose=verbose,
         )
+        if np.any(all_nan_rois):
+            coef_full = np.full(n_total_neurons, np.nan)
+            coef_full[valid_rois_idx] = res["model"].coef_
+            res["model"].coef_ = coef_full
         fold_results.append(res)
 
     # Aggregate across folds
@@ -476,6 +482,7 @@ def continuous_decoder(
     overall_r2 = r2_score(y_test_all, y_pred_all)
     overall_r, _ = pearsonr(y_test_all, y_pred_all)
     overall_mse = mean_squared_error(y_test_all, y_pred_all)
+    overall_mae = mean_absolute_error(y_test_all, y_pred_all)
 
     # Reconstruct full-length per-trial arrays containing NaNs for invalid frames
     total_frames = sum(df[dff_col].apply(len).values)
@@ -502,11 +509,13 @@ def continuous_decoder(
         print(f"  R²       = {overall_r2:.4f}")
         print(f"  Pearson r = {overall_r:.4f}")
         print(f"  MSE       = {overall_mse:.4f}")
+        print(f"  MAE       = {overall_mae:.4f}")
 
     return {
         "r2": overall_r2,
         "pearson_r": overall_r,
         "mse": overall_mse,
+        "mae": overall_mae,
         "y_test": y_test_all,
         "y_pred": y_pred_all,
         "y_test_trials": y_test_series,
@@ -614,10 +623,11 @@ def decode_with_neuron_subsets(
     n_total_neurons = trials_df["dff_stim"].iloc[0].shape[1]
 
     if subset_sizes is None:
-        steps = [2, 5, 10, 20, 50, 100, 200, 500, 1000]
+        steps = [5, 10, 20, 50, 100, 200, 500, 1000]
         subset_sizes = [s for s in steps if s < n_total_neurons]
         if n_total_neurons not in subset_sizes:
             subset_sizes.append(n_total_neurons)
+        subset_sizes.append("inf")
 
     # Convert 'inf' (string or float) to n_total_neurons
     parsed_sizes = []
@@ -667,12 +677,15 @@ def decode_with_neuron_subsets(
 
     results = {
         "subset_sizes": subset_sizes,
+        "n_resamples": [],
         "r2_mean": [],
         "r2_std": [],
         "pearson_r_mean": [],
         "pearson_r_std": [],
         "mse_mean": [],
         "mse_std": [],
+        "mae_mean": [],
+        "mae_std": [],
         "raw_results": {},
     }
 
@@ -685,7 +698,7 @@ def decode_with_neuron_subsets(
     pbar = tqdm(total=total_steps, desc=f"Subsampling ({target_name})")
 
     for size in subset_sizes:
-        r2s, rs, mses = [], [], []
+        r2s, rs, mses, maes = [], [], [], []
         size_raw = []
 
         # Get the number of runs for this size
@@ -713,16 +726,20 @@ def decode_with_neuron_subsets(
             r2s.append(res["r2"])
             rs.append(res["pearson_r"])
             mses.append(res["mse"])
+            maes.append(res["mae"])
             size_raw.append(res)
 
             pbar.update(1)
 
+        results["n_resamples"].append(runs)
         results["r2_mean"].append(np.mean(r2s))
         results["r2_std"].append(np.std(r2s) if len(r2s) > 1 else 0.0)
         results["pearson_r_mean"].append(np.mean(rs))
         results["pearson_r_std"].append(np.std(rs) if len(rs) > 1 else 0.0)
         results["mse_mean"].append(np.mean(mses))
         results["mse_std"].append(np.std(mses) if len(mses) > 1 else 0.0)
+        results["mae_mean"].append(np.mean(maes))
+        results["mae_std"].append(np.std(maes) if len(maes) > 1 else 0.0)
         results["raw_results"][size] = size_raw
 
     pbar.close()
