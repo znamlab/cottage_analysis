@@ -17,7 +17,7 @@ from .fit_gaussian_blob import fit_rs_of_tuning
 
 DEFAULT_TREADMILL_PARAMS = {
     "steps_per_rev": 200,
-    "microstepping": 1 / 16,
+    "microstepping": 1 / 4,
     "wheel_radius": 9.8,  # cm
     # Small error in the motor speed
     "actual_motor_speed": {
