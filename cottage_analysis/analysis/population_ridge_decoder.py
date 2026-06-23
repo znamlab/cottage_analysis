@@ -376,6 +376,19 @@ def continuous_decoder(
             lambda row: np.repeat(row[target_col], len(row["dff_stim"])), axis=1
         )
 
+    # Check if we have any all-NaN ROIs
+    dff_col_to_check = "dff_stim"
+    all_dff = np.vstack(df[dff_col_to_check].values)
+    all_nan_rois = np.all(np.isnan(all_dff), axis=0)
+    valid_rois_idx = np.where(~all_nan_rois)[0]
+    n_total_neurons = all_nan_rois.shape[0]
+
+    if np.any(all_nan_rois):
+        print(
+            f"continuous_decoder: Excluding {np.sum(all_nan_rois)} ROIs that contain only NaN values."
+        )
+        df["dff_stim"] = df["dff_stim"].apply(lambda x: x[:, valid_rois_idx])
+
     # Preprocessing: rolling average + downsample
     if rolling_window is not None and downsample_window is not None:
         df = downsample_for_regression(
@@ -585,6 +598,19 @@ def decode_with_neuron_subsets(
             - ``mse_mean``, ``mse_std``: Mean and std of Mean Squared Error.
             - ``raw_results``: Dict mapping each size to its list of individual resample run dicts.
     """
+    # Exclude all-NaN ROIs before subset analysis
+    all_dff = np.vstack(trials_df["dff_stim"].values)
+    all_nan_rois = np.all(np.isnan(all_dff), axis=0)
+    valid_rois_idx = np.where(~all_nan_rois)[0]
+    if np.any(all_nan_rois):
+        print(
+            f"decode_with_neuron_subsets: Excluding {np.sum(all_nan_rois)} ROIs that contain only NaN values."
+        )
+        trials_df = trials_df.copy()
+        trials_df["dff_stim"] = trials_df["dff_stim"].apply(
+            lambda x: x[:, valid_rois_idx]
+        )
+
     n_total_neurons = trials_df["dff_stim"].iloc[0].shape[1]
 
     if subset_sizes is None:
