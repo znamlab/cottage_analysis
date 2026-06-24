@@ -45,6 +45,8 @@ def run_session(
     is_treadmill: bool = None,
     cut_treadmill: bool = False,
     max_rs2motor_diff: float = None,
+    grid_keys: list = None,
+    grid_name: str = None,
 ):
     """
     Run Ridge decoder for a single session and save results to parquet.
@@ -196,6 +198,28 @@ def run_session(
         )
         return
 
+    # Filter trials by grid_keys if specified
+    if grid_keys is not None and len(grid_keys) > 0:
+        print(
+            f"\nFiltering trials to grid_keys ({len(grid_keys)} conditions)...",
+            flush=True,
+        )
+        grid_keys_set = set(tuple(k) for k in grid_keys)
+        expected_OF = trials_df_all.expected_optic_flow_stim.map(np.nanmedian)
+        expected_RS = trials_df_all.MotorSpeed_stim.map(np.nanmedian)
+        mask = pd.Series(
+            [tuple(pair) in grid_keys_set for pair in zip(expected_RS, expected_OF)],
+            index=trials_df_all.index,
+        )
+        trials_df_all = trials_df_all[mask]
+        print(f"  Trials after filtering: {len(trials_df_all)}", flush=True)
+        if len(trials_df_all) == 0:
+            print(
+                f"Warning: No trials match grid_keys for session {sess}. Skipping.",
+                flush=True,
+            )
+            return
+
     n_rois = trials_df_all["dff_stim"].iloc[0].shape[1]
     print(
         f"Number of ROIs: {n_rois}, Number of trials: {len(trials_df_all)}", flush=True
@@ -284,6 +308,8 @@ def run_session(
         suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
     else:
         suffix = "_closedloop"
+    if grid_name is not None:
+        suffix = f"{suffix}_{grid_name}"
     if has_results:
         neurons_parquet_path = session_folder / f"ridge_decoder_neurons{suffix}.parquet"
         predictions_parquet_path = (
