@@ -8,6 +8,15 @@ from znamutils.decorators import slurm_it
 from cottage_analysis.analysis import spheres, treadmill, population_ridge_decoder
 
 
+def safe_log(arr):
+    target = np.array(arr, dtype=float)
+    invalid = target <= 0
+    target[invalid] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.log(target)
+
+
 # Define the Slurm-wrapped function for processing a single session
 @slurm_it(
     conda_env="v1_depth_map",
@@ -34,6 +43,8 @@ def run_session(
     run_neuron_subsets: bool = False,
     subset_sizes: list = None,
     is_treadmill: bool = None,
+    cut_treadmill: bool = False,
+    max_rs2motor_diff: float = None,
 ):
     """
     Run Ridge decoder for a single session and save results to parquet.
@@ -41,6 +52,10 @@ def run_session(
     """
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3, "ast_neuropil": False}
+
+    max_rs2motor_diff_val = max_rs2motor_diff
+    if cut_treadmill and max_rs2motor_diff_val is None:
+        max_rs2motor_diff_val = 0.3
 
     flexilims_session = flz.get_flexilims_session(project_id=project)
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -123,9 +138,10 @@ def run_session(
     def _do_sync(filt):
         if is_treadmill:
             print(
-                f"Detected treadmill session. Synchronizing with no-cut version...",
+                f"Detected treadmill session. Synchronizing with {'cut' if cut_treadmill else 'no-cut'} version...",
                 flush=True,
             )
+            acc_time = 0.13 if cut_treadmill else None
             return treadmill.sync_all_recordings(
                 session_name=sess,
                 flexilims_session=flexilims_session,
@@ -134,7 +150,7 @@ def run_session(
                 recording_type="two_photon",
                 photodiode_protocol=photodiode_protocol,
                 return_volumes=True,
-                acceleration_time=None,
+                acceleration_time=acc_time,
                 cut_trial_end=None,
                 trial_duration=None,
             )
@@ -218,6 +234,7 @@ def run_session(
                     k_folds=k_folds,
                     random_state=random_state,
                     verbose=False,
+                    max_rs2motor_diff=max_rs2motor_diff_val,
                 )
                 if alphas is not None:
                     decoder_kwargs["alphas"] = alphas
@@ -263,7 +280,10 @@ def run_session(
                 )
 
     # 4. Save results to parquet if we have any successful decodes
-    suffix = "_motor" if is_treadmill else "_closedloop"
+    if is_treadmill:
+        suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+    else:
+        suffix = "_closedloop"
     if has_results:
         neurons_parquet_path = session_folder / f"ridge_decoder_neurons{suffix}.parquet"
         predictions_parquet_path = (
@@ -275,6 +295,119 @@ def run_session(
 
         print(f"Saved: {neurons_parquet_path}", flush=True)
         print(f"Saved: {predictions_parquet_path}", flush=True)
+
+        if is_treadmill:
+            trial_averaged_rows = []
+            for cond in conditions:
+                cond_str = "closedloop" if cond == 1 else "openloop"
+                pred_cols = [
+                    f"ridge_pred_OF_stim_{cond_str}",
+                    f"ridge_pred_RS_stim_{cond_str}",
+                    f"ridge_pred_depth_{cond_str}",
+                ]
+                if not all(col in predictions_df_ridge.columns for col in pred_cols):
+                    continue
+
+                cond_trials = trials_df_all[trials_df_all.closed_loop == cond].copy()
+                if len(cond_trials) == 0:
+                    continue
+
+                cond_trials["expected_OF"] = cond_trials.expected_optic_flow_stim.map(
+                    np.nanmedian
+                )
+                cond_trials["expected_RS"] = cond_trials.MotorSpeed_stim.map(
+                    np.nanmedian
+                )
+
+                cond_trials["RS_pred"] = predictions_df_ridge[
+                    f"ridge_pred_RS_stim_{cond_str}"
+                ].loc[cond_trials.index]
+                cond_trials["OF_pred"] = predictions_df_ridge[
+                    f"ridge_pred_OF_stim_{cond_str}"
+                ].loc[cond_trials.index]
+                cond_trials["depth_pred"] = predictions_df_ridge[
+                    f"ridge_pred_depth_{cond_str}"
+                ].loc[cond_trials.index]
+                cond_trials["depth_actual_log"] = predictions_df_ridge[
+                    f"ridge_true_depth_{cond_str}"
+                ].loc[cond_trials.index]
+
+                rs_errs = []
+                for rs, pred in zip(cond_trials["RS_stim"], cond_trials["RS_pred"]):
+                    if pred is None or (isinstance(pred, float) and np.isnan(pred)):
+                        rs_errs.append(np.nan)
+                    else:
+                        rs_errs.append((safe_log(rs) - pred) ** 2)
+                cond_trials["RS_error"] = rs_errs
+
+                of_errs = []
+                for of, pred in zip(cond_trials["OF_stim"], cond_trials["OF_pred"]):
+                    if pred is None or (isinstance(pred, float) and np.isnan(pred)):
+                        of_errs.append(np.nan)
+                    else:
+                        of_errs.append((safe_log(of) - pred) ** 2)
+                cond_trials["OF_error"] = of_errs
+
+                depth_errs = []
+                for d_true, pred in zip(
+                    cond_trials["depth_actual_log"], cond_trials["depth_pred"]
+                ):
+                    if pred is None or (isinstance(pred, float) and np.isnan(pred)):
+                        depth_errs.append(np.nan)
+                    else:
+                        depth_errs.append((d_true - pred) ** 2)
+                cond_trials["depth_error"] = depth_errs
+
+                for (of_val, rs_val), tdf in cond_trials.groupby(
+                    ["expected_OF", "expected_RS"]
+                ):
+                    part = tdf[
+                        [
+                            "RS_stim",
+                            "OF_stim",
+                            "depth_actual_log",
+                            "RS_pred",
+                            "OF_pred",
+                            "depth_pred",
+                            "OF_error",
+                            "RS_error",
+                            "depth_error",
+                        ]
+                    ]
+                    if len(part) == 0:
+                        continue
+
+                    averaged_row = {
+                        "condition": cond_str,
+                        "expected_OF": of_val,
+                        "expected_RS": rs_val,
+                        "depth": tdf.depth.mean(),
+                    }
+                    for col in part.columns:
+                        valid_arrays = [
+                            arr
+                            for arr in part[col]
+                            if isinstance(arr, (np.ndarray, list, pd.Series))
+                        ]
+                        if len(valid_arrays) == 0:
+                            averaged_row[col] = np.nan
+                            continue
+                        min_len = min(len(arr) for arr in valid_arrays)
+                        truncated_arrays = [arr[:min_len] for arr in valid_arrays]
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", category=RuntimeWarning)
+                            averaged_row[col] = np.nanmean(
+                                np.stack(truncated_arrays), axis=0
+                            )
+                    trial_averaged_rows.append(averaged_row)
+
+            if trial_averaged_rows:
+                trial_averaged_df = pd.DataFrame(trial_averaged_rows)
+                trial_averaged_parquet_path = (
+                    session_folder / f"ridge_decoder_trial_averaged{suffix}.parquet"
+                )
+                trial_averaged_df.to_parquet(trial_averaged_parquet_path, index=False)
+                print(f"Saved: {trial_averaged_parquet_path}", flush=True)
     else:
         print(f"No Ridge decoder results obtained for session {sess}.", flush=True)
 
@@ -305,6 +438,7 @@ def run_session(
                         log_transform=log_transform,
                         rs_thr=rs_thr,
                         k_folds=k_folds,
+                        max_rs2motor_diff=max_rs2motor_diff_val,
                     )
                     if alphas is not None:
                         subset_kwargs["alphas"] = alphas

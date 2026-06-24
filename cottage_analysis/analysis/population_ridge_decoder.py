@@ -113,6 +113,7 @@ def split_train_test(
     random_state=42,
     log_transform=True,
     rs_thr=None,
+    max_rs2motor_diff=None,
 ):
     """Split trials into k train/test folds.
 
@@ -128,6 +129,8 @@ def split_train_test(
         log_transform (bool): Whether to log-transform the target.
         rs_thr (float or None): If not None, exclude frames where RS_stim
             (or RS_stim_downsample if present) is below this threshold.
+        max_rs2motor_diff (float or None): If not None, exclude frames where
+            max_abs_rs2motor_diff_ratio (or downsample) is above or equal to this.
 
     Returns:
         dict: With keys ``dff_train``, ``dff_test``, ``y_train``, ``y_test``,
@@ -164,6 +167,21 @@ def split_train_test(
                 else:
                     rs_arr = np.hstack(trials_df.iloc[idx]["RS_stim"].values)
                 valid &= rs_arr >= rs_thr
+
+            # Optional rs2motor diff filter
+            if max_rs2motor_diff is not None:
+                ratio_col_ds = "max_abs_rs2motor_diff_ratio_downsample"
+                if ratio_col_ds in trials_df.columns:
+                    ratio_arr = np.hstack(trials_df.iloc[idx][ratio_col_ds].values)
+                elif "max_abs_rs2motor_diff_ratio_stim" in trials_df.columns:
+                    ratio_arr = np.hstack(
+                        trials_df.iloc[idx]["max_abs_rs2motor_diff_ratio_stim"].values
+                    )
+                else:
+                    ratio_arr = None
+
+                if ratio_arr is not None:
+                    valid &= ratio_arr < max_rs2motor_diff
 
             dff_valid = dff[valid]
             target_valid = target[valid]
@@ -316,6 +334,7 @@ def continuous_decoder(
     shuffle_control=False,
     zscore_dff=True,
     verbose=True,
+    max_rs2motor_diff=None,
 ):
     """Decode a continuous variable from population neural activity.
 
@@ -412,6 +431,22 @@ def continuous_decoder(
                     x, factor=round(downsample_window * frame_rate), mode="average"
                 )
             )
+        # Also downsample max_abs_rs2motor_diff_ratio_stim if we have a max_rs2motor_diff
+        if max_rs2motor_diff is not None:
+            ratio_col = "max_abs_rs2motor_diff_ratio_stim"
+            if ratio_col in df.columns:
+                df["max_abs_rs2motor_diff_ratio_rolling"] = df[ratio_col].apply(
+                    lambda x: rolling_average(
+                        x, window=round(rolling_window * frame_rate), axis=0
+                    )
+                )
+                df["max_abs_rs2motor_diff_ratio_downsample"] = df[
+                    "max_abs_rs2motor_diff_ratio_rolling"
+                ].apply(
+                    lambda x: downsample(
+                        x, factor=round(downsample_window * frame_rate), mode="average"
+                    )
+                )
         dff_col = "dff_stim_downsample"
         target_col_ds = f"{target_col}_downsample"
     else:
@@ -444,6 +479,7 @@ def continuous_decoder(
         random_state=random_state,
         log_transform=log_transform,
         rs_thr=rs_thr,
+        max_rs2motor_diff=max_rs2motor_diff,
     )
 
     # Fit each fold

@@ -24,6 +24,8 @@ def main(
     random_state: int = 42,
     run_neuron_subsets: bool = True,
     subset_sizes: list[int] = None,
+    cut_treadmill: bool = False,
+    max_rs2motor_diff: float = None,
 ):
     """
     Run Ridge decoder (RS/OF/depth) for sessions of a project and save results as parquet files.
@@ -45,6 +47,8 @@ def main(
         random_state (int): Random seed for reproducibility. Default 42.
         run_neuron_subsets (bool): Run decoder with neuron subsets and save results. Default True.
         subset_sizes (list[int]): Neuron subset sizes to test. None = auto.
+        cut_treadmill (bool): Whether to cut/exclude the acceleration period and transient periods. Default False.
+        max_rs2motor_diff (float): Maximum absolute running speed to motor speed ratio threshold. Default None.
     """
     flexilims_session = flz.get_flexilims_session(project_id=project)
 
@@ -117,7 +121,10 @@ def main(
 
     for i, (sess, is_treadmill) in enumerate(runs):
         sess_type = "motor" if is_treadmill else "closed-loop"
-        suffix = "_motor" if is_treadmill else "_closedloop"
+        if is_treadmill:
+            suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+        else:
+            suffix = "_closedloop"
         print(
             f"\n========================================\n"
             f"Submitting/Processing run {i+1}/{len(runs)}: {sess} ({sess_type})\n"
@@ -152,6 +159,8 @@ def main(
                 slurm_folder=slurm_folder,
                 scripts_name=f"ridge_decoder_{sess}{suffix}",
                 is_treadmill=is_treadmill,
+                cut_treadmill=cut_treadmill,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
         except Exception as e:
             print(
