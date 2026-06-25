@@ -267,6 +267,31 @@ def gaussian_multiplicative(
     return g
 
 
+def gaussian_product(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
+):
+    """Product of independent RS and OF Gaussians (separable, no rotation)."""
+    (rs, of) = xy_tuple
+    g = gaussian_2mult(
+        (rs, of),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+    )
+    return g
+
+
 def gabor_2d(
     xy_tuple,
     log_amplitude,
@@ -648,6 +673,39 @@ def initial_fit_conditions(
                 offset=np.random.normal(),
             )
 
+    elif model == "gaussian_product":
+        model_sfx = "_gprod"
+        lower_bounds = GaussianMultiplicativeParams(
+            log_amplitude=-np.inf,
+            x0=np.log(param_range["rs_min"]),
+            y0=np.log(param_range["of_min"]),
+            log_sigma_x2=-np.inf,
+            log_sigma_y2=-np.inf,
+            offset=-np.inf,
+        )
+        upper_bounds = GaussianMultiplicativeParams(
+            log_amplitude=np.inf,
+            x0=np.log(param_range["rs_max"]),
+            y0=np.log(param_range["of_max"]),
+            log_sigma_x2=np.inf,
+            log_sigma_y2=np.inf,
+            offset=np.inf,
+        )
+
+        def p0_func():
+            return GaussianMultiplicativeParams(
+                log_amplitude=np.random.normal(),
+                x0=np.random.uniform(
+                    np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
+                ),
+                y0=np.random.uniform(
+                    np.log(param_range["of_min"]), np.log(param_range["of_max"])
+                ),
+                log_sigma_x2=np.random.normal(),
+                log_sigma_y2=np.random.normal(),
+                offset=np.random.normal(),
+            )
+
     return model_sfx, lower_bounds, upper_bounds, p0_func
 
 
@@ -1003,6 +1061,17 @@ def fit_rs_of_tuning(
                             roi,
                             f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = np.exp(popt[2])
+
+                    elif model == "gaussian_product":
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.exp(popt[1])
+                        # rad/s
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.radians(np.exp(popt[2]))
 
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
