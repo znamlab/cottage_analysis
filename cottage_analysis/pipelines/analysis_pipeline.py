@@ -465,6 +465,8 @@ def main(
             ("gaussian_RS", None, 5),
             ("gaussian_multiplicative", None, 1),
             ("gaussian_multiplicative", None, 5),
+            ("gaussian_product", None, 1),
+            ("gaussian_product", None, 5),
         ]
 
         for model, trials, k_folds in to_do:
