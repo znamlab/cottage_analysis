@@ -9,6 +9,8 @@ from scipy import stats
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from cottage_analysis.summary_analysis import get_session_list
+from pathlib import Path
 
 
 def concatenate_all_neurons_df(
@@ -70,3 +72,377 @@ def concatenate_all_neurons_df(
             print(f"ERROR: SESSION {session}: {filename} not found")
 
     return neurons_df_all
+
+
+def load_project_subsets(
+    project_or_session,
+    session_list=None,
+    filename=None,
+    session_to_exclude=None,
+    cut_treadmill=False,
+):
+    """Load and concatenate subset parquet files for a project.
+
+    Args:
+        project_or_session (str or flexilims.Flexilims): Project name or flexilims session.
+        session_list (list of str, optional): List of sessions to load. If None, queries all V1 motor sessions.
+        filename (str, optional): Name of the subsets parquet file.
+        session_to_exclude (list of str, optional): List of sessions to exclude.
+        cut_treadmill (bool): Whether to load the cut or no-cut version. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Concatenated subset results.
+    """
+    if filename is None:
+        suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+        filename = f"ridge_decoder_neuron_subsets{suffix}.parquet"
+
+    if isinstance(project_or_session, str):
+        flexilims_session = flz.get_flexilims_session(project_id=project_or_session)
+    else:
+        flexilims_session = project_or_session
+
+    if session_list is None:
+        session_list = get_session_list.get_motor_session_list(flexilims_session)
+
+    project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
+
+    all_subsets = []
+    for session_name in session_list:
+        if session_to_exclude is not None:
+            if session_name in session_to_exclude:
+                continue
+        if session_name in project_sessions.index:
+            nominal_depth = project_sessions.loc[session_name, "nominal_depth"]
+        else:
+            print(f"Session {session_name} not found in session entities. Skipping.")
+            continue
+
+        neurons_ds = flz.get_datasets(
+            origin_name=session_name,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            filter_datasets={"annotated": True},
+            allow_multiple=True,
+        )
+        if not neurons_ds:
+            neurons_ds = flz.get_datasets(
+                origin_name=session_name,
+                dataset_type="neurons_df",
+                flexilims_session=flexilims_session,
+                allow_multiple=True,
+            )
+
+        if not neurons_ds:
+            print(f"Skipping {session_name}: No neurons_df dataset found.")
+            continue
+
+        ds = neurons_ds[0]
+        session_folder = Path(ds.path_full).parent
+        subsets_parquet_path = session_folder / filename
+
+        if subsets_parquet_path.exists():
+            try:
+                df = pd.read_parquet(subsets_parquet_path)
+                df["session"] = session_name
+                if isinstance(nominal_depth, (list, np.ndarray, pd.Series)):
+                    resolved_depth = np.mean(nominal_depth)
+                else:
+                    resolved_depth = nominal_depth
+                df["nominal_depth"] = resolved_depth
+                all_subsets.append(df)
+            except Exception as e:
+                print(f"Error loading parquet for {session_name}: {e}")
+        else:
+            print(
+                f"No subsets parquet found for {session_name} at {subsets_parquet_path}"
+            )
+
+    if all_subsets:
+        return pd.concat(all_subsets, ignore_index=True)
+    else:
+        return pd.DataFrame()
+
+
+def load_project_predictions(
+    project_or_session,
+    session_list=None,
+    filename=None,
+    session_to_exclude=None,
+    cut_treadmill=False,
+):
+    """Load and concatenate prediction parquet files for a project.
+
+    Same pattern as :func:`load_project_subsets`: iterates over motor sessions,
+    locates ``session_folder`` via the ``neurons_df`` dataset, loads the parquet,
+    and adds ``session`` and ``nominal_depth`` columns.
+
+    Args:
+        project_or_session (str or flexilims.Flexilims): Project name or
+            flexilims session.
+        session_list (list of str, optional): List of sessions to load. If
+            ``None``, queries all motor sessions.
+        filename (str, optional): Name of the predictions parquet file.
+        session_to_exclude (list of str, optional): Sessions to skip.
+        cut_treadmill (bool): Whether to load the cut or no-cut version. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Concatenated predictions with columns including
+            ``trial_no``, ``ridge_pred_*``, ``ridge_true_*``, ``session``,
+            and ``nominal_depth``.
+    """
+    if filename is None:
+        suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+        filename = f"ridge_decoder_predictions{suffix}.parquet"
+    if isinstance(project_or_session, str):
+        flexilims_session = flz.get_flexilims_session(project_id=project_or_session)
+    else:
+        flexilims_session = project_or_session
+
+    if session_list is None:
+        session_list = get_session_list.get_motor_session_list(flexilims_session)
+
+    project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
+
+    all_predictions = []
+    for session_name in session_list:
+        if session_to_exclude is not None:
+            if session_name in session_to_exclude:
+                continue
+        if session_name in project_sessions.index:
+            nominal_depth = project_sessions.loc[session_name, "nominal_depth"]
+        else:
+            print(f"Session {session_name} not found in session entities. Skipping.")
+            continue
+
+        neurons_ds = flz.get_datasets(
+            origin_name=session_name,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            filter_datasets={"annotated": True},
+            allow_multiple=True,
+        )
+        if not neurons_ds:
+            neurons_ds = flz.get_datasets(
+                origin_name=session_name,
+                dataset_type="neurons_df",
+                flexilims_session=flexilims_session,
+                allow_multiple=True,
+            )
+
+        if not neurons_ds:
+            print(f"Skipping {session_name}: No neurons_df dataset found.")
+            continue
+
+        ds = neurons_ds[0]
+        session_folder = Path(ds.path_full).parent
+        predictions_parquet_path = session_folder / filename
+
+        if predictions_parquet_path.exists():
+            try:
+                df = pd.read_parquet(predictions_parquet_path)
+                df["session"] = session_name
+                if isinstance(nominal_depth, (list, np.ndarray, pd.Series)):
+                    resolved_depth = np.mean(nominal_depth)
+                else:
+                    resolved_depth = nominal_depth
+                df["nominal_depth"] = resolved_depth
+                all_predictions.append(df)
+            except Exception as e:
+                print(f"Error loading parquet for {session_name}: {e}")
+        else:
+            print(
+                f"No predictions parquet found for {session_name} "
+                f"at {predictions_parquet_path}"
+            )
+
+    if all_predictions:
+        return pd.concat(all_predictions, ignore_index=True)
+    else:
+        return pd.DataFrame()
+
+
+def load_project_neurons(
+    project_or_session,
+    session_list=None,
+    filename=None,
+    session_to_exclude=None,
+    cut_treadmill=False,
+):
+    """Load and concatenate neuron parquet files for a project.
+
+    Args:
+        project_or_session (str or flexilims.Flexilims): Project name or flexilims session.
+        session_list (list of str, optional): List of sessions to load. If None, queries all V1 motor sessions.
+        filename (str, optional): Name of the neurons parquet file.
+        session_to_exclude (list of str, optional): List of sessions to exclude.
+        cut_treadmill (bool): Whether to load the cut or no-cut version. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Concatenated neuron results.
+    """
+    if filename is None:
+        suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+        filename = f"ridge_decoder_neurons{suffix}.parquet"
+    if isinstance(project_or_session, str):
+        flexilims_session = flz.get_flexilims_session(project_id=project_or_session)
+    else:
+        flexilims_session = project_or_session
+
+    if session_list is None:
+        session_list = get_session_list.get_motor_session_list(flexilims_session)
+
+    project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
+
+    all_neurons = []
+    for session_name in session_list:
+        if session_to_exclude is not None:
+            if session_name in session_to_exclude:
+                continue
+        if session_name in project_sessions.index:
+            nominal_depth = project_sessions.loc[session_name, "nominal_depth"]
+        else:
+            print(f"Session {session_name} not found in session entities. Skipping.")
+            continue
+
+        neurons_ds = flz.get_datasets(
+            origin_name=session_name,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            filter_datasets={"annotated": True},
+            allow_multiple=True,
+        )
+        if not neurons_ds:
+            neurons_ds = flz.get_datasets(
+                origin_name=session_name,
+                dataset_type="neurons_df",
+                flexilims_session=flexilims_session,
+                allow_multiple=True,
+            )
+
+        if not neurons_ds:
+            print(f"Skipping {session_name}: No neurons_df dataset found.")
+            continue
+
+        ds = neurons_ds[0]
+        session_folder = Path(ds.path_full).parent
+        neurons_parquet_path = session_folder / filename
+
+        if neurons_parquet_path.exists():
+            try:
+                df = pd.read_parquet(neurons_parquet_path)
+                df["session"] = session_name
+                if isinstance(nominal_depth, (list, np.ndarray, pd.Series)):
+                    resolved_depth = np.mean(nominal_depth)
+                else:
+                    resolved_depth = nominal_depth
+                df["nominal_depth"] = resolved_depth
+                all_neurons.append(df)
+            except Exception as e:
+                print(f"Error loading parquet for {session_name}: {e}")
+        else:
+            print(
+                f"No neurons parquet found for {session_name} at {neurons_parquet_path}"
+            )
+
+    if all_neurons:
+        return pd.concat(all_neurons, ignore_index=True)
+    else:
+        return pd.DataFrame()
+
+
+def load_project_trial_averaged(
+    project_or_session,
+    session_list=None,
+    filename=None,
+    session_to_exclude=None,
+    cut_treadmill=False,
+):
+    """Load and concatenate trial-averaged parquet files for a project.
+
+    Args:
+        project_or_session (str or flexilims.Flexilims): Project name or flexilims session.
+        session_list (list of str, optional): List of sessions to load. If None, queries all V1 motor sessions.
+        filename (str, optional): Name of the trial-averaged parquet file.
+        session_to_exclude (list of str, optional): List of sessions to exclude.
+        cut_treadmill (bool): Whether to load the cut or no-cut version. Defaults to False.
+
+    Returns:
+        pd.DataFrame: Concatenated trial-averaged results.
+    """
+    if isinstance(project_or_session, str):
+        flexilims_session = flz.get_flexilims_session(project_id=project_or_session)
+    else:
+        flexilims_session = project_or_session
+
+    if session_list is None:
+        session_list = get_session_list.get_motor_session_list(flexilims_session)
+
+    if filename is None:
+        suffix = "_motor_cut" if cut_treadmill else "_motor_nocut"
+        filename = f"ridge_decoder_trial_averaged{suffix}.parquet"
+
+    project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
+
+    all_averaged = []
+    for session_name in session_list:
+        if session_to_exclude is not None:
+            if session_name in session_to_exclude:
+                continue
+        if session_name in project_sessions.index:
+            nominal_depth = project_sessions.loc[session_name, "nominal_depth"]
+        else:
+            print(f"Session {session_name} not found in session entities. Skipping.")
+            continue
+
+        neurons_ds = flz.get_datasets(
+            origin_name=session_name,
+            dataset_type="neurons_df",
+            flexilims_session=flexilims_session,
+            filter_datasets={"annotated": True},
+            allow_multiple=True,
+        )
+        if not neurons_ds:
+            neurons_ds = flz.get_datasets(
+                origin_name=session_name,
+                dataset_type="neurons_df",
+                flexilims_session=flexilims_session,
+                allow_multiple=True,
+            )
+
+        if not neurons_ds:
+            print(f"Skipping {session_name}: No neurons_df dataset found.")
+            continue
+
+        ds = neurons_ds[0]
+        session_folder = Path(ds.path_full).parent
+        averaged_parquet_path = session_folder / filename
+        if not averaged_parquet_path.exists() and filename.endswith(
+            "_motor_nocut.parquet"
+        ):
+            alt_filename = filename.replace("_motor_nocut.parquet", "_motor.parquet")
+            alt_path = session_folder / alt_filename
+            if alt_path.exists():
+                averaged_parquet_path = alt_path
+
+        if averaged_parquet_path.exists():
+            try:
+                df = pd.read_parquet(averaged_parquet_path)
+                df["session"] = session_name
+                if isinstance(nominal_depth, (list, np.ndarray, pd.Series)):
+                    resolved_depth = np.mean(nominal_depth)
+                else:
+                    resolved_depth = nominal_depth
+                df["nominal_depth"] = resolved_depth
+                all_averaged.append(df)
+            except Exception as e:
+                print(f"Error loading parquet for {session_name}: {e}")
+        else:
+            print(
+                f"No trial-averaged parquet found for {session_name} at {averaged_parquet_path}"
+            )
+
+    if all_averaged:
+        return pd.concat(all_averaged, ignore_index=True)
+    else:
+        return pd.DataFrame()

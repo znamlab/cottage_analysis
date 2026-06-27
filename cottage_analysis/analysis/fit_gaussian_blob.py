@@ -267,6 +267,31 @@ def gaussian_multiplicative(
     return g
 
 
+def gaussian_product(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
+    log_sigma_x2,
+    log_sigma_y2,
+    offset,
+    min_sigma,
+):
+    """Product of independent RS and OF Gaussians (separable, no rotation)."""
+    (rs, of) = xy_tuple
+    g = gaussian_2mult(
+        (rs, of),
+        log_amplitude,
+        x0,
+        y0,
+        log_sigma_x2,
+        log_sigma_y2,
+        offset,
+        min_sigma,
+    )
+    return g
+
+
 def gabor_2d(
     xy_tuple,
     log_amplitude,
@@ -648,6 +673,39 @@ def initial_fit_conditions(
                 offset=np.random.normal(),
             )
 
+    elif model == "gaussian_product":
+        model_sfx = "_gprod"
+        lower_bounds = GaussianMultiplicativeParams(
+            log_amplitude=-np.inf,
+            x0=np.log(param_range["rs_min"]),
+            y0=np.log(param_range["of_min"]),
+            log_sigma_x2=-np.inf,
+            log_sigma_y2=-np.inf,
+            offset=-np.inf,
+        )
+        upper_bounds = GaussianMultiplicativeParams(
+            log_amplitude=np.inf,
+            x0=np.log(param_range["rs_max"]),
+            y0=np.log(param_range["of_max"]),
+            log_sigma_x2=np.inf,
+            log_sigma_y2=np.inf,
+            offset=np.inf,
+        )
+
+        def p0_func():
+            return GaussianMultiplicativeParams(
+                log_amplitude=np.random.normal(),
+                x0=np.random.uniform(
+                    np.log(param_range["rs_min"]), np.log(param_range["rs_max"])
+                ),
+                y0=np.random.uniform(
+                    np.log(param_range["of_min"]), np.log(param_range["of_max"])
+                ),
+                log_sigma_x2=np.random.normal(),
+                log_sigma_y2=np.random.normal(),
+                offset=np.random.normal(),
+            )
+
     return model_sfx, lower_bounds, upper_bounds, p0_func
 
 
@@ -695,6 +753,8 @@ def fit_rs_of_tuning(
     run_openloop_only=False,
     max_acc=None,
     max_rs2motor_diff=None,
+    min_valid_frames=None,
+    trial_average=False,
 ):
     """Fit running speed and optic flow tuning with a specified model.
 
@@ -741,6 +801,10 @@ def fit_rs_of_tuning(
             selection. Defaults to None.
         max_rs2motor_diff (float, optional): Maximum absolute ratio of
             (rs - motor_speed)/rs for frame selection. Defaults to None.
+        min_valid_frames (int, optional): Minimum number of valid frames required in a trial
+            to include it in the fit. Defaults to None.
+        trial_average (bool, optional): Whether to fit on trial-averaged responses.
+            Defaults to False.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -748,36 +812,98 @@ def fit_rs_of_tuning(
     """
 
     def process_rs_of_for_fit(
-        trials_df, trial_list=[], rs_thr=0.01, max_acc=None, max_rs2motor_diff=None
+        trials_df,
+        trial_list=[],
+        rs_thr=0.01,
+        max_acc=None,
+        max_rs2motor_diff=None,
+        min_valid_frames=None,
+        trial_average=False,
     ):
         # take a subset of trials
         trials_df_part = (
             trials_df.iloc[trial_list] if len(trial_list) > 0 else trials_df
         )
 
-        # take the rs, of, dff, depth_labels from those trials
-        rs = np.concatenate(trials_df_part["RS_stim"].values)
+        rs_list = []
+        rs_eye_list = []
+        of_list = []
+        dff_list = []
+        depth_labels_list = []
 
-        rs_eye = np.concatenate(trials_df_part["RS_eye_stim"].values)
-        of = np.concatenate(trials_df_part["OF_stim"].values)
-        dff = np.concatenate(trials_df_part["dff_stim"].values, axis=0)
-        depth_labels = np.concatenate(trials_df_part["depth_labels"].values)
+        for idx, trial in trials_df_part.iterrows():
+            trial_rs = trial["RS_stim"]
+            trial_rs_eye = trial["RS_eye_stim"]
+            trial_of = trial["OF_stim"]
+            trial_dff = trial["dff_stim"]
+            trial_depth_labels = trial["depth_labels"]
 
-        # choose frames that are above a certain running speed threshold
-        running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of)) & (of > 0)
-        if max_acc is not None:
-            acc = np.concatenate(trials_df_part["acceleration_ratio_max_stim"].values)
-            running = running & (acc < max_acc)
-        if max_rs2motor_diff is not None:
-            rs2motor_diff = np.concatenate(
-                trials_df_part["max_abs_rs2motor_diff_ratio_stim"].values
+            # choose frames that are above a certain running speed threshold
+            running = (
+                (trial_rs > rs_thr)
+                & (trial_rs_eye > rs_thr)
+                & (~np.isnan(trial_of))
+                & (trial_of > 0)
             )
-            running = running & (rs2motor_diff < max_rs2motor_diff)
-        rs = np.log(rs[running])
-        rs_eye = np.log(rs_eye[running])
-        of = np.log(np.degrees(of[running]))  # fit using of in deg
-        dff = dff[running, :]
-        depth_labels = depth_labels[running]
+            if (
+                max_acc is not None
+                and "acceleration_ratio_max_stim" in trials_df_part.columns
+            ):
+                trial_acc = trial["acceleration_ratio_max_stim"]
+                running = running & (trial_acc < max_acc)
+            if (
+                max_rs2motor_diff is not None
+                and "max_abs_rs2motor_diff_ratio_stim" in trials_df_part.columns
+            ):
+                trial_rs2motor_diff = trial["max_abs_rs2motor_diff_ratio_stim"]
+                running = running & (trial_rs2motor_diff < max_rs2motor_diff)
+
+            num_valid = np.sum(running)
+            if min_valid_frames is not None and num_valid < min_valid_frames:
+                continue
+
+            if num_valid == 0:
+                continue
+
+            if trial_average:
+                rs_list.append(np.mean(trial_rs[running]))
+                rs_eye_list.append(np.mean(trial_rs_eye[running]))
+                of_list.append(np.mean(trial_of[running]))
+                dff_list.append(np.mean(trial_dff[running, :], axis=0))
+                depth_labels_list.append(trial_depth_labels[0])
+            else:
+                rs_list.append(trial_rs[running])
+                rs_eye_list.append(trial_rs_eye[running])
+                of_list.append(trial_of[running])
+                dff_list.append(trial_dff[running, :])
+                depth_labels_list.append(np.array(trial_depth_labels)[running])
+
+        if len(rs_list) == 0:
+            n_rois = trials_df["dff_stim"].iloc[0].shape[1]
+            return (
+                np.array([]),
+                np.array([]),
+                np.array([]),
+                np.empty((0, n_rois)),
+                np.array([]),
+            )
+
+        if trial_average:
+            rs = np.array(rs_list)
+            rs_eye = np.array(rs_eye_list)
+            of = np.array(of_list)
+            dff = np.vstack(dff_list)
+            depth_labels = np.array(depth_labels_list)
+        else:
+            rs = np.concatenate(rs_list)
+            rs_eye = np.concatenate(rs_eye_list)
+            of = np.concatenate(of_list)
+            dff = np.concatenate(dff_list, axis=0)
+            depth_labels = np.concatenate(depth_labels_list)
+
+        rs = np.log(rs)
+        rs_eye = np.log(rs_eye)
+        of = np.log(np.degrees(of))  # fit using of in deg
 
         return rs, rs_eye, of, dff, depth_labels
 
@@ -865,6 +991,8 @@ def fit_rs_of_tuning(
                 rs_thr=rs_thr,
                 max_acc=max_acc,
                 max_rs2motor_diff=max_rs2motor_diff,
+                min_valid_frames=min_valid_frames,
+                trial_average=trial_average,
             )
 
             # loop between actual and virtual running speeds
@@ -934,6 +1062,17 @@ def fit_rs_of_tuning(
                             f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
                         ] = np.exp(popt[2])
 
+                    elif model == "gaussian_product":
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_RS_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.exp(popt[1])
+                        # rad/s
+                        neurons_df_temp.at[
+                            roi,
+                            f"preferred_OF_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}",
+                        ] = np.radians(np.exp(popt[2]))
+
                     neurons_df_temp.at[
                         roi, f"rsof_popt_{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
                     ] = popt  # !! calculated with RS in m and OF in degrees/s
@@ -990,6 +1129,9 @@ def fit_rs_of_tuning(
                         trial_list=data_idx,
                         rs_thr=rs_thr,
                         max_acc=max_acc,
+                        max_rs2motor_diff=max_rs2motor_diff,
+                        min_valid_frames=min_valid_frames,
+                        trial_average=trial_average,
                     )
                     data_all[data_type]["rs"].append(rs)
                     data_all[data_type]["rs_eye"].append(rs_eye)
@@ -1257,6 +1399,21 @@ def get_preferred_rs(popt):
         return np.nan
     # x0 (popt[1]) is log(RS) in m/s, convert to cm/s
     return np.exp(popt[1]) * 100
+
+
+def get_preferred_of(popt):
+    """Calculate preferred optic flow in deg/s.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Preferred OF in deg/s.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 3:
+        return np.nan
+    # y0 (popt[2]) is log(OF) in deg/s
+    return np.exp(popt[2])
 
 
 def get_semimajor_length(popt, min_sigma=0.25):

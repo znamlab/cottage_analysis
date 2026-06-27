@@ -465,6 +465,8 @@ def main(
             ("gaussian_RS", None, 5),
             ("gaussian_multiplicative", None, 1),
             ("gaussian_multiplicative", None, 5),
+            ("gaussian_product", None, 1),
+            ("gaussian_product", None, 5),
         ]
 
         for model, trials, k_folds in to_do:
@@ -490,46 +492,36 @@ def main(
             outputs.append(out)
             print("---RS OF fit finished. Neurons_df saved.---")
 
-        # Merge fit dataframes
-        job_dependency = outputs if use_slurm else None
+    # After the run_rsof_fit and run_depth_fit/run_rf blocks
+    if run_rsof_fit or run_depth_fit or run_rf:
+        print("---Merging all fit dataframes...---")
+        # Only use SLURM and dependencies if we just ran new fits
+        use_slurm_merge = use_slurm if run_rsof_fit else 0
+        job_dependency = outputs if (run_rsof_fit and use_slurm) else None
+        exclude_keywords = ["recording", "openclosed", "openloop"] + (
+            ["treadmill"] if special_sfx_base == "" else []
+        )
+
         out = pipeline_utils.merge_fit_dataframes(
             project,
             session_name,
-            use_slurm=use_slurm,
+            use_slurm=use_slurm_merge,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
-            scripts_name=f"{session_name}_merge_fit_dataframes",
+            scripts_name=f"{session_name}{special_sfx_base}_merge_fit_dataframes",
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
+            exclude_keywords=exclude_keywords,
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )
-        print("---Analysis finished. Neurons_df saved.---")
-
-    if (run_depth_fit or run_rf) and not run_rsof_fit:
-        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        # Merge fit dataframes
-        out = pipeline_utils.merge_fit_dataframes(
-            project,
-            session_name,
-            use_slurm=0,
-            slurm_folder=slurm_folder,
-            job_dependency=None,
-            scripts_name=f"{session_name}_merge_fit_dataframes",
-            conflicts=conflicts,
-            prefix="fit_rs_of_tuning_",
-            suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed"],
-            include_keywords=[],
-            target_column_suffix=special_sfx_base,
-            filetype=".pickle",
-            target_filename="neurons_df.pickle",
-        )
-        print("---Analysis finished. Neurons_df saved.---")
+        if use_slurm_merge:
+            print("Job started")
+        else:
+            print("---Analysis finished. Neurons_df saved.---")
 
     # Plot basic plots
     if run_plot:

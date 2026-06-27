@@ -441,3 +441,278 @@ def size_control_session(neurons_df, trials_df, neurons_ds, **kwargs):
             )
 
             plt.close()
+
+
+def _plot_treadmill_speed_tuning(
+    trials_df,
+    roi,
+    is_closed_loop,
+    which_speed="RS",
+    nbins=10,
+    speed_min=0.01,
+    speed_max=1.5,
+    speed_thr=0.01,
+    of_min=0.1,
+    of_max=1000.0,
+    smoothing_sd=1,
+    fontsize_dict=None,
+):
+    """Plot speed tuning for a treadmill session (no depth grouping).
+
+    In a treadmill session there is no ``depth`` column, so the standard
+    :func:`rsof_plots.plot_speed_tuning` cannot be used directly (it groups
+    by depth). This helper concatenates all stimulus frames across trials and
+    computes a single pooled tuning curve.
+
+    Args:
+        trials_df (pd.DataFrame): Treadmill trials dataframe. Must contain
+            ``dff_stim``, ``RS_stim``, and ``OF_stim`` columns.
+        roi (int): ROI index.
+        is_closed_loop (int): 1 for closed-loop, 0 for open-loop.
+        which_speed (str): ``"RS"`` (running speed) or ``"OF"`` (optic flow).
+        nbins (int): Number of bins for the tuning curve. Defaults to 10.
+        speed_min (float): Minimum speed for RS bins (m/s). Defaults to 0.01.
+        speed_max (float): Maximum speed for RS bins (m/s). Defaults to 1.5.
+        speed_thr (float): Speed threshold below which frames are excluded (m/s).
+            Defaults to 0.01.
+        of_min (float): Minimum OF speed for bins (deg/s). Defaults to 0.1.
+        of_max (float): Maximum OF speed for bins (deg/s). Defaults to 1000.
+        smoothing_sd (float): SD of Gaussian kernel for smoothing. Defaults to 1.
+        fontsize_dict (dict or None): Font size dict with keys ``"label"`` and
+            ``"tick"``. If None a sensible default is used.
+    """
+    import scipy.stats
+    import seaborn as sns
+
+    if fontsize_dict is None:
+        fontsize_dict = {"title": 10, "label": 8, "tick": 7}
+
+    ax = plt.gca()
+    df = trials_df[trials_df.closed_loop == is_closed_loop]
+    if len(df) == 0:
+        ax.axis("off")
+        return
+
+    # Concatenate all frames across trials
+    dff_arr = np.concatenate([v[:, roi] for v in df.dff_stim.values if v.ndim == 2])
+    if which_speed == "RS":
+        speed_arr = np.concatenate(df.RS_stim.values) * 100  # m/s -> cm/s
+        bins = np.linspace(speed_min * 100, speed_max * 100, nbins + 1)
+        xlabel = "Running speed (cm/s)"
+    else:
+        speed_arr = np.degrees(np.concatenate(df.OF_stim.values))  # rad/s -> deg/s
+        bins = np.geomspace(of_min, of_max, nbins + 1)
+        xlabel = "Optic flow speed (deg/s)"
+
+    if which_speed == "RS":
+        mask = speed_arr > speed_thr * 100
+    else:
+        mask = speed_arr > 0
+    speed_arr = speed_arr[mask]
+    dff_arr = dff_arr[mask]
+
+    bin_means, _, _ = scipy.stats.binned_statistic(
+        x=speed_arr, values=dff_arr, statistic="mean", bins=bins
+    )
+    bin_counts, _, _ = scipy.stats.binned_statistic(
+        x=speed_arr, values=dff_arr, statistic="count", bins=bins
+    )
+    bin_centers = (bins[:-1] + bins[1:]) / 2
+
+    # Gaussian smoothing over bins (weighted by count)
+    weights = np.where(np.isnan(bin_means), 0, bin_counts)
+    smooth = np.zeros(nbins)
+    for i in range(nbins):
+        w = np.exp(-((np.arange(nbins) - i) ** 2) / (2 * smoothing_sd**2))
+        w *= weights
+        if w.sum() > 0:
+            smooth[i] = np.nansum(w * bin_means) / w.sum()
+
+    ax.plot(bin_centers, smooth, color="k", linewidth=1.5)
+    ax.errorbar(
+        bin_centers,
+        bin_means,
+        fmt="o",
+        color="k",
+        markersize=3,
+        linewidth=1,
+        markeredgewidth=0.3,
+        markeredgecolor="w",
+        ls="none",
+    )
+    if which_speed == "OF":
+        ax.set_xscale("log")
+    ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"])
+    ax.set_ylabel("\u0394F/F", fontsize=fontsize_dict["label"], labelpad=-3)
+    ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
+    sns.despine(ax=ax, offset=3, trim=True)
+
+
+def basic_treadmill_session(neurons_df, trials_df, neurons_ds, **kwargs):
+    """Basic visualisation plots for a treadmill-only session (no sphere stimulus).
+
+    Because the treadmill protocol has no depth axis, this function skips depth
+    tuning curves and instead produces an RS speed tuning, an OF speed tuning,
+    an RS-OF heatmap and up to four RS-OF model-fit panels for every ROI.
+    Fit panels are silently skipped when the corresponding column is absent from
+    *neurons_df* (e.g. before fitting has been run).
+
+    The output figures are saved under::
+
+        <neurons_ds parent>/plots/basic_treadmill/
+
+    Args:
+        neurons_df (pd.DataFrame): Neurons dataframe (one row per ROI).
+        trials_df (pd.DataFrame): Treadmill trials dataframe. Must contain
+            ``dff_stim``, ``RS_stim``, ``OF_stim``, and ``closed_loop`` columns.
+        neurons_ds: Flexilims neurons dataset (used for the output path).
+        **kwargs: Optional overrides.
+
+            ``rs_curve`` (dict): Passed to the RS speed tuning helper.
+                Keys: ``speed_min``, ``speed_max``, ``nbins``, ``speed_thr``.
+            ``of_curve`` (dict): Passed to the OF speed tuning helper.
+                Keys: ``of_min``, ``of_max``, ``nbins``.
+            ``RS_OF_matrix_log_range`` (dict): Log-range dict for
+                :func:`rsof_plots.plot_RS_OF_matrix`.
+            ``treadmill_sfx`` (str): Suffix appended to the RS-OF fit column
+                names, e.g. ``"_treadmill"``. Defaults to ``"_treadmill"``.
+    """
+    rois = neurons_df.roi.values
+    is_closed_loop = 1  # treadmill recordings are always closed-loop
+
+    save_dir = neurons_ds.path_full.parent / "plots" / "basic_treadmill"
+    os.makedirs(save_dir, exist_ok=True)
+
+    treadmill_sfx = kwargs.get("treadmill_sfx", "_treadmill")
+
+    rs_curve_defaults = dict(speed_min=0.01, speed_max=1.5, nbins=10, speed_thr=0.01)
+    rs_curve_kwargs = {**rs_curve_defaults, **kwargs.get("rs_curve", {})}
+
+    of_curve_defaults = dict(of_min=0.1, of_max=1000.0, nbins=10)
+    of_curve_kwargs = {**of_curve_defaults, **kwargs.get("of_curve", {})}
+
+    log_range_defaults = {
+        "rs_bin_log_min": 0,
+        "rs_bin_log_max": 2.5,
+        "rs_bin_num": 6,
+        "of_bin_log_min": -1.5,
+        "of_bin_log_max": 3.5,
+        "of_bin_num": 11,
+        "log_base": 10,
+    }
+    log_range = {**log_range_defaults, **kwargs.get("RS_OF_matrix_log_range", {})}
+
+    fontsize_dict = {"title": 10, "label": 8, "tick": 7, "legend": 6}
+
+    # Layout per row: RS tuning | OF tuning | Depth tuning | RS-OF matrix | g2d | gadd | gof | gratio
+    models = ["g2d", "gadd", "gof", "gratio"]
+    model_labels = ["2D Gaussian", "Additive", "OF only", "RS/OF ratio"]
+    plot_rows = 10
+    plot_cols = 8
+
+    for i in tqdm(range(int(len(rois) // plot_rows + 1))):
+        roi_batch = rois[i * plot_rows : np.min([(i + 1) * plot_rows, len(rois)])]
+        if len(roi_batch) == 0:
+            break
+
+        fig = plt.figure(figsize=(3 * plot_cols, 3 * plot_rows))
+
+        for iroi, roi in enumerate(roi_batch):
+            # ------ Column 0: RS speed tuning ------
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 0))
+            _plot_treadmill_speed_tuning(
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=is_closed_loop,
+                which_speed="RS",
+                fontsize_dict=fontsize_dict,
+                speed_min=rs_curve_kwargs["speed_min"],
+                speed_max=rs_curve_kwargs["speed_max"],
+                nbins=rs_curve_kwargs["nbins"],
+                speed_thr=rs_curve_kwargs["speed_thr"],
+            )
+            plt.title(f"roi{roi}", fontsize=fontsize_dict["title"])
+
+            # ------ Column 1: OF speed tuning ------
+            plt.subplot2grid((plot_rows, plot_cols), (iroi, 1))
+            _plot_treadmill_speed_tuning(
+                trials_df=trials_df,
+                roi=roi,
+                is_closed_loop=is_closed_loop,
+                which_speed="OF",
+                fontsize_dict=fontsize_dict,
+                of_min=of_curve_kwargs["of_min"],
+                of_max=of_curve_kwargs["of_max"],
+                nbins=of_curve_kwargs["nbins"],
+            )
+
+            # ------ Column 2: Depth tuning ------
+            ax_depth = plt.subplot2grid((plot_rows, plot_cols), (iroi, 2))
+            if "depth" in trials_df.columns:
+                depth_col = f"depth_tuning_popt_closedloop{treadmill_sfx}"
+                if depth_col not in neurons_df.columns:
+                    depth_col = "depth_tuning_popt_closedloop"
+                dsp.plot_depth_tuning_curve(
+                    neurons_df=neurons_df,
+                    trials_df=trials_df,
+                    roi=roi,
+                    rs_thr=None,
+                    plot_fit=True,
+                    linewidth=1.5,
+                    linecolor="k",
+                    closed_loop=is_closed_loop,
+                    use_col=depth_col,
+                    ax=ax_depth,
+                    fontsize_dict=fontsize_dict,
+                    markersize=3,
+                )
+            else:
+                ax_depth.axis("off")
+
+            # ------ Column 3: RS-OF heatmap ------
+            ax_matrix = plt.subplot2grid((plot_rows, plot_cols), (iroi, 3))
+            vmin, vmax = rsof_plots.plot_RS_OF_matrix(
+                trials_df=trials_df[trials_df.closed_loop == is_closed_loop],
+                roi=roi,
+                log_range=log_range,
+                is_closed_loop=is_closed_loop,
+                fontsize_dict=fontsize_dict,
+                cbar_width=None,
+                ax=ax_matrix,
+            )
+
+            # ------ Columns 4-7: RS-OF model fits ------
+            for imodel, (model, model_label) in enumerate(zip(models, model_labels)):
+                ax = plt.subplot2grid((plot_rows, plot_cols), (iroi, 4 + imodel))
+                col_name = f"rsof_popt_closedloop_{model}{treadmill_sfx}"
+                if col_name not in neurons_df.columns:
+                    ax.set_title(
+                        f"{model_label}\n(not fitted)",
+                        fontsize=fontsize_dict["title"],
+                    )
+                    ax.axis("off")
+                    continue
+                rsof_plots.plot_RS_OF_fit(
+                    neurons_df=neurons_df,
+                    roi=roi,
+                    model=model,
+                    model_label=model_label,
+                    min_sigma=0.25,
+                    vmin=vmin,
+                    vmax=vmax,
+                    log_range=log_range,
+                    fontsize_dict=fontsize_dict,
+                    cbar_width=None,
+                    ax=ax,
+                    sfx=treadmill_sfx,
+                )
+                if imodel > 0:
+                    ax.set_ylabel("")
+                    ax.set_yticklabels([])
+
+        plt.savefig(
+            save_dir / f"roi{roi_batch[0]}-{roi_batch[-1]}.png",
+            dpi=100,
+            bbox_inches="tight",
+        )
+        plt.close()

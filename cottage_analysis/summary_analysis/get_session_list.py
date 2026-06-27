@@ -82,3 +82,70 @@ def get_sessions(
             continue
         keep_sessions.append(session)
     return keep_sessions
+
+
+def get_motor_session_list(
+    flexilims_session,
+    exclude_sessions=(),
+    mouse_list=None,
+):
+    """
+    Get a list of sessions that are treadmill/motor sessions.
+
+    Args:
+        flexilims_session (str): flexilims session
+        exclude_sessions (list, optional): list of sessions to exclude manually.
+            Defaults to ().
+        mouse_list (list, optional): list of mice to include, if None, include all.
+            Default to None.
+
+    Returns:
+        list: list of sessions to include
+    """
+    session_list = []
+    if mouse_list is None:
+        mouse_list = flz.get_entities("mouse", flexilims_session=flexilims_session)
+
+    # get children is too slow. It's better to get everything and filter
+    project_sessions = flz.get_entities("session", flexilims_session=flexilims_session)
+    project_recordings = flz.get_entities(
+        "recording", flexilims_session=flexilims_session
+    )
+    for mouse_id in mouse_list["id"].values:
+        sessions_mouse = project_sessions[project_sessions.origin_id == mouse_id]
+        # exclude any sessions which have an "exclude_reason" on flexilims
+        if "exclude_reason" in sessions_mouse.columns:
+            sessions_mouse = sessions_mouse[
+                (sessions_mouse["exclude_reason"].isna())
+                | (sessions_mouse["exclude_reason"].str.isspace())
+                | (sessions_mouse["exclude_reason"] == "not V1")
+            ]
+        if len(sessions_mouse) > 0:
+            session_list.append(sessions_mouse.name.values.tolist())
+
+    # exclude any sessions from exclude_sessions
+    session_list = [session for i in session_list for session in i]
+    session_list = [
+        session for session in session_list if session not in exclude_sessions
+    ]
+    keep_sessions = []
+    for session in session_list:
+        sess_id = project_sessions.loc[session].id
+        recs = project_recordings[project_recordings.origin_id == sess_id]
+
+        is_treadmill = False
+        if "protocol" in recs.columns:
+            is_treadmill = (
+                recs["protocol"]
+                .str.contains("SpheresTubeMotor|Treadmill", na=False)
+                .any()
+            )
+        if not is_treadmill:
+            is_treadmill = (
+                recs["name"].str.contains("SpheresTubeMotor|Treadmill", na=False).any()
+            )
+
+        if is_treadmill:
+            keep_sessions.append(session)
+
+    return keep_sessions

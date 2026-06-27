@@ -6,6 +6,7 @@ from tqdm import tqdm
 from spikeinterface.core.loading import load as si_load
 from spikeinterface import preprocessing as spre
 from znamutils import slurm_it
+from spikeinterface.core import BinaryRecordingExtractor
 
 
 def load_raw_rec_from_aind(preprocessed_json_file):
@@ -39,11 +40,20 @@ def compute_lfp_power_spectrum(
     if use_load_raw_rec_from_aind:
         recording = load_raw_rec_from_aind(recording_path)
     else:
-        recording = si_load(recording_path)
+        # 1. Read our custom JSON
+        with open(recording_path, "r") as f:
+            info = json.load(f)["reader_kwargs"]
+        # 2. Initialize the extractor using the info in the JSON
+        recording = BinaryRecordingExtractor(
+            file_paths=info["file_paths"],
+            sampling_frequency=info["sampling_frequency"],
+            num_channels=info["num_channels"],
+            dtype=info["dtype"],
+            gain_to_uV=info["gain_to_uV"],
+            offset_to_uV=info["offset_to_uV"],
+        )
     fs = cutoff * 3
-    recording = spre.bandpass_filter(
-        recording, freq_min=0.5, freq_max=cutoff, ignore_low_freq_error=True
-    )
+    recording = spre.bandpass_filter(recording, freq_min=0.5, freq_max=cutoff)
     recording = spre.resample(recording, fs)
 
     power_spectrums = None

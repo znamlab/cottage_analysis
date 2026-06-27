@@ -317,8 +317,10 @@ def generate_vs_df(
         else:
             # same for SpherePermTubeReward and SpherePermTubeReward_multidepth
             frame_log_z = frame_log[["FrameIndex", "HarpTime", "MouseZ", "EyeZ"]].copy()
-            if "MotorSps" in frame_log:
-                frame_log_z["MotorSps"] = frame_log.MotorSps.copy()
+            optional_columns = ["MotorSps", "Depth", "ExpectedOF", "ExpectedRS"]
+            for col in optional_columns:
+                if col in frame_log:
+                    frame_log_z[col] = frame_log[col].copy()
             frame_log_z.rename(
                 columns={
                     "FrameIndex": "closest_frame",

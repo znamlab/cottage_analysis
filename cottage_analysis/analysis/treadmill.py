@@ -15,12 +15,26 @@ from . import spheres
 from ..preprocessing import synchronisation
 from .fit_gaussian_blob import fit_rs_of_tuning
 
-STEPS_PER_REV = 200
-MICROSTEPPING = 1 / 4
-WHEEL_RADIUS = 10.5
+DEFAULT_TREADMILL_PARAMS = {
+    "steps_per_rev": 200,
+    "microstepping": 1 / 4,
+    "wheel_radius": 9.8,  # cm
+    # Small error in the motor speed
+    "actual_motor_speed": {
+        64: 61,
+        32: 61.0 / 2,
+        16: 61.0 / 4,
+        8: 61.0 / 8,
+        4: 61.0 / 16,
+    },
+}
+
+# Keep old names as aliases for backwards compatibility
+STEPS_PER_REV = DEFAULT_TREADMILL_PARAMS["steps_per_rev"]
+MICROSTEPPING = DEFAULT_TREADMILL_PARAMS["microstepping"]
+WHEEL_RADIUS = DEFAULT_TREADMILL_PARAMS["wheel_radius"]
 CIRCUMFERENCE = 2 * np.pi * WHEEL_RADIUS
-# Small error in the motor speed
-ACTUAL_MOTOR_SPEED = {64: 61, 32: 61.0 / 2, 16: 61.0 / 4, 8: 61.0 / 8, 4: 61.0 / 16}
+ACTUAL_MOTOR_SPEED = DEFAULT_TREADMILL_PARAMS["actual_motor_speed"]
 
 
 def compute_response_matrix(neurons_df, trials_df_tread):
@@ -80,7 +94,13 @@ def compute_response_matrix(neurons_df, trials_df_tread):
     return motor_speeds, optic_flows, tread_responses
 
 
-def sync_treadmill_sess(session_name, project, flexilims_session, filter_datasets=None):
+def sync_treadmill_sess(
+    session_name,
+    project,
+    flexilims_session,
+    filter_datasets=None,
+    treadmill_params=None,
+):
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
     if project is None:
@@ -93,9 +113,13 @@ def sync_treadmill_sess(session_name, project, flexilims_session, filter_dataset
         recording_type="two_photon",
         photodiode_protocol=5,
         return_volumes=True,
+        treadmill_params=treadmill_params,
     )
     trials_df_tread["MotorSpeed"] = np.round(
-        sps2speed(trials_df_tread["MotorSps_stim"].apply(np.nanmedian).values)
+        sps2speed(
+            trials_df_tread["MotorSps_stim"].apply(np.nanmedian).values,
+            treadmill_params=treadmill_params,
+        )
     )
     trials_df_tread["expected_optic_flow"] = np.round(
         trials_df_tread["expected_optic_flow_stim"].apply(np.nanmedian).values
@@ -125,6 +149,8 @@ def sync_all_recordings(
     sim_tau_rise=0.15,
     sim_make_circular=True,
     do_process_imaging_df=True,
+    protocol_base=None,
+    treadmill_params=None,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -166,12 +192,21 @@ def sync_all_recordings(
             for the calcium simulation. Defaults to 0.15.
         sim_make_circular (bool, optional): If True, make the Gaussian circular by setting
             the major axis to the minor axis length. Defaults to True.
+        do_process_imaging_df (bool, optional): If True, cut dff_stim to the static period of the trial. If False,
+            keep the full dff_stim. Defaults to True.
+        protocol_base (str, optional): Protocol base name. Defaults to
+            "SpheresTubeMotor".
+        treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
+            Keys: ``steps_per_rev`` (int), ``microstepping`` (float),
+            ``wheel_radius`` (float, cm), ``actual_motor_speed`` (dict mapping
+            nominal to actual speed). Defaults to ``DEFAULT_TREADMILL_PARAMS``.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
             for all recordings, one concatenated trials_df for all recordings.
     """
-    protocol_base = "SpheresTubeMotor"
+    if protocol_base is None:
+        protocol_base = "SpheresTubeMotor"
     assert flexilims_session is not None or project is not None
     if flexilims_session is None:
         flexilims_session = flz.get_flexilims_session(project_id=project)
@@ -191,6 +226,13 @@ def sync_all_recordings(
     recordings = recordings[recordings.name.str.contains(protocol_base)]
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
+    if len(recordings) == 0:
+        raise ValueError(
+            f"No recordings found for session '{session_name}' matching "
+            f"protocol_base '{protocol_base_filter}' and "
+            f"recording_type '{recording_type}'. "
+            f"Check that protocol_base matches the actual recording names in flexilims."
+        )
 
     load_onix = False if recording_type == "two_photon" else True
     for i, recording_name in enumerate(recordings.name):
@@ -220,6 +262,7 @@ def sync_all_recordings(
                 return_volumes=return_volumes,
             )
         else:
+            assert ephys_kwargs is not None, "Must provide ephys_kwargs if non-2p"
             imaging_df, unit_ids, units_harp = synchronisation.generate_spike_rate_df(
                 vs_df=vs_df,
                 onix_recording=onix_rec,
@@ -257,6 +300,7 @@ def sync_all_recordings(
                 trial_duration=trial_duration,
                 cut_trial_end=cut_trial_end,
                 acceleration_time=acceleration_time,
+                treadmill_params=treadmill_params,
             )
 
         trials_df = spheres.generate_trials_df(
@@ -283,6 +327,7 @@ def sync_all_recordings(
             flexilims_session=flexilims_session,
             vis_stim_recording=recording,
             is_multidepth="multidepth" in recording.protocol,
+            imaging_df=imaging_df,
         )
         trials_df["recording"] = recording_name
 
@@ -297,33 +342,31 @@ def sync_all_recordings(
     return vs_df_all, trials_df_all
 
 
-def sps2speed(
-    sps,
-    circumference=CIRCUMFERENCE,
-    steps_per_rev=STEPS_PER_REV,
-    microstepping=MICROSTEPPING,
-):
+def sps2speed(sps, treadmill_params=None):
     """Convert steps per second to speed in cm/s.
 
     Args:
         sps (float or list or np.ndarray): Steps per second.
-        circumference (float, optional): Circumference of the wheel in cm. Defaults to
-            local constant.
-        steps_per_rev (int, optional): Number of steps per revolution. Defaults to
-            local constant.
-        microstepping (int, optional): Microstepping factor. Defaults to local
-            constant.
-
+        treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
+            Keys: ``steps_per_rev`` (int), ``microstepping`` (float),
+            ``wheel_radius`` (float, cm). Defaults to ``DEFAULT_TREADMILL_PARAMS``.
 
     Returns:
         float or np.ndarray or None: Speed in cm/s. Returns None if input is None.
     """
+    if treadmill_params is None:
+        treadmill_params = DEFAULT_TREADMILL_PARAMS
     if sps is None:
         return None
     if isinstance(sps, list):
         sps = np.array(sps)
-
-    return sps / steps_per_rev * microstepping * circumference
+    circumference = 2 * np.pi * treadmill_params["wheel_radius"]
+    return (
+        sps
+        / treadmill_params["steps_per_rev"]
+        * treadmill_params["microstepping"]
+        * circumference
+    )
 
 
 def process_imaging_df(
@@ -332,6 +375,7 @@ def process_imaging_df(
     cut_trial_end=None,
     motor_stability_window=0.5,
     acceleration_time=0.13,
+    treadmill_params=None,
 ):
     """Process the imaging dataframe to add treadmill information.
 
@@ -354,15 +398,25 @@ def process_imaging_df(
             in seconds. Defaults to 0.5.
         acceleration_time (float, optional): Acceleration time in s per cm/s. If not
             None, overrides trial_duration. Defaults to 0.13.
+        treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
+            Keys: ``steps_per_rev`` (int), ``microstepping`` (float),
+            ``wheel_radius`` (float, cm). Defaults to ``DEFAULT_TREADMILL_PARAMS``.
 
     Returns:
         pd.DataFrame: Imaging dataframe with treadmill information.
     """
+    if treadmill_params is None:
+        treadmill_params = DEFAULT_TREADMILL_PARAMS
     frame_rate = 1 / np.nanmedian(imaging_df.imaging_harptime.diff())
     assert "MotorSps" in imaging_df.columns, "Imaging df must contain MotorSps"
 
-    imaging_df["MotorSpeed"] = np.round(sps2speed(imaging_df.MotorSps))
-    imaging_df["MotorSpeed"] = imaging_df.MotorSpeed.map(ACTUAL_MOTOR_SPEED)
+    imaging_df["MotorSpeed"] = np.round(
+        sps2speed(imaging_df.MotorSps, treadmill_params=treadmill_params)
+    )
+    if "actual_motor_speed" in treadmill_params:
+        imaging_df["MotorSpeed"] = imaging_df.MotorSpeed.map(
+            treadmill_params["actual_motor_speed"]
+        ).fillna(imaging_df.MotorSpeed)
 
     # 1. Find physical trial starts and ends
     # Find trial starts, defined as first frame of motor running
