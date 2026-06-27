@@ -124,6 +124,7 @@ def sync_all_recordings(
     sim_tau_decay=0.8,
     sim_tau_rise=0.15,
     sim_make_circular=True,
+    do_process_imaging_df=True,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -249,14 +250,14 @@ def sync_all_recordings(
                 frame_rate=frame_rate,
                 make_circular=sim_make_circular,
             )
-
+        if do_process_imaging_df:
         # Add the treadmill specific part
-        imaging_df = process_imaging_df(
-            imaging_df,
-            trial_duration=trial_duration,
-            cut_trial_end=cut_trial_end,
-            acceleration_time=acceleration_time,
-        )
+            imaging_df = process_imaging_df(
+                imaging_df,
+                trial_duration=trial_duration,
+                cut_trial_end=cut_trial_end,
+                acceleration_time=acceleration_time,
+            )
 
         trials_df = spheres.generate_trials_df(
             recording=recording, imaging_df=imaging_df
