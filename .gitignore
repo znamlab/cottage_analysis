@@ -7,16 +7,13 @@ tests/test_data/tests_outputs
 *checkpoint.ipynb
 *logs/*
 build
-.vscode/*
+.vscode/
 temp_data/*
 scratch.py
 launch.json
 scripts/ccyp*
 cottage_analysis/analysis/tests/*
 cottage_analysis/depth_analysis/*
-
-
-
 cottage_analysis_debug.code-workspace
 */slurm-*
 slurm-*
