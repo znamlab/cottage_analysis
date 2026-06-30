@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import scipy
 import pandas as pd
@@ -66,7 +67,15 @@ def calculate_r_squared(y, y_hat):
 
 
 def iterate_fit(
-    func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None, verbose=False
+    func,
+    X,
+    y,
+    lower_bounds,
+    upper_bounds,
+    niter=5,
+    p0_func=None,
+    verbose=False,
+    maxfev=100000,
 ):
     """Iterate fitting to avoid local minima.
 
@@ -77,7 +86,13 @@ def iterate_fit(
         lower_bounds: lower bounds for the parameters
         upper_bounds: upper bounds for the parameters
         niter: number of iterations
-        p0_func: function to generate initial parameters
+        p0_func: function to generate initial parameters. If it accepts arguments
+            (i.e. its signature takes >= 2 parameters) it is called as
+            ``p0_func(X, y, i_iter)`` so it can produce a data-informed guess on the
+            first iteration; otherwise it is called with no arguments (legacy contract).
+        verbose: print progress
+        maxfev: maximum number of function evaluations per curve_fit call. Lower values
+            abort runaway fits (e.g. on untuned/outlier cells) early.
 
     Returns:
         popt_best: best parameters
@@ -86,6 +101,13 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
+    # Detect whether p0_func wants the data (so it can make a data-informed guess).
+    p0_wants_data = False
+    if p0_func is not None:
+        try:
+            p0_wants_data = len(inspect.signature(p0_func).parameters) >= 2
+        except (TypeError, ValueError):
+            p0_wants_data = False
     if isinstance(X, tuple):
         valid = ~np.any(np.isnan(np.asarray(X)), axis=0) & ~np.isnan(y)
     else:
@@ -120,7 +142,7 @@ def iterate_fit(
     np.random.seed(42)
     for i_iter in range(niter):
         if p0_func is not None:
-            p0 = p0_func()
+            p0 = p0_func(X, y, i_iter) if p0_wants_data else p0_func()
         else:
             # generate random initial parameters from a standard normal distribution for unbounded parameters
             # otherwise, draw from a uniform distribution between lower and upper bounds
@@ -135,7 +157,7 @@ def iterate_fit(
                 func,
                 X,
                 y,
-                maxfev=100000,  # 100000
+                maxfev=maxfev,
                 bounds=(
                     lower_bounds,
                     upper_bounds,
