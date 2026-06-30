@@ -96,6 +96,7 @@ def fit_rf_preferred_depth(
     min_sigma=0.5,
     depth_bounds=(np.log(0.02), np.log(20)),
     use_multidepth=False,
+    suffix=None,
 ):
     """Fit a 1D Gaussian across depths at the best azimuth/elevation pixel.
 
@@ -119,6 +120,7 @@ def fit_rf_preferred_depth(
             Default (np.log(0.02), np.log(20)).
         use_multidepth (bool): Whether to use multidepth coefficients.
             Default False.
+        suffix (str, optional): Custom suffix for the columns. Default None.
 
     Returns:
         tuple: (rf_preferred_depth, rf_depth_popt, rf_depth_rsq)
@@ -133,9 +135,10 @@ def fit_rf_preferred_depth(
     # Load coef from neurons_df (n_neurons, n_folds, n_features)
     # with n_features = ndepths * n_ele * n_azi + 1 (bias term)
 
-    suffix = "_closedloop" if is_closed_loop else "_openloop"
-    if use_multidepth:
-        suffix += "_multidepth"
+    if suffix is None:
+        suffix = "_closedloop" if is_closed_loop else "_openloop"
+        if use_multidepth:
+            suffix += "_multidepth"
     coef = np.stack(neurons_df[f"rf_coef{suffix}"].values)
 
     # Drop bias term and reshape to (n_neurons, n_folds, ndepths, n_ele, n_azi)

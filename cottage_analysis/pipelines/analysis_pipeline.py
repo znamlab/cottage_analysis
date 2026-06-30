@@ -100,7 +100,6 @@ def main(
     # Synchronisation
     print("---Start synchronisation...---")
     if protocol_base == "SpheresTubeMotor":
-        run_rf = False
         _, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
             flexilims_session=flexilims_session,
@@ -324,13 +323,19 @@ def main(
         print("---RF analysis...---")
         # finished = pipeline_utils.save_finish_time(finished, col="rf_started")
         print("Generating sphere stimuli...")
-        for is_closedloop in trials_df_all["closed_loop"].unique():
+        if "closed_loop" in trials_df_all.columns:
+            closed_loops = trials_df_all["closed_loop"].unique()
+        else:
+            closed_loops = [True]
+        for is_closedloop in closed_loops:
             if is_closedloop:
                 sfx = "_closedloop"
             else:
                 sfx = "_openloop"
             if is_multidepth:
                 sfx += "_multidepth"
+            if protocol_base == "SpheresTubeMotor":
+                sfx += "_treadmill"
 
             frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
                 session_name=session_name,
@@ -415,11 +420,13 @@ def main(
             depths=depth_list,
             is_closed_loop=1,
             use_multidepth=is_multidepth,
+            suffix=sfx,
         )
 
         # Save neurons_df
         assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
-        neurons_df.to_pickle(neurons_ds.path_full)
+        if protocol_base != "SpheresTubeMotor":
+            neurons_df.to_pickle(neurons_ds.path_full)
         # Also save a copy with special_sfx_base in the name
         target_file = neurons_ds.path_full.with_name(
             f"neurons_df_for_rf{special_sfx_base}.pickle"
