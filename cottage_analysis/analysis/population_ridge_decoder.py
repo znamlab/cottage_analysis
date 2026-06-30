@@ -615,6 +615,29 @@ def depth_decoder(trials_df, **kwargs):
     return continuous_decoder(trials_df, **kwargs)
 
 
+def rsof_product_decoder(trials_df, **kwargs):
+    """Decode the depth-orthogonal speed-flow product from population activity.
+
+    Depth is essentially the *ratio* of running speed to optic flow
+    (``OF = RS / depth``), so in log space ``log(depth) ~ log(RS) - log(OF)``.
+    The axis orthogonal to depth is therefore ``log(RS) + log(OF) = log(RS * OF)``.
+    This decoder targets that orthogonal dimension, i.e. the elementwise product
+    ``RS * OF`` (stored in the ``"rsof_product_stim"`` column).
+
+    Convenience wrapper around :func:`continuous_decoder` with
+    ``target_col="rsof_product_stim"``.
+
+    All keyword arguments are forwarded to :func:`continuous_decoder`.
+    See its docstring for the full parameter list.
+
+    Returns:
+        dict: Decoder results. See :func:`continuous_decoder`.
+    """
+    kwargs.setdefault("target_col", "rsof_product_stim")
+    kwargs.setdefault("log_transform", True)
+    return continuous_decoder(trials_df, **kwargs)
+
+
 def decode_with_neuron_subsets(
     trials_df,
     decoder_func,
