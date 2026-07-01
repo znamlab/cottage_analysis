@@ -431,37 +431,95 @@ def main(
             )
 
             print(f"Fitting RF{sfx}...")
-            (
-                coef,
-                r2,
-                best_reg_xys,
-                best_reg_depths,
-            ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
-                imaging_df_all,
-                frames_all[..., int(frames_all.shape[2] // 2) :],
-                reg_xys=np.geomspace(2.5, 10240, 13),
-                reg_depths=np.geomspace(2.5, 10240, 13),
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                tune_separately=True,
-                validation=False,
-            )
+            if run_rsof_fit_on_separate_slurm_jobs:
+                from cottage_analysis.pipelines import fit_rf_array
 
-            print("Fitting ipsi RF...")
-            (
-                coef_ipsi,
-                r2_ipsi,
-            ) = rf_fitting.fit_3d_rfs_ipsi(
-                imaging_df_all,
-                frames_all[..., : int(frames_all.shape[2] // 2)],
-                best_reg_xys,
-                best_reg_depths,
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                validation=False,
-            )
+                rf_work_dir = neurons_ds.path_full.parent / f"_rf_fit_tmp{sfx}"
+                job_id, n_tasks = fit_rf_array.submit_hyperparam_array(
+                    work_dir=rf_work_dir,
+                    imaging_df=imaging_df_all,
+                    frames=frames_all[..., int(frames_all.shape[2] // 2) :],
+                    reg_xys=np.geomspace(2.5, 10240, 13),
+                    reg_depths=np.geomspace(2.5, 10240, 13),
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
+                fit_rf_array.wait_for_results(
+                    rf_work_dir / "hyperparam", n_tasks
+                )
+                (
+                    coef,
+                    r2,
+                    best_reg_xys,
+                    best_reg_depths,
+                ) = fit_rf_array.collect_hyperparam_results(
+                    work_dir=rf_work_dir,
+                    tune_separately=True,
+                    r2_threshold=0.01,
+                )
+
+                print(f"Fitting ipsi RF{sfx} (Slurm array)...")
+                job_id, n_tasks = fit_rf_array.submit_ipsi_array(
+                    work_dir=rf_work_dir,
+                    imaging_df=imaging_df_all,
+                    frames=frames_all[
+                        ..., : int(frames_all.shape[2] // 2)
+                    ],
+                    best_reg_xys=best_reg_xys,
+                    best_reg_depths=best_reg_depths,
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
+                fit_rf_array.wait_for_results(
+                    rf_work_dir / "ipsi", n_tasks
+                )
+                (
+                    coef_ipsi,
+                    r2_ipsi,
+                ) = fit_rf_array.collect_ipsi_results(
+                    work_dir=rf_work_dir,
+                )
+
+                # Clean up temporary files
+                import shutil
+
+                shutil.rmtree(rf_work_dir)
+            else:
+                (
+                    coef,
+                    r2,
+                    best_reg_xys,
+                    best_reg_depths,
+                ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
+                    imaging_df_all,
+                    frames_all[..., int(frames_all.shape[2] // 2) :],
+                    reg_xys=np.geomspace(2.5, 10240, 13),
+                    reg_depths=np.geomspace(2.5, 10240, 13),
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    tune_separately=True,
+                    validation=False,
+                )
+
+                print("Fitting ipsi RF...")
+                (
+                    coef_ipsi,
+                    r2_ipsi,
+                ) = rf_fitting.fit_3d_rfs_ipsi(
+                    imaging_df_all,
+                    frames_all[..., : int(frames_all.shape[2] // 2)],
+                    best_reg_xys,
+                    best_reg_depths,
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
 
             if not run_depth_fit:
                 neurons_df = pd.read_pickle(neurons_ds.path_full)
