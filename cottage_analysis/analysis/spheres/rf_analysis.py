@@ -132,6 +132,15 @@ def fit_rf_preferred_depth(
     ndepths = len(depths)
     log_depths = np.log(depths)
 
+    # Ensure depth_bounds covers the range of log_depths to avoid ValueError in curve_fit
+    if depth_bounds is None:
+        depth_bounds = (log_depths.min(), log_depths.max())
+    else:
+        depth_bounds = (
+            min(depth_bounds[0], log_depths.min()),
+            max(depth_bounds[1], log_depths.max()),
+        )
+
     # Load coef from neurons_df (n_neurons, n_folds, n_features)
     # with n_features = ndepths * n_ele * n_azi + 1 (bias term)
 

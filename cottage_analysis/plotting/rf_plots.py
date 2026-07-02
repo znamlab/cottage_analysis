@@ -103,6 +103,7 @@ def plot_rf(
     fontsize_dict={"title": 15, "label": 10, "tick": 5, "legend": 8},
     use_ipsi=False,
     use_multidepth=False,
+    use_treadmill=False,
     extent=(0, 120, -40, 40),
     clim=None,
 ):
@@ -116,6 +117,8 @@ def plot_rf(
         sfx += "_openloop"
     if use_multidepth:
         sfx += "_multidepth"
+    if use_treadmill:
+        sfx += "_treadmill"
     coef = neurons_df.loc[roi, f"rf_coef{sfx}"][:, :-1].copy()
     coef = coef.reshape(coef.shape[0], ndepths, frame_shape[0], frame_shape[1])
     coef_mean = np.nanmean(coef, axis=0)

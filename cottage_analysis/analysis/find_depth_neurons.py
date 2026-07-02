@@ -400,6 +400,8 @@ def fit_preferred_depth(
 
     # Choose trials
     depth_list = find_depth_list(trials_df)
+    depth_min = min(depth_min, np.min(depth_list))
+    depth_max = max(depth_max, np.max(depth_list))
 
     if max_rs2motor_diff is not None:
         trials_df = common_utils.filter_trials_by_rs2motor(
