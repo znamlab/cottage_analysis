@@ -25,6 +25,7 @@ def find_rf_centers(
     is_closed_loop=1,
     resolution=5,
     coef=None,
+    use_treadmill=False,
 ):
     """Find the spatial center and best depth of receptive fields.
 
@@ -41,6 +42,8 @@ def find_rf_centers(
         resolution (int, optional): Degrees per pixel. Defaults to 5.
         coef (np.ndarray, optional): Pre-stacked coefficients (n_neurons, n_folds,
             n_features). If None, loaded from neurons_df.
+        use_treadmill (bool, optional): Whether to use treadmill RF columns.
+            Defaults to False.
 
     Returns:
         tuple: (rf_azi, rf_ele, rf_idepth, coef)
@@ -53,6 +56,8 @@ def find_rf_centers(
         sfx = "_closedloop"
     else:
         sfx = "_openloop"
+    if use_treadmill:
+        sfx += "_treadmill"
     if coef is None:
         coef = np.stack(neurons_df[f"rf_coef{sfx}"].values)
     coef_ = (coef[:, :, :-1]).reshape(
