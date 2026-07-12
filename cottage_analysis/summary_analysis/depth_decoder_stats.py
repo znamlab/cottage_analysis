@@ -6,7 +6,7 @@ from cottage_analysis.analysis import common_utils
 
 
 def concatenate_all_decoder_results(
-    flexilims_session, session_list, filename="decoder_results.pickle"
+    flexilims_session, session_list, filename="decoder_results.pickle", cols_to_keep=None
 ):
     all_sessions = []
     for session in session_list:
@@ -21,6 +21,10 @@ def concatenate_all_decoder_results(
             decoder_dict = pd.read_pickle(neurons_ds.path_full.parent / filename)
             decoder_dict["ndepths"] = len(decoder_dict["conmat_closedloop"])
             decoder_dict["session"] = session
+            if cols_to_keep is not None:
+                decoder_dict = {
+                    k: v for k, v in decoder_dict.items() if k in cols_to_keep
+                }
             print(f"SESSION {session}: decoder_results concatenated")
             all_sessions.append(decoder_dict)
         else:
