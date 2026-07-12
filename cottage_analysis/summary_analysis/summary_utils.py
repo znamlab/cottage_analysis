@@ -23,6 +23,7 @@ def concatenate_all_neurons_df(
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
     isess = 0
+    neurons_df_list = []
     for session in session_list:
         neurons_ds = pipeline_utils.create_neurons_ds(
             session_name=session,
@@ -54,12 +55,7 @@ def concatenate_all_neurons_df(
                     neurons_df["iscell"] = iscell
 
                 neurons_df["session"] = session
-                if isess == 0:
-                    neurons_df_all = neurons_df
-                else:
-                    neurons_df_all = pd.concat(
-                        [neurons_df_all, neurons_df], ignore_index=True
-                    )
+                neurons_df_list.append(neurons_df)
 
                 if verbose:
                     print(f"Finished concat {filename} from session {session}")
@@ -69,4 +65,5 @@ def concatenate_all_neurons_df(
         else:
             print(f"ERROR: SESSION {session}: {filename} not found")
 
+    neurons_df_all = pd.concat(neurons_df_list, ignore_index=True)
     return neurons_df_all
