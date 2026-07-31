@@ -1122,7 +1122,9 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
         popt, rsq = common_utils.iterate_fit(
             grating_tuning_,
             X.T,
-            trials_df[roi],
+            # numpy, not Series: iterate_fit does y[np.newaxis, :], which pandas
+            # >= 2.0 rejects on a Series
+            trials_df[roi].to_numpy(dtype=float),
             lower_bounds,
             upper_bounds,
             niter=niter,
