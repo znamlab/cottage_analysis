@@ -1,0 +1,28 @@
+name: cottage
+# Recreate with:  conda env create -f environment.yml
+# Requires a GitHub SSH key on the machine (flexiznam/znamutils are private repos).
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      # pandas 3.x removed pandas.errors.SettingWithCopyWarning, which
+      # cottage_analysis/pipelines/pipeline_utils.py imports at module level.
+      - "pandas<3"
+      # Imported by cottage_analysis.io_module.onix, which
+      # cottage_analysis.preprocessing.synchronisation imports unconditionally,
+      # so the SFTF path needs them even though the analysis is 2p-only.
+      - probeinterface
+      - spikeinterface
+      - lxml
+      # used elsewhere in the package (spheres.multidepth, plotting, roi_location)
+      - natsort
+      - seaborn
+      - roifile
+      - ipykernel
+      # everything else comes from setup.py install_requires
+      - -e .
+# NOT installed (only needed for eye-tracking / DLC modules):
+#   opencv-python-headless, deeplabcut

@@ -6,7 +6,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=8G           
-#SBATCH --output=logs/sftf_%j.log    
+#SBATCH --output=/camp/lab/znamenskiyp/home/users/toksozi/cottage_analysis/cottage_analysis/analysis/logs/sftf_%j.log
 #SBATCH --partition=ncpu              
 
 # 1. LOAD ENVIRONMENT
@@ -19,9 +19,11 @@ source activate cottage
 : "${SESSION:?Error: SESSION variable is not set.}"
 
 # Defaults
-: "${PROTOCOL:=SFTF}" 
+: "${PROTOCOL:=SFTF}"
 # This is where it looks for RAW data (Input)
 : "${BASE_DIR:=/camp/lab/znamenskiyp/home/shared/projects/}"
+# Where run_sftf_fitting.py lives (override with CODE_DIR if you move the repo)
+: "${CODE_DIR:=/camp/lab/znamenskiyp/home/users/toksozi/cottage_analysis/cottage_analysis/analysis}"
 
 print_header() {
     echo "========================================"
@@ -36,6 +38,10 @@ print_header() {
 print_header
 
 # 3. RUN THE PYTHON SCRIPT
+# cd to the analysis dir so run_sftf_fitting.py is found no matter where sbatch
+# was called from
+cd "$CODE_DIR" || exit 1
+
 # We use the variables ($MOUSE, etc.) that were passed in
 python run_sftf_fitting.py \
     --project "$PROJECT" \
