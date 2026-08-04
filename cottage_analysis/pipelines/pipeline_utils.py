@@ -266,6 +266,8 @@ def load_and_fit(
     ephys_kwargs=None,
     max_rs2motor_diff=None,
     max_acc=None,
+    trial_average=False,
+    min_valid_frames=None,
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -317,6 +319,10 @@ def load_and_fit(
             (rs - motor_speed)/rs for frame selection. Defaults to None.
         max_acc (float, optional): Maximum acceleration ratio threshold for frame
             selection. Defaults to None.
+        trial_average (bool, optional): Whether to fit on trial-averaged responses (one
+            sample per trial) instead of per-frame responses. Defaults to False.
+        min_valid_frames (int, optional): Minimum number of valid frames required in a
+            trial to include it in the fit. Defaults to None.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -368,6 +374,8 @@ def load_and_fit(
         run_openloop_only=run_openloop_only,
         max_rs2motor_diff=max_rs2motor_diff,
         max_acc=max_acc,
+        trial_average=trial_average,
+        min_valid_frames=min_valid_frames,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
