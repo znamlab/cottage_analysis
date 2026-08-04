@@ -9,7 +9,12 @@ from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
 from cottage_analysis.utilities.misc import get_str_or_recording
 from cottage_analysis.io_module.visstim import get_param_log
-from cottage_analysis.analysis.fit_gaussian_blob import fit_rs_of_tuning
+
+# Import the module, not the function: fit_gaussian_blob imports this package (via
+# find_depth_neurons -> size_control -> spheres), so `from ... import fit_rs_of_tuning`
+# fails when fit_gaussian_blob is imported first. A module import resolves the attribute
+# lazily, at call time.
+from cottage_analysis.analysis import fit_gaussian_blob
 
 print = partial(print, flush=True)
 
@@ -985,7 +990,7 @@ def simulate_and_fit_session(
     mock_trials_df = trials_df_all.copy()
     mock_trials_df["dff_stim"] = mock_trials_df["fake_dff_stim"]
 
-    sim_neurons_df = fit_rs_of_tuning(
+    sim_neurons_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=mock_trials_df,
         model="gaussian_2d",
         trial_sfx="",

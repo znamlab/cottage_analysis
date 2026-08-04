@@ -83,6 +83,7 @@ Gabor3DRFParams = namedtuple(
     ],
 )
 
+
 def gaussian_2d(
     xy_tuple,
     log_amplitude,
@@ -405,7 +406,13 @@ def grating_tuning(
     tuning = direction_tuning(alpha, alpha0, log_kappa, dsi)
     return gaussian * tuning + offset
 
+
+# Imported here, not at the top of the module: this pulls in find_depth_neurons ->
+# size_control -> spheres -> rf_fitting, and rf_fitting imports the namedtuples defined
+# above. Hoisting this back to the header reintroduces a circular ImportError whenever
+# fit_gaussian_blob is the first cottage_analysis module imported.
 from cottage_analysis.analysis import common_utils, find_depth_neurons
+
 
 def initial_fit_conditions(
     model,
