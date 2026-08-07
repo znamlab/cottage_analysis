@@ -142,6 +142,7 @@ def load_session(
     protocol_base="SpheresPermTubeReward",
     recording_type="two_photon",
     ephys_kwargs=None,
+    tread_kwargs=None,
 ):
     """Load data from a single session.
 
@@ -162,6 +163,10 @@ def load_session(
         recording_type (str, optional): recording type. Defaults to "two_photon".
         ephys_kwargs (dict, optional): ephys kwargs for spike rate generation.
             Defaults to None.
+        tread_kwargs (dict, optional): additional kwargs for
+            `treadmill.sync_all_recordings` (e.g. `acceleration_time`, `method`,
+            `margin`, `cut_trial_end`, `trial_duration`). Only used when
+            `protocol_base == "SpheresTubeMotor"`. Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -199,6 +204,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
+            **(tread_kwargs or {}),
         )
     else:
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
@@ -268,6 +274,7 @@ def load_and_fit(
     max_acc=None,
     trial_average=False,
     min_valid_frames=None,
+    tread_kwargs=None,
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -323,6 +330,9 @@ def load_and_fit(
             sample per trial) instead of per-frame responses. Defaults to False.
         min_valid_frames (int, optional): Minimum number of valid frames required in a
             trial to include it in the fit. Defaults to None.
+        tread_kwargs (dict, optional): additional kwargs for
+            `treadmill.sync_all_recordings`, forwarded to `load_session`. Only used
+            when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -348,6 +358,7 @@ def load_and_fit(
         protocol_base=protocol_base,
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
+        tread_kwargs=tread_kwargs,
     )
     # create name from model and choose_trials
     suffix = f"{model}"

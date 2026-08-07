@@ -1,5 +1,9 @@
 # Change log
 
+## Unreleased
+### Minor changes
+- Added `method="plateau"` option to `treadmill.process_imaging_df`/`sync_all_recordings` for detecting the post-motor-on analysis window start via a trapezoid-ramp fit to `RS`, as an opt-in alternative to the fixed `acceleration_time * motor_speed` estimate. The former hardcoded `+ 0.5` s buffer is now a `margin` parameter, applied identically by both methods. Default behavior (`method="model"`) is unchanged.
+
 ## v2.0.3
 ### Major changes
 - Added analysis code for the mismatch experiments.
