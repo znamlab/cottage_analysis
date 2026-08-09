@@ -927,22 +927,22 @@ def plot_r2_comparison(
                     y=props[i],
                     size=markersize,
                     alpha=alpha,
-                    jitter=0.4,
+                    jitter=0.3,
                     edgecolor="white",
-                    color=sns.color_palette("Set1")[i],
+                    color=color,
                 )
                 plt.plot(
                     [i - 0.4, i + 0.4],
                     [np.median(props[i]), np.median(props[i])],
                     linewidth=3,
-                    color=color,
+                    color='k',
                 )
                 if ci is not None:
                     plt.fill_between(
                         [i - 0.4, i + 0.4],
                         [ci[i][0], ci[i][0]],
                         [ci[i][1], ci[i][1]],
-                        color=sns.color_palette("Set1")[i],
+                        color=color,
                         alpha=0.7,
                         edgecolor="none",
                     )
