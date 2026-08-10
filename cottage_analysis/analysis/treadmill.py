@@ -151,6 +151,7 @@ def sync_all_recordings(
     do_process_imaging_df=True,
     protocol_base=None,
     treadmill_params=None,
+    add_spikes=False,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -200,6 +201,7 @@ def sync_all_recordings(
             Keys: ``steps_per_rev`` (int), ``microstepping`` (float),
             ``wheel_radius`` (float, cm), ``actual_motor_speed`` (dict mapping
             nominal to actual speed). Defaults to ``DEFAULT_TREADMILL_PARAMS``.
+        add_spikes (bool, optional): If True, add spikes to the neurons dataframe. Defaults to False.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -260,6 +262,7 @@ def sync_all_recordings(
                 filter_datasets=filter_datasets,
                 exclude_datasets=exclude_datasets,
                 return_volumes=return_volumes,
+                add_spikes=add_spikes,
             )
         else:
             assert ephys_kwargs is not None, "Must provide ephys_kwargs if non-2p"
@@ -304,7 +307,7 @@ def sync_all_recordings(
             )
 
         trials_df = spheres.generate_trials_df(
-            recording=recording, imaging_df=imaging_df
+            recording=recording, imaging_df=imaging_df, add_spikes=add_spikes,
         )
 
         # Slice the continuous simulated trace correctly into the cropped trials
