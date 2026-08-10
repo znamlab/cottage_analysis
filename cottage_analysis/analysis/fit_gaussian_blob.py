@@ -11,10 +11,24 @@ from scipy.stats import spearmanr
 
 print = partial(print, flush=True)
 
+# Max curve_fit evaluations for the RS/OF tuning models. Well-posed fits converge in
+# < ~150 evaluations; this cap aborts runaway fits on untuned / outlier cells early
+# (they otherwise creep toward the precision bound for thousands of iterations) without
+# changing the best-of-niter result for genuinely tuned cells.
+RSOF_MAXFEV = 3000
+
+# Finite penalty substituted for any non-finite model output. With a small/zero
+# min_sigma floor the optimiser can transiently push params into regimes where the
+# precision exponent overflows (-> inf/nan predictions), which would otherwise trip
+# scipy's asarray_chkfinite and abort the whole fit. Replacing non-finite values with
+# a large-but-finite penalty (huge residual vs the O(1) dff data) steers curve_fit
+# away from those params instead of crashing. Well-posed fits never hit this.
+G2D_NONFINITE_PENALTY = 1e8
+
 
 Gaussian2DParams = namedtuple(
     "Gaussian2DParams",
-    ["log_amplitude", "x0", "y0", "log_sigma_x2", "log_sigma_y2", "theta", "offset"],
+    ["log_amplitude", "x0", "y0", "log_l11", "l21", "log_l22", "offset"],
 )
 
 GaussianAdditiveParams = namedtuple(
@@ -95,12 +109,79 @@ def gaussian_2d(
     log_amplitude,
     x0,
     y0,
+    log_l11,
+    l21,
+    log_l22,
+    offset,
+    min_sigma,
+):
+    (x, y) = xy_tuple
+    a, b, c = _regularised_precision(log_l11, l21, log_l22, min_sigma)
+    with np.errstate(over="ignore", invalid="ignore"):
+        amplitude = np.exp(log_amplitude)
+        g = offset + amplitude * np.exp(
+            -(a * ((x - x0) ** 2) + 2 * b * (x - x0) * (y - y0) + c * ((y - y0) ** 2))
+        )
+    # Guard against inf/nan predictions (e.g. amplitude overflow * exp underflow) so
+    # curve_fit's finite-check never aborts; see G2D_NONFINITE_PENALTY.
+    g = np.nan_to_num(
+        g,
+        nan=G2D_NONFINITE_PENALTY,
+        posinf=G2D_NONFINITE_PENALTY,
+        neginf=-G2D_NONFINITE_PENALTY,
+    )
+    return g
+
+
+def _regularised_precision(log_l11, l21, log_l22, min_sigma):
+    """Exponent-matrix entries (a, b, c) of the 2D Gaussian, with min_sigma floor.
+
+    The raw precision is P = L L^T (Cholesky factor L = [[l11, 0], [l21, l22]]),
+    giving exponent matrix entries a0, b0, c0. The min_sigma floor adds min_sigma*I
+    to the covariance Σ = P^{-1}/2. Rather than inverting P explicitly (which blows
+    up to inf/nan when l11 or l22 -> 0), we use the algebraically-identical but
+    division-safe identity M_eff = (I + 2s P)^{-1} P, whose determinant D >= 1 always:
+
+        a = (a0 + 2s*det0) / D,  b = b0 / D,  c = (c0 + 2s*det0) / D
+        D = 1 + 2s*(a0 + c0) + 4 s^2 * det0,   det0 = (l11*l22)^2,   s = min_sigma
+
+    The effective precision saturates at 1/(2*min_sigma) per eigenvalue, reached by
+    log_l ~ 10. Inputs are clipped to a far-wider range purely to keep the intermediate
+    quantities (l**2, det0) from overflowing float64 when the optimiser transiently
+    probes extreme values — this changes no physically-meaningful fit.
+    """
+    log_l11 = np.clip(log_l11, -170.0, 170.0)
+    log_l22 = np.clip(log_l22, -170.0, 170.0)
+    l21 = np.clip(l21, -1e150, 1e150)
+    l11 = np.exp(log_l11)
+    l22 = np.exp(log_l22)
+    a0 = l11**2
+    b0 = l11 * l21
+    c0 = l21**2 + l22**2
+    if min_sigma > 0:
+        det0 = (l11 * l22) ** 2
+        s = min_sigma
+        D = 1 + 2 * s * (a0 + c0) + 4 * s**2 * det0
+        a = (a0 + 2 * s * det0) / D
+        b = b0 / D
+        c = (c0 + 2 * s * det0) / D
+    else:
+        a, b, c = a0, b0, c0
+    return a, b, c
+
+
+def _gaussian_2d_sigma_theta(
+    xy_tuple,
+    log_amplitude,
+    x0,
+    y0,
     log_sigma_x2,
     log_sigma_y2,
     theta,
     offset,
     min_sigma,
 ):
+    """Old (sigma_x, sigma_y, theta) Gaussian envelope, used by gabor/grating models."""
     (x, y) = xy_tuple
     sigma_x_sq = np.exp(log_sigma_x2) + min_sigma
     sigma_y_sq = np.exp(log_sigma_y2) + min_sigma
@@ -112,10 +193,9 @@ def gaussian_2d(
     c = (np.sin(theta) ** 2) / (2 * sigma_x_sq) + (np.cos(theta) ** 2) / (
         2 * sigma_y_sq
     )
-    g = offset + amplitude * np.exp(
+    return offset + amplitude * np.exp(
         -(a * ((x - x0) ** 2) + 2 * b * (x - x0) * (y - y0) + c * ((y - y0) ** 2))
     )
-    return g
 
 
 def gaussian_1d(
@@ -332,7 +412,7 @@ def gabor_2d(
     )
 
     gabor = (
-        gaussian_2d(
+        _gaussian_2d_sigma_theta(
             xy_tuple,
             log_amplitude,
             x0,
@@ -440,7 +520,7 @@ def gaussian_3d_rf(
     min_sigma,
 ):
     (x, y, z) = stim_tuple
-    rf = gaussian_2d(
+    rf = _gaussian_2d_sigma_theta(
         (x, y),
         log_amplitude,
         x0,
@@ -471,7 +551,7 @@ def grating_tuning(
 ):
     """2D gaussian function with direction tuning."""
     (sf, tf, alpha) = stim_tuple
-    gaussian = gaussian_2d(
+    gaussian = _gaussian_2d_sigma_theta(
         (sf, tf),
         log_amplitude,
         x0,
@@ -497,22 +577,61 @@ def initial_fit_conditions(
             log_amplitude=-np.inf,
             x0=np.log(param_range["rs_min"]),
             y0=np.log(param_range["of_min"]),
-            log_sigma_x2=-np.inf,
-            log_sigma_y2=-np.inf,
-            theta=0,
+            log_l11=-np.inf,
+            l21=-1e4,
+            log_l22=-np.inf,
             offset=-np.inf,
         )
         upper_bounds = Gaussian2DParams(
-            log_amplitude=np.inf,
+            # Cap (exp(50) ~ 5e21) far above any real dff amplitude but well below the
+            # exp overflow threshold (~exp(709)), so amplitude never becomes inf and
+            # amplitude*exp(...) never yields inf*0 = nan. Needed once min_sigma is
+            # small/zero and the optimiser stops being held back by the variance floor.
+            log_amplitude=50.0,
             x0=np.log(param_range["rs_max"]),
             y0=np.log(param_range["of_max"]),
-            log_sigma_x2=np.inf,
-            log_sigma_y2=np.inf,
-            theta=np.pi / 2,
+            # Precision saturates at 1/(2*min_sigma) by log_l ~ 10; cap well above that
+            # to stop the optimiser from running precision off to infinity on noise ROIs
+            # (which would overflow the exponent matrix). l21 (tilt) gets a generous cap
+            # for the same reason — both are far beyond any physically-meaningful fit.
+            log_l11=15.0,
+            l21=1e4,
+            log_l22=15.0,
             offset=np.inf,
         )
 
-        def p0_func():
+        def p0_func(X=None, y=None, i_iter=0):
+            # First iteration: a data-informed guess. Anchoring the centre at the peak
+            # response and the offset/amplitude at the data baseline avoids the
+            # "narrow spike on an outlier" local minimum that otherwise makes the
+            # optimiser creep toward the precision bound for thousands of iterations.
+            if X is not None and y is not None and i_iter == 0:
+                rs, of = X
+                y = np.asarray(y)
+                finite = np.isfinite(y)
+                if finite.any():
+                    yf = y[finite]
+                    baseline = np.median(yf)
+                    amplitude = max(yf.max() - baseline, 1e-3)
+                    j = np.flatnonzero(finite)[np.argmax(yf)]
+                    return Gaussian2DParams(
+                        log_amplitude=np.log(amplitude),
+                        x0=np.clip(
+                            rs[j],
+                            np.log(param_range["rs_min"]),
+                            np.log(param_range["rs_max"]),
+                        ),
+                        y0=np.clip(
+                            of[j],
+                            np.log(param_range["of_min"]),
+                            np.log(param_range["of_max"]),
+                        ),
+                        log_l11=0.0,
+                        l21=0.0,
+                        log_l22=0.0,
+                        offset=baseline,
+                    )
+            # Subsequent iterations: random restarts for robustness.
             return Gaussian2DParams(
                 log_amplitude=np.random.normal(),
                 x0=np.random.uniform(
@@ -521,9 +640,9 @@ def initial_fit_conditions(
                 y0=np.random.uniform(
                     np.log(param_range["of_min"]), np.log(param_range["of_max"])
                 ),
-                log_sigma_x2=np.random.normal(),
-                log_sigma_y2=np.random.normal(),
-                theta=np.random.uniform(0, 0.5 * np.pi),
+                log_l11=np.random.uniform(-2, 2),
+                l21=np.random.normal(0, 0.5),
+                log_l22=np.random.uniform(-2, 2),
                 offset=np.random.normal(),
             )
 
@@ -1020,6 +1139,7 @@ def fit_rs_of_tuning(
                         upper_bounds,
                         niter=niter,
                         p0_func=p0_func,
+                        maxfev=RSOF_MAXFEV,
                     )
                     # Assign values to neurons_df_temp
                     if (model == "gaussian_additive") or (model == "gaussian_2d"):
@@ -1199,6 +1319,7 @@ def fit_rs_of_tuning(
                             upper_bounds,
                             niter=niter,
                             p0_func=p0_func,
+                            maxfev=RSOF_MAXFEV,
                         )
                         dff_pred = model_func_((rs_to_use_test, of_test), *popt)
                         dff_pred_all.append(dff_pred)
@@ -1336,7 +1457,20 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
 # Given that popt can be NaN if the fit fails, we need to handle this
 
 
-def get_gaussian_angle(popt):
+def _effective_precision_eig(popt, min_sigma=0.25):
+    """Eigenvalues/eigenvectors of the effective 2×2 precision matrix.
+
+    Reconstructs the precision after the min_sigma covariance floor is applied,
+    matching the computation inside gaussian_2d exactly.
+
+    Returns:
+        tuple: (eigenvalues ascending, eigenvectors as columns) from np.linalg.eigh.
+    """
+    a, b, c = _regularised_precision(popt[3], popt[4], popt[5], min_sigma)
+    return np.linalg.eigh(np.array([[a, b], [b, c]]))
+
+
+def get_gaussian_angle(popt, min_sigma=0.25):
     """Calculate the angle of the major axis of the Gaussian.
 
     This wraps the angle on the [-45, 135] range to avoid splitting cells with theta
@@ -1344,20 +1478,17 @@ def get_gaussian_angle(popt):
 
     Args:
         popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
 
     Returns:
         float: Angle in degrees.
     """
     if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
         return np.nan
-    log_sigma_x2 = popt[3]
-    log_sigma_y2 = popt[4]
-    theta = popt[5]
-    if log_sigma_x2 < log_sigma_y2:
-        angle = theta + np.pi / 2
-    else:
-        angle = theta
-    angle_deg = np.degrees(angle)
+    eigenvalues, eigenvectors = _effective_precision_eig(popt, min_sigma)
+    major_vec = eigenvectors[:, 0]  # smallest eigenvalue → widest (major) axis
+    angle_rad = np.arctan2(major_vec[1], major_vec[0])
+    angle_deg = np.degrees(angle_rad) % 180
     return (angle_deg + 45) % 180 - 45
 
 
@@ -1371,19 +1502,12 @@ def get_gaussian_eccentricity(popt, min_sigma=0.25):
     Returns:
         float: Eccentricity value.
     """
-    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
         return np.nan
-    # Log-variances (popt[3] and popt[4])
-    # The actual standard deviations used in the fit are sqrt(exp(log_sigma_i2) + min_sigma)
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
-
-    # Major and minor axes
-    major = max(sigma_x, sigma_y)
-    minor = min(sigma_x, sigma_y)
-
-    # Eccentricity defined as 1 - (minor/major)
-    return 1 - (minor / major)
+    eigenvalues, _ = _effective_precision_eig(popt, min_sigma)
+    sigma_major = 1.0 / np.sqrt(eigenvalues[0])
+    sigma_minor = 1.0 / np.sqrt(eigenvalues[1])
+    return 1.0 - sigma_minor / sigma_major
 
 
 def get_preferred_rs(popt):
@@ -1417,7 +1541,7 @@ def get_preferred_of(popt):
 
 
 def get_semimajor_length(popt, min_sigma=0.25):
-    """Get the length of the semi-major axis
+    """Get the length of the semi-major axis.
 
     Args:
         popt (list or np.ndarray): Gaussian fit parameters.
@@ -1426,25 +1550,68 @@ def get_semimajor_length(popt, min_sigma=0.25):
     Returns:
         float: Length of the semi-major axis
     """
-    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
         return np.nan
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
-    return max(sigma_x, sigma_y)
+    eigenvalues, _ = _effective_precision_eig(popt, min_sigma)
+    # E_eff eigenvalue λ relates to Gaussian σ as: σ = 1/sqrt(2λ)  (from E = Σ^{-1}/2)
+    return 1.0 / np.sqrt(2 * eigenvalues[0])
 
 
 def get_semiminor_length(popt, min_sigma=0.25):
-    """Get the length of the semi-major axis
+    """Get the length of the semi-minor axis.
 
     Args:
         popt (list or np.ndarray): Gaussian fit parameters.
         min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
 
     Returns:
-        float: Length of the semi-major axis
+        float: Length of the semi-minor axis
     """
-    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
         return np.nan
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
-    return min(sigma_x, sigma_y)
+    eigenvalues, _ = _effective_precision_eig(popt, min_sigma)
+    return 1.0 / np.sqrt(2 * eigenvalues[1])
+
+
+def convert_g2d_popt_old_to_cholesky(popt_old, min_sigma=0.25):
+    """Convert old (log_sigma_x2, log_sigma_y2, theta) popt to Cholesky (log_l11, l21, log_l22).
+
+    Args:
+        popt_old (list or np.ndarray): Old-format popt with 7 elements:
+            [log_amplitude, x0, y0, log_sigma_x2, log_sigma_y2, theta, offset]
+        min_sigma (float, optional): Minimum sigma value used in the original fit.
+
+    Returns:
+        list: New-format popt with 7 elements:
+            [log_amplitude, x0, y0, log_l11, l21, log_l22, offset]
+    """
+    popt_old = list(popt_old)
+    # Use RAW variances (no +min_sigma) so that gaussian_2d applies min_sigma correctly.
+    # The old formula's effective covariance Σ_eff = Σ_raw + min_sigma*I, which is
+    # exactly what gaussian_2d computes from E_raw with its covariance floor.
+    sigma_x_sq_raw = np.exp(popt_old[3])
+    sigma_y_sq_raw = np.exp(popt_old[4])
+    theta = popt_old[5]
+    # Raw exponent matrix E_raw entries (a = E_11, b = E_12, c = E_22)
+    a = np.cos(theta) ** 2 / (2 * sigma_x_sq_raw) + np.sin(theta) ** 2 / (
+        2 * sigma_y_sq_raw
+    )
+    b = np.sin(2 * theta) / (4 * sigma_x_sq_raw) - np.sin(2 * theta) / (
+        4 * sigma_y_sq_raw
+    )
+    c = np.sin(theta) ** 2 / (2 * sigma_x_sq_raw) + np.cos(theta) ** 2 / (
+        2 * sigma_y_sq_raw
+    )
+    # Cholesky factorisation of E_raw = [[a, b], [b, c]]
+    l11 = np.sqrt(a)
+    l21 = b / l11
+    l22 = np.sqrt(max(c - l21**2, 1e-10))
+    return [
+        popt_old[0],
+        popt_old[1],
+        popt_old[2],
+        np.log(l11),
+        l21,
+        np.log(l22),
+        popt_old[6],
+    ]

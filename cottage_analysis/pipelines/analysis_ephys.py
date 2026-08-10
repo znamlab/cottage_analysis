@@ -133,7 +133,6 @@ def main(
     print("")
     print("---Start synchronisation...---")
     if protocol_base == "SpheresTubeMotor":
-        run_rf = False
         _, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
             flexilims_session=flexilims_session,
@@ -398,13 +397,19 @@ def main(
         print("---RF analysis...---")
         # finished = pipeline_utils.save_finish_time(finished, col="rf_started")
         print("Generating sphere stimuli...")
-        for is_closedloop in trials_df_all["closed_loop"].unique():
+        if "closed_loop" in trials_df_all.columns:
+            closed_loops = trials_df_all["closed_loop"].unique()
+        else:
+            closed_loops = [True]
+        for is_closedloop in closed_loops:
             if is_closedloop:
                 sfx = "_closedloop"
             else:
                 sfx = "_openloop"
             if is_multidepth:
                 sfx += "_multidepth"
+            if protocol_base == "SpheresTubeMotor":
+                sfx += "_treadmill"
 
             frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
                 session_name=session_name,
@@ -426,37 +431,95 @@ def main(
             )
 
             print(f"Fitting RF{sfx}...")
-            (
-                coef,
-                r2,
-                best_reg_xys,
-                best_reg_depths,
-            ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
-                imaging_df_all,
-                frames_all[..., int(frames_all.shape[2] // 2) :],
-                reg_xys=np.geomspace(2.5, 10240, 13),
-                reg_depths=np.geomspace(2.5, 10240, 13),
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                tune_separately=True,
-                validation=False,
-            )
+            if run_rsof_fit_on_separate_slurm_jobs:
+                from cottage_analysis.pipelines import fit_rf_array
 
-            print("Fitting ipsi RF...")
-            (
-                coef_ipsi,
-                r2_ipsi,
-            ) = rf_fitting.fit_3d_rfs_ipsi(
-                imaging_df_all,
-                frames_all[..., : int(frames_all.shape[2] // 2)],
-                best_reg_xys,
-                best_reg_depths,
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                validation=False,
-            )
+                rf_work_dir = neurons_ds.path_full.parent / f"_rf_fit_tmp{sfx}"
+                job_id, n_tasks = fit_rf_array.submit_hyperparam_array(
+                    work_dir=rf_work_dir,
+                    imaging_df=imaging_df_all,
+                    frames=frames_all[..., int(frames_all.shape[2] // 2) :],
+                    reg_xys=np.geomspace(2.5, 10240, 13),
+                    reg_depths=np.geomspace(2.5, 10240, 13),
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
+                fit_rf_array.wait_for_results(
+                    rf_work_dir / "hyperparam", n_tasks
+                )
+                (
+                    coef,
+                    r2,
+                    best_reg_xys,
+                    best_reg_depths,
+                ) = fit_rf_array.collect_hyperparam_results(
+                    work_dir=rf_work_dir,
+                    tune_separately=True,
+                    r2_threshold=0.01,
+                )
+
+                print(f"Fitting ipsi RF{sfx} (Slurm array)...")
+                job_id, n_tasks = fit_rf_array.submit_ipsi_array(
+                    work_dir=rf_work_dir,
+                    imaging_df=imaging_df_all,
+                    frames=frames_all[
+                        ..., : int(frames_all.shape[2] // 2)
+                    ],
+                    best_reg_xys=best_reg_xys,
+                    best_reg_depths=best_reg_depths,
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
+                fit_rf_array.wait_for_results(
+                    rf_work_dir / "ipsi", n_tasks
+                )
+                (
+                    coef_ipsi,
+                    r2_ipsi,
+                ) = fit_rf_array.collect_ipsi_results(
+                    work_dir=rf_work_dir,
+                )
+
+                # Clean up temporary files
+                import shutil
+
+                shutil.rmtree(rf_work_dir)
+            else:
+                (
+                    coef,
+                    r2,
+                    best_reg_xys,
+                    best_reg_depths,
+                ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
+                    imaging_df_all,
+                    frames_all[..., int(frames_all.shape[2] // 2) :],
+                    reg_xys=np.geomspace(2.5, 10240, 13),
+                    reg_depths=np.geomspace(2.5, 10240, 13),
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    tune_separately=True,
+                    validation=False,
+                )
+
+                print("Fitting ipsi RF...")
+                (
+                    coef_ipsi,
+                    r2_ipsi,
+                ) = rf_fitting.fit_3d_rfs_ipsi(
+                    imaging_df_all,
+                    frames_all[..., : int(frames_all.shape[2] // 2)],
+                    best_reg_xys,
+                    best_reg_depths,
+                    shift_stim=2,
+                    use_col="dffs",
+                    k_folds=5,
+                    validation=False,
+                )
 
             if not run_depth_fit:
                 neurons_df = pd.read_pickle(neurons_ds.path_full)
@@ -477,7 +540,14 @@ def main(
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
         # Save neurons_df
-        neurons_df.to_pickle(neurons_ds.path_full)
+        if protocol_base != "SpheresTubeMotor":
+            neurons_df.to_pickle(neurons_ds.path_full)
+        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        target_file = neurons_ds.path_full.with_name(
+            f"neurons_df_for_rf{special_sfx_base}.pickle"
+        )
+        print(f"Saving separate RF tuning fitting files in {target_file}...")
+        neurons_df.to_pickle(target_file)
 
         # Update neurons_ds on flexilims
         # neurons_ds.update_flexilims(mode="update")

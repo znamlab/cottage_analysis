@@ -103,6 +103,7 @@ def plot_rf(
     fontsize_dict={"title": 15, "label": 10, "tick": 5, "legend": 8},
     use_ipsi=False,
     use_multidepth=False,
+    use_treadmill=False,
     extent=(0, 120, -40, 40),
     clim=None,
 ):
@@ -116,6 +117,8 @@ def plot_rf(
         sfx += "_openloop"
     if use_multidepth:
         sfx += "_multidepth"
+    if use_treadmill:
+        sfx += "_treadmill"
     coef = neurons_df.loc[roi, f"rf_coef{sfx}"][:, :-1].copy()
     coef = coef.reshape(coef.shape[0], ndepths, frame_shape[0], frame_shape[1])
     coef_mean = np.nanmean(coef, axis=0)
@@ -180,11 +183,14 @@ def plot_rf_centers(
     plot_width=1,
     plot_height=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 5},
+    use_treadmill=False,
 ):
     if is_closed_loop:
         sfx = "_closedloop"
     else:
         sfx = "_openloop"
+    if use_treadmill:
+        sfx += "_treadmill"
 
     ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
     sessions = results.session.unique()
@@ -307,14 +313,19 @@ def plot_sig_rf_perc(
     plt.tick_params(labelsize=fontsize_dict["tick"])
 
 
-def plot_rf_3d(neurons_df, rois, depths, savepath, fontsize_dict):
+def plot_rf_3d(
+    neurons_df, rois, depths, savepath, fontsize_dict, use_treadmill=False,
+):
     depth, ele, azi = np.mgrid[0:8, -37.5:37.5:16j, 2.5:117.5:24j]
+    sfx = "_closedloop"
+    if use_treadmill:
+        sfx += "_treadmill"
 
     data = []
     for roi, rf_color, line_color in zip(
         rois, ["Reds", "Greens", "Blues"], ["red", "green", "blue"]
     ):
-        coef = neurons_df.loc[roi, f"rf_coef_closedloop"][:, :-1].copy()
+        coef = neurons_df.loc[roi, f"rf_coef{sfx}"][:, :-1].copy()
         coef = coef.reshape(coef.shape[0], len(depths), 16, 24)
         coef_mean = np.mean(coef, axis=0)
         data.append(

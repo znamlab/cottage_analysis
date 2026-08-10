@@ -400,6 +400,8 @@ def fit_preferred_depth(
 
     # Choose trials
     depth_list = find_depth_list(trials_df)
+    depth_min = min(depth_min, np.min(depth_list))
+    depth_max = max(depth_max, np.max(depth_list))
 
     if max_rs2motor_diff is not None:
         trials_df = common_utils.filter_trials_by_rs2motor(
@@ -503,9 +505,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
-                np.exp(popt[1])
-            )
+            neurons_df.at[
+                roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"
+            ] = np.exp(popt[1])
             neurons_df.at[
                 roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
             ] = popt
@@ -551,12 +553,15 @@ def fit_preferred_depth(
                 )
                 y_pred = gaussian_func_(np.log(X_test.astype(float)), *popt)
                 y_pred_all.append(y_pred)
-            rsq = common_utils.calculate_r_squared(
-                np.concatenate(y_test_all), np.concatenate(y_pred_all)
-            )
-            rval, pval = spearmanr(
-                np.concatenate(y_test_all), np.concatenate(y_pred_all)
-            )
+            # Drop held-out trials with NaN data before scoring: a trial whose
+            # frames were all removed (e.g. by max_rs2motor_diff filtering) has a
+            # NaN trial mean, which would otherwise propagate through the
+            # (non-NaN-aware) r-squared / spearmanr and force the whole ROI to NaN.
+            y_test_cat = np.concatenate(y_test_all)
+            y_pred_cat = np.concatenate(y_pred_all)
+            valid = ~(np.isnan(y_test_cat) | np.isnan(y_pred_cat))
+            rsq = common_utils.calculate_r_squared(y_test_cat[valid], y_pred_cat[valid])
+            rval, pval = spearmanr(y_test_cat[valid], y_pred_cat[valid])
             neurons_df.at[
                 roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"
             ] = rsq

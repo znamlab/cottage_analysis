@@ -220,6 +220,19 @@ def run_session(
             )
             return
 
+    # Build the depth-orthogonal target: the elementwise product of running speed
+    # and optic flow. Depth is essentially the RS/OF ratio (OF = RS / depth), so in
+    # log space log(depth) ~ log(RS) - log(OF). The axis orthogonal to depth is
+    # log(RS) + log(OF) = log(RS * OF), which we decode as "rsof_product_stim".
+    def _rsof_product(row):
+        rs = np.asarray(row["RS_stim"], dtype=float)
+        of = np.asarray(row["OF_stim"], dtype=float)
+        n = min(len(rs), len(of))
+        return rs[:n] * of[:n]
+
+    trials_df_all = trials_df_all.copy()
+    trials_df_all["rsof_product_stim"] = trials_df_all.apply(_rsof_product, axis=1)
+
     n_rois = trials_df_all["dff_stim"].iloc[0].shape[1]
     print(
         f"Number of ROIs: {n_rois}, Number of trials: {len(trials_df_all)}", flush=True
@@ -232,7 +245,7 @@ def run_session(
         index=trials_df_all.index,
     )
 
-    targets = ["OF_stim", "RS_stim", "depth"]
+    targets = ["OF_stim", "RS_stim", "depth", "rsof_product_stim"]
     conditions = [1, 0]  # 1: closedloop, 0: openloop
     has_results = False
 
@@ -445,6 +458,7 @@ def run_session(
             "OF_stim": population_ridge_decoder.of_decoder,
             "RS_stim": population_ridge_decoder.rs_decoder,
             "depth": population_ridge_decoder.depth_decoder,
+            "rsof_product_stim": population_ridge_decoder.rsof_product_decoder,
         }
 
         for cond in conditions:

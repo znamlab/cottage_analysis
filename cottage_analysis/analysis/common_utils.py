@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import scipy
 import pandas as pd
@@ -66,7 +67,15 @@ def calculate_r_squared(y, y_hat):
 
 
 def iterate_fit(
-    func, X, y, lower_bounds, upper_bounds, niter=5, p0_func=None, verbose=False
+    func,
+    X,
+    y,
+    lower_bounds,
+    upper_bounds,
+    niter=5,
+    p0_func=None,
+    verbose=False,
+    maxfev=100000,
 ):
     """Iterate fitting to avoid local minima.
 
@@ -77,7 +86,13 @@ def iterate_fit(
         lower_bounds: lower bounds for the parameters
         upper_bounds: upper bounds for the parameters
         niter: number of iterations
-        p0_func: function to generate initial parameters
+        p0_func: function to generate initial parameters. If it accepts arguments
+            (i.e. its signature takes >= 2 parameters) it is called as
+            ``p0_func(X, y, i_iter)`` so it can produce a data-informed guess on the
+            first iteration; otherwise it is called with no arguments (legacy contract).
+        verbose: print progress
+        maxfev: maximum number of function evaluations per curve_fit call. Lower values
+            abort runaway fits (e.g. on untuned/outlier cells) early.
 
     Returns:
         popt_best: best parameters
@@ -86,6 +101,13 @@ def iterate_fit(
     """
     popt_arr = []
     rsq_arr = []
+    # Detect whether p0_func wants the data (so it can make a data-informed guess).
+    p0_wants_data = False
+    if p0_func is not None:
+        try:
+            p0_wants_data = len(inspect.signature(p0_func).parameters) >= 2
+        except (TypeError, ValueError):
+            p0_wants_data = False
     if isinstance(X, tuple):
         valid = ~np.any(np.isnan(np.asarray(X)), axis=0) & ~np.isnan(y)
     else:
@@ -120,7 +142,7 @@ def iterate_fit(
     np.random.seed(42)
     for i_iter in range(niter):
         if p0_func is not None:
-            p0 = p0_func()
+            p0 = p0_func(X, y, i_iter) if p0_wants_data else p0_func()
         else:
             # generate random initial parameters from a standard normal distribution for unbounded parameters
             # otherwise, draw from a uniform distribution between lower and upper bounds
@@ -135,7 +157,7 @@ def iterate_fit(
                 func,
                 X,
                 y,
-                maxfev=100000,  # 100000
+                maxfev=maxfev,
                 bounds=(
                     lower_bounds,
                     upper_bounds,
@@ -549,6 +571,83 @@ def get_n_seeds(n=10):
     rng = np.random.RandomState(0)
     seeds = rng.randint(0, 1000, n)
     return seeds.tolist()
+
+
+def empirical_null_threshold(rsq_values, percentile=95):
+    """Estimate the null R-squared distribution from the negative tail and return a threshold.
+
+    Assumes the null (no tuning) is symmetric around 0: R-squared can go negative for bad
+    fits, and that negative tail is an uncontaminated sample of the null, so its standard
+    deviation estimates the null's width. The threshold is the given percentile of N(0, sigma).
+
+    Args:
+        rsq_values (array-like): R-squared values (finite, already filtered of sentinels).
+        percentile (float): Percentile of the null distribution to use as threshold. Defaults to 95.
+
+    Returns:
+        tuple: (threshold, sigma)
+    """
+    vals = np.asarray(rsq_values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    neg = vals[vals < 0]
+    if len(neg) < 20:
+        raise ValueError(f"Only {len(neg)} negative values - too few to fit null reliably")
+    sigma = np.std(neg)
+    threshold = stats.norm.ppf(percentile / 100, loc=0, scale=sigma)
+    return threshold, sigma
+
+
+def add_rsq_significance(df, rsq_cols, percentile=95, min_valid_rsq=-1, verbose=True):
+    """Add a boolean "is this fit significant" column for each R-squared column.
+
+    For each column, fits an empirical null from the negative tail of that column's values
+    (see `empirical_null_threshold`) and flags rows whose R-squared exceeds the resulting
+    threshold. Adds one new column per input column, named f"{col}_sig", in place.
+
+    R-squared here is 1 - residual_var / total_var (see `calculate_r_squared`), which,
+    unlike a correlation coefficient, is not bounded below by -1: it blows up whenever
+    residual_var >> total_var. For a cross-validated *test* R-squared this happens for two
+    different reasons - (1) a genuinely bad fit, where the model's prediction is far from
+    the held-out data (this is the real "no tuning" signal the empirical null is built to
+    detect), and (2) near-zero variance in the held-out test trials themselves (e.g. a
+    low-trial-count session, or a flat/non-responsive neuron), where dividing by a tiny
+    total_var sends R-squared to extreme values (e.g. -10000) that reflect a degenerate
+    test set rather than fit quality. Those numerical-artifact outliers would otherwise
+    dominate and inflate the estimated null sigma, making the significance threshold far
+    too lenient - hence `min_valid_rsq` excludes them before the null is fit.
+
+    Args:
+        df (pd.DataFrame): Dataframe containing the R-squared columns.
+        rsq_cols (list or dict): R-squared column names to threshold. If a dict, values
+            are treated as column names and keys are used as the labels in `thresholds`
+            (matches the {model: column} convention used elsewhere).
+        percentile (float): Percentile of the null distribution to use as threshold. Defaults to 95.
+        min_valid_rsq (float): Values below this are treated as degenerate-test-set artifacts
+            (see above) and dropped before fitting the null, rather than genuine bad-fit
+            signal. Defaults to -1, matching the cutoff used ad hoc across the existing
+            notebooks (not a principled bound - just "worse than explaining -100% of
+            variance is treated as noise-fitting degenerate rather than informative").
+        verbose (bool): Print sigma/threshold/% passing per column. Defaults to True.
+
+    Returns:
+        dict: {label: threshold} for each column (label = dict key if `rsq_cols` is a dict,
+            else the column name).
+    """
+    items = rsq_cols.items() if isinstance(rsq_cols, dict) else [(c, c) for c in rsq_cols]
+    thresholds = {}
+    for label, col in items:
+        vals = pd.to_numeric(df[col], errors="coerce")
+        finite = vals[np.isfinite(vals) & (vals >= min_valid_rsq)].to_numpy()
+        thr, sigma = empirical_null_threshold(finite, percentile=percentile)
+        thresholds[label] = thr
+        sig_col = f"{col}_sig"
+        df[sig_col] = vals > thr
+        if verbose:
+            print(
+                f"{str(label):8s} sigma={sigma:.4f}  threshold={thr:.4f}  "
+                f"passing={df[sig_col].mean() * 100:5.1f}%"
+            )
+    return thresholds
 
 
 def filter_trials_by_rs2motor(

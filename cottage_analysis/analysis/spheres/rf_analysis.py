@@ -25,6 +25,7 @@ def find_rf_centers(
     is_closed_loop=1,
     resolution=5,
     coef=None,
+    use_treadmill=False,
 ):
     """Find the spatial center and best depth of receptive fields.
 
@@ -41,6 +42,8 @@ def find_rf_centers(
         resolution (int, optional): Degrees per pixel. Defaults to 5.
         coef (np.ndarray, optional): Pre-stacked coefficients (n_neurons, n_folds,
             n_features). If None, loaded from neurons_df.
+        use_treadmill (bool, optional): Whether to use treadmill RF columns.
+            Defaults to False.
 
     Returns:
         tuple: (rf_azi, rf_ele, rf_idepth, coef)
@@ -53,6 +56,8 @@ def find_rf_centers(
         sfx = "_closedloop"
     else:
         sfx = "_openloop"
+    if use_treadmill:
+        sfx += "_treadmill"
     if coef is None:
         coef = np.stack(neurons_df[f"rf_coef{sfx}"].values)
     coef_ = (coef[:, :, :-1]).reshape(
@@ -96,6 +101,7 @@ def fit_rf_preferred_depth(
     min_sigma=0.5,
     depth_bounds=(np.log(0.02), np.log(20)),
     use_multidepth=False,
+    suffix=None,
 ):
     """Fit a 1D Gaussian across depths at the best azimuth/elevation pixel.
 
@@ -119,6 +125,7 @@ def fit_rf_preferred_depth(
             Default (np.log(0.02), np.log(20)).
         use_multidepth (bool): Whether to use multidepth coefficients.
             Default False.
+        suffix (str, optional): Custom suffix for the columns. Default None.
 
     Returns:
         tuple: (rf_preferred_depth, rf_depth_popt, rf_depth_rsq)
@@ -130,12 +137,22 @@ def fit_rf_preferred_depth(
     ndepths = len(depths)
     log_depths = np.log(depths)
 
+    # Ensure depth_bounds covers the range of log_depths to avoid ValueError in curve_fit
+    if depth_bounds is None:
+        depth_bounds = (log_depths.min(), log_depths.max())
+    else:
+        depth_bounds = (
+            min(depth_bounds[0], log_depths.min()),
+            max(depth_bounds[1], log_depths.max()),
+        )
+
     # Load coef from neurons_df (n_neurons, n_folds, n_features)
     # with n_features = ndepths * n_ele * n_azi + 1 (bias term)
 
-    suffix = "_closedloop" if is_closed_loop else "_openloop"
-    if use_multidepth:
-        suffix += "_multidepth"
+    if suffix is None:
+        suffix = "_closedloop" if is_closed_loop else "_openloop"
+        if use_multidepth:
+            suffix += "_multidepth"
     coef = np.stack(neurons_df[f"rf_coef{suffix}"].values)
 
     # Drop bias term and reshape to (n_neurons, n_folds, ndepths, n_ele, n_azi)
