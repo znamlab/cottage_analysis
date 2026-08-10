@@ -156,6 +156,7 @@ def load_session(
     ephys_kwargs=None,
     return_neurons_df=True,
     treadmill_params=None,
+    add_spikes=False,
 ):
     """Load data from a single session.
 
@@ -182,6 +183,7 @@ def load_session(
         treadmill_params (dict, optional): Hardware parameters for the treadmill rig.
             Passed to ``treadmill.sync_all_recordings``. Defaults to
             ``DEFAULT_TREADMILL_PARAMS``.
+        add_spikes (bool, optional): Whether to add spikes to the neurons dataframe. Defaults to False.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -224,6 +226,7 @@ def load_session(
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
             treadmill_params=treadmill_params,
+            add_spikes=add_spikes,
         )
     else:
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
@@ -237,6 +240,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
+            add_spikes=add_spikes,
         )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
@@ -253,6 +257,7 @@ def load_session(
             resolution=5,
             verbose=False,
             ephys_kwargs=ephys_kwargs,
+            add_spikes=add_spikes,
         )
         out = out + [frames_all, imaging_df_all]
     return tuple(out)

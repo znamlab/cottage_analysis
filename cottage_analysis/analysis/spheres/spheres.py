@@ -651,6 +651,7 @@ def regenerate_frames_all_recordings(
     harp_is_in_recording=True,
     use_onix=False,
     ephys_kwargs=None,
+    add_spikes=False,
     do_regenerate_frames=True,
     verbose=True,
 ):
@@ -683,6 +684,7 @@ def regenerate_frames_all_recordings(
              False.
         ephys_kwargs (dict): Keyword arguments for generate_spike_rate_df.
             `return_multiunit` or `exp_sd` for instance. Defaults to None.
+        add_spikes (bool): if True, add spikes to trials_df for two_photon recordings. Defaults to False.
         do_regenerate_frames (bool): if True, regenerate frames. Defaults to True.
         verbose (bool): if True, print progress. Defaults to True.
 
@@ -740,6 +742,7 @@ def regenerate_frames_all_recordings(
             exclude_datasets,
             return_volumes,
             ephys_kwargs,
+            add_spikes=add_spikes,
             verbose=True,
         )
 
