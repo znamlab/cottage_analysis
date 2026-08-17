@@ -986,6 +986,7 @@ def plot_psth_raster(
 
 def plot_depth_neuron_perc_hist(
     results_df,
+    use_col="depth_tuned",
     bins=50,
     xlim=None,
     ylim=None,
@@ -996,13 +997,15 @@ def plot_depth_neuron_perc_hist(
 
     Args:
         results_df (pd.DataFrame): dataframe with analyzed info of all rois from all sessions.
+        use_col (str, optional): boolean column flagging depth-tuned rois, averaged per
+            session. Defaults to "depth_tuned".
         bins (int, optional): number of bins for histogram. Defaults to 50.
         ylim (tuple, optional): y-axis limits. Defaults to None.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
     """
-    session_prop = results_df.groupby("session").agg({"depth_tuned": "mean"})
+    session_prop = results_df.groupby("session").agg({use_col: "mean"})
     plt.hist(
-        session_prop["depth_tuned"],
+        session_prop[use_col],
         bins=bins,
         color="cornflowerblue",
         edgecolor="royalblue",
@@ -1017,13 +1020,13 @@ def plot_depth_neuron_perc_hist(
     ax.set_ylabel("Number of sessions", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", labelsize=fontsize_dict["tick"])
     # plot median proportion as a triangle along the top of the histogram
-    median_prop = np.median(session_prop["depth_tuned"])
+    median_prop = np.median(session_prop[use_col])
     print("Median proportion of depth-tuned neurons:", median_prop)
     print(
         "Range of proportions of depth-tuned neurons:",
-        np.min(session_prop["depth_tuned"]),
+        np.min(session_prop[use_col]),
         "to",
-        np.max(session_prop["depth_tuned"]),
+        np.max(session_prop[use_col]),
     )
     print("Number of sessions:", len(session_prop))
     ax.plot(
