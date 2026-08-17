@@ -962,7 +962,7 @@ def plot_psth_raster(
     ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=60)
     ax.set_ylabel("Neuron number", fontsize=fontsize_dict["label"], labelpad=-5)
-    ax.set_yticks([1, len(results_df)])
+    ax.set_yticks([0.5, len(results_df)-0.5], labels=[1, len(results_df)])
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
