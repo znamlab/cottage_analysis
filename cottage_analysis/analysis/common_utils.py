@@ -580,10 +580,10 @@ def empirical_null_threshold(rsq_values, percentile=95, method="empirical"):
     fits, and that negative tail is an uncontaminated sample of the null, so it can be
     mirrored to estimate the null distribution. Two ways to turn that mirrored tail into
     a threshold:
-      - "empirical" (default): take the `percentile`-th percentile of the mirrored
-        negative tail directly.
+      - "empirical" (default): mirror the tail (`concatenate([neg, -neg])`) and take the
+        `percentile`-th percentile of it directly.
       - "gaussian": mirror the tail (`concatenate([neg, -neg])`) and fit a zero-mean
-        Gaussian, then take the `percentile`-th quantile of.
+        Gaussian, then take the `percentile`-th quantile of it.
 
     Note: in practice the R-squared distribution (and its negative tail) is often not
     centered exactly at 0 - cross-validated test R-squared is a downward-biased
@@ -606,13 +606,13 @@ def empirical_null_threshold(rsq_values, percentile=95, method="empirical"):
         raise ValueError(
             f"Only {len(neg)} negative values - too few to fit null reliably"
         )
+    mirrored = np.concatenate([neg, -neg])
     if method == "gaussian":
-        mirrored = np.concatenate([neg, -neg])
         _, sigma = stats.norm.fit(mirrored, floc=0)
         threshold = stats.norm.ppf(percentile / 100, loc=0, scale=sigma)
     elif method == "empirical":
         sigma = np.std(neg)
-        threshold = np.percentile(-neg, percentile)
+        threshold = np.percentile(mirrored, percentile)
     else:
         raise ValueError(
             f"Unknown method {method!r} - expected 'gaussian' or 'empirical'"
@@ -656,7 +656,9 @@ def add_rsq_significance(df, rsq_cols, percentile=95, min_valid_rsq=-1, verbose=
         dict: {label: threshold} for each column (label = dict key if `rsq_cols` is a dict,
             else the column name).
     """
-    items = rsq_cols.items() if isinstance(rsq_cols, dict) else [(c, c) for c in rsq_cols]
+    items = (
+        rsq_cols.items() if isinstance(rsq_cols, dict) else [(c, c) for c in rsq_cols]
+    )
     thresholds = {}
     for label, col in items:
         vals = pd.to_numeric(df[col], errors="coerce")
