@@ -485,31 +485,61 @@ def calculate_pval_from_bootstrap(distribution, value):
     return q_min * 2
 
 
-def empirical_null_threshold(rsq_values, percentile=95):
-    """Estimate the null R-squared distribution from the negative tail and return a threshold.
+def empirical_null_threshold(rsq_values, percentile=95, method="empirical"):
+    """Estimate threshold from the negative tail of the R-squared distribution
 
     Assumes the null (no tuning) is symmetric around 0: R-squared can go negative for bad
-    fits, and that negative tail is an uncontaminated sample of the null, so its standard
-    deviation estimates the null's width. The threshold is the given percentile of N(0, sigma).
+    fits, and that negative tail is an uncontaminated sample of the null, so it can be
+    mirrored to estimate the null distribution. Two ways to turn that mirrored tail into
+    a threshold:
+      - "empirical" (default): take the `percentile`-th percentile of the mirrored
+        negative tail directly.
+      - "gaussian": mirror the tail (`concatenate([neg, -neg])`) and fit a zero-mean
+        Gaussian, then take the `percentile`-th quantile of.
+
+    Note: in practice the R-squared distribution (and its negative tail) is often not
+    centered exactly at 0 - cross-validated test R-squared is a downward-biased
+    estimator, so even the null (no tuning) population tends to sit slightly below 0.
 
     Args:
         rsq_values (array-like): R-squared values (finite, already filtered of sentinels).
         percentile (float): Percentile of the null distribution to use as threshold. Defaults to 95.
+        method (str): "empirical" or "gaussian". Defaults to "empirical".
 
     Returns:
-        tuple: (threshold, sigma)
+        tuple: (threshold, sigma) - sigma is std(neg) for "empirical" (useful for
+            diagnostics/plotting even though "empirical" doesn't use it to compute the
+            threshold), or the MLE-fit sigma for "gaussian".
     """
     vals = np.asarray(rsq_values, dtype=float)
     vals = vals[np.isfinite(vals)]
     neg = vals[vals < 0]
     if len(neg) < 20:
-        raise ValueError(f"Only {len(neg)} negative values - too few to fit null reliably")
-    sigma = np.std(neg)
-    threshold = stats.norm.ppf(percentile / 100, loc=0, scale=sigma)
+        raise ValueError(
+            f"Only {len(neg)} negative values - too few to fit null reliably"
+        )
+    if method == "gaussian":
+        mirrored = np.concatenate([neg, -neg])
+        _, sigma = stats.norm.fit(mirrored, floc=0)
+        threshold = stats.norm.ppf(percentile / 100, loc=0, scale=sigma)
+    elif method == "empirical":
+        sigma = np.std(neg)
+        threshold = np.percentile(-neg, percentile)
+    else:
+        raise ValueError(
+            f"Unknown method {method!r} - expected 'gaussian' or 'empirical'"
+        )
     return threshold, sigma
 
 
-def add_rsq_significance(df, rsq_cols, percentile=95, min_valid_rsq=-1, verbose=True):
+def add_rsq_significance(
+    df,
+    rsq_cols,
+    percentile=95,
+    min_valid_rsq=-1,
+    method="empirical",
+    verbose=True,
+):
     """Add a boolean "is this fit significant" column for each R-squared column.
 
     For each column, fits an empirical null from the negative tail of that column's values
@@ -539,18 +569,24 @@ def add_rsq_significance(df, rsq_cols, percentile=95, min_valid_rsq=-1, verbose=
             signal. Defaults to -1, matching the cutoff used ad hoc across the existing
             notebooks (not a principled bound - just "worse than explaining -100% of
             variance is treated as noise-fitting degenerate rather than informative").
+        method (str): "empirical" or "gaussian", passed through to `empirical_null_threshold`.
+            Defaults to "empirical".
         verbose (bool): Print sigma/threshold/% passing per column. Defaults to True.
 
     Returns:
         dict: {label: threshold} for each column (label = dict key if `rsq_cols` is a dict,
             else the column name).
     """
-    items = rsq_cols.items() if isinstance(rsq_cols, dict) else [(c, c) for c in rsq_cols]
+    items = (
+        rsq_cols.items() if isinstance(rsq_cols, dict) else [(c, c) for c in rsq_cols]
+    )
     thresholds = {}
     for label, col in items:
         vals = pd.to_numeric(df[col], errors="coerce")
         finite = vals[np.isfinite(vals) & (vals >= min_valid_rsq)].to_numpy()
-        thr, sigma = empirical_null_threshold(finite, percentile=percentile)
+        thr, sigma = empirical_null_threshold(
+            finite, percentile=percentile, method=method
+        )
         thresholds[label] = thr
         sig_col = f"{col}_sig"
         df[sig_col] = vals > thr
