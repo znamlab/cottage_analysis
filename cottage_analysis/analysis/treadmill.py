@@ -190,7 +190,7 @@ def sync_all_recordings(
     cut_trial_end=None,
     trial_duration=None,
     acceleration_time=0.13,
-    method="model",
+    method="plateau",
     margin=0.5,
     sim_popt_list=None,
     sim_tau_decay=0.8,
@@ -229,9 +229,9 @@ def sync_all_recordings(
         acceleration_time (float or None): Acceleration time in s per cm/s. If not None,
             overrides trial_duration. Default to 0.13 (aka 61cm/s reached in 8s)
         method (str, optional): Onset-detection method passed to `process_imaging_df`;
-            "model" (default, unchanged legacy behavior) or "plateau" (fits a
-            trapezoidal ramp template to the RS trace, falling back to the model
-            estimate per-trial if the fit is not possible). Defaults to "model".
+            "plateau" (fits a trapezoidal ramp template to the RS trace, falling back
+            to the model estimate per-trial if the fit is not possible) or "model"
+            (the legacy fixed-formula estimate). Defaults to "plateau".
         margin (float, optional): Extra seconds added on top of the onset estimate
             before converting to a frame offset (formerly a hardcoded 0.5s). Applied
             identically for either method. Defaults to 0.5.
@@ -412,7 +412,7 @@ def process_imaging_df(
     cut_trial_end=None,
     motor_stability_window=0.5,
     acceleration_time=0.13,
-    method="model",
+    method="plateau",
     margin=0.5,
 ):
     """Process the imaging dataframe to add treadmill information.
@@ -442,15 +442,15 @@ def process_imaging_df(
         method (str, optional): How to estimate, per trial, when the analysis window
             should open relative to the motor turning on. Only used when
             `acceleration_time` is not None. One of:
-                - "model": onset = acceleration_time * motor_speed (the original
-                  fixed-formula estimate).
                 - "plateau": onset = the time at which a trapezoidal-ramp template
                   (see `_match_ramp_template`) best matches the trial's actual `RS`
                   trace, using `acceleration_time` to fix the ramp's slope. Falls
                   back to the "model" estimate for any individual trial where the
                   detector cannot return a value (e.g. too few samples, or no room
                   for a valid ramp + plateau given that trial's speed/duration).
-            Defaults to "model".
+                - "model": onset = acceleration_time * motor_speed (the original
+                  fixed-formula estimate).
+            Defaults to "plateau".
         margin (float, optional): Extra seconds added on top of the onset estimate
             (from either method) before converting to a frame offset, replacing the
             previously hardcoded `+ 0.5`. Applied identically regardless of method.
