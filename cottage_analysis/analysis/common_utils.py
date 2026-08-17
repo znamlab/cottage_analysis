@@ -523,7 +523,7 @@ def empirical_null_threshold(rsq_values, percentile=95, method="empirical"):
         _, sigma = stats.norm.fit(mirrored, floc=0)
         threshold = stats.norm.ppf(percentile / 100, loc=0, scale=sigma)
     elif method == "empirical":
-        sigma = np.std(neg)       
+        sigma = np.std(neg)
         threshold = np.percentile(mirrored, percentile)
     else:
         raise ValueError(
@@ -596,6 +596,48 @@ def add_rsq_significance(
                 f"passing={df[sig_col].mean() * 100:5.1f}%"
             )
     return thresholds
+
+
+def one_sided_pval_from_spearman(rval, pval_two_sided):
+    """Convert two-sided Spearman p-values to one-sided p-values testing rval > 0.
+
+    The null distribution of the Spearman statistic is symmetric around 0, so the
+    one-sided p-value for "correlation is positive" is half the two-sided p-value
+    when rval > 0, and its complement when rval <= 0.
+
+    Args:
+        rval (array-like): Spearman correlation coefficients.
+        pval_two_sided (array-like): Two-sided p-values from scipy.stats.spearmanr.
+
+    Returns:
+        np.ndarray: One-sided p-values, same shape as input.
+    """
+    rval = np.asarray(rval, dtype=float)
+    pval_two_sided = np.asarray(pval_two_sided, dtype=float)
+    return np.where(rval > 0, pval_two_sided / 2, 1 - pval_two_sided / 2)
+
+
+def add_one_sided_spearman_significance(df, rval_col, pval_col, out_col, alpha=0.05):
+    """Add a boolean column flagging significantly positive Spearman correlations.
+
+    Replaces the ad hoc `rval > 0.1 & pval_two_sided < alpha` filter (where the 0.1
+    magnitude cutoff exists only to reject significant-but-negative correlations)
+    with a proper one-sided test at the same significance level, using
+    `one_sided_pval_from_spearman`.
+
+    Args:
+        df (pd.DataFrame): Dataframe containing the rval/pval columns.
+        rval_col (str): Column of Spearman rval (e.g. "depth_tuning_test_spearmanr_rval_closedloop").
+        pval_col (str): Column of two-sided Spearman pval (e.g. "..._pval_closedloop").
+        out_col (str): Name of the boolean column to add (e.g. "is_depth_neuron").
+        alpha (float): Significance level for the one-sided test. Defaults to 0.05.
+
+    Returns:
+        pd.DataFrame: `df`, modified in place with `out_col` added.
+    """
+    pval_one_sided = one_sided_pval_from_spearman(df[rval_col], df[pval_col])
+    df[out_col] = pval_one_sided < alpha
+    return df
 
 
 def filter_trials_by_rs2motor(
