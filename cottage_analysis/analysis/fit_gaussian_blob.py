@@ -1218,8 +1218,9 @@ def get_gaussian_eccentricity(popt, min_sigma=0.25):
         return np.nan
     # Log-variances (popt[3] and popt[4])
     # The actual standard deviations used in the fit are sqrt(exp(log_sigma_i2) + min_sigma)
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    with np.errstate(over="ignore"):
+        sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+        sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
 
     # Major and minor axes
     major = max(sigma_x, sigma_y)
@@ -1271,8 +1272,10 @@ def get_semimajor_length(popt, min_sigma=0.25):
     """
     if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
         return np.nan
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+
+    with np.errstate(over="ignore"):
+        sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+        sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
     return max(sigma_x, sigma_y)
 
 
@@ -1288,6 +1291,7 @@ def get_semiminor_length(popt, min_sigma=0.25):
     """
     if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
         return np.nan
-    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
-    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    with np.errstate(over="ignore"):
+        sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+        sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
     return min(sigma_x, sigma_y)
