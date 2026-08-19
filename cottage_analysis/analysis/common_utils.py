@@ -429,7 +429,62 @@ def hierarchical_bootstrap_stats(
     correlation=False,
     difference=False,
     ratio=False,
+    plot=True,
 ):
+    """Hierarchically bootstrap a per-column statistic to build a null/CI distribution.
+
+    For each bootstrap iteration, rows are hierarchically resampled with `bootstrap_sample`
+    (see that function for the nested-resampling scheme), and one statistic is computed per
+    entry of `xcol` on the resampled rows:
+      - if `ycol` is None: the median of `data[x]`.
+      - if `ycol` is given: one of a paired statistic between `data[x]` and the matching
+        `data[y]`, selected by exactly one of `correlation` (Spearman r), `difference`
+        (median of `x - y`), or `ratio` (median of `x / y`).
+
+    The resulting `distribution` is the standard input to `calculate_pval_from_bootstrap`:
+    e.g. pass `distribution[:, i] - distribution[:, j]` to test whether columns `i` and `j`
+    differ significantly, or `distribution[:, i]` directly (with `value=0`) to test a single
+    column against zero.
+
+    If `"mouse"` is not already a column of `data`, it is derived as
+    `data["session"].str.split("_").str[0]` (i.e. assumes session names of the form
+    `"{mouse}_{session_id}"`), so `resample_cols` can reference `"mouse"` even when it isn't
+    an explicit column.
+
+    Note: seeds `np.random.seed(0)` internally, so results are reproducible across calls but
+    this also resets global numpy random state as a side effect.
+
+    Args:
+        data (pd.DataFrame): Dataframe containing `xcol` (and `ycol`, if given) plus the
+            columns needed for `resample_cols` (and `"session"`, if `"mouse"` isn't already
+            a column).
+        n_boots (int): Number of bootstrap iterations.
+        xcol (list): Column names to bootstrap; one distribution column is produced per
+            entry, in order.
+        resample_cols (list): Columns to hierarchically resample over, passed straight to
+            `bootstrap_sample` (e.g. `["mouse", "session"]` to resample mice, then sessions
+            within each resampled mouse, then rows within each resampled session).
+        ycol (list, optional): Column names to pair with `xcol` (same length, same order),
+            required when `correlation`, `difference`, or `ratio` is True. Defaults to None.
+        correlation (bool): If True (with `ycol` given), compute the Spearman correlation
+            between each `xcol`/`ycol` pair instead of a plain median. Defaults to False.
+        difference (bool): If True (with `ycol` given), compute the median of `x - y` for
+            each pair instead of a plain median. Defaults to False.
+        ratio (bool): If True (with `ycol` given), compute the median of `x / y` for each
+            pair instead of a plain median. Defaults to False.
+        plot (bool): If True, plot a quick grid of histograms of `distribution` (one subplot
+            per `xcol`), each with dashed lines at the 2.5th/97.5th percentiles, as a
+            sanity-check diagnostic. Defaults to True.
+
+    Returns:
+        tuple: `(r, distribution)`.
+            r (np.ndarray or None): Point estimate (correlation, difference, or ratio) of
+                each `xcol`/`ycol` pair computed on the full, unresampled `data`; `None` if
+                none of `correlation`/`difference`/`ratio` is set (including whenever `ycol`
+                is None).
+            distribution (np.ndarray): Array of shape `(n_boots, len(xcol))` with one
+                bootstrap replicate of the chosen statistic per row/column.
+    """
     np.random.seed(0)
     data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
@@ -466,16 +521,17 @@ def hierarchical_bootstrap_stats(
                     distribution[i, icol] = np.median(
                         data.loc[sample][x] / data.loc[sample][y]
                     )
-    plt.figure()
-    for icol, x in enumerate(xcol):
-        plt.subplot(2, len(xcol) // 2 + 1, icol + 1)
-        plt.hist(distribution[:, icol], bins=31)
-        plt.axvline(
-            np.percentile(distribution[:, icol], 2.5), color="r", linestyle="--"
-        )
-        plt.axvline(
-            np.percentile(distribution[:, icol], 97.5), color="r", linestyle="--"
-        )
+    if plot:
+        plt.figure()
+        for icol, x in enumerate(xcol):
+            plt.subplot(2, len(xcol) // 2 + 1, icol + 1)
+            plt.hist(distribution[:, icol], bins=31)
+            plt.axvline(
+                np.percentile(distribution[:, icol], 2.5), color="r", linestyle="--"
+            )
+            plt.axvline(
+                np.percentile(distribution[:, icol], 97.5), color="r", linestyle="--"
+            )
     return r, distribution
 
 
