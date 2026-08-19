@@ -399,7 +399,7 @@ def plot_RS_OF_matrix(
     vmin=None,
     vmax=None,
     xlabel="Running speed (cm/s)",
-    ylabel="Optic flow speed \n(degrees/s)",
+    ylabel="Optic flow speed (°/s)",
     title="",
     cbar_width=0.01,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 5},
@@ -426,8 +426,7 @@ def plot_RS_OF_matrix(
         vmin (float, optional): min value of the heatmap. Defaults to None.
         vmax (float, optional): max value of the heatmap. Defaults to None.
         xlabel (str, optional): x-axis label. Defaults to "Running speed (cm/s)".
-        ylabel (str, optional): y-axis label. Defaults to "Optical flow speed
-            (degrees/s)".
+        ylabel (str, optional): y-axis label. Defaults to "Optic flow speed (°/s)".
         title (str, optional): title of the plot. Defaults to "".
         cbar_width (float, optional): width of the colorbar. Defaults to 0.01.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label, tick
@@ -686,7 +685,7 @@ def plot_RS_OF_fit(
     },
     cbar_width=0.01,
     xlabel="Running speed (cm/s)",
-    ylabel="Optical flow speed \n(degrees/s)",
+    ylabel="Optical flow speed (°/s)",
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
     ax=None,
     sfx="",
@@ -716,7 +715,7 @@ def plot_RS_OF_fit(
         cbar_width (float, optional): Width of the colorbar. Defaults to 0.01.
         xlabel (str, optional): Label for the x-axis. Defaults to "Running speed (cm/s)"
         ylabel (str, optional): Label for the y-axis. Defaults to "Optical flow speed
-            \n(degrees/s)".
+            (°/s)".
         fontsize_dict (dict, optional): Dictionary specifying font sizes for title,
             label, tick, and legend.
         ax (matplotlib.axes.Axes, optional): Matplotlib axes to plot on. Defaults to
@@ -868,8 +867,10 @@ def plot_r2_comparison(
     plot_y=0,
     plot_width=1,
     plot_height=1,
+    reference_model="g2d",
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
+    neurons_df = neurons_df[neurons_df["iscell"] == 1].copy()
     if plot_type == "violin":
         results = pd.DataFrame(columns=["model", "rsq"])
         ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
@@ -935,7 +936,7 @@ def plot_r2_comparison(
                     [i - 0.4, i + 0.4],
                     [np.median(props[i]), np.median(props[i])],
                     linewidth=3,
-                    color='k',
+                    color="k",
                 )
                 if ci is not None:
                     plt.fill_between(
@@ -956,15 +957,13 @@ def plot_r2_comparison(
             )
             ax.set_ylim([0, 1])
             ax.tick_params(axis="y", which="major", labelsize=fontsize_dict["tick"])
-            print(
-                f"{labels[0]} vs {labels[1]}: {scipy.stats.wilcoxon(props[0],props[1])}"
-            )
-            print(
-                f"{labels[0]} vs {labels[2]}: {scipy.stats.wilcoxon(props[0],props[2])}"
-            )
-            print(
-                f"{labels[1]} vs {labels[2]}: {scipy.stats.wilcoxon(props[1],props[2])}"
-            )
+            reference_id = models.index(reference_model)
+            for i, model in enumerate(model_cols):
+                if i != reference_id:
+                    wilcoxon_result = scipy.stats.wilcoxon(
+                        props[reference_id], props[i]
+                    )
+                    print(f"{labels[reference_id]} vs {labels[i]}: {wilcoxon_result}")
         return props
 
 
@@ -1182,7 +1181,7 @@ def plot_speed_colored_by_depth(
     ycol,
     zcol,
     xlabel="Running speed (cm/s)",
-    ylabel="Optic flow speed (degree/s)",
+    ylabel="Optic flow speed (°/s)",
     zlabel="Preferred depth (cm)",
     s=10,
     alpha=0.2,
@@ -1365,9 +1364,7 @@ def plot_speed_trace(
         if OF_to_degree:  # to convert OF from rads/s to degrees/s
             param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"][
-                -int(fs * 10) :
-            ]
+            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"][-int(fs * 10) :]
             param_trace = np.concatenate([np.full(int(fs * 10), np.nan), param_trace])
         else:
             blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"]
@@ -1473,7 +1470,7 @@ def plot_speed_trace_closed_open_loop(
     ylims = []
     axes = [fig.add_axes(position) for position in positions]
     for closed_loop, title in zip([1, 0], ["Closed loop", "Open loop"]):
-        for param, ylabel in zip(["RS", "OF"], ["RS\n(cm/s)", "OF\n(degrees/s)"]):
+        for param, ylabel in zip(["RS", "OF"], ["RS (cm/s)", "OF (°/s)"]):
             ax = axes[0]
             ylim = plot_speed_trace(
                 trials_df=trials_df[trials_df.closed_loop == closed_loop],
@@ -1491,7 +1488,7 @@ def plot_speed_trace_closed_open_loop(
 
     i = 0
     for closed_loop, title in zip([1, 0], ["Closed loop", "Open loop"]):
-        for param, ylabel in zip(["RS", "OF"], ["RS\n(cm/s)", "OF\n(degrees/s)"]):
+        for param, ylabel in zip(["RS", "OF"], ["RS (cm/s)", "OF (°/s)"]):
             if param == "RS":
                 lim_set = 0
             else:
@@ -1956,11 +1953,19 @@ def plot_rsof_slice(
     of_min=2**-8,
     of_max=2**12,
     plot_trials=True,
+    color="darkorchid",
+    linewidth=2,
+    capsize=3,
+    markersize=None,
+    scatter_size=20,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
 ):
     """
     Filters data for a specific running speed bin, fits a 1D Gaussian to optic flow responses,
     and plots the raw data, fit, and binned mean with bootstrap CI.
+
+    color, linewidth, capsize, markersize and scatter_size are cosmetic and default
+    to values suited to full-page axes. Reduce them for small panels.
     """
     if gaussian_func_ is None:
         gaussian_func_ = partial(fit_gaussian_blob.gaussian_1d, min_sigma=0.25)
@@ -1996,15 +2001,21 @@ def plot_rsof_slice(
         return
     if plot_trials:
         # 2. Scatter raw data
-        ax.scatter(of, dff, color="k", s=20, alpha=0.3, zorder=5, clip_on=False)
+        ax.scatter(
+            of, dff, color="k", s=scatter_size, alpha=0.3, zorder=5, clip_on=False
+        )
 
     # 3. Perform 1D Gaussian Fit in log-space
     # Initial guess: centre on the bin with the highest mean response
+    of_bins = np.asarray(of_bins, dtype=float)
     m, _, _ = scipy.stats.binned_statistic(of, dff, bins=of_bins, statistic="mean")
-    bin_mid = np.diff(of_bins) / 2 + of_bins[:-1]
+    # geometric midpoint: bins are log-spaced and drawn on a log x-axis
+    bin_mid = np.sqrt(of_bins[:-1] * of_bins[1:])
 
     def p0_func():
-        best_of = bin_mid[np.nanargmax(m)]
+        # of_bins may start at 0 (catch-all bin), which has no log midpoint
+        m_pos = np.where(bin_mid > 0, m, np.nan)
+        best_of = bin_mid[np.nanargmax(m_pos)]
         return np.array(
             [
                 np.random.normal(),  # log_amplitude
@@ -2030,8 +2041,8 @@ def plot_rsof_slice(
     ax.plot(
         np.exp(x_fine),
         resp_pred,
-        color="darkorchid",
-        lw=2,
+        color=color,
+        lw=linewidth,
         label=f"pref OF={np.exp(popt[1]):.2f}, R²={rsq:.2f}",
     )
     # 4. Calculate Binned Stats & Bootstrap CI
@@ -2058,9 +2069,10 @@ def plot_rsof_slice(
         m,
         yerr=err,
         fmt="o",
-        color="darkorchid",
+        color=color,
         label="Binned mean & 95% CI",
-        capsize=3,
+        capsize=capsize,
+        markersize=markersize,
         zorder=10,
     )
     # 6. Axis Styling
