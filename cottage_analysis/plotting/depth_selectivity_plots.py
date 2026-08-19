@@ -962,7 +962,7 @@ def plot_psth_raster(
     ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=60)
     ax.set_ylabel("Neuron number", fontsize=fontsize_dict["label"], labelpad=-5)
-    ax.set_yticks([0.5, len(results_df)-0.5], labels=[1, len(results_df)])
+    ax.set_yticks([0.5, len(results_df) - 0.5], labels=[1, len(results_df)])
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
@@ -1061,13 +1061,15 @@ def plot_example_fov(
     )
     roi_location.find_roi_centers(neurons_df, stat)
     if col == "preferred_depth":
+        one_sided_pval = common_utils.one_sided_pval_from_spearman(
+            neurons_df["depth_tuning_test_spearmanr_rval_closedloop"],
+            neurons_df["depth_tuning_test_spearmanr_pval_closedloop"],
+        )
         select_neurons = neurons_df[
-            (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] < 0.05)
-            & (neurons_df["iscell"] == 1)
+            (one_sided_pval < 0.05) & (neurons_df["iscell"] == 1)
         ]
         null_neurons = neurons_df[
-            (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] >= 0.05)
-            & (neurons_df["iscell"] == 1)
+            (one_sided_pval >= 0.05) & (neurons_df["iscell"] == 1)
         ]
     else:
         if "multidepth" in col:
@@ -1269,9 +1271,7 @@ def plot_mean_running_speed_alldepths(
         ax.set_ylabel("Average running\nspeed (cm/s)", fontsize=fontsize_dict["label"])
         ax.set_ylim(0, ax.get_ylim()[1])
     elif param == "OF":
-        ax.set_ylabel(
-            "Average optic flow\nspeed (degrees/s)", fontsize=fontsize_dict["label"]
-        )
+        ax.set_ylabel("Average optic flow speed (°/s)", fontsize=fontsize_dict["label"])
         ax.set_yscale("log")
     ax.set_xlabel("Depth (cm)", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])

@@ -423,7 +423,9 @@ def load_sig_rf(
                 allow_multiple=False,
                 return_dataseries=False,
             )
-            assert suite2p_ds is not None, f"No suite2p ROIs found for session {session}"
+            assert (
+                suite2p_ds is not None
+            ), f"No suite2p ROIs found for session {session}"
             iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["session"] = session
@@ -458,10 +460,12 @@ def load_sig_rf(
                 )
                 neurons_df["rf_sig"] = sig
                 neurons_df["rf_sig_ipsi"] = sig_ipsi
-                select_neurons = (
-                    (neurons_df["iscell"] == 1)
-                    & (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] < 0.05)
-                    & (neurons_df["depth_tuning_test_spearmanr_rval_closedloop"] > 0.1)
+                select_neurons = (neurons_df["iscell"] == 1) & (
+                    common_utils.one_sided_pval_from_spearman(
+                        neurons_df["depth_tuning_test_spearmanr_rval_closedloop"],
+                        neurons_df["depth_tuning_test_spearmanr_pval_closedloop"],
+                    )
+                    < 0.05
                 )
                 sig = sig[select_neurons]
                 sig_ipsi = sig_ipsi[select_neurons]
