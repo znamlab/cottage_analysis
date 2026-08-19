@@ -36,8 +36,8 @@ def ramp_template(t, shift, plateau_speed, acceleration):
     """Ideal trapezoidal ramp: flat zero, then a linear rise, then a flat plateau.
 
     Args:
-        t (np.ndarray): Time in seconds, relative to the motor command onset 
-        shift (float): Onset of the ramp, in seconds. 
+        t (np.ndarray): Time in seconds, relative to the motor command onset
+        shift (float): Onset of the ramp, in seconds.
         plateau_speed (float): Commanded speed this ramp rises to, in cm/s.
         acceleration (float): Rise rate of the ramp, in cm/s^2.
 
@@ -110,7 +110,9 @@ def _match_ramp_template(
         return np.nan, np.nan, np.nan
     cap = max(cap_rel * plateau_speed, cap_abs)
     shifts = np.arange(0.0, max_shift, shift_step)
-    template = np.clip(acceleration * (t[None, :] - shifts[:, None]), 0.0, plateau_speed)
+    template = np.clip(
+        acceleration * (t[None, :] - shifts[:, None]), 0.0, plateau_speed
+    )
     cost = np.minimum(np.abs(rs[None, :] - template), cap).mean(axis=1) / cap
     best = int(np.argmin(cost))
     return float(shifts[best] + ramp), float(shifts[best]), float(cost[best])
@@ -196,6 +198,7 @@ def sync_all_recordings(
     sim_tau_decay=0.8,
     sim_tau_rise=0.15,
     sim_make_circular=True,
+    sim_kernel_normalization="max",
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -244,6 +247,9 @@ def sync_all_recordings(
             for the calcium simulation. Defaults to 0.15.
         sim_make_circular (bool, optional): If True, make the Gaussian circular by setting
             the major axis to the minor axis length. Defaults to True.
+        sim_kernel_normalization (str, optional): "max" to normalize the calcium
+            kernel's peak to 1, or "area" to normalize its sum (unit gain) to 1.
+            Defaults to "max".
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -327,6 +333,7 @@ def sync_all_recordings(
                 tau_rise=sim_tau_rise,
                 frame_rate=frame_rate,
                 make_circular=sim_make_circular,
+                kernel_normalization=sim_kernel_normalization,
             )
 
         # Add the treadmill specific part
@@ -618,6 +625,7 @@ def simulate_and_fit_session(
     filter_datasets=None,
     flexilims_session=None,
     project=None,
+    kernel_normalization="max",
 ):
     """Run a full continuous simulation and fit for an entire session.
 
@@ -635,6 +643,9 @@ def simulate_and_fit_session(
             Required if project is None. Defaults to None.
         project (str, optional): Project name. Required if flexilims_session is None.
             Defaults to None.
+        kernel_normalization (str, optional): "max" to normalize the calcium kernel's
+            peak to 1, or "area" to normalize its sum (unit gain) to 1. Defaults to
+            "max".
 
     Returns:
         pd.DataFrame: A dataframe containing the ground-truth
@@ -648,6 +659,7 @@ def simulate_and_fit_session(
     print(f"Make circular: {make_circular}")
     print(f"Filter datasets: {filter_datasets}")
     print(f"Project: {project}")
+    print(f"Kernel normalization: {kernel_normalization}")
     print("\n")
 
     if flexilims_session is None:
@@ -683,6 +695,7 @@ def simulate_and_fit_session(
         sim_tau_decay=decay_tau,
         sim_tau_rise=rise_tau,
         sim_make_circular=make_circular,
+        sim_kernel_normalization=kernel_normalization,
     )
 
     # 3. Fit 2D Gaussians to Simulated Responses

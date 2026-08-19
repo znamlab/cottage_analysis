@@ -844,6 +844,7 @@ def simulate_and_fit_session(
     filter_datasets=None,
     flexilims_session=None,
     project=None,
+    kernel_normalization="max",
 ):
     """Run a full continuous simulation and fit for an entire spheres session.
 
@@ -868,6 +869,9 @@ def simulate_and_fit_session(
             Required if *project* is None. Defaults to None.
         project (str, optional): Project name. Required if *flexilims_session* is None.
             Defaults to None.
+        kernel_normalization (str, optional): "max" to normalize the calcium kernel's
+            peak to 1, or "area" to normalize its sum (unit gain) to 1. Defaults to
+            "max".
 
     Returns:
         pd.DataFrame: A dataframe containing:
@@ -886,6 +890,7 @@ def simulate_and_fit_session(
     print(f"Make circular: {make_circular}")
     print(f"Filter datasets: {filter_datasets}")
     print(f"Project: {project}")
+    print(f"Kernel normalization: {kernel_normalization}")
     print("\n")
     from cottage_analysis.analysis.spheres.simulation import simulate_calcium_responses
 
@@ -969,6 +974,7 @@ def simulate_and_fit_session(
             tau_rise=rise_tau,
             frame_rate=frame_rate,
             make_circular=make_circular,
+            kernel_normalization=kernel_normalization,
         )
 
         # Slice the continuous simulated trace into individual trials
