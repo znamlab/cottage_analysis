@@ -198,7 +198,7 @@ def sync_all_recordings(
     sim_tau_decay=0.8,
     sim_tau_rise=0.15,
     sim_make_circular=True,
-    sim_kernel_normalization="max",
+    sim_kernel_normalization="area",
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -249,7 +249,7 @@ def sync_all_recordings(
             the major axis to the minor axis length. Defaults to True.
         sim_kernel_normalization (str, optional): "max" to normalize the calcium
             kernel's peak to 1, or "area" to normalize its sum (unit gain) to 1.
-            Defaults to "max".
+            Defaults to "area".
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -625,7 +625,7 @@ def simulate_and_fit_session(
     filter_datasets=None,
     flexilims_session=None,
     project=None,
-    kernel_normalization="max",
+    kernel_normalization="area",
 ):
     """Run a full continuous simulation and fit for an entire session.
 
@@ -645,7 +645,7 @@ def simulate_and_fit_session(
             Defaults to None.
         kernel_normalization (str, optional): "max" to normalize the calcium kernel's
             peak to 1, or "area" to normalize its sum (unit gain) to 1. Defaults to
-            "max".
+            "area".
 
     Returns:
         pd.DataFrame: A dataframe containing the ground-truth

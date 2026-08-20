@@ -31,7 +31,7 @@ def _normalize_kernel(kernel, normalization):
     )
 
 
-def make_exponential_kernel(tau, frame_rate, normalization="max"):
+def make_exponential_kernel(tau, frame_rate, normalization="area"):
     """
     Create an exponential decay kernel.
 
@@ -39,7 +39,7 @@ def make_exponential_kernel(tau, frame_rate, normalization="max"):
         tau (float): Decay time constant in seconds.
         frame_rate (float): Sampling rate in Hz.
         normalization (str, optional): "max" to normalize the kernel peak to 1, or
-            "area" to normalize its sum (unit gain) to 1. Defaults to "max".
+            "area" to normalize its sum (unit gain) to 1. Defaults to "area".
 
     Returns:
         np.ndarray: Normalized exponential decay kernel.
@@ -50,7 +50,7 @@ def make_exponential_kernel(tau, frame_rate, normalization="max"):
     return _normalize_kernel(kernel, normalization)
 
 
-def make_biexponential_kernel(tau_decay, tau_rise, frame_rate, normalization="max"):
+def make_biexponential_kernel(tau_decay, tau_rise, frame_rate, normalization="area"):
     """
     Create a biexponential kernel.
 
@@ -59,7 +59,7 @@ def make_biexponential_kernel(tau_decay, tau_rise, frame_rate, normalization="ma
         tau_rise (float): Rise time constant in seconds.
         frame_rate (float): Sampling rate in Hz.
         normalization (str, optional): "max" to normalize the kernel peak to 1, or
-            "area" to normalize its sum (unit gain) to 1. Defaults to "max".
+            "area" to normalize its sum (unit gain) to 1. Defaults to "area".
 
     Returns:
         np.ndarray: Normalized exponential decay kernel.
@@ -79,7 +79,7 @@ def simulate_calcium_responses(
     frame_rate=30.0,
     min_sigma=0.25,
     make_circular=True,
-    kernel_normalization="max",
+    kernel_normalization="area",
 ):
     """
     Simulate calcium responses continuously based on 2D Gaussian fit parameters.
@@ -96,7 +96,7 @@ def simulate_calcium_responses(
             the major axis to the minor axis length.
         kernel_normalization (str, optional): "max" to normalize the calcium kernel's
             peak to 1, or "area" to normalize its sum (unit gain) to 1. Defaults to
-            "max".
+            "area".
 
     Returns:
         np.ndarray: Simulated continuous responses for all ROIs, shape (time, n_rois).

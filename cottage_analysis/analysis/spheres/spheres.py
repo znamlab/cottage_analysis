@@ -844,7 +844,7 @@ def simulate_and_fit_session(
     filter_datasets=None,
     flexilims_session=None,
     project=None,
-    kernel_normalization="max",
+    kernel_normalization="area",
 ):
     """Run a full continuous simulation and fit for an entire spheres session.
 
@@ -871,7 +871,7 @@ def simulate_and_fit_session(
             Defaults to None.
         kernel_normalization (str, optional): "max" to normalize the calcium kernel's
             peak to 1, or "area" to normalize its sum (unit gain) to 1. Defaults to
-            "max".
+            "area".
 
     Returns:
         pd.DataFrame: A dataframe containing:
