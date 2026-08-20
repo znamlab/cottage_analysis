@@ -1953,6 +1953,8 @@ def plot_rsof_slice(
     of_min=2**-8,
     of_max=2**12,
     plot_trials=True,
+    plot_fit_mean=True,
+    plot_rs_label=True,
     color="darkorchid",
     linewidth=2,
     capsize=3,
@@ -1963,6 +1965,9 @@ def plot_rsof_slice(
     """
     Filters data for a specific running speed bin, fits a 1D Gaussian to optic flow responses,
     and plots the raw data, fit, and binned mean with bootstrap CI.
+
+    If `plot_fit_mean`, a downward triangle marks the preferred OF (mean of the
+    gaussian fit) at the top of the axes.
 
     color, linewidth, capsize, markersize and scatter_size are cosmetic and default
     to values suited to full-page axes. Reduce them for small panels.
@@ -1976,14 +1981,15 @@ def plot_rsof_slice(
 
     # 1. Filter data
     mid_val = np.sqrt(b_s * b_e)
-    ax.text(
-        1,
-        0.8,
-        f"RS: {int(mid_val)}",
-        transform=ax.transAxes,
-        horizontalalignment="right",
-        fontsize=fontsize_dict.get("legend", 10),
-    )
+    if plot_rs_label:
+        ax.text(
+            1,
+            0.8,
+            f"RS: {int(mid_val)}",
+            transform=ax.transAxes,
+            horizontalalignment="right",
+            fontsize=fontsize_dict.get("legend", 10),
+        )
     ok_speed = (tav_df.rs > b_s) & (tav_df.rs < b_e)
 
     if not np.any(ok_speed):
@@ -2080,3 +2086,17 @@ def plot_rsof_slice(
     ax.set_ylabel(r"$\Delta$F/F", fontsize=fontsize_dict["label"])
     ax.axhline(0, color="grey", lw=0.5, zorder=-10)
     ax.set_xlim(of_bins[0], of_bins[-1])
+
+    # 7. Mark the mean of the gaussian fit. y is in axes coordinates so the marker
+    # stays at the top of the panel whatever ylim the caller sets afterwards.
+    if plot_fit_mean:
+        ax.plot(
+            np.exp(popt[1]),
+            1,
+            marker="v",
+            color=color,
+            markersize=markersize if markersize is not None else 8,
+            transform=ax.get_xaxis_transform(),
+            clip_on=False,
+            zorder=11,
+        )
