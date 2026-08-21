@@ -24,12 +24,21 @@ fi
 if [ -z ${USE_ANNOTATED+x} ]; then
     USE_ANNOTATED="False"
 fi
+if [ -z ${PROTOCOL_BASE+x} ]; then
+    PROTOCOL_BASE="SizeControl"
+fi
 
 echo Use anatomical only datasets: ${ANATOMICAL_ONLY}
 echo Use ASt neuropil correction: ${AST_NEUROPIL}
 echo Use annotated dataset: ${USE_ANNOTATED}
+echo Protocol base: ${PROTOCOL_BASE}
 cd "/camp/lab/znamenskiyp/home/users/blota/code/cottage_analysis/cottage_analysis/pipelines/"
-python analysis_pipeline_size_control.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL} ${USE_SLURM} \
-    $( [ "${ANATOMICAL_ONLY}" = "False" ] && echo "--no-anatomical-only" ) \
-    $( [ "${AST_NEUROPIL}" = "True" ] && echo "--ast-neuropil" ) \
-    $( [ "${USE_ANNOTATED}" = "True" ] && echo "--use-annotated" )
+# NB: defopt 6.4.0 exposes every parameter of main() as a POSITIONAL argument, bools
+# included -- there are no --flags (`--help` lists only -h). The previous
+# `--no-anatomical-only` / `--ast-neuropil` / `--use-annotated` echoes would have been
+# rejected as unrecognised arguments; they never fired only because the current config
+# leaves all three at their defaults, so each `$(...)` expanded to an empty string.
+# Pass them positionally instead, in signature order.
+python analysis_pipeline_size_control.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} \
+    ${PHOTODIODE_PROTOCOL} ${USE_SLURM} ${ANATOMICAL_ONLY} ${AST_NEUROPIL} \
+    ${USE_ANNOTATED} ${PROTOCOL_BASE}

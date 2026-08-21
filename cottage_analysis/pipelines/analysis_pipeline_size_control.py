@@ -11,7 +11,13 @@ from cottage_analysis.plotting import basic_vis_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-PROTOCOL_BASE = "SizeControl"  # "SpherePermTubeReward"
+# Default protocol for size-control recordings. Matched against the `protocol`
+# *attribute* on flexilims (see size_control.sync_all_recordings), not the recording
+# name -- some sessions hold size-control data under a `SpheresPermTubeReward` recording
+# name (e.g. PZAH10.2f_S20230815) yet still carry protocol='SizeControl', so they need
+# no special handling. Exposed as a `protocol_base` argument so it need not be
+# hand-edited.
+PROTOCOL_BASE = "SizeControl"
 
 
 def main(
@@ -23,6 +29,7 @@ def main(
     anatomical_only: bool = True,
     ast_neuropil: bool = False,
     use_annotated: bool = False,
+    protocol_base: str = PROTOCOL_BASE,
 ):
     """
     Main function to analyze a session.
@@ -74,7 +81,7 @@ def main(
         project=project,
         filter_datasets=filter_traces,
         recording_type="two_photon",
-        protocol_base=PROTOCOL_BASE,
+        protocol_base=protocol_base,
         photodiode_protocol=photodiode_protocol,
         return_volumes=True,
     )
