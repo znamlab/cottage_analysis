@@ -107,7 +107,10 @@ def plot_preferred_depths_sizes_scatter(
     plot_height,
     fontsize_dict=None,
     max_y=80,
+    scatter_kwargs=None,
 ):
+    SCATTER_KWARGS_DEFAULT = dict(s=5, c="k", alpha=0.5, edgecolors="none")
+    scatter_kwargs = dict(SCATTER_KWARGS_DEFAULT, **(scatter_kwargs or {}))
     if fontsize_dict is None:
         fontsize_dict = FONTSIZE_DICT
     fig = plt.gcf()
@@ -120,15 +123,12 @@ def plot_preferred_depths_sizes_scatter(
         ax.scatter(
             neurons_df[f"preferred_depth_size{size_x}"],
             neurons_df[f"preferred_depth_size{size_y}"],
-            s=5,
-            c="k",
-            alpha=0.25,
-            edgecolors="none",
+            **scatter_kwargs,
         )
         xlim = (0.02, 50)
         ax.set_xlim(xlim)
         ax.set_ylim(xlim)
-        ax.plot(xlim, xlim, "k:", linewidth=1)
+        ax.plot([0.02, 20], [0.02, 20], "k:", linewidth=1)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel(
@@ -214,7 +214,7 @@ def plot_preferred_depths_sizes_scatter(
         )
 
         ax_hist.axis["left"].label.set_text("Number of neurons")
-        ax_hist.axis["left"].label.set_fontsize(fontsize_dict["tick"])
+        ax_hist.axis["left"].label.set_fontsize(fontsize_dict["label"])
         ax_hist.axis["left"].major_ticklabels.set_fontsize(fontsize_dict["tick"])
         ax_hist.axis["bottom"].major_ticklabels.set_fontsize(fontsize_dict["tick"])
 

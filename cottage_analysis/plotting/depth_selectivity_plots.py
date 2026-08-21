@@ -173,6 +173,7 @@ def plot_depth_tuning_curve(
     ylim_precision=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
     ax=None,
+    clip_on=True,
 ):
     """
     Plot depth tuning curve for one neuron.
@@ -251,6 +252,7 @@ def plot_depth_tuning_curve(
         fillstyle="full",
         linewidth=linewidth,
         markersize=markersize,
+        clip_on=clip_on,
     )
 
     if plot_smooth:
@@ -267,6 +269,7 @@ def plot_depth_tuning_curve(
             color=linecolor,
             label=label,
             linewidth=linewidth,
+            clip_on=clip_on,
         )
     # Load gaussian fit params for this roi
     if plot_fit:
@@ -287,6 +290,7 @@ def plot_depth_tuning_curve(
                     color=fit_linecolor,
                     linewidth=linewidth,
                     label=label,
+                    clip_on=clip_on,
                 )
         else:
             [a, x0, log_sigma, b] = neurons_df.loc[roi, use_col]
@@ -299,6 +303,7 @@ def plot_depth_tuning_curve(
                 color=fit_linecolor,
                 linewidth=linewidth,
                 label=label,
+                clip_on=clip_on,
             )
     if ylim is None:
         ylim = [
