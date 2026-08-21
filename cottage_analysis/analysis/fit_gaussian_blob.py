@@ -1205,7 +1205,11 @@ def get_gaussian_angle(popt):
 
 
 def get_gaussian_eccentricity(popt, min_sigma=0.25):
-    """Calculate the eccentricity of the Gaussian (1 - minor/major).
+    """Calculate the eccentricity of the Gaussian.
+
+    This is the standard geometric eccentricity of the iso-response ellipse: 0 for a
+    circular Gaussian, approaching 1 as the fit becomes an unbounded ridge along one
+    axis.
 
     Args:
         popt (list or np.ndarray): Gaussian fit parameters.
@@ -1226,8 +1230,13 @@ def get_gaussian_eccentricity(popt, min_sigma=0.25):
     major = max(sigma_x, sigma_y)
     minor = min(sigma_x, sigma_y)
 
-    # Eccentricity defined as 1 - (minor/major)
-    return 1 - (minor / major)
+    # A ridge fit overflows to sigma = inf on the unbounded axis, giving a ratio of 0
+    # and an eccentricity of exactly 1. If both axes overflow the ratio is nan and so is
+    # the eccentricity, which is correct: the shape is undefined.
+    ratio = minor / major
+    if not np.isfinite(ratio):
+        return np.nan
+    return np.sqrt(max(1 - ratio**2, 0.0))
 
 
 def get_preferred_rs(popt):
