@@ -10,6 +10,7 @@ import functools
 
 import warnings
 
+
 ## Classes for setting up boundary conditions
 @dataclass
 class Gaussian1DBounds:
@@ -183,11 +184,13 @@ def format_model_bounds(
 
 
 def vectorise_bounds(
-    bounds: Gaussian2DBounds
-    | Gaussian1DBounds
-    | Gaussian2DCholeskyBounds
-    | Gaussian2DAngleBounds
-    | GaussianAdditiveBounds,
+    bounds: (
+        Gaussian2DBounds
+        | Gaussian1DBounds
+        | Gaussian2DCholeskyBounds
+        | Gaussian2DAngleBounds
+        | GaussianAdditiveBounds
+    ),
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Format bounds as lower and upper tensors for each parameter."""
     if isinstance(bounds, Gaussian2DBounds):
@@ -390,7 +393,9 @@ def _default_init(
         # -- diverges from the shared layout below (x0 isn't at index 1), so it gets
         # its own self-contained init rather than slotting into the is_2d branch.
         for i in range(n_params):
-            raw[:, i] = torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
+            raw[:, i] = (
+                torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
+            )
         return raw
 
     is_2d = n_params >= 6  # "g2d" (7) and "g2mult" (6) both have an (x0, y0) centre
@@ -591,7 +596,8 @@ def generate_n_inits(
         y0_targets = torch.zeros(n_starts, device=device, dtype=dtype)
         y0_targets[1:] = (
             bounds.y0_min
-            + torch.rand(n_starts - 1, device=device, dtype=dtype, generator=g) * y_range
+            + torch.rand(n_starts - 1, device=device, dtype=dtype, generator=g)
+            * y_range
         )
 
     if y is not None:
@@ -609,7 +615,9 @@ def generate_n_inits(
         else:
             raw[:, 1] = invert_bounded_sigmoid(x0_targets, bounds.x0_min, bounds.x0_max)
             if is_2d:
-                raw[:, 2] = invert_bounded_sigmoid(y0_targets, bounds.y0_min, bounds.y0_max)
+                raw[:, 2] = invert_bounded_sigmoid(
+                    y0_targets, bounds.y0_min, bounds.y0_max
+                )
 
     return raw
 
@@ -690,8 +698,10 @@ def calculate_residual(
 ) -> torch.Tensor:
     """Calculate the residuals between the model prediction and the target with penalty."""
     prediction = model_func(X, params, bounds, optimiser=optimiser)
-    prediction = torch.nan_to_num(prediction, nan=penalty, posinf=penalty, neginf=-penalty)
-    
+    prediction = torch.nan_to_num(
+        prediction, nan=penalty, posinf=penalty, neginf=-penalty
+    )
+
     return prediction - y
 
 
@@ -726,7 +736,7 @@ class AdamW_fit:
         self.y = y  # tensor of responses
         self.n_steps = n_steps
         self.params = params
-        self.model = model  
+        self.model = model
         self.bounds = bounds
         self.model_func = model_func
         self.n_starts = n_starts
@@ -759,7 +769,9 @@ class AdamW_fit:
         # expand the y tensor to match the number of starts for each ROI
         y_expanded = self.y.repeat_interleave(self.n_starts, dim=1)
         # do the fit
-        for step in tqdm(range(self.n_steps), desc="[batch-adamw] fitting all ROIs", unit="step"):
+        for step in tqdm(
+            range(self.n_steps), desc="[batch-adamw] fitting all ROIs", unit="step"
+        ):
             self.optimiser.zero_grad()
             z_pred = self.model_func(
                 self.X, self.params, self.bounds, optimiser="adamw"
@@ -816,7 +828,9 @@ class Refine_fit:
         debug: bool = False,
     ):
         if method not in ("trf", "lm"):
-            raise ValueError(f"Unknown Refine_fit method: {method!r}. Use 'trf' or 'lm'.")
+            raise ValueError(
+                f"Unknown Refine_fit method: {method!r}. Use 'trf' or 'lm'."
+            )
         self.X = X
         self.y = y
         self.params = params
@@ -828,7 +842,9 @@ class Refine_fit:
         self.chunk_size = chunk_size
         self.delta_init = delta_init  # trust-region radius init, used when method="trf"
         self.lambda_init = lambda_init  # LM damping init, used when method="lm"
-        self.method = method  # "trf" (trust-region-radius) or "lm" (Levenberg-Marquardt)
+        self.method = (
+            method  # "trf" (trust-region-radius) or "lm" (Levenberg-Marquardt)
+        )
         self.penalty = penalty
         self.n_starts = n_starts
         self.log_every = log_every
@@ -1200,11 +1216,13 @@ class Refine_fit:
                     )
                 else:
                     # LM update rule
-                    radius = torch.where(
-                        improved, radius * 0.5, radius * 2.0
-                    ).clamp(1e-7, 1e7)
+                    radius = torch.where(improved, radius * 0.5, radius * 2.0).clamp(
+                        1e-7, 1e7
+                    )
                     p_post = torch.where(improved[:, None], p_new, p)
-                    iter_converged = self._check_convergence_lm(p_post, delta_x, scaled_g)
+                    iter_converged = self._check_convergence_lm(
+                        p_post, delta_x, scaled_g
+                    )
 
                 # accept only steps that actually reduce cost
                 p = torch.where(improved[:, None], p_new, p)
@@ -1215,11 +1233,13 @@ class Refine_fit:
                 converged = converged | iter_converged
                 if self.debug:
                     if it % 20 == 0 or it == self.n_iters - 1:
-                        print(f"  it={it:4d} accept_rate={improved.float().mean().item():.3f} "
+                        print(
+                            f"  it={it:4d} accept_rate={improved.float().mean().item():.3f} "
                             f"radius_mean={radius.mean().item():.3e} radius_max={radius.max().item():.3e} "
                             f"cost_finite={torch.isfinite(cost).all().item()} "
-                            f"cost_min={cost.min().item():.4e} cost_max={cost.max().item():.4e}", flush=True)
-
+                            f"cost_min={cost.min().item():.4e} cost_max={cost.max().item():.4e}",
+                            flush=True,
+                        )
 
             n_fits_improved += torch.sum(cost < cost_before).item()
             total_cost_before += cost_before.sum().item()
@@ -1251,7 +1271,10 @@ class Refine_fit:
         # evaluate the R-squared value for each fit and store it in the object for later inspection
         with torch.no_grad():
             z_pred_final = self.model_func(
-                self.X, params, self.bounds, optimiser=self.method,
+                self.X,
+                params,
+                self.bounds,
+                optimiser=self.method,
             )
             r2_all = calculate_r2(y_samples_major, z_pred_final)
             self.r2 = r2_all.detach().view(self.y.shape[1], self.n_starts)

@@ -229,7 +229,7 @@ def gaussian_2mult(
     raw_params: torch.Tensor,
     bounds: Gaussian2DBounds,
     min_sigma: float = 0.25,
-    optimiser: str | None = None
+    optimiser: str | None = None,
 ) -> torch.Tensor:
     """Evaluate multiplicative 2D Gaussian for all ROIs in parallel.
 
@@ -376,7 +376,7 @@ def gaussian_multiplicative(
     params: torch.Tensor,
     bounds: Gaussian2DBounds,
     min_sigma: float = 0.25,
-    optimiser: str | None = None
+    optimiser: str | None = None,
 ):
     """Evaluate multiplicative 2D Gaussian for running speed and optic flow."""
     rs, of = xy_tuple
@@ -393,10 +393,12 @@ def gaussian_2d_cholesky(
     optimiser: str | None = None,
 ):
     """Evaluate 2D Gaussian for running speed and optic flow (Cholesky
-    parameterisation). 
+    parameterisation).
     """
     rs, of = xy_tuple
-    return gaussian_bivar_cholesky(rs, of, params, bounds, min_sigma, optimiser=optimiser)
+    return gaussian_bivar_cholesky(
+        rs, of, params, bounds, min_sigma, optimiser=optimiser
+    )
 
 
 def gaussian_2d(
@@ -411,6 +413,7 @@ def gaussian_2d(
     """
     rs, of = xy_tuple
     return gaussian_bivar_angle(rs, of, params, bounds, min_sigma, optimiser=optimiser)
+
 
 ## Helper functions for munging the input data
 MODEL_SPECS = {
@@ -512,8 +515,6 @@ def process_rs_of_for_fit(
         np.concatenate(response_list, axis=0),
         np.concatenate(depth_list),
     )
-
-
 
 
 ## Helper functions for computing fit metrics
@@ -742,7 +743,9 @@ def _store_torch_cv_results(
     """Assign per-fold train metrics and held-out test metrics into `torch_df` columns."""
     sfx = f"{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}_torch"
     train_r2_per_roi = np.stack(train_r2_folds, axis=1)  # (n_rois, k_folds)
-    train_popt_per_roi = np.stack(train_popt_folds, axis=1)  # (n_rois, k_folds, n_params)
+    train_popt_per_roi = np.stack(
+        train_popt_folds, axis=1
+    )  # (n_rois, k_folds, n_params)
     train_rval_per_roi = np.stack(train_rval_folds, axis=1)  # (n_rois, k_folds)
     train_pval_per_roi = np.stack(train_pval_folds, axis=1)  # (n_rois, k_folds)
 
@@ -834,7 +837,7 @@ def fit_rs_of_tuning(
     )
     model_sfx = "_" + model
 
-    # choose trials 
+    # choose trials
     if choose_trials is not None and isinstance(choose_trials, list):
         (
             trials_df_select,
@@ -1079,6 +1082,3 @@ def fit_rs_of_tuning(
             )
 
     return torch_df
-
-
-    
