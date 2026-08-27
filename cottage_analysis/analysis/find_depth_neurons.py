@@ -271,7 +271,13 @@ def find_depth_neurons(
     )
 
     for roi in tqdm(np.arange(nrois)):
-        _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])
+        # `f_oneway` is not NaN-aware, so a single trial whose frames were all removed
+        # returns NaN for the whole ROI, making `is_depth_neuron` all-False. Drop NaN
+        # per depth group and require at least two groups with two usable trials. This
+        # is a no-op when nothing is filtered out, so non-treadmill fits are unaffected.
+        groups = [g[~np.isnan(g)] for g in mean_dff_arr[:, :, roi]]
+        groups = [g for g in groups if g.size > 1]
+        p = scipy.stats.f_oneway(*groups)[1] if len(groups) > 1 else np.nan
 
         neurons_df.loc[roi, f"depth_neuron_anova_p{special_sfx}"] = p
         neurons_df.loc[roi, f"is_depth_neuron{special_sfx}"] = p < alpha
@@ -488,9 +494,9 @@ def fit_preferred_depth(
                 niter=niter,
                 p0_func=p0_func,
             )
-            neurons_df.at[roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"] = (
-                np.exp(popt[1])
-            )
+            neurons_df.at[
+                roi, f"preferred_{param}{protocol_sfx}{sfx}{special_sfx}"
+            ] = np.exp(popt[1])
             neurons_df.at[
                 roi, f"{param}_tuning_popt{protocol_sfx}{sfx}{special_sfx}"
             ] = popt
@@ -536,12 +542,19 @@ def fit_preferred_depth(
                 )
                 y_pred = gaussian_func_(np.log(X_test), *popt)
                 y_pred_all.append(y_pred)
-            rsq = common_utils.calculate_r_squared(
-                np.concatenate(y_test_all), np.concatenate(y_pred_all)
-            )
-            rval, pval = spearmanr(
-                np.concatenate(y_test_all), np.concatenate(y_pred_all)
-            )
+            # Drop held-out trials with NaN data before scoring: a trial whose
+            # frames were all removed (e.g. by max_rs2motor_diff filtering) has a
+            # NaN trial mean, which would otherwise propagate through the
+            # (non-NaN-aware) r-squared / spearmanr and force the whole ROI to NaN.
+            # Ported from dev (46d7c0c). Without it, plateau onset detection -- which
+            # keeps fewer frames per trial than the model method -- empties enough
+            # trials that every test statistic comes out NaN, `is_depth_neuron` ends
+            # up all-False, and the depth-cell selections silently return nothing.
+            y_test_cat = np.concatenate(y_test_all)
+            y_pred_cat = np.concatenate(y_pred_all)
+            valid = ~(np.isnan(y_test_cat) | np.isnan(y_pred_cat))
+            rsq = common_utils.calculate_r_squared(y_test_cat[valid], y_pred_cat[valid])
+            rval, pval = spearmanr(y_test_cat[valid], y_pred_cat[valid])
             neurons_df.at[
                 roi, f"{param}_tuning_test_rsq{protocol_sfx}{sfx}{special_sfx}"
             ] = rsq
