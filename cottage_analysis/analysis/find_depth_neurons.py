@@ -13,6 +13,30 @@ from functools import partial
 
 print = partial(print, flush=True)
 
+# Treadmill tags a column suffix can end with, longest first so that
+# "_treadmill_model" wins over "_treadmill".
+TREADMILL_TAGS = ("_treadmill_model", "_treadmill")
+
+
+def get_treadmill_tag(special_sfx):
+    """Return the treadmill tag at the end of a composed column suffix
+
+    `special_sfx` combines the running condition and the treadmill tag, e.g.
+    "_running_treadmill_model", but `find_depth_neurons` writes its columns with the
+    treadmill tag alone. Use this to go from one to the other.
+
+    Args:
+        special_sfx (str): composed column suffix, e.g. "_running_treadmill_model"
+
+    Returns:
+        str: the matching entry of `TREADMILL_TAGS`, or "" if there is no treadmill tag
+
+    """
+    for tag in TREADMILL_TAGS:
+        if special_sfx.endswith(tag):
+            return tag
+    return ""
+
 
 def find_depth_list(df):
     """Return the depth list from a dataframe that contains all the depth information from
@@ -348,10 +372,18 @@ def fit_preferred_depth(
 
     # Function to initialize depth tuning parameters
     if param == "depth":
-        if "treadmill" in special_sfx:
-            p0_depth = "best_depth_treadmill"
-        else:
-            p0_depth = "best_depth"
+        # `find_depth_neurons` wrote the seed column with the treadmill tag alone, not
+        # with the full composed suffix, so drop the running condition part. Matching
+        # the tag exactly (rather than sniffing for the substring "treadmill" and
+        # assuming the untagged form) is what avoids a KeyError as soon as the tag
+        # carries an onset method.
+        tread_sfx = get_treadmill_tag(special_sfx)
+        p0_depth = f"best_depth{tread_sfx}"
+        if p0_depth not in neurons_df.columns:
+            raise KeyError(
+                f"seed column {p0_depth!r} (for special_sfx={special_sfx!r}) is not in "
+                "neurons_df; run find_depth_neurons with the same suffix first"
+            )
 
         def p0_func():
             return np.concatenate(

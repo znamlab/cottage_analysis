@@ -14,6 +14,24 @@ from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
 
 
+def treadmill_special_sfx(protocol_base, tread_method="plateau"):
+    """Suffix identifying a SpheresTubeMotor run's onset-detection method.
+
+    Applied to both the fit pickle filenames and the merged `neurons_df` column names, so
+    the method is always recoverable from the name:
+
+        plateau -> "_treadmill"         (the default, and what the figures read)
+        model   -> "_treadmill_model"
+    """
+    if protocol_base != "SpheresTubeMotor":
+        return ""
+    if tread_method not in ("plateau", "model"):
+        raise ValueError(
+            f"unknown tread_method {tread_method!r}; expected plateau or model"
+        )
+    return "_treadmill" if tread_method == "plateau" else f"_treadmill_{tread_method}"
+
+
 def main(
     project,
     session_name,
@@ -28,6 +46,7 @@ def main(
     anatomical_only=True,
     ast_neuropil=False,
     use_annotated=False,
+    tread_method="plateau",
 ):
     """
     Main function to analyze a session.
@@ -47,6 +66,11 @@ def main(
         anatomical_only(bool): whether to only use anatomical datasets. Default True.
         ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
         use_annotated(bool): Filter s2p dataset by "annotated=True", default False
+        tread_method(str): onset-detection method passed to
+            `treadmill.sync_all_recordings` for SpheresTubeMotor sessions, "plateau"
+            (default) or "model". It is recorded in the output names: "plateau" keeps the
+            bare `_treadmill` suffix, "model" tags its columns and fit pickles
+            `_treadmill_model`. Ignored for non-treadmill protocols.
     """
     print(
         f"   ------------------------------- \n \
@@ -107,6 +131,7 @@ def main(
             recording_type="two_photon",
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
+            method=tread_method,
         )
     else:
         _, trials_df_all = spheres.sync_all_recordings(
@@ -193,10 +218,7 @@ def main(
 
     # Treadmill only parameter
     max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
-    if protocol_base == "SpheresTubeMotor":
-        special_sfx_base = "_treadmill"
-    else:
-        special_sfx_base = ""
+    special_sfx_base = treadmill_special_sfx(protocol_base, tread_method)
     if run_depth_fit:
         # finished = pipeline_utils.save_finish_time(finished,
         # col="depth_fit_started")
@@ -428,7 +450,7 @@ def main(
     if run_rsof_fit:
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
-        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        special_sfx_base = treadmill_special_sfx(protocol_base, tread_method)
         common_params = dict(
             rs_thr=0.01,
             param_range={
@@ -442,6 +464,10 @@ def main(
             run_openloop_only=False,
             file_special_sfx=special_sfx_base,
             max_rs2motor_diff=max_rs2motor_diff,
+            # load_and_fit re-syncs the recordings itself, so it needs the same onset
+            # method as the depth fit above -- otherwise the RS/OF and depth columns of a
+            # single run would come from different trial onsets.
+            tread_kwargs=dict(method=tread_method),
         )
 
         to_do = [
@@ -502,7 +528,7 @@ def main(
         print("---Analysis finished. Neurons_df saved.---")
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
-        special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
+        special_sfx_base = treadmill_special_sfx(protocol_base, tread_method)
         # Merge fit dataframes
         out = pipeline_utils.merge_fit_dataframes(
             project,
