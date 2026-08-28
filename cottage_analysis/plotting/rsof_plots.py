@@ -1961,6 +1961,7 @@ def plot_rsof_slice(
     markersize=None,
     scatter_size=20,
     fontsize_dict={"title": 15, "label": 10, "tick": 10, "legend": 10},
+    clip_on=True,
 ):
     """
     Filters data for a specific running speed bin, fits a 1D Gaussian to optic flow responses,
@@ -2008,7 +2009,7 @@ def plot_rsof_slice(
     if plot_trials:
         # 2. Scatter raw data
         ax.scatter(
-            of, dff, color="k", s=scatter_size, alpha=0.3, zorder=5, clip_on=False
+            of, dff, color="k", s=scatter_size, alpha=0.3, zorder=5, clip_on=clip_on
         )
 
     # 3. Perform 1D Gaussian Fit in log-space
@@ -2042,7 +2043,7 @@ def plot_rsof_slice(
     )
 
     # Plot the fit
-    x_fine = np.linspace(np.log(of_min), np.log(of_max), 300)
+    x_fine = np.linspace(np.log(of_bins[0]), np.log(of_bins[-1]), 300)
     resp_pred = gaussian_func_(x_fine, *popt)
     ax.plot(
         np.exp(x_fine),
@@ -2080,6 +2081,7 @@ def plot_rsof_slice(
         capsize=capsize,
         markersize=markersize,
         zorder=10,
+        clip_on=clip_on,
     )
     # 6. Axis Styling
     ax.set_xscale("log")
@@ -2097,6 +2099,6 @@ def plot_rsof_slice(
             color=color,
             markersize=markersize if markersize is not None else 8,
             transform=ax.get_xaxis_transform(),
-            clip_on=False,
+            clip_on=clip_on,
             zorder=11,
         )
