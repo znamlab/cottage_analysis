@@ -480,12 +480,11 @@ def plot_RS_OF_matrix(
         extent = [rs_lower, rs_upper, of_lower, of_upper]
     else:
         # Fallback to logical default log_bounds
-        extent = [
-            log_range.get("rs_bin_log_min", 0),
-            log_range.get("rs_bin_log_max", 2.5),
-            log_range.get("of_bin_log_min", -1.5),
-            log_range.get("of_bin_log_max", 3.5),
-        ]
+        rs_lower = log_range.get("rs_bin_log_min", 0)
+        rs_upper = log_range.get("rs_bin_log_max", 2.5)
+        of_lower = log_range.get("of_bin_log_min", -1.5)
+        of_upper = log_range.get("of_bin_log_max", 3.5)
+        extent = [rs_lower, rs_upper, of_lower, of_upper]
     plt.sca(ax)
     fig = ax.get_figure()
     trials_df = trials_df[trials_df.closed_loop == is_closed_loop]
@@ -572,30 +571,49 @@ def plot_RS_OF_matrix(
         ax.get_position().height,
     )
 
-    set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict)
-
     if is_closed_loop:
+        set_rsof_ticks(ax, log_range, tick_dict, fontsize_dict)
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
         ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=0)
     else:
-        (
-            ticks_select1,
-            ticks_select2,
-            bin_edges1,
-            bin_edges2,
-        ) = get_RS_OF_heatmap_axis_ticks(
-            log_range=log_range,
-            fontsize_dict=fontsize_dict,
-        )
+        # Ticks move to the marginal axes below/left of the matrix. Use the same
+        # selectors as `set_rsof_ticks` so that open and closed loop panels of
+        # equal size end up with tick marks at identical positions.
+        if tick_dict is None:
+            (
+                ticks_select1,
+                ticks_select2,
+                bin_edges1,
+                bin_edges2,
+            ) = get_RS_OF_heatmap_axis_ticks(
+                log_range=log_range,
+                fontsize_dict=fontsize_dict,
+            )
+            rs_ticks, rs_tick_labels = ticks_select1[0::2], bin_edges1[0::2]
+            of_ticks, of_tick_labels = ticks_select2[1::2], bin_edges2[1::2]
+        else:
+            rs_ticks = tick_dict["rs_tick_select"]
+            rs_tick_labels = tick_dict["rs_tick_values"]
+            of_ticks = tick_dict["of_tick_select"]
+            of_tick_labels = tick_dict["of_tick_values"]
         ax.set_xticks([])
         ax.set_yticks([])
 
         rect = ax.get_position()
+        # Number of cells actually drawn in the main matrix, and the size of one
+        # cell in log units. The marginal strips are one cell thick, so their
+        # extent must match that or `aspect="equal"` shrinks them relative to the
+        # main matrix.
+        n_rs = bin_means.shape[0] - 1
+        n_of = bin_means.shape[1] - 1
+        rs_cell = (rs_upper - rs_lower) / n_rs
+        of_cell = (of_upper - of_lower) / n_of
+
         ax_left = fig.add_axes(
             [
-                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
+                rect.x0 - rect.width / n_rs * 1.5,
                 rect.y0,
-                rect.width / (log_range["rs_bin_num"] - 1),
+                rect.width / n_rs,
                 rect.height,
             ]
         )
@@ -606,18 +624,18 @@ def plot_RS_OF_matrix(
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
+            extent=[0, rs_cell, of_lower, of_upper],
         )
-        plt.yticks(
-            ticks_select2[1::2], bin_edges2[1::2], fontsize=fontsize_dict["tick"]
-        )
-        plt.xticks([])
+        ax_left.set_yticks(of_ticks)
+        ax_left.set_yticklabels(of_tick_labels, fontsize=fontsize_dict["tick"])
+        ax_left.set_xticks([])
 
         ax_down = fig.add_axes(
             [
                 rect.x0,
-                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
+                rect.y0 - rect.height / n_of * 1.5,
                 rect.width,
-                rect.height / (log_range["of_bin_num"] - 1),
+                rect.height / n_of,
             ]
         )
         ax_down.imshow(
@@ -627,17 +645,17 @@ def plot_RS_OF_matrix(
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
+            extent=[rs_lower, rs_upper, 0, of_cell],
         )
-        plt.xticks(
-            ticks_select1[0::2], bin_edges1[0::2], fontsize=fontsize_dict["tick"]
-        )
-        plt.yticks([])
+        ax_down.set_xticks(rs_ticks)
+        ax_down.set_xticklabels(rs_tick_labels, fontsize=fontsize_dict["tick"])
+        ax_down.set_yticks([])
         ax_corner = fig.add_axes(
             [
-                rect.x0 - rect.width / (log_range["rs_bin_num"] - 1) * 1.5,
-                rect.y0 - rect.height / (log_range["of_bin_num"] - 1) * 1.5,
-                rect.width / (log_range["rs_bin_num"] - 1),
-                rect.height / (log_range["of_bin_num"] - 1),
+                rect.x0 - rect.width / n_rs * 1.5,
+                rect.y0 - rect.height / n_of * 1.5,
+                rect.width / n_rs,
+                rect.height / n_of,
             ]
         )
         ax_corner.imshow(
@@ -647,9 +665,12 @@ def plot_RS_OF_matrix(
             cmap=cmap,
             vmin=vmin,
             vmax=vmax,
+            extent=[0, rs_cell, 0, of_cell],
         )
-        plt.yticks(ax_corner.get_yticks()[1::2], ["< 0.03"])
-        plt.xticks(ax_corner.get_xticks()[1::2], ["< 1"])
+        ax_corner.set_yticks([of_cell / 2])
+        ax_corner.set_yticklabels(["< 0.03"], fontsize=fontsize_dict["tick"])
+        ax_corner.set_xticks([rs_cell / 2])
+        ax_corner.set_xticklabels(["< 1"], fontsize=fontsize_dict["tick"])
 
         ax_down.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
         ax_left.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=0)

@@ -193,6 +193,7 @@ def decoder_accuracy(
         ax.set_ylabel("Open loop decoding accuracy", fontsize=fontsize_dict["label"])
         ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
         sns.despine(ax=ax)
+    return ax
 
 
 def calculate_average_confusion_matrix(
