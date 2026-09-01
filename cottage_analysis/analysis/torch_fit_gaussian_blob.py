@@ -662,9 +662,9 @@ def _fit_trf(
         rng_seed=seed,
         device=device,
         dtype=dtype,
-        apply_bounds=True,
+        apply_bounds=False,
     )
-    initial_params = torch_utils.decode_params(initial_params, model=model, bounds=bounds)
+
     trf_fit = torch_utils.Curve_fit(
         X=X,
         y=y,
