@@ -323,8 +323,7 @@ def bounded_sigmoid(raw: torch.Tensor, low: float, high: float) -> torch.Tensor:
 
 
 def bounded_softplus_upper(raw: torch.Tensor, high: float) -> torch.Tensor:
-    """Map unconstrained values to (-inf, high] with a smooth one-sided cap.
-    """
+    """Map unconstrained values to (-inf, high] with a smooth one-sided cap."""
     return high - torch.nn.functional.softplus(high - raw)
 
 
@@ -370,7 +369,9 @@ def decode_params(
         natural[:, 2] = bounded_sigmoid(raw_params[:, 2], bounds.y0_min, bounds.y0_max)
     if model == "g2d":
         # --- Cholesky g2d (active) ---
-        natural[:, 0] = bounded_softplus_upper(raw_params[:, 0], bounds.log_amplitude_max)
+        natural[:, 0] = bounded_softplus_upper(
+            raw_params[:, 0], bounds.log_amplitude_max
+        )
         natural[:, 3] = bounded_sigmoid(
             raw_params[:, 3], -bounds.log_l_max, bounds.log_l_max
         )
@@ -380,7 +381,7 @@ def decode_params(
         natural[:, 5] = bounded_sigmoid(
             raw_params[:, 5], -bounds.log_l_max, bounds.log_l_max
         )
-        # --- angle/sigma-parameterised g2d 
+        # --- angle/sigma-parameterised g2d
         # natural[:, 5] = bounded_sigmoid(raw_params[:, 5], bounds.theta_min, bounds.theta_max)
     return natural
 
@@ -573,10 +574,10 @@ def generate_n_inits(
             given, start 0 is anchored at the (x, y) center of the best-response bin
             (see `_binned_peak_guess` for 2D models, `_make_data_driven_guess` for
             1D models) instead of an uninformed random guess.
-        apply_bounds: 
-            - True: run through `invert_bounded_sigmoid`, allowing the fit parameter to be 
+        apply_bounds:
+            - True: run through `invert_bounded_sigmoid`, allowing the fit parameter to be
               unbounded.
-            - False (default): written directly, unmodified, in data space units 
+            - False (default): written directly, unmodified, in data space units
     """
     is_2d = MODEL_N_PARAMS[model] >= 6
     if is_2d:
@@ -751,7 +752,13 @@ class AdamW_fit:
         y: torch.Tensor,
         params: torch.Tensor,
         model: str,
-        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds | Gaussian2DAngleBounds | GaussianAdditiveBounds,
+        bounds: (
+            Gaussian2DBounds
+            | Gaussian1DBounds
+            | Gaussian2DCholeskyBounds
+            | Gaussian2DAngleBounds
+            | GaussianAdditiveBounds
+        ),
         model_func: Callable,
         n_steps: int = 1000,
         n_starts: int = 5,
@@ -775,12 +782,16 @@ class AdamW_fit:
         self.dtype = params.dtype
         self.log_every = log_every
         if loss_fn not in ("mse", "smooth_l1"):
-            raise ValueError(f"Unknown loss_fn: {loss_fn!r} (expected 'mse' or 'smooth_l1')")
+            raise ValueError(
+                f"Unknown loss_fn: {loss_fn!r} (expected 'mse' or 'smooth_l1')"
+            )
         self.loss_fn = loss_fn
         self.smooth_l1_beta = smooth_l1_beta
         self.initialise_optimiser()
 
-    def _per_col_loss(self, z_pred: torch.Tensor, y_expanded: torch.Tensor) -> torch.Tensor:
+    def _per_col_loss(
+        self, z_pred: torch.Tensor, y_expanded: torch.Tensor
+    ) -> torch.Tensor:
         """Per-fit (per-column) training loss, averaged over samples.
 
         Note this is the loss AdamW optimises, distinct from the R^2/SSE metrics used
@@ -867,7 +878,13 @@ class Refine_fit:
         X: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         y: torch.Tensor,
         params: torch.Tensor,
-        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds | Gaussian2DAngleBounds | GaussianAdditiveBounds,
+        bounds: (
+            Gaussian2DBounds
+            | Gaussian1DBounds
+            | Gaussian2DCholeskyBounds
+            | Gaussian2DAngleBounds
+            | GaussianAdditiveBounds
+        ),
         model_func: Callable,
         n_starts: int,
         lr: float = 1e-3,
@@ -905,7 +922,7 @@ class Refine_fit:
         self.log_every = log_every
         # a fit is only dropped from the active (masked) set once it BOTH satisfies
         # the formal xtol/gtol convergence test AND has failed to improve cost for
-        # `patience` consecutive iterations 
+        # `patience` consecutive iterations
         self.patience = patience
         self.debug = debug
 
@@ -1298,10 +1315,8 @@ class Refine_fit:
                 cost_a = torch.where(improved, cost_new, cost_a)
 
                 # bump the stall counter on any iteration that didn't improve cost,
-                # reset it on any that did 
-                stall_a = torch.where(
-                    improved, torch.zeros_like(stall_a), stall_a + 1
-                )
+                # reset it on any that did
+                stall_a = torch.where(improved, torch.zeros_like(stall_a), stall_a + 1)
                 freeze_a = iter_converged & (stall_a >= self.patience)
 
                 # scatter the active subset's results back into the full-chunk tensors

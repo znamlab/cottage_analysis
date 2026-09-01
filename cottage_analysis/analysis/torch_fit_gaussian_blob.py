@@ -159,7 +159,7 @@ def _g2d_basis(
     log_l22: torch.Tensor,
     min_sigma: float = 0.25,
 ) -> torch.Tensor:
-    """Blob shape term of `gaussian_bivar_cholesky` 
+    """Blob shape term of `gaussian_bivar_cholesky`
 
     Args:
         x, y: Tensors of shape (n_samples,).
@@ -835,6 +835,14 @@ def fit_rs_of_tuning(
         min_valid_frames: Minimum number of valid frames required for including a neuron in the fit. Defaults to None.
         trial_average: If True, average the data across trials before fitting. Defaults to False.
         min_sigma: Minimum variance floor passed to the model function. Defaults to 0.25.
+        adamw_lr: AdamW learning rate. Defaults to 0.05.
+        adamw_weight_decay: AdamW decoupled weight decay. Defaults to 1e-6.
+        adamw_n_steps: Number of AdamW steps per restart. Defaults to 1000.
+        adamw_loss_fn: Loss AdamW optimises -- "mse" (default) or "smooth_l1". See
+            _fit_adamw_then_refine for details; the refine stage and reported R^2
+            are unaffected regardless of this setting.
+        adamw_smooth_l1_beta: Transition point between smooth_l1's quadratic and
+            linear regions, in response (dff) units. Ignored for "mse".
         verbose: If True, print progress and fit metrics during the fitting process. Defaults to False.
 
     Returns:
