@@ -560,7 +560,7 @@ def generate_n_inits(
     rng_seed: int,
     device: torch.device,
     dtype: torch.dtype,
-    optimiser: str = "adamw",
+    apply_bounds: bool = False,
 ) -> torch.Tensor:
     """Generate n_starts initial parameter sets for fitting.
 
@@ -573,6 +573,10 @@ def generate_n_inits(
             given, start 0 is anchored at the (x, y) center of the best-response bin
             (see `_binned_peak_guess` for 2D models, `_make_data_driven_guess` for
             1D models) instead of an uninformed random guess.
+        apply_bounds: 
+            - True: run through `invert_bounded_sigmoid`, allowing the fit parameter to be 
+              unbounded.
+            - False (default): written directly, unmodified, in data space units 
     """
     is_2d = MODEL_N_PARAMS[model] >= 6
     if is_2d:
@@ -620,7 +624,7 @@ def generate_n_inits(
         else:
             x0_targets[0] = _make_data_driven_guess(x_stim, y)
 
-    if optimiser == "adamw":
+    if apply_bounds:
         if model == "gadd":
             # x0/y0 sit at indices 2/3 here -- see decode_params/_default_init.
             raw[:, 2] = invert_bounded_sigmoid(x0_targets, bounds.x0_min, bounds.x0_max)
@@ -631,6 +635,15 @@ def generate_n_inits(
                 raw[:, 2] = invert_bounded_sigmoid(
                     y0_targets, bounds.y0_min, bounds.y0_max
                 )
+    else:
+        # no sigmoid transform
+        if model == "gadd":
+            raw[:, 2] = x0_targets
+            raw[:, 3] = y0_targets
+        else:
+            raw[:, 1] = x0_targets
+            if is_2d:
+                raw[:, 2] = y0_targets
 
     return raw
 
@@ -644,7 +657,7 @@ def generate_n_inits_all_rois(
     rng_seed: int,
     device: torch.device,
     dtype: torch.dtype,
-    optimiser: str = "adamw",
+    apply_bounds: bool = False,
 ) -> torch.Tensor:
     """Build (n_rois * n_starts, n_params) tensor of initialisations for fitting.
 
@@ -663,7 +676,7 @@ def generate_n_inits_all_rois(
             rng_seed=rng_seed + roi,
             device=device,
             dtype=dtype,
-            optimiser=optimiser,
+            apply_bounds=apply_bounds,
         )
         for roi in range(n_rois)
     ]
@@ -826,7 +839,7 @@ class Refine_fit:
         X: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
         y: torch.Tensor,
         params: torch.Tensor,
-        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds,
+        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds | Gaussian2DAngleBounds | GaussianAdditiveBounds,
         model_func: Callable,
         n_starts: int,
         lr: float = 1e-3,
@@ -838,6 +851,7 @@ class Refine_fit:
         method: str = "trf",
         penalty: float = 1e8,
         log_every: int = 100,
+        patience: int = 10,
         debug: bool = False,
     ):
         if method not in ("trf", "lm"):
@@ -861,6 +875,10 @@ class Refine_fit:
         self.penalty = penalty
         self.n_starts = n_starts
         self.log_every = log_every
+        # a fit is only dropped from the active (masked) set once it BOTH satisfies
+        # the formal xtol/gtol convergence test AND has failed to improve cost for
+        # `patience` consecutive iterations 
+        self.patience = patience
         self.debug = debug
 
     def _cl_scaling_vector(
@@ -1080,7 +1098,6 @@ class Refine_fit:
         updated each iteration.
         """
 
-        # suppress DeprecationWarnings from torch.func.vmap and torch.func.jacfwd
         warnings.filterwarnings(
             "ignore",
             category=DeprecationWarning,
@@ -1090,7 +1107,7 @@ class Refine_fit:
         device, dtype = self.params.device, self.params.dtype
 
         params = self.params.detach().clone()
-        # Separate out the lower and upper bounds for the parameters
+        # separate out the lower and upper bounds for the parameters
         lower, upper = vectorise_bounds(self.bounds)
         lower = lower.to(device=device, dtype=dtype)
         upper = upper.to(device=device, dtype=dtype)
@@ -1105,7 +1122,7 @@ class Refine_fit:
             optimiser="trf",
         )
 
-        # Declare the Jacobian and residual functions
+        # declare the Jacobian and residual functions
         jac_func = torch.func.vmap(
             torch.func.jacfwd(residual_func, argnums=0), in_dims=(0, None, 0)
         )
@@ -1134,25 +1151,35 @@ class Refine_fit:
             cost = (r**2).sum(dim=1)
             cost_before = cost.clone()
 
-            # initialise convergence tensor
+            # initialise convergence and stall-patience trackers
             converged = torch.zeros_like(cost, dtype=torch.bool)
+            stall_count = torch.zeros_like(cost, dtype=torch.long)
             for it in tqdm(
                 range(self.n_iters),
                 desc=f"[batch-{self.method}] chunk {start}-{end}",
                 unit="iter",
             ):
-                # check for convergence
-                if torch.all(converged):
+                # mask out fits that have been dropped from the active set
+                active_idx = (~converged).nonzero(as_tuple=True)[0]
+                if active_idx.numel() == 0:
                     break
+                p_a = p[active_idx]
+                t_a = t[active_idx]
+                radius_a = radius[active_idx]
+                r_a = r[active_idx]
+                cost_a = cost[active_idx]
+                # keep track of how many times a fit stalls
+                stall_a = stall_count[active_idx]
+
                 # calculate the Jacobian, check for NaNs and Infs
                 J = torch.nan_to_num(
-                    jac_func(p, self.X, t), nan=0.0, posinf=0.0, neginf=0.0
+                    jac_func(p_a, self.X, t_a), nan=0.0, posinf=0.0, neginf=0.0
                 )
                 # evaluate the gradient vector
-                g = torch.einsum("bni,bn->bi", J, r)
+                g = torch.einsum("bni,bn->bi", J, r_a)
                 g = torch.nan_to_num(g, nan=0.0, posinf=0.0, neginf=0.0)
                 # scale the gradient and the Jacobian
-                v, dv = self._cl_scaling_vector(p, g, lower, upper)
+                v, dv = self._cl_scaling_vector(p_a, g, lower, upper)
                 d_scale = v.sqrt()
                 J_h = (J * d_scale[:, None, :]).double()  # scale the columns of J
                 scaled_g = d_scale * g  # scale the parameter-column of the gradient
@@ -1165,7 +1192,7 @@ class Refine_fit:
                     diag_h = torch.nan_to_num(
                         (g * v).double(), nan=0.0, posinf=0.0, neginf=0.0
                     ).clamp_min(0.0)
-                r_d = torch.nan_to_num(r.double(), nan=0.0, posinf=0.0, neginf=0.0)
+                r_d = torch.nan_to_num(r_a.double(), nan=0.0, posinf=0.0, neginf=0.0)
                 # augment J_h on the diagonal with sqrt(diag_h)
                 diag_block = torch.diag_embed(diag_h.sqrt())
                 J_aug = torch.cat([J_h, diag_block], dim=1)
@@ -1181,27 +1208,27 @@ class Refine_fit:
                 if self.method == "trf":
                     # trust-region-radius step
                     delta_q, _alpha, bound_hit = self._solve_lsq_trust_region(
-                        V, s, uf, radius
+                        V, s, uf, radius_a
                     )
                 else:
                     # Levenberg-Marquardt step
-                    delta_q = self._svd_ridge_step(V, s, uf, radius)
+                    delta_q = self._svd_ridge_step(V, s, uf, radius_a)
                 delta_q = torch.nan_to_num(delta_q, nan=0.0, posinf=0.0, neginf=0.0)
                 delta_x = (
                     d_scale * delta_q
                 )  # map the scaled-space step back to the actual params
 
-                step_frac = self._step_size_to_bound(p, -delta_x, lower, upper)
+                step_frac = self._step_size_to_bound(p_a, -delta_x, lower, upper)
                 # get the new parameters
                 step = -step_frac[:, None] * delta_x
-                p_new = p + step
+                p_new = p_a + step
                 # evaluate the new residuals and cost for p_new
-                r_new = res_func(p_new, self.X, t)
+                r_new = res_func(p_new, self.X, t_a)
                 cost_new = (r_new**2).sum(dim=1)
-                improved = cost_new < cost
+                improved = cost_new < cost_a
 
                 if self.method == "trf":
-                    actual_reduction = cost - cost_new
+                    actual_reduction = cost_a - cost_new
                     q_step = step_frac[:, None] * (-delta_q)
                     Jq = torch.einsum("bni,bi->bn", J_aug, q_step)
                     predicted_reduction = -(
@@ -1214,41 +1241,56 @@ class Refine_fit:
                         actual_reduction / predicted_reduction.clamp_min(1e-300),
                         torch.where(
                             (actual_reduction == 0) & (predicted_reduction == 0),
-                            torch.ones_like(cost),
-                            torch.zeros_like(cost),
+                            torch.ones_like(cost_a),
+                            torch.zeros_like(cost_a),
                         ),
                     )
                     step_h_norm = torch.norm(q_step, dim=1).double()
-                    radius = torch.where(ratio < 0.25, 0.25 * step_h_norm, radius)
-                    radius = torch.where(
-                        (ratio > 0.75) & bound_hit, 2.0 * radius, radius
+                    radius_a = torch.where(ratio < 0.25, 0.25 * step_h_norm, radius_a)
+                    radius_a = torch.where(
+                        (ratio > 0.75) & bound_hit, 2.0 * radius_a, radius_a
                     )
-                    radius = radius.clamp_min(1e-10)
+                    radius_a = radius_a.clamp_min(1e-10)
                     iter_converged = self._check_convergence(
-                        cost, cost_new, ratio, p_new, step, scaled_g, improved
+                        cost_a, cost_new, ratio, p_new, step, scaled_g, improved
                     )
                 else:
                     # LM update rule
-                    radius = torch.where(improved, radius * 0.5, radius * 2.0).clamp(
-                        1e-7, 1e7
-                    )
-                    p_post = torch.where(improved[:, None], p_new, p)
+                    radius_a = torch.where(
+                        improved, radius_a * 0.5, radius_a * 2.0
+                    ).clamp(1e-7, 1e7)
+                    p_post = torch.where(improved[:, None], p_new, p_a)
                     iter_converged = self._check_convergence_lm(
                         p_post, delta_x, scaled_g
                     )
 
                 # accept only steps that actually reduce cost
-                p = torch.where(improved[:, None], p_new, p)
-                r = torch.where(improved[:, None], r_new, r)
-                cost = torch.where(improved, cost_new, cost)
+                p_a = torch.where(improved[:, None], p_new, p_a)
+                r_a = torch.where(improved[:, None], r_new, r_a)
+                cost_a = torch.where(improved, cost_new, cost_a)
+
+                # bump the stall counter on any iteration that didn't improve cost,
+                # reset it on any that did 
+                stall_a = torch.where(
+                    improved, torch.zeros_like(stall_a), stall_a + 1
+                )
+                freeze_a = iter_converged & (stall_a >= self.patience)
+
+                # scatter the active subset's results back into the full-chunk tensors
+                p[active_idx] = p_a
+                r[active_idx] = r_a
+                cost[active_idx] = cost_a
+                radius[active_idx] = radius_a
+                stall_count[active_idx] = stall_a
+                converged[active_idx] = freeze_a
 
                 cost_by_iter[it] += cost.sum()
-                converged = converged | iter_converged
                 if self.debug:
                     if it % 20 == 0 or it == self.n_iters - 1:
                         print(
-                            f"  it={it:4d} accept_rate={improved.float().mean().item():.3f} "
-                            f"radius_mean={radius.mean().item():.3e} radius_max={radius.max().item():.3e} "
+                            f"  it={it:4d} n_active={active_idx.numel()}/{cost.shape[0]} "
+                            f"accept_rate={improved.float().mean().item():.3f} "
+                            f"radius_mean={radius_a.mean().item():.3e} radius_max={radius_a.max().item():.3e} "
                             f"cost_finite={torch.isfinite(cost).all().item()} "
                             f"cost_min={cost.min().item():.4e} cost_max={cost.max().item():.4e}",
                             flush=True,

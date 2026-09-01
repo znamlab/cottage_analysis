@@ -215,7 +215,7 @@ def gaussian_bivar_angle(
     theta = params[:, 5]
     offset = params[:, 6]
 
-    if optimiser is not None and optimiser.lower() == "adamw":
+    if optimiser is not None and optimiser.lower() == "adamw" and bounds is not None:
         # Constrain selected parameters to match original fit semantics
         x0 = torch_utils.bounded_sigmoid(x0, bounds.x0_min, bounds.x0_max)
         y0 = torch_utils.bounded_sigmoid(y0, bounds.y0_min, bounds.y0_max)
@@ -279,7 +279,7 @@ def gaussian_2mult(
     offset = raw_params[:, 5]
 
     # Constrain selected parameters to match original fit semantics
-    if optimiser is not None and optimiser.lower() == "adamw":
+    if optimiser is not None and optimiser.lower() == "adamw" and bounds is not None:
         x0 = torch_utils.bounded_sigmoid(x0, bounds.x0_min, bounds.x0_max)
         y0 = torch_utils.bounded_sigmoid(y0, bounds.y0_min, bounds.y0_max)
 
@@ -374,7 +374,7 @@ def gaussian_additive(
     log_sigma_y2 = params[:, 5]
     offset = params[:, 6]
 
-    if optimiser is not None and optimiser.lower() == "adamw":
+    if optimiser is not None and optimiser.lower() == "adamw" and bounds is not None:
         x0 = torch_utils.bounded_sigmoid(x0, bounds.x0_min, bounds.x0_max)
         y0 = torch_utils.bounded_sigmoid(y0, bounds.y0_min, bounds.y0_max)
 
@@ -661,7 +661,7 @@ def _fit_adamw_then_refine(
         rng_seed=seed,
         device=device,
         dtype=dtype,
-        optimiser="adamw",
+        apply_bounds=True,
     )
     adamw_fit = torch_utils.AdamW_fit(
         X=X,
