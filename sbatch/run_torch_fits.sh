@@ -1,4 +1,4 @@
-#!/bin/bash --login
+#!/bin/bash
 #
 #SBATCH --job-name=cottage_analysis
 #SBATCH --ntasks=1
