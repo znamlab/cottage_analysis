@@ -370,6 +370,7 @@ def decode_params(
         natural[:, 2] = bounded_sigmoid(raw_params[:, 2], bounds.y0_min, bounds.y0_max)
     if model == "g2d":
         # --- Cholesky g2d (active) ---
+        natural[:, 0] = bounded_softplus_upper(raw_params[:, 0], bounds.log_amplitude_max)
         natural[:, 3] = bounded_sigmoid(
             raw_params[:, 3], -bounds.log_l_max, bounds.log_l_max
         )
@@ -379,9 +380,7 @@ def decode_params(
         natural[:, 5] = bounded_sigmoid(
             raw_params[:, 5], -bounds.log_l_max, bounds.log_l_max
         )
-        # --- angle/sigma-parameterised g2d (commented out; uncomment to rewire
-        # the angle parameterisation back in, and comment out the Cholesky
-        # block above): only theta is bounded ---
+        # --- angle/sigma-parameterised g2d 
         # natural[:, 5] = bounded_sigmoid(raw_params[:, 5], bounds.theta_min, bounds.theta_max)
     return natural
 

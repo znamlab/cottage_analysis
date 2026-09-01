@@ -127,8 +127,10 @@ def gaussian_bivar_cholesky(
     log_l22 = params[:, 5]
     offset = params[:, 6]
 
-    if optimiser is not None and optimiser.lower() == "adamw":
-        # Constrain selected parameters to match original fit semantics
+    if optimiser is not None and optimiser.lower() == "adamw" and bounds is not None:
+        log_amplitude = torch_utils.bounded_softplus_upper(
+            log_amplitude, bounds.log_amplitude_max
+        )
         x0 = torch_utils.bounded_sigmoid(x0, bounds.x0_min, bounds.x0_max)
         y0 = torch_utils.bounded_sigmoid(y0, bounds.y0_min, bounds.y0_max)
         log_l11 = torch_utils.bounded_sigmoid(
@@ -139,24 +141,45 @@ def gaussian_bivar_cholesky(
         )
         l21 = torch_utils.bounded_sigmoid(l21, -bounds.l21_max, bounds.l21_max)
 
+    amplitude = torch.exp(log_amplitude)
+    basis = _g2d_basis(x, y, x0, y0, log_l11, l21, log_l22, min_sigma=min_sigma)
+    result = offset[None, :] + amplitude[None, :] * basis
+
+    return result.squeeze(-1) if single else result
+
+
+def _g2d_basis(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    x0: torch.Tensor,
+    y0: torch.Tensor,
+    log_l11: torch.Tensor,
+    l21: torch.Tensor,
+    log_l22: torch.Tensor,
+    min_sigma: float = 0.25,
+) -> torch.Tensor:
+    """Blob shape term of `gaussian_bivar_cholesky` 
+
+    Args:
+        x, y: Tensors of shape (n_samples,).
+        x0, y0, log_l11, l21, log_l22: Tensors of shape (n_candidates,)
+        min_sigma: Small additive term for variance stability.
+
+    Returns:
+        Tensor of shape (n_samples, n_candidates).
+    """
     a, b, c = torch_utils.regularised_precision(
         log_l11, l21, log_l22, min_sigma=min_sigma
     )
-    amplitude = torch.exp(log_amplitude)
-
     delta_x = x[:, None] - x0[None, :]
     delta_y = y[:, None] - y0[None, :]
-    exponent = (
-        -(
-            a[None, :] * delta_x**2
-            + 2.0 * b[None, :] * delta_x * delta_y
-            + c[None, :] * delta_y**2
-        )
-        / 2.0
-    )
-    result = offset[None, :] + amplitude[None, :] * torch.exp(exponent)
 
-    return result.squeeze(-1) if single else result
+    exponent = -(
+        a[None, :] * delta_x**2
+        + 2.0 * b[None, :] * delta_x * delta_y
+        + c[None, :] * delta_y**2
+    )
+    return torch.exp(exponent)
 
 
 def gaussian_bivar_angle(
