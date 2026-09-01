@@ -414,7 +414,7 @@ def _default_init(
     is_2d = n_params >= 6  # "g2d" (7) and "g2mult" (6) both have an (x0, y0) centre
 
     raw[:, 0] = (
-        torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
+        torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 1.0
     )  # log_amplitude
     raw[:, 1] = torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1  # x0
 
@@ -454,7 +454,7 @@ def _default_init(
                 torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
             )  # log_sigma_y2
         raw[:, -1] = (
-            torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
+            torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 1.0
         )  # offset
     else:
         raw[:, 2] = (
