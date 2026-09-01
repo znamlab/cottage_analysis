@@ -751,12 +751,15 @@ class AdamW_fit:
         y: torch.Tensor,
         params: torch.Tensor,
         model: str,
-        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds,
+        bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds | Gaussian2DAngleBounds | GaussianAdditiveBounds,
         model_func: Callable,
         n_steps: int = 1000,
         n_starts: int = 5,
         lr: float = 1e-3,
-        weight_decay: float = 1e-2,
+        weight_decay: float = 1e-6,
+        log_every: int = 1000,
+        loss_fn: str = "mse",
+        smooth_l1_beta: float = 1.0,
     ):
         self.X = X  # tuple of (x, y) tensors or single tensor depending on model
         self.y = y  # tensor of responses
@@ -770,7 +773,32 @@ class AdamW_fit:
         self.weight_decay = weight_decay
         self.device = params.device
         self.dtype = params.dtype
+        self.log_every = log_every
+        if loss_fn not in ("mse", "smooth_l1"):
+            raise ValueError(f"Unknown loss_fn: {loss_fn!r} (expected 'mse' or 'smooth_l1')")
+        self.loss_fn = loss_fn
+        self.smooth_l1_beta = smooth_l1_beta
         self.initialise_optimiser()
+
+    def _per_col_loss(self, z_pred: torch.Tensor, y_expanded: torch.Tensor) -> torch.Tensor:
+        """Per-fit (per-column) training loss, averaged over samples.
+
+        Note this is the loss AdamW optimises, distinct from the R^2/SSE metrics used
+        for evaluation and for the Refine (LM/TRF) stage, which always use plain
+        least-squares regardless of this setting -- switching AdamW to smooth_l1
+        changes what basin it settles into, not what "good fit" means downstream.
+        """
+        if self.loss_fn == "mse":
+            return torch.mean((z_pred - y_expanded) ** 2, dim=0)
+        # smooth_l1: quadratic for |residual| < beta, linear beyond -- less sensitive
+        # to outlier residuals than MSE. beta is in the same units as the response
+        # (dff), so pick it relative to the residual scale you actually see; at
+        # beta=1.0 (the torch default) it may behave almost identically to MSE if
+        # typical residuals are well under 1.
+        elementwise = torch.nn.functional.smooth_l1_loss(
+            z_pred, y_expanded, reduction="none", beta=self.smooth_l1_beta
+        )
+        return torch.mean(elementwise, dim=0)
 
     def _initialise_scheduler(self):
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -802,13 +830,13 @@ class AdamW_fit:
             z_pred = self.model_func(
                 self.X, self.params, self.bounds, optimiser="adamw"
             )
-            per_col_loss = torch.mean((z_pred - y_expanded) ** 2, dim=0)
+            per_col_loss = self._per_col_loss(z_pred, y_expanded)
             loss = per_col_loss.mean()
             loss.backward()
             self.optimiser.step()
             self.scheduler.step()
             loss_history_all[step] = per_col_loss.detach()
-            if step % 100 == 0 or step == self.n_steps - 1:
+            if step % self.log_every == 0 or step == self.n_steps - 1:
                 current_lr = self.scheduler.get_last_lr()[0]
                 print(
                     f"[batch-adamw] step {step}: mean loss = {loss.item():.6f}, lr = {current_lr:.5f}"
