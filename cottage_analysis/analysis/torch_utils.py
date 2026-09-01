@@ -322,6 +322,20 @@ def bounded_sigmoid(raw: torch.Tensor, low: float, high: float) -> torch.Tensor:
     return low + (high - low) * torch.sigmoid(raw)
 
 
+def bounded_softplus_upper(raw: torch.Tensor, high: float) -> torch.Tensor:
+    """Map unconstrained values to (-inf, high] with a smooth one-sided cap.
+    """
+    return high - torch.nn.functional.softplus(high - raw)
+
+
+def invert_bounded_softplus_upper(
+    value: torch.Tensor, high: float, eps: float = 1e-4
+) -> torch.Tensor:
+    """Invert the mapping from bounded_softplus_upper."""
+    gap = torch.clamp(high - value, min=eps)
+    return high - torch.log(torch.expm1(gap))
+
+
 MODEL_N_PARAMS = {
     "g2d": 7,  # log_amplitude, x0, y0, log_l11, l21, log_l22, offset (Cholesky
     # parameterisation, active; angle/sigma layout -- log_sigma_x2, log_sigma_y2,
