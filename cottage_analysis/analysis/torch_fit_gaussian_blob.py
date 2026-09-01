@@ -37,17 +37,18 @@ except Exception as exc:
 
 ## Class for specifying model parameters and bounds
 @dataclass
-class TorchModelSpec:
-    param_names: tuple[str, ...]  # use the *Params namedtuples
-    centre_indices: tuple[int, ...]  # which parameters are sigmoid-bounded
-    stim_transform: (
-        Callable  # (rs_log, of_log) -> tuple of tensors in centre_indices order
-    )
-    bounds_from_range: Callable  # (param_range) -> tuple of (low, high) for each centre
-    model_func: Callable  # (e.g. gaussian_2d)
-    fit_class: (
-        torch_utils.Refine_fit | torch_utils.AdamW_fit
-    )  # which optimiser to use for fitting
+class AdamWFitConfig:
+    lr: float = 0.05
+    weight_decay: float = 1e-6
+    n_steps: int = 1000
+    loss_fn: str = "mse"
+    smooth_l1_beta: float = 1.0
+
+
+@dataclass
+class RefineFitConfig:
+    method: str = "trf"
+    n_iters: int = 2000
 
 
 ## Core model functions to fit
@@ -630,7 +631,8 @@ def _fit_adamw_then_refine(
     seed: int,
     device: torch.device,
     dtype: torch.dtype,
-    refine_method: str = "lm",
+    adamw_config: AdamWFitConfig,
+    refine_config: RefineFitConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Fit all ROIs with AdamW random restarts, then refine the top-K starts per ROI with TRF.
 
@@ -644,7 +646,8 @@ def _fit_adamw_then_refine(
         n_starts: Number of AdamW random restarts per ROI.
         top_k: Number of top (by AdamW R^2) restarts per ROI to refine with TRF.
         seed: RNG seed for initialisation.
-        refine_method: Method string for TRF refinement (default: "lm").
+        adamw_config: AdamWFitConfig dataclass containing AdamW random restart settings.
+        refine_config: RefineFitConfig dataclass containing TRF refinement settings.
 
     Returns:
         Tuple of (best_params, best_r2): best_params has shape (n_rois, n_params) in
@@ -670,10 +673,12 @@ def _fit_adamw_then_refine(
         bounds=bounds,
         model=model,
         model_func=model_func,
-        n_steps=1000,
+        n_steps=adamw_config.n_steps,
         n_starts=n_starts,
-        lr=0.05,
-        weight_decay=1e-6,
+        lr=adamw_config.lr,
+        weight_decay=adamw_config.weight_decay,
+        loss_fn=adamw_config.loss_fn,
+        smooth_l1_beta=adamw_config.smooth_l1_beta,
     )
     params_fit = adamw_fit.fit()
     # transform the parameters back into stimulus data space
@@ -695,8 +700,8 @@ def _fit_adamw_then_refine(
         bounds=bounds,
         model_func=model_func,
         n_starts=top_k,
-        n_iters=2000,
-        method=refine_method,
+        n_iters=refine_config.n_iters,
+        method=refine_config.method,
     )
     params_fit = trf_fit.fit()
     r2_final = trf_fit.r2.view(n_rois, top_k)
@@ -803,6 +808,11 @@ def fit_rs_of_tuning(
     min_valid_frames: Optional[int] = None,
     trial_average: bool = False,
     min_sigma: float = 0.25,
+    adamw_lr: float = 0.05,
+    adamw_weight_decay: float = 1e-6,
+    adamw_n_steps: int = 1000,
+    adamw_loss_fn: str = "mse",
+    adamw_smooth_l1_beta: float = 1.0,
 ):
     """Run the RS/OF model fit on batches of neurons using PyTorch for gradient-based optimisation.
 
@@ -840,7 +850,17 @@ def fit_rs_of_tuning(
             "of_min": 0.03,
             "of_max": 3000,
         }
-
+    adamw_config = AdamWFitConfig(
+        lr=adamw_lr,
+        weight_decay=adamw_weight_decay,
+        n_steps=adamw_n_steps,
+        loss_fn=adamw_loss_fn,
+        smooth_l1_beta=adamw_smooth_l1_beta,
+    )
+    refine_config = RefineFitConfig(
+        n_iters=2000,
+        method="trf",
+    )
     bounds = torch_utils.format_model_bounds(
         model,
         **param_range,
@@ -961,7 +981,8 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    refine_method="trf",
+                    adamw_config=adamw_config,
+                    refine_config=refine_config,
                 )
 
                 # calculate the spearman R and p-value per ROI
@@ -1062,7 +1083,8 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    refine_method="trf",
+                    adamw_config=adamw_config,
+                    refine_config=refine_config,
                 )
                 y_test_pred = model_func(X_test, best_params, bounds, optimiser="trf")
                 y_train_pred = model_func(X_train, best_params, bounds, optimiser="trf")
