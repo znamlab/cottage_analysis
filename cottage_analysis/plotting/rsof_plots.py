@@ -1585,6 +1585,10 @@ def plot_speed_trace_closed_open_loop(
     #              1,
     #              "OF", fontsize=fontsize_dict["tick"], rotation=0, ha="left", va="center",)
 
+    # In the order of `positions`: closed loop RS, closed loop OF, open loop RS,
+    # open loop OF. Returned so callers can restyle individual panels.
+    return axes
+
 
 def plot_openloop_rs_correlation_alldepths(
     results,

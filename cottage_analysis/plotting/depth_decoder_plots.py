@@ -300,7 +300,7 @@ def plot_closed_open_conmat(
     ax2.tick_params(labelsize=fontsize_dict["tick"])
     bounds = ax2.get_position().bounds
     cbar_ax = fig.add_axes(
-        [bounds[0] + bounds[2] + 0.01, bounds[1], 0.01, bounds[3] / 2]
+        [bounds[0] + bounds[2] + 0.005, bounds[1], 0.01, bounds[3] / 2]
     )
     cbar = fig.colorbar(
         ax=ax2,
