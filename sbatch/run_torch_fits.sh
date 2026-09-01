@@ -7,6 +7,12 @@
 #SBATCH --mem-per-cpu=8G
 #SBATCH --partition=ncpu
 #SBATCH --mail-type=END,FAIL
+. ~/.bash_profile
+ml purge
+
+ml Anaconda3/2020.07
+source activate base
+
 conda activate v1_depth_seq
 
 echo Processing ${SESSION_NAME} in project ${PROJECT} with photodiode protocol ${PHOTODIODE_PROTOCOL} use slurm ${USE_SLURM}...
