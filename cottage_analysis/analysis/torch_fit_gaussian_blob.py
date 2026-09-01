@@ -46,7 +46,7 @@ class AdamWFitConfig:
 
 
 @dataclass
-class RefineFitConfig:
+class CurveFitConfig:
     method: str = "trf"
     n_iters: int = 2000
 
@@ -630,7 +630,7 @@ def _fit_trf(
     seed: int,
     device: torch.device,
     dtype: torch.dtype,
-    refine_config: RefineFitConfig,
+    curve_fit_config: CurveFitConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Fit all ROIs with n_starts random inits with TRF.
     
@@ -642,10 +642,8 @@ def _fit_trf(
             `min_sigma` (e.g. via functools.partial).
         bounds: Bounds dataclass for `model`.
         n_starts: Number of AdamW random restarts per ROI.
-        top_k: Number of top (by AdamW R^2) restarts per ROI to refine with TRF.
         seed: RNG seed for initialisation.
-        adamw_config: AdamWFitConfig dataclass containing AdamW random restart settings.
-        refine_config: RefineFitConfig dataclass containing TRF refinement settings.
+        curve_fit_config: CurveFitConfig dataclass containing TRF refinement settings.
 
     Returns:
         Tuple of (best_params, best_r2): best_params has shape (n_rois, n_params) in
@@ -672,8 +670,8 @@ def _fit_trf(
         bounds=bounds,
         model_func=model_func,
         n_starts=n_starts,
-        n_iters=refine_config.n_iters,
-        method=refine_config.method,
+        n_iters=curve_fit_config.n_iters,
+        method=curve_fit_config.method,
     )
     params_fit = trf_fit.fit()
     r2_final = trf_fit.r2.view(n_rois, n_starts)
@@ -693,7 +691,7 @@ def _fit_adamw_then_curve(
     device: torch.device,
     dtype: torch.dtype,
     adamw_config: AdamWFitConfig,
-    refine_config: RefineFitConfig,
+    curve_fit_config: CurveFitConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Fit all ROIs with AdamW random restarts, then refine the top-K starts per ROI with TRF.
 
@@ -708,7 +706,7 @@ def _fit_adamw_then_curve(
         top_k: Number of top (by AdamW R^2) restarts per ROI to refine with TRF.
         seed: RNG seed for initialisation.
         adamw_config: AdamWFitConfig dataclass containing AdamW random restart settings.
-        refine_config: RefineFitConfig dataclass containing TRF refinement settings.
+        curve_fit_config: CurveFitConfig dataclass containing TRF refinement settings.
 
     Returns:
         Tuple of (best_params, best_r2): best_params has shape (n_rois, n_params) in
@@ -761,14 +759,119 @@ def _fit_adamw_then_curve(
         bounds=bounds,
         model_func=model_func,
         n_starts=top_k,
-        n_iters=refine_config.n_iters,
-        method=refine_config.method,
+        n_iters=curve_fit_config.n_iters,
+        method=curve_fit_config.method,
     )
     params_fit = trf_fit.fit()
     r2_final = trf_fit.r2.view(n_rois, top_k)
     best_r2, best_idx = r2_final.max(dim=1)
     best_params = params_fit.view(n_rois, top_k, -1)[torch.arange(n_rois), best_idx]
     return best_params, best_r2
+
+
+## Variable Projection (VarPro) analytic candidate initialisation for g2d
+## (prototype -- see notebooks/pytorch_fits.ipynb for orchestration/validation
+## against AdamW+TRF and scipy; not yet wired into fit_rs_of_tuning).
+def generate_varpro_candidates(
+    X: tuple[torch.Tensor, torch.Tensor],
+    y: torch.Tensor,
+    bounds: Gaussian2DCholeskyBounds,
+    n_bins: int = 10,
+    min_bin_count: int = 5,
+    top_m_centers: int = 5,
+    shape_grid: torch.Tensor | None = None,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """Cheap, gradient-free candidate shape params for a single ROI's fit.
+
+    Crosses the `top_m_centers` best-response (x0, y0) bin centers (via
+    `torch_utils._binned_peak_guesses_topm`) with a small fixed grid of
+    (log_l11, l21, log_l22) shape presets. Each candidate costs one forward
+    pass to score (see `score_varpro_candidates`), not a gradient-descent
+    trajectory, so `n_candidates` is intentionally much larger than AdamW's
+    typical `n_starts` (e.g. 10).
+
+    Args:
+        X: (rs, of) tensors, each of shape (n_samples,).
+        y: Response tensor of shape (n_samples,) for one ROI.
+        bounds: Bounds for x0/y0, used only to clip degenerate centers.
+        top_m_centers: Number of data-driven (x0, y0) peaks to seed.
+        shape_grid: Optional (n_presets, 3) tensor of (log_l11, l21, log_l22)
+            presets. Defaults to a small isotropic-scale x tilt grid.
+
+    Returns:
+        Tensor of shape (top_m_centers * n_presets, 5): natural-space
+        [x0, y0, log_l11, l21, log_l22] candidates.
+    """
+    rs, of = X
+    if device is None:
+        device = rs.device
+    if dtype is None:
+        dtype = rs.dtype
+
+    x0_centers, y0_centers = torch_utils._binned_peak_guesses_topm(
+        rs, of, y, n_bins=n_bins, min_bin_count=min_bin_count, top_m=top_m_centers
+    )
+    x0_centers = x0_centers.clamp(bounds.x0_min, bounds.x0_max)
+    y0_centers = y0_centers.clamp(bounds.y0_min, bounds.y0_max)
+
+    if shape_grid is None:
+        # A handful of isotropic scales (log_l11 == log_l22, l21 == 0 --
+        # circular blobs at a few widths) crossed with a couple of tilts.
+        log_scales = torch.tensor([-1.0, 0.0, 1.0], device=device, dtype=dtype)
+        tilts = torch.tensor([0.0, 0.5, -0.5], device=device, dtype=dtype)
+        log_l11_grid, tilt_grid = torch.meshgrid(log_scales, tilts, indexing="ij")
+        shape_grid = torch.stack(
+            [log_l11_grid.reshape(-1), tilt_grid.reshape(-1), log_l11_grid.reshape(-1)],
+            dim=1,
+        )  # (n_presets, 3): [log_l11, l21, log_l22]
+    shape_grid = shape_grid.to(device=device, dtype=dtype)
+
+    n_centers = x0_centers.shape[0]
+    n_presets = shape_grid.shape[0]
+    x0_full = x0_centers.repeat_interleave(n_presets)
+    y0_full = y0_centers.repeat_interleave(n_presets)
+    shape_full = shape_grid.repeat(n_centers, 1)
+
+    return torch.cat(
+        [x0_full[:, None], y0_full[:, None], shape_full], dim=1
+    )  # (n_centers * n_presets, 5)
+
+
+def score_varpro_candidates(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    target: torch.Tensor,
+    shape_candidates: torch.Tensor,
+    min_sigma: float = 0.25,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Score candidate shapes by analytically solving for amplitude/offset
+    (VarPro) and computing the resulting R^2 -- no gradient steps.
+
+    Args:
+        x, y: Stimulus tensors of shape (n_samples,) (rs, of).
+        target: Response tensor of shape (n_samples,) for one ROI.
+        shape_candidates: Tensor of shape (n_candidates, 5):
+            [x0, y0, log_l11, l21, log_l22], as returned by
+            `generate_varpro_candidates`.
+        min_sigma: Small additive term for variance stability.
+
+    Returns:
+        Tuple of (offset, amplitude, r2), each of shape (n_candidates,).
+        `amplitude` is clamped to a small positive floor before use elsewhere
+        (e.g. `torch.log`) since VarPro's unconstrained linear solve can
+        return non-positive values for a poorly-fitting shape -- such
+        candidates simply score a low R^2 here and lose the subsequent
+        top-k selection, no special-casing needed.
+    """
+    x0, y0, log_l11, l21, log_l22 = shape_candidates.unbind(dim=1)
+    basis = _g2d_basis(x, y, x0, y0, log_l11, l21, log_l22, min_sigma=min_sigma)
+    offset, amplitude = torch_utils.solve_linear_params(basis, target)
+    amplitude = amplitude.clamp_min(1e-6)
+    y_pred = offset[None, :] + amplitude[None, :] * basis
+    r2 = torch_utils.calculate_r2(target[:, None].expand_as(y_pred), y_pred)
+    return offset, amplitude, r2
 
 
 def _per_roi_spearman(
@@ -918,7 +1021,7 @@ def fit_rs_of_tuning(
     #     loss_fn=adamw_loss_fn,
     #     smooth_l1_beta=adamw_smooth_l1_beta,
     # )
-    refine_config = RefineFitConfig(
+    refine_config = CurveFitConfig(
         n_iters=2000,
         method="trf",
     )
@@ -1056,7 +1159,7 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    refine_config=refine_config,
+                    curve_fit_config=refine_config,
                 )
 
                 # calculate the spearman R and p-value per ROI
@@ -1170,7 +1273,7 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    refine_config=refine_config,
+                    curve_fit_config=refine_config,
                 )
                 y_test_pred = model_func(X_test, best_params, bounds, optimiser="trf")
                 y_train_pred = model_func(X_train, best_params, bounds, optimiser="trf")
