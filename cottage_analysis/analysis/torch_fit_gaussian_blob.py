@@ -665,7 +665,7 @@ def _fit_trf(
         apply_bounds=True,
     )
     initial_params = torch_utils.decode_params(initial_params, model=model, bounds=bounds)
-    trf_fit = torch_utils.Refine_fit(
+    trf_fit = torch_utils.Curve_fit(
         X=X,
         y=y,
         params=initial_params,
@@ -681,7 +681,7 @@ def _fit_trf(
     best_params = params_fit.view(n_rois, n_starts, -1)[torch.arange(n_rois), best_idx]
     return best_params, best_r2
 
-def _fit_adamw_then_refine(
+def _fit_adamw_then_curve(
     X: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
     y: torch.Tensor,
     model: str,
@@ -754,7 +754,7 @@ def _fit_adamw_then_refine(
     topk_popt = topk_popt.view(n_rois * top_k, -1)
 
     # refine the top K parameters per ROI with TRF
-    trf_fit = torch_utils.Refine_fit(
+    trf_fit = torch_utils.Curve_fit(
         X=X,
         y=y,
         params=topk_popt,

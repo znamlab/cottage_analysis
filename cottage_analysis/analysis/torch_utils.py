@@ -870,7 +870,7 @@ class AdamW_fit:
         return self.params.detach()
 
 
-class Refine_fit:
+class Curve_fit:
     """Class for TRF or LM fit object."""
 
     def __init__(
@@ -901,7 +901,7 @@ class Refine_fit:
     ):
         if method not in ("trf", "lm"):
             raise ValueError(
-                f"Unknown Refine_fit method: {method!r}. Use 'trf' or 'lm'."
+                f"Unknown Curve_fit method: {method!r}. Use 'trf' or 'lm'."
             )
         self.X = X
         self.y = y
