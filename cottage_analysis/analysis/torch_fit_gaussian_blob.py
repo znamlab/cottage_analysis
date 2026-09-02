@@ -5,6 +5,7 @@ from cottage_analysis.analysis.fit_gaussian_blob import (
     GaussianMultiplicativeParams,
     Gaussian1DParams,
     depth_class_labels,
+    initial_fit_conditions,
 )
 from dataclasses import dataclass
 from typing import Callable
@@ -634,6 +635,7 @@ def _fit_trf(
     model: str,
     model_func: Callable,
     bounds: Gaussian1DBounds | Gaussian2DAngleBounds | Gaussian2DCholeskyBounds | GaussianAdditiveBounds,
+    param_range: dict[str, float],
     n_starts: int,
     seed: int,
     device: torch.device,
@@ -658,18 +660,22 @@ def _fit_trf(
         natural/data space, best_r2 has shape (n_rois,).
     """
     n_rois = y.shape[1]
-    
-    initial_params = torch_utils.generate_n_inits_all_rois(
-        n_starts,
-        X,
-        y,
-        model=model,
-        bounds=bounds,
-        rng_seed=seed,
-        device=device,
-        dtype=dtype,
-        apply_bounds=False,
+    # get the same inits as the scipy pipeline
+    _, lower_bounds, upper_bounds, p0_func = initial_fit_conditions(
+        model, param_range=param_range
     )
+
+    X_np = tuple(x.detach().cpu().numpy() for x in X)
+    y_np = y.detach().cpu().numpy()
+    p0s = []
+    for i in range(n_rois):
+        tmp = []
+        for j in range(n_starts):
+            p0 = p0_func(X=X_np, y=y_np[:, i], i_iter=j)
+            tmp.append(torch.tensor(p0, device=device, dtype=dtype))
+        p0s.append(torch.stack(tmp))
+
+    initial_params = torch.stack(p0s).reshape(n_rois * n_starts, -1)
 
     trf_fit = torch_utils.Curve_fit(
         X=X,
@@ -1165,6 +1171,7 @@ def fit_rs_of_tuning(
                     model,
                     model_func,
                     bounds,
+                    param_range,
                     n_starts,
                     seed,
                     resolved_device,
@@ -1279,6 +1286,7 @@ def fit_rs_of_tuning(
                     model,
                     model_func,
                     bounds,
+                    param_range,
                     n_starts,
                     seed,
                     resolved_device,
