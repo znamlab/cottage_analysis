@@ -1036,8 +1036,8 @@ def fit_rs_of_tuning(
     #     loss_fn=adamw_loss_fn,
     #     smooth_l1_beta=adamw_smooth_l1_beta,
     # )
-    refine_config = CurveFitConfig(
-        n_iters=2000,
+    curve_fit_config = CurveFitConfig(
+        n_iters=500,
         method="trf",
     )
     bounds = torch_utils.format_model_bounds(
@@ -1176,7 +1176,7 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    curve_fit_config=refine_config,
+                    curve_fit_config=curve_fit_config,
                 )
 
                 # calculate the spearman R and p-value per ROI
@@ -1291,7 +1291,7 @@ def fit_rs_of_tuning(
                     seed,
                     resolved_device,
                     torch_dtype,
-                    curve_fit_config=refine_config,
+                    curve_fit_config=curve_fit_config,
                 )
                 y_test_pred = model_func(X_test, best_params, bounds, optimiser="trf")
                 y_train_pred = model_func(X_train, best_params, bounds, optimiser="trf")
