@@ -441,17 +441,25 @@ def gaussian_2d(
 
 ## Helper functions for munging the input data
 MODEL_SPECS = {
-    "g2d": gaussian_2d_cholesky,  # Cholesky parameterisation (active)
-    # "g2d": gaussian_2d,  # angle/sigma parameterisation -- commented out,
+    "gaussian_2d": gaussian_2d_cholesky,  # Cholesky parameterisation (active)
+    # "gaussian_2d": gaussian_2d,  # angle/sigma parameterisation -- commented out,
     # uncomment (and comment out the line above) to rewire the angle
     # parameterisation back in
-    "grs": gaussian_rs,
-    "gof": gaussian_of,
-    "gratio": gaussian_ratio,
-    "g2mult": gaussian_multiplicative,
-    "gadd": gaussian_additive,
+    "gaussian_RS": gaussian_rs,
+    "gaussian_OF": gaussian_of,
+    "gaussian_ratio": gaussian_ratio,
+    "gaussian_multiplicative": gaussian_multiplicative,
+    "gaussian_additive": gaussian_additive,
 }
 
+MODEL_ABBRV = {
+    "gaussian_2d": "g2d",
+    "gaussian_RS": "grs",
+    "gaussian_OF": "gof",
+    "gaussian_ratio": "gratio",
+    "gaussian_multiplicative": "g2mult",
+    "gaussian_additive": "gadd",
+}
 
 def process_rs_of_for_fit(
     trials_df: pd.DataFrame,
@@ -637,7 +645,7 @@ def _fit_trf(
     Args:
         X: Stimulus tensor or tuple of tensors, shared across all ROIs/starts.
         y: Response tensor of shape (n_samples, n_rois).
-        model: Model string (e.g. "g2d") -- see torch_utils.MODEL_N_PARAMS.
+        model: Model string (e.g. "gaussian_2d") -- see torch_utils.MODEL_N_PARAMS.
         model_func: Model function from MODEL_SPECS, already bound to a fixed
             `min_sigma` (e.g. via functools.partial).
         bounds: Bounds dataclass for `model`.
@@ -698,7 +706,7 @@ def _fit_adamw_then_curve(
     Args:
         X: Stimulus tensor or tuple of tensors, shared across all ROIs/starts.
         y: Response tensor of shape (n_samples, n_rois).
-        model: Model string (e.g. "g2d") -- see torch_utils.MODEL_N_PARAMS.
+        model: Model string (e.g. "gaussian_2d") -- see torch_utils.MODEL_N_PARAMS.
         model_func: Model function from MODEL_SPECS, already bound to a fixed
             `min_sigma` (e.g. via functools.partial).
         bounds: Bounds dataclass for `model`.
@@ -955,7 +963,7 @@ def _store_torch_cv_results(
 
 def fit_rs_of_tuning(
     trials_df,
-    model: str = "g2d",
+    model: str = "gaussian_2d",
     use_col: str = "dff_stim",
     param_range: dict | None = None,
     choose_trials: list | None = None,
@@ -982,7 +990,8 @@ def fit_rs_of_tuning(
 
     Args:
         trials_df: DataFrame containing trial data with columns for running speed, optic flow, dF/F or spikes.
-        model: Model type to fit. Options are 'g2d', 'grs', 'gof', 'gratio', 'gadd', 'gmult'.
+        model: Model type to fit. Options are 'gaussian_2d', 'gaussian_RS', 'gaussian_OF',
+            'gaussian_ratio', 'gaussian_additive', 'gaussian_multiplicative'.
         use_col: Column name in trials_df to use as the target variable for fitting.
         choose_trials: Trials to include in the fit. Can be a list of trial indices. Defaults to None.
         trial_sfx: Suffix to append to saved column names in the output dataframe. Defaults to an empty string.
@@ -1042,7 +1051,8 @@ def fit_rs_of_tuning(
     torch_df = pd.DataFrame(
         columns=["roi"], data=np.arange(trials_df.iloc[0][use_col].shape[1], dtype=int)
     )
-    model_sfx = "_" + model
+    model_abbrv = MODEL_ABBRV.get(model, model)
+    model_sfx = "_" + model_abbrv
 
     # choose trials
     if choose_trials is not None and isinstance(choose_trials, list):

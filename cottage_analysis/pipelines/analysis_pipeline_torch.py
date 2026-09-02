@@ -213,19 +213,19 @@ def main(
     )
 
     to_do = [
-        ("g2d", None, 1),
-        ("g2d", "even", 1),
-        ("g2d", None, 5),
-        ("gadd", None, 1),
-        ("gadd", None, 5),
-        ("gof", None, 1),
-        ("gof", None, 5),
-        ("gratio", None, 1),
-        ("gratio", None, 5),
-        ("grs", None, 1),
-        ("grs", None, 5),
-        ("g2mult", None, 1),
-        ("g2mult", None, 5),
+        ("gaussian_2d", None, 1),
+        ("gaussian_2d", "even", 1),
+        ("gaussian_2d", None, 5),
+        ("gaussian_additive", None, 1),
+        ("gaussian_additive", None, 5),
+        ("gaussian_OF", None, 1),
+        ("gaussian_OF", None, 5),
+        ("gaussian_ratio", None, 1),
+        ("gaussian_ratio", None, 5),
+        ("gaussian_RS", None, 1),
+        ("gaussian_RS", None, 5),
+        ("gaussian_multiplicative", None, 1),
+        ("gaussian_multiplicative", None, 5),
     ]
 
     for model, trials, k_folds in to_do:

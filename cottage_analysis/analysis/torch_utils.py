@@ -119,7 +119,7 @@ def format_model_bounds(
     | GaussianAdditiveBounds
 ):
     """Format bounds for the specified model type."""
-    if model == "g2d":
+    if model == "gaussian_2d":
         # --- Cholesky g2d (active) ---
         return Gaussian2DCholeskyBounds(
             x0_min=np.log(rs_min),
@@ -143,7 +143,7 @@ def format_model_bounds(
         #     theta_min=theta_min if theta_min is not None else 0.0,
         #     theta_max=theta_max if theta_max is not None else np.pi / 2,
         # )
-    elif model == "g2mult":
+    elif model == "gaussian_multiplicative":
         # convert x params to minimum and maximum virtual depth
         return Gaussian2DBounds(
             log_amplitude_max=log_amplitude_max,
@@ -154,26 +154,26 @@ def format_model_bounds(
             theta_min=None,
             theta_max=None,
         )
-    elif model == "gadd":
+    elif model == "gaussian_additive":
         return GaussianAdditiveBounds(
             x0_min=np.log(rs_min),
             x0_max=np.log(rs_max),
             y0_min=np.log(of_min),
             y0_max=np.log(of_max),
         )
-    elif model == "grs":
+    elif model == "gaussian_RS":
         return Gaussian1DBounds(
             log_amplitude_max=log_amplitude_max,
             x0_min=np.log(rs_min),
             x0_max=np.log(rs_max),
         )
-    elif model == "gof":
+    elif model == "gaussian_OF":
         return Gaussian1DBounds(
             log_amplitude_max=log_amplitude_max,
             x0_min=np.log(of_min),
             x0_max=np.log(of_max),
         )
-    elif model == "gratio":
+    elif model == "gaussian_ratio":
         return Gaussian1DBounds(
             x0_min=np.log(rs_min / of_max),
             x0_max=np.log(rs_max / of_min),
@@ -336,16 +336,12 @@ def invert_bounded_softplus_upper(
 
 
 MODEL_N_PARAMS = {
-    "g2d": 7,  # log_amplitude, x0, y0, log_l11, l21, log_l22, offset (Cholesky
-    # parameterisation, active; angle/sigma layout -- log_sigma_x2, log_sigma_y2,
-    # theta instead of log_l11, l21, log_l22 -- commented out alongside its
-    # callsites in format_model_bounds/decode_params/_default_init)
-    "g2mult": 6,  # log_amplitude, x0, y0, log_sigma_x2, log_sigma_y2, offset
-    "gadd": 7,  # log_amplitude_x, log_amplitude_y, x0, y0, log_sigma_x2, log_sigma_y2,
-    # offset -- order matches fit_gaussian_blob.GaussianAdditiveParams exactly
-    "grs": 4,  # log_amplitude, x0, log_sigma_x2, offset
-    "gof": 4,
-    "gratio": 4,
+    "gaussian_2d": 7,  # (Cholesky parameterisation)
+    "gaussian_multiplicative": 6,  
+    "gaussian_additive": 7, 
+    "gaussian_RS": 4,  
+    "gaussian_OF": 4,
+    "gaussian_ratio": 4,
 }
 
 
@@ -358,16 +354,16 @@ def decode_params(
     (Inverse of the mapping used in `generate_n_inits` for initialisation.)
     """
     natural = raw_params.clone()
-    if model == "gadd":
+    if model == "gaussian_additive":
         # x0/y0 sit at indices 2/3 here (log_amplitude_x, log_amplitude_y come first),
         # matching fit_gaussian_blob.GaussianAdditiveParams's order exactly.
         natural[:, 2] = bounded_sigmoid(raw_params[:, 2], bounds.x0_min, bounds.x0_max)
         natural[:, 3] = bounded_sigmoid(raw_params[:, 3], bounds.y0_min, bounds.y0_max)
         return natural
     natural[:, 1] = bounded_sigmoid(raw_params[:, 1], bounds.x0_min, bounds.x0_max)
-    if model in ("g2d", "g2mult"):
+    if model in ("gaussian_2d", "gaussian_multiplicative"):
         natural[:, 2] = bounded_sigmoid(raw_params[:, 2], bounds.y0_min, bounds.y0_max)
-    if model == "g2d":
+    if model == "gaussian_2d":
         # --- Cholesky g2d (active) ---
         natural[:, 0] = bounded_softplus_upper(
             raw_params[:, 0], bounds.log_amplitude_max
@@ -402,7 +398,7 @@ def _default_init(
     n_params = MODEL_N_PARAMS[model]
     raw = torch.zeros((n_rois, n_params), device=device, dtype=dtype)
 
-    if model == "gadd":
+    if model == "gaussian_additive":
         # [log_amplitude_x, log_amplitude_y, x0, y0, log_sigma_x2, log_sigma_y2, offset]
         # -- diverges from the shared layout below (x0 isn't at index 1), so it gets
         # its own self-contained init rather than slotting into the is_2d branch.
@@ -412,7 +408,8 @@ def _default_init(
             )
         return raw
 
-    is_2d = n_params >= 6  # "g2d" (7) and "g2mult" (6) both have an (x0, y0) centre
+    is_2d = n_params >= 6  # "gaussian_2d" (7) and "gaussian_multiplicative" (6) both
+    # have an (x0, y0) centre
 
     raw[:, 0] = (
         torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 1.0
@@ -423,7 +420,7 @@ def _default_init(
         raw[:, 2] = (
             torch.randn(n_rois, device=device, dtype=dtype, generator=g) * 0.1
         )  # y0
-        if model == "g2d":
+        if model == "gaussian_2d":
             # --- Cholesky g2d init (active) ---
             raw[:, 3] = (
                 -2.0 + torch.rand(n_rois, device=device, dtype=dtype, generator=g) * 4.0
@@ -582,11 +579,11 @@ def generate_n_inits(
     is_2d = MODEL_N_PARAMS[model] >= 6
     if is_2d:
         x_stim, y_stim = X
-    elif model == "grs":
+    elif model == "gaussian_RS":
         x_stim, y_stim = X[0], None
-    elif model == "gof":
+    elif model == "gaussian_OF":
         x_stim, y_stim = X[1], None
-    elif model == "gratio":
+    elif model == "gaussian_ratio":
         x_stim, y_stim = X[0] - X[1], None
     else:
         raise ValueError(f"Unknown model type: {model}")
@@ -626,7 +623,7 @@ def generate_n_inits(
             x0_targets[0] = _make_data_driven_guess(x_stim, y)
 
     if apply_bounds:
-        if model == "gadd":
+        if model == "gaussian_additive":
             # x0/y0 sit at indices 2/3 here -- see decode_params/_default_init.
             raw[:, 2] = invert_bounded_sigmoid(x0_targets, bounds.x0_min, bounds.x0_max)
             raw[:, 3] = invert_bounded_sigmoid(y0_targets, bounds.y0_min, bounds.y0_max)
@@ -638,7 +635,7 @@ def generate_n_inits(
                 )
     else:
         # no sigmoid transform
-        if model == "gadd":
+        if model == "gaussian_additive":
             raw[:, 2] = x0_targets
             raw[:, 3] = y0_targets
         else:
