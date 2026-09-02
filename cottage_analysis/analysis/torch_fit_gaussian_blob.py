@@ -462,6 +462,7 @@ MODEL_ABBRV = {
     "gaussian_additive": "gadd",
 }
 
+
 def process_rs_of_for_fit(
     trials_df: pd.DataFrame,
     trial_list: list = [],
@@ -634,7 +635,12 @@ def _fit_trf(
     y: torch.Tensor,
     model: str,
     model_func: Callable,
-    bounds: Gaussian1DBounds | Gaussian2DAngleBounds | Gaussian2DCholeskyBounds | GaussianAdditiveBounds,
+    bounds: (
+        Gaussian1DBounds
+        | Gaussian2DAngleBounds
+        | Gaussian2DCholeskyBounds
+        | GaussianAdditiveBounds
+    ),
     param_range: dict[str, float],
     n_starts: int,
     seed: int,
@@ -643,7 +649,7 @@ def _fit_trf(
     curve_fit_config: CurveFitConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Fit all ROIs with n_starts random inits with TRF.
-    
+
     Args:
         X: Stimulus tensor or tuple of tensors, shared across all ROIs/starts.
         y: Response tensor of shape (n_samples, n_rois).
@@ -692,6 +698,7 @@ def _fit_trf(
     best_r2, best_idx = r2_final.max(dim=1)
     best_params = params_fit.view(n_rois, n_starts, -1)[torch.arange(n_rois), best_idx]
     return best_params, best_r2
+
 
 def _fit_adamw_then_curve(
     X: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
@@ -921,7 +928,7 @@ def _store_torch_fit_results(
     min_sigma: float,
 ) -> None:
     """Assign single-fit params and fit-quality metrics into `torch_df` columns."""
-    sfx = f"{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}_torch"
+    sfx = f"{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
     torch_df[f"rsof_popt_{sfx}"] = best_params.detach().cpu().numpy().tolist()
     torch_df[f"rsof_rsq_{sfx}"] = best_r2.detach().cpu().numpy()
     torch_df[f"rsof_spearmanr_rval_{sfx}"] = rval
@@ -947,7 +954,7 @@ def _store_torch_cv_results(
     seed: int,
 ) -> None:
     """Assign per-fold train metrics and held-out test metrics into `torch_df` columns."""
-    sfx = f"{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}_torch"
+    sfx = f"{protocol_sfx}{rs_type}{trial_sfx}{model_sfx}"
     train_r2_per_roi = np.stack(train_r2_folds, axis=1)  # (n_rois, k_folds)
     train_popt_per_roi = np.stack(
         train_popt_folds, axis=1
@@ -1332,5 +1339,5 @@ def fit_rs_of_tuning(
                 k_folds,
                 seed,
             )
-
+            
     return torch_df
