@@ -974,6 +974,65 @@ def _store_torch_cv_results(
     torch_df[f"rsof_kFolds_{sfx}"] = k_folds
 
 
+def _calculate_tuning_properties(
+    torch_df: pd.DataFrame,
+    popt_prefix: str,
+    protocol_sfx: str,
+    rs_type: str,
+    trial_sfx: str,
+    model_abbrv: str,
+    min_sigma: float,
+) -> None:
+    """Calculate and store tuning properties for the given model in the torch_df.
+    
+    Args:
+        torch_df (pd.DataFrame): DataFrame containing the training results for each ROI.
+        protocol_sfx (str): Suffix for the protocol used in the analysis.
+        rs_type (str): Type of the response variable.
+        trial_sfx (str): Suffix for the trial used in the analysis.
+        model_abbrv (str): Abbreviation of the model used.
+        min_sigma (float): Minimum sigma value used in the model.
+    """
+    popts = torch_df[
+        f"{popt_prefix}{protocol_sfx}{rs_type}{trial_sfx}_{model_abbrv}"
+    ].to_numpy()
+    popts = np.stack(popts)  # (n_rois, n_params)
+    torch_df[f"tuning_minSigma_{model_abbrv}"] = min_sigma
+    if (model_abbrv == "gadd") or (model_abbrv == "g2d"):
+        torch_df.loc[
+            :,
+            f"preferred_RS_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.exp(popts[:, 1])
+        torch_df.loc[
+            :,
+            f"preferred_OF_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.radians(np.exp(popts[:, 2]))
+    elif model_abbrv == "gof":
+        torch_df.loc[
+            :,
+            f"preferred_OF_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.radians(np.exp(popts[:, 1]))
+    elif model_abbrv == "grs":
+        torch_df.loc[
+            :,
+            f"preferred_RS_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.exp(popts[:, 1])
+    elif model_abbrv == "gratio":
+        torch_df.loc[
+            :,
+            f"preferred_RSOFratio_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.degrees(np.exp(popts[:, 1]))
+    elif model_abbrv == "g2mult":
+        torch_df.loc[
+            :,
+            f"preferred_RSOF_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.degrees(np.exp(popts[:, 1]))
+        torch_df.loc[
+            :,
+            f"preferred_RS_{protocol_sfx}{rs_type}_{model_abbrv}{trial_sfx}",
+        ] = np.exp(popts[:, 2])
+
+
 def fit_rs_of_tuning(
     trials_df,
     model: str = "gaussian_2d",
@@ -1203,8 +1262,16 @@ def fit_rs_of_tuning(
                     model_sfx,
                     min_sigma,
                 )
-
-                # placeholder for a function that calculates the preferred running speed, optic flow and depth for each model
+                popt_prefix = "rsof_popt_"
+                _calculate_tuning_properties(
+                    torch_df,
+                    popt_prefix,
+                    protocol_sfx,
+                    rs_type,
+                    trial_sfx,
+                    model_abbrv,
+                    min_sigma,
+                )
 
         if k_folds > 1:
             print(f"Fit with {k_folds} fold cross-validation...", flush=True)
