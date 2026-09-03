@@ -1112,7 +1112,7 @@ def fit_rs_of_tuning(
     #     smooth_l1_beta=adamw_smooth_l1_beta,
     # )
     curve_fit_config = CurveFitConfig(
-        n_iters=500,
+        n_iters=500 if k_folds == 1 else 1000,
         method="trf",
     )
     bounds = torch_utils.format_model_bounds(
