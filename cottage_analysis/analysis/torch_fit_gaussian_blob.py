@@ -675,9 +675,18 @@ def _fit_trf(
     y_np = y.detach().cpu().numpy()
     p0s = []
     for i in range(n_rois):
+        valid = ~np.any(np.isnan(np.asarray(X_np)), axis=0) & ~np.isnan(y_np[:, i])
+        if np.any(~valid):
+            X_roi = tuple(x[valid] for x in X_np)
+            y_roi = y_np[valid, i]
+        else:
+            X_roi = X_np
+            y_roi = y_np[:, i]
         tmp = []
+        # this makes the initial params identical to the scipy pipeline
+        np.random.seed(42)
         for j in range(n_starts):
-            p0 = p0_func(X=X_np, y=y_np[:, i], i_iter=j)
+            p0 = p0_func(X=X_roi, y=y_roi, i_iter=j)
             tmp.append(torch.tensor(p0, device=device, dtype=dtype))
         p0s.append(torch.stack(tmp))
 
