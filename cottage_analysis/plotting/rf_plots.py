@@ -106,6 +106,7 @@ def plot_rf(
     use_treadmill=False,
     extent=(0, 120, -40, 40),
     clim=None,
+    colorbar=True,
 ):
     if use_ipsi:
         sfx = "_ipsi"
@@ -153,7 +154,7 @@ def plot_rf(
         ax.tick_params(axis="both", labelsize=fontsize_dict["tick"], length=1.5)
         ax.set_xticks([0, 60, 120])
         axes.append(ax)
-        if i == ndepths - 1:
+        if (i == ndepths - 1) and colorbar:
             ax_pos = ax.get_position()
             ax2 = plt.gcf().add_axes(
                 [
@@ -166,7 +167,8 @@ def plot_rf(
             cbar = plt.colorbar(mappable=im, cax=ax2)
             cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
             cbar.ax.tick_params(labelsize=fontsize_dict["legend"], length=2, pad=1)
-            cbar.set_ticks([-np.round(coef_max, 1), 0, np.round(coef_max, 1)])
+            tick_val = np.round(clim, 1) if np.round(clim, 1) > 0 else np.round(clim, 2)
+            cbar.set_ticks([-tick_val, 0, tick_val])
     return axes
 
 
@@ -314,7 +316,12 @@ def plot_sig_rf_perc(
 
 
 def plot_rf_3d(
-    neurons_df, rois, depths, savepath, fontsize_dict, use_treadmill=False,
+    neurons_df,
+    rois,
+    depths,
+    savepath,
+    fontsize_dict,
+    use_treadmill=False,
 ):
     depth, ele, azi = np.mgrid[0:8, -37.5:37.5:16j, 2.5:117.5:24j]
     sfx = "_closedloop"
