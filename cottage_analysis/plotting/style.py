@@ -6,11 +6,19 @@ output. See :func:`expand_font_shorthand` for why the latter is needed.
 """
 
 import re
+import warnings
 from pathlib import Path
 
 import matplotlib as mpl
 
 CM = 1 / 2.54
+
+# Directories searched by :func:`setup_figure_fonts` for the Arial ``.ttf`` faces,
+# in order. The first one that exists wins.
+FONT_SEARCH_DIRS = (
+    "/Volumes/BlackPasspo/v1_depth_map/processed/v1_manuscript_figures/fonts",
+    "/nemo/lab/znamenskiyp/home/shared/resources/fonts",
+)
 
 # Default manuscript figure font sizes (panel=10, labels/titles=7, ticks/legends=5)
 FONTSIZE_DICT = {
@@ -66,6 +74,115 @@ def setup_matplotlib_style(font_sans_serif="Arial", font_dict=None):
 
 # Apply defaults on import
 setup_matplotlib_style()
+
+
+def _weight_as_int(weight):
+    """Normalise a FontEntry weight, which may be an int or a name like 'bold'."""
+    import matplotlib.font_manager as fm
+
+    try:
+        return int(weight)
+    except (TypeError, ValueError):
+        return fm.weight_dict.get(str(weight).lower(), 400)
+
+
+def _registered_faces(family):
+    """Return the faces matplotlib knows for ``family``, as (weight, style) pairs."""
+    import matplotlib.font_manager as fm
+
+    return [
+        (_weight_as_int(entry.weight), entry.style)
+        for entry in fm.fontManager.ttflist
+        if entry.name == family
+    ]
+
+
+def setup_figure_fonts(font_dir=None, font_dict=None, family="Arial", verbose=False):
+    """Register the manuscript font faces and apply the publication rcParams.
+
+    This is the single setup call a figure notebook should make. It replaces the
+    hand-rolled ``arial_font_path`` boilerplate that used to be pasted into every
+    notebook, and fixes two problems with it.
+
+    **It registers every face, not just the regular one.** The old boilerplate
+    called ``addfont`` on ``arial.ttf`` alone, leaving ``arialbd.ttf`` unused in the
+    same folder. ``findfont`` does not fail when asked for a weight it cannot
+    supply - it silently returns the closest match - so ``fontweight="bold"``
+    quietly produced *non-bold* text in PDF and PNG on any machine without a system
+    Arial Bold (NEMO and most Linux runners; macOS happens to ship one in
+    ``/System/Library/Fonts/Supplemental``, which is why this went unnoticed).
+    Panel letters are usually the only bold text in a figure, so the symptom is
+    panel letters that are not bold.
+
+    **It never raises on a missing font directory.** The fonts live on an external
+    drive, so three of the old variants failed at import time whenever it was not
+    mounted. A missing directory is a warning here, and the requested family is
+    used as-is in the hope that the system provides it.
+
+    ``font.family`` is set to a single family name rather than ``"sans-serif"``: with
+    the generic alias, matplotlib writes the whole ``font.sans-serif`` fallback
+    chain into every SVG ``font-family``, and one name is what Illustrator resolves
+    most reliably. See :func:`expand_font_shorthand` for the separate SVG-side fix
+    that :func:`savefig` applies on top of this.
+
+    Args:
+        font_dir (str or Path): Directory holding the ``.ttf``/``.otf`` faces. Every
+            font file in it is registered, so Arial Narrow and Arial Black come
+            along too. Defaults to the first existing entry of
+            :data:`FONT_SEARCH_DIRS`.
+        font_dict (dict): Font sizes, forwarded to :func:`setup_matplotlib_style`.
+            Defaults to :data:`FONTSIZE_DICT`.
+        family (str): Font family to use for all text. Defaults to ``"Arial"``.
+        verbose (bool): Print the directory used and the faces registered. Defaults
+            to False.
+
+    Returns:
+        str: The family name that was applied, so a caller can assert on it.
+    """
+    import matplotlib.font_manager as fm
+
+    if font_dir is None:
+        font_dir = next((d for d in FONT_SEARCH_DIRS if Path(d).is_dir()), None)
+        if font_dir is None and verbose:
+            print(f"No font directory found in {FONT_SEARCH_DIRS}")
+
+    registered = []
+    if font_dir is not None:
+        font_dir = Path(font_dir)
+        if font_dir.is_dir():
+            for path in sorted(font_dir.iterdir()):
+                if path.suffix.lower() in (".ttf", ".otf"):
+                    fm.fontManager.addfont(str(path))
+                    registered.append(path.name)
+            if verbose:
+                print(f"Registered {len(registered)} font(s) from {font_dir}")
+        else:
+            warnings.warn(
+                f"Font directory {font_dir} does not exist; falling back to any "
+                f"system-installed {family!r}."
+            )
+
+    setup_matplotlib_style(font_sans_serif=family, font_dict=font_dict)
+    # Name the one family directly, rather than leaving the "sans-serif" alias that
+    # setup_matplotlib_style sets - see the note on font.family above.
+    mpl.rcParams["font.family"] = family
+    mpl.rcParams["mathtext.default"] = "regular"  # keep math mode in the same font
+
+    faces = _registered_faces(family)
+    if not faces:
+        warnings.warn(
+            f"No {family!r} face is available to matplotlib; text will fall back to "
+            f"another font. Pass font_dir= to point at the manuscript fonts."
+        )
+    elif not any(weight >= 700 and style == "normal" for weight, style in faces):
+        warnings.warn(
+            f"No bold {family!r} face is available to matplotlib; text drawn with "
+            f'fontweight="bold" (typically the panel letters) will not be bold in '
+            f"PDF or PNG output. Pass font_dir= to point at the manuscript fonts."
+        )
+    if verbose:
+        print(f"font.family -> {family} ({len(faces)} face(s) available)")
+    return family
 
 
 # ─────────────────────── Illustrator-safe SVG export ────────────────────────
@@ -204,3 +321,51 @@ def savefig(path, fig=None, verbose=False, **kwargs):
     if path.suffix.lower() == ".svg":
         fix_svg_fonts(path, verbose=verbose)
     return path
+
+
+# ──────────────────────── Centimetre-based panel layout ─────────────────────
+def rect_cm(fig, x, y, w, h):
+    """Convert centimetre coordinates (bottom-left origin) to figure fractions.
+
+    Args:
+        fig (matplotlib.figure.Figure): Figure the rectangle belongs to.
+        x, y (float): Position of the bottom-left corner, in cm from the bottom
+            left of the figure.
+        w, h (float): Width and height, in cm.
+
+    Returns:
+        list[float]: ``[left, bottom, width, height]`` in figure fractions, ready
+            for ``fig.add_axes`` or a ``GridSpec`` rect.
+    """
+    fig_w, fig_h = (size / CM for size in fig.get_size_inches())
+    return [x / fig_w, y / fig_h, w / fig_w, h / fig_h]
+
+
+def panel_letter(fig, letter, x, y, fontsize=None, **kwargs):
+    """Draw a bold panel letter at a centimetre position on the figure.
+
+    Args:
+        fig (matplotlib.figure.Figure): Figure to annotate.
+        letter (str): Panel letter, e.g. ``"A"``.
+        x, y (float): Position in cm from the bottom left of the figure. The letter
+            is top-left aligned on that point, so ``y`` is its top edge.
+        fontsize (float): Size in points. Defaults to ``FONTSIZE_DICT["panel"]``,
+            which is what keeps panel letters consistent across figures.
+        **kwargs: Forwarded to ``fig.text``.
+
+    Returns:
+        matplotlib.text.Text: The text artist that was added.
+    """
+    if fontsize is None:
+        fontsize = FONTSIZE_DICT["panel"]
+    fig_w, fig_h = (size / CM for size in fig.get_size_inches())
+    kwargs.setdefault("va", "top")
+    kwargs.setdefault("ha", "left")
+    return fig.text(
+        x / fig_w,
+        y / fig_h,
+        letter,
+        fontsize=fontsize,
+        fontweight="bold",
+        **kwargs,
+    )

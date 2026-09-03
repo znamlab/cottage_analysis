@@ -106,6 +106,7 @@ def plot_rf(
     extent=(0, 120, -40, 40),
     clim=None,
     plot_yticklabels=True,
+    colorbar=True,
 ):
     if use_ipsi:
         sfx = "_ipsi"
@@ -153,7 +154,7 @@ def plot_rf(
         if not plot_yticklabels:
             ax.set_yticklabels([])
         axes.append(ax)
-        if i == ndepths - 1:
+        if (i == ndepths - 1) and colorbar:
             ax_pos = ax.get_position()
             ax2 = plt.gcf().add_axes(
                 [
@@ -166,7 +167,8 @@ def plot_rf(
             cbar = plt.colorbar(mappable=im, cax=ax2)
             # cbar.set_label("Z-score", fontsize=fontsize_dict["legend"])
             cbar.ax.tick_params(labelsize=fontsize_dict["legend"], length=2, pad=1)
-            cbar.set_ticks([-np.round(coef_max, 1), 0, np.round(coef_max, 1)])
+            tick_val = np.round(clim, 1) if np.round(clim, 1) > 0 else np.round(clim, 2)
+            cbar.set_ticks([-tick_val, 0, tick_val])
     return axes
 
 
