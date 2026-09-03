@@ -1316,6 +1316,7 @@ def fit_rs_of_tuning(
                         max_acc=max_acc,
                         max_rs2motor_diff=max_rs2motor_diff,
                         trial_average=trial_average,
+                        min_valid_frames=min_valid_frames,
                     )
                 )
                 rs_test, of_test, rs_eye_test, responses_test, depth_test = (
@@ -1328,6 +1329,7 @@ def fit_rs_of_tuning(
                         max_acc=max_acc,
                         max_rs2motor_diff=max_rs2motor_diff,
                         trial_average=trial_average,
+                        min_valid_frames=min_valid_frames,
                     )
                 )
 
