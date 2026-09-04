@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import functools
+import inspect
 import numpy as np
 import pandas as pd
 
@@ -670,6 +671,15 @@ def _fit_trf(
     _, lower_bounds, upper_bounds, p0_func = initial_fit_conditions(
         model, param_range=param_range
     )
+
+    # Match common_utils.iterate_fit's contract: only "gaussian_2d" has a
+    # data-informed p0_func(X, y, i_iter); every other model's p0_func takes no
+    # arguments (legacy contract), so calling it with X/y/i_iter kwargs raises
+    # TypeError.
+    try:
+        p0_wants_data = len(inspect.signature(p0_func).parameters) >= 2
+    except (TypeError, ValueError):
+        p0_wants_data = False
 
     X_np = tuple(x.detach().cpu().numpy() for x in X)
     y_np = y.detach().cpu().numpy()
