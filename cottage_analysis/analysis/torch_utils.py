@@ -887,7 +887,7 @@ class Curve_fit:
         lr: float = 1e-3,
         weight_decay: float = 1e-2,
         n_iters: int = 1000,
-        chunk_size: int = 256,
+        chunk_size: int = 8192,
         delta_init: float = 1.0,
         lambda_init: float = 1e-5,
         method: str = "trf",
