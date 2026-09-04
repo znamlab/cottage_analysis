@@ -909,7 +909,8 @@ class Curve_fit:
         self.weight_decay = weight_decay
         self.n_iters = n_iters
         self.chunk_size = chunk_size
-        self.delta_init = delta_init  # trust-region radius init, used when method="trf"
+        # fallback trust-region radius
+        self.delta_init = delta_init
         self.lambda_init = lambda_init  # LM damping init, used when method="lm"
         self.method = (
             method  # "trf" (trust-region-radius) or "lm" (Levenberg-Marquardt)
@@ -1154,8 +1155,6 @@ class Curve_fit:
         lower = lower.to(device=device, dtype=dtype)
         upper = upper.to(device=device, dtype=dtype)
 
-        radius_init = self.delta_init if self.method == "trf" else self.lambda_init
-        radius_all = torch.full((n_fits,), radius_init, device=device, dtype=dtype)
         residual_func = functools.partial(
             calculate_residual,
             model_func=self.model_func,
@@ -1187,11 +1186,28 @@ class Curve_fit:
             end = min(start + self.chunk_size, n_fits)
             p = params[start:end]
             t = y_expanded[start:end]
-            radius = radius_all[start:end].clone()
 
             r = res_func(p, self.X, t)
             cost = (r**2).sum(dim=1)
             cost_before = cost.clone()
+
+            if self.method == "trf":
+                # seed the trust-region radius with the Coleman-Li-scaled norm of 
+                # the initial point
+                J0 = torch.nan_to_num(
+                    jac_func(p, self.X, t), nan=0.0, posinf=0.0, neginf=0.0
+                )
+                g0 = torch.einsum("bni,bn->bi", J0, r)
+                g0 = torch.nan_to_num(g0, nan=0.0, posinf=0.0, neginf=0.0)
+                v0, _ = self._cl_scaling_vector(p, g0, lower, upper)
+                delta0 = torch.norm(p / v0.sqrt(), dim=1)
+                radius = torch.where(
+                    delta0 > 0, delta0, torch.full_like(delta0, self.delta_init)
+                )
+            else:
+                radius = torch.full(
+                    (end - start,), self.lambda_init, device=device, dtype=dtype
+                )
 
             # initialise convergence and stall-patience trackers
             converged = torch.zeros_like(cost, dtype=torch.bool)
