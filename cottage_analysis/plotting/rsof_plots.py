@@ -862,10 +862,11 @@ def plot_RS_OF_fit(
         fontdict={"fontsize": fontsize_dict["label"]},
     )
     if label_r2:
+        r2_val = neurons_df[f"rsof_test_rsq_closedloop_{model}{sfx}"].iloc[roi]
         plt.text(
             x=log_range["rs_bin_log_min"] + 0.2,
             y=log_range["of_bin_log_max"] - 0.7,
-            s=f"$R^2$ = {neurons_df[f'rsof_test_rsq_closedloop_{model}{sfx}'].iloc[roi]:.2f}",
+            s=f"$R^2$ = {r2_val:.2f}",
             fontsize=fontsize_dict["tick"],
         )
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
@@ -1981,6 +1982,7 @@ def plot_rsof_slice(
     plot_fit_mean=True,
     plot_rs_label=True,
     color="darkorchid",
+    fit_color="darkorchid",
     linewidth=2,
     capsize=3,
     markersize=None,
@@ -2073,7 +2075,7 @@ def plot_rsof_slice(
     ax.plot(
         np.exp(x_fine),
         resp_pred,
-        color=color,
+        color=fit_color,
         lw=linewidth,
         label=f"pref OF={np.exp(popt[1]):.2f}, R²={rsq:.2f}",
     )
@@ -2121,7 +2123,7 @@ def plot_rsof_slice(
             np.exp(popt[1]),
             1,
             marker="v",
-            color=color,
+            color=fit_color,
             markersize=markersize if markersize is not None else 8,
             transform=ax.get_xaxis_transform(),
             clip_on=clip_on,
