@@ -648,6 +648,39 @@ def _make_fit_tensors(
     return X, y, y.shape[1]
 
 
+def _calculate_chunk_size(
+    n_samples: int,
+    n_params: int,
+    n_fits: int,
+    dtype_bytes: int = 8,
+    K: int = 12,
+    target_fraction: float = 0.75,
+    max_chunk_size: int | None = None,
+) -> int:
+    """Calculate an appropriate chunk size for processing ROIs in batches.
+
+    Args:
+        n_samples: Number of samples.
+        n_params: Number of parameters.
+        dtype_bytes: Number of bytes per tensor element (default: 8 for float64).
+        K: Number of additional tensors to account for in memory estimation.
+        target_fraction: Fraction of available memory to target.
+        max_chunk_size: Optional maximum chunk size.
+
+    Returns:
+        Calculated chunk size as an integer.
+    """
+    torch.cuda.empty_cache()
+    free_bytes, _ = torch.cuda.mem_get_info()
+    fixed_bytes = 2 * n_fits * n_samples * dtype_bytes
+    budget = target_fraction * free_bytes - fixed_bytes
+    per_row_bytes = K * n_samples * n_params * dtype_bytes
+    chunk_size = max(1, int(budget / per_row_bytes))
+    if max_chunk_size is not None:
+        chunk_size = min(chunk_size, max_chunk_size)
+    return (chunk_size // 32) * 32 # hardware granularity alignment
+
+
 def _fit_trf(
     X: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
     y: torch.Tensor,
@@ -728,6 +761,7 @@ def _fit_trf(
         n_starts=n_starts,
         n_iters=curve_fit_config.n_iters,
         method=curve_fit_config.method,
+        chunk_size=chunk_size,
     )
     params_fit = trf_fit.fit()
     r2_final = trf_fit.r2.view(n_rois, n_starts)
