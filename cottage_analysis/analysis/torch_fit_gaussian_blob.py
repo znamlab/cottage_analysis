@@ -699,22 +699,25 @@ def _fit_trf(
     y_np = y.detach().cpu().numpy()
     p0s = []
     for i in range(n_rois):
-        valid = ~np.any(np.isnan(np.asarray(X_np)), axis=0) & ~np.isnan(y_np[:, i])
-        if np.any(~valid):
-            X_roi = tuple(x[valid] for x in X_np)
-            y_roi = y_np[valid, i]
-        else:
-            X_roi = X_np
-            y_roi = y_np[:, i]
+        X_roi, y_roi = X_np, y_np[:, i]
+        if p0_wants_data:
+            valid = ~np.any(np.isnan(np.asarray(X_np)), axis=0) & ~np.isnan(y_roi)
+            if np.any(~valid):
+                X_roi = tuple(x[valid] for x in X_np)
+                y_roi = y_roi[valid]
         tmp = []
         # this makes the initial params identical to the scipy pipeline
         np.random.seed(42)
         for j in range(n_starts):
-            p0 = p0_func(X=X_roi, y=y_roi, i_iter=j)
-            tmp.append(torch.tensor(p0, device=device, dtype=dtype))
-        p0s.append(torch.stack(tmp))
+            p0 = p0_func(X=X_roi, y=y_roi, i_iter=j) if p0_wants_data else p0_func()
+            tmp.append(p0)
+        p0s.append(np.stack(tmp))
 
-    initial_params = torch.stack(p0s).reshape(n_rois * n_starts, -1)
+    initial_params = torch.tensor(np.stack(p0s), device=device, dtype=dtype).reshape(n_rois * n_starts, -1)
+
+    chunk_size = _calculate_chunk_size(
+        y.shape[0], initial_params.shape[-1], initial_params.shape[0], dtype_bytes=8, K=12, target_fraction=0.75, max_chunk_size=8192
+    )
 
     trf_fit = torch_utils.Curve_fit(
         X=X,
