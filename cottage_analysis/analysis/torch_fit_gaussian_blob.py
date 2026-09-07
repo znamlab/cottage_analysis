@@ -467,7 +467,7 @@ MODEL_ABBRV = {
 def process_rs_of_for_fit(
     trials_df: pd.DataFrame,
     trial_list: list = [],
-    rs_col: str = "RS_volume_stim",
+    rs_col: str = "RS_stim",
     of_col: str = "OF_stim",
     response_col: str = "dff_stim",
     rs_threshold: float = 0.01,
@@ -508,7 +508,9 @@ def process_rs_of_for_fit(
         depths = np.full_like(rs, trial["depth"])
 
         # choose frames that are above the running speed threshold
-        running = (rs > rs_threshold) & (~np.isnan(of)) & (of > 0)
+        running = (
+            (rs > rs_threshold) & (rs_eye > rs_threshold) & (~np.isnan(of)) & (of > 0)
+        )
         # remove frames/volumes that are outside the acceleration ratio
         if max_acc is not None and "acceleration_ratio_max_stim" in trials_df.columns:
             acc = trial["acceleration_ratio_max_stim"]
@@ -524,8 +526,13 @@ def process_rs_of_for_fit(
                 f"No valid frames for trial {trial.name} after applying thresholds."
             )
             continue
+
         if min_valid_frames is not None and np.sum(running) < min_valid_frames:
             continue
+
+        if np.sum(running) == 0:
+            continue
+
         if trial_average:
             rs_list.append(np.mean(rs[running]))
             rs_eye_list.append(np.mean(rs_eye[running]))
@@ -538,6 +545,16 @@ def process_rs_of_for_fit(
             of_list.append(of[running])
             response_list.append(responses[running, :])
             depth_list.append(depths[running])
+
+    if len(rs_list) == 0:
+        n_rois = subset["dff_stim"].iloc[0].shape[1]
+        return (
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            np.empty((0, n_rois)),
+            np.array([]),
+        )
 
     rs = np.log(np.concatenate(rs_list))
     of = np.log(np.degrees(np.concatenate(of_list)))
@@ -672,10 +689,7 @@ def _fit_trf(
         model, param_range=param_range
     )
 
-    # Match common_utils.iterate_fit's contract: only "gaussian_2d" has a
-    # data-informed p0_func(X, y, i_iter); every other model's p0_func takes no
-    # arguments (legacy contract), so calling it with X/y/i_iter kwargs raises
-    # TypeError.
+    # gaussian_2d has a data-informed p0_func(X, y, i_iter)
     try:
         p0_wants_data = len(inspect.signature(p0_func).parameters) >= 2
     except (TypeError, ValueError):
@@ -1003,7 +1017,7 @@ def _calculate_tuning_properties(
     min_sigma: float,
 ) -> None:
     """Calculate and store tuning properties for the given model in the torch_df.
-    
+
     Args:
         torch_df (pd.DataFrame): DataFrame containing the training results for each ROI.
         protocol_sfx (str): Suffix for the protocol used in the analysis.
@@ -1122,7 +1136,7 @@ def fit_rs_of_tuning(
     #     smooth_l1_beta=adamw_smooth_l1_beta,
     # )
     curve_fit_config = CurveFitConfig(
-        n_iters=500 if k_folds == 1 else 1000,
+        n_iters=500,
         method="trf",
     )
     bounds = torch_utils.format_model_bounds(
@@ -1211,7 +1225,7 @@ def fit_rs_of_tuning(
             rs, of, rs_eye, responses, depth = process_rs_of_for_fit(
                 trials_df_fit,
                 trial_list=[],
-                rs_col="RS_volume_stim",
+                rs_col="RS_stim",
                 response_col=use_col,
                 rs_threshold=rs_thr,
                 max_acc=max_acc,
@@ -1320,7 +1334,7 @@ def fit_rs_of_tuning(
                     process_rs_of_for_fit(
                         trials_df_fit,
                         trial_list=train_idx,
-                        rs_col="RS_volume_stim",
+                        rs_col="RS_stim",
                         response_col=use_col,
                         rs_threshold=rs_thr,
                         max_acc=max_acc,
@@ -1333,7 +1347,7 @@ def fit_rs_of_tuning(
                     process_rs_of_for_fit(
                         trials_df_fit,
                         trial_list=test_idx,
-                        rs_col="RS_volume_stim",
+                        rs_col="RS_stim",
                         response_col=use_col,
                         rs_threshold=rs_thr,
                         max_acc=max_acc,
