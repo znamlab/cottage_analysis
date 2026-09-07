@@ -860,111 +860,6 @@ def _fit_adamw_then_curve(
     return best_params, best_r2
 
 
-## Variable Projection (VarPro) analytic candidate initialisation for g2d
-## (prototype -- see notebooks/pytorch_fits.ipynb for orchestration/validation
-## against AdamW+TRF and scipy; not yet wired into fit_rs_of_tuning).
-def generate_varpro_candidates(
-    X: tuple[torch.Tensor, torch.Tensor],
-    y: torch.Tensor,
-    bounds: Gaussian2DCholeskyBounds,
-    n_bins: int = 10,
-    min_bin_count: int = 5,
-    top_m_centers: int = 5,
-    shape_grid: torch.Tensor | None = None,
-    device: torch.device | None = None,
-    dtype: torch.dtype | None = None,
-) -> torch.Tensor:
-    """Cheap, gradient-free candidate shape params for a single ROI's fit.
-
-    Crosses the `top_m_centers` best-response (x0, y0) bin centers (via
-    `torch_utils._binned_peak_guesses_topm`) with a small fixed grid of
-    (log_l11, l21, log_l22) shape presets. Each candidate costs one forward
-    pass to score (see `score_varpro_candidates`), not a gradient-descent
-    trajectory, so `n_candidates` is intentionally much larger than AdamW's
-    typical `n_starts` (e.g. 10).
-
-    Args:
-        X: (rs, of) tensors, each of shape (n_samples,).
-        y: Response tensor of shape (n_samples,) for one ROI.
-        bounds: Bounds for x0/y0, used only to clip degenerate centers.
-        top_m_centers: Number of data-driven (x0, y0) peaks to seed.
-        shape_grid: Optional (n_presets, 3) tensor of (log_l11, l21, log_l22)
-            presets. Defaults to a small isotropic-scale x tilt grid.
-
-    Returns:
-        Tensor of shape (top_m_centers * n_presets, 5): natural-space
-        [x0, y0, log_l11, l21, log_l22] candidates.
-    """
-    rs, of = X
-    if device is None:
-        device = rs.device
-    if dtype is None:
-        dtype = rs.dtype
-
-    x0_centers, y0_centers = torch_utils._binned_peak_guesses_topm(
-        rs, of, y, n_bins=n_bins, min_bin_count=min_bin_count, top_m=top_m_centers
-    )
-    x0_centers = x0_centers.clamp(bounds.x0_min, bounds.x0_max)
-    y0_centers = y0_centers.clamp(bounds.y0_min, bounds.y0_max)
-
-    if shape_grid is None:
-        # A handful of isotropic scales (log_l11 == log_l22, l21 == 0 --
-        # circular blobs at a few widths) crossed with a couple of tilts.
-        log_scales = torch.tensor([-1.0, 0.0, 1.0], device=device, dtype=dtype)
-        tilts = torch.tensor([0.0, 0.5, -0.5], device=device, dtype=dtype)
-        log_l11_grid, tilt_grid = torch.meshgrid(log_scales, tilts, indexing="ij")
-        shape_grid = torch.stack(
-            [log_l11_grid.reshape(-1), tilt_grid.reshape(-1), log_l11_grid.reshape(-1)],
-            dim=1,
-        )  # (n_presets, 3): [log_l11, l21, log_l22]
-    shape_grid = shape_grid.to(device=device, dtype=dtype)
-
-    n_centers = x0_centers.shape[0]
-    n_presets = shape_grid.shape[0]
-    x0_full = x0_centers.repeat_interleave(n_presets)
-    y0_full = y0_centers.repeat_interleave(n_presets)
-    shape_full = shape_grid.repeat(n_centers, 1)
-
-    return torch.cat(
-        [x0_full[:, None], y0_full[:, None], shape_full], dim=1
-    )  # (n_centers * n_presets, 5)
-
-
-def score_varpro_candidates(
-    x: torch.Tensor,
-    y: torch.Tensor,
-    target: torch.Tensor,
-    shape_candidates: torch.Tensor,
-    min_sigma: float = 0.25,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Score candidate shapes by analytically solving for amplitude/offset
-    (VarPro) and computing the resulting R^2 -- no gradient steps.
-
-    Args:
-        x, y: Stimulus tensors of shape (n_samples,) (rs, of).
-        target: Response tensor of shape (n_samples,) for one ROI.
-        shape_candidates: Tensor of shape (n_candidates, 5):
-            [x0, y0, log_l11, l21, log_l22], as returned by
-            `generate_varpro_candidates`.
-        min_sigma: Small additive term for variance stability.
-
-    Returns:
-        Tuple of (offset, amplitude, r2), each of shape (n_candidates,).
-        `amplitude` is clamped to a small positive floor before use elsewhere
-        (e.g. `torch.log`) since VarPro's unconstrained linear solve can
-        return non-positive values for a poorly-fitting shape -- such
-        candidates simply score a low R^2 here and lose the subsequent
-        top-k selection, no special-casing needed.
-    """
-    x0, y0, log_l11, l21, log_l22 = shape_candidates.unbind(dim=1)
-    basis = _g2d_basis(x, y, x0, y0, log_l11, l21, log_l22, min_sigma=min_sigma)
-    offset, amplitude = torch_utils.solve_linear_params(basis, target)
-    amplitude = amplitude.clamp_min(1e-6)
-    y_pred = offset[None, :] + amplitude[None, :] * basis
-    r2 = torch_utils.calculate_r2(target[:, None].expand_as(y_pred), y_pred)
-    return offset, amplitude, r2
-
-
 def _per_roi_spearman(
     y_true: np.ndarray, y_pred: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -1478,5 +1373,5 @@ def fit_rs_of_tuning(
                 k_folds,
                 seed,
             )
-            
+
     return torch_df
