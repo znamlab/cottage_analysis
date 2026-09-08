@@ -569,17 +569,6 @@ def process_rs_of_for_fit(
     )
 
 
-## Helper functions for computing fit metrics
-def _r2_per_roi(
-    y_true: torch.Tensor, y_pred: torch.Tensor, eps: float = 1e-12
-) -> torch.Tensor:
-    """Compute R^2 independently for each ROI column."""
-    ss_res = ((y_true - y_pred) ** 2).sum(dim=0)
-    y_mean = y_true.mean(dim=0, keepdim=True)
-    ss_tot = ((y_true - y_mean) ** 2).sum(dim=0).clamp_min(eps)
-    return 1.0 - ss_res / ss_tot
-
-
 def _validate_and_filter_fit_arrays(
     rs: np.ndarray,
     of: np.ndarray,
@@ -769,95 +758,14 @@ def _fit_trf(
     best_params = params_fit.view(n_rois, n_starts, -1)[torch.arange(n_rois), best_idx]
     return best_params, best_r2
 
-
-def _fit_adamw_then_curve(
-    X: tuple[torch.Tensor, torch.Tensor] | torch.Tensor,
-    y: torch.Tensor,
-    model: str,
-    model_func: Callable,
-    bounds: Gaussian2DBounds | Gaussian1DBounds | Gaussian2DCholeskyBounds,
-    n_starts: int,
-    top_k: int,
-    seed: int,
-    device: torch.device,
-    dtype: torch.dtype,
-    adamw_config: AdamWFitConfig,
-    curve_fit_config: CurveFitConfig,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Fit all ROIs with AdamW random restarts, then refine the top-K starts per ROI with TRF.
-
-    Args:
-        X: Stimulus tensor or tuple of tensors, shared across all ROIs/starts.
-        y: Response tensor of shape (n_samples, n_rois).
-        model: Model string (e.g. "gaussian_2d") -- see torch_utils.MODEL_N_PARAMS.
-        model_func: Model function from MODEL_SPECS, already bound to a fixed
-            `min_sigma` (e.g. via functools.partial).
-        bounds: Bounds dataclass for `model`.
-        n_starts: Number of AdamW random restarts per ROI.
-        top_k: Number of top (by AdamW R^2) restarts per ROI to refine with TRF.
-        seed: RNG seed for initialisation.
-        adamw_config: AdamWFitConfig dataclass containing AdamW random restart settings.
-        curve_fit_config: CurveFitConfig dataclass containing TRF refinement settings.
-
-    Returns:
-        Tuple of (best_params, best_r2): best_params has shape (n_rois, n_params) in
-        natural/data space, best_r2 has shape (n_rois,).
-    """
-    n_rois = y.shape[1]
-
-    initial_params = torch_utils.generate_n_inits_all_rois(
-        n_starts,
-        X,
-        y,
-        model=model,
-        bounds=bounds,
-        rng_seed=seed,
-        device=device,
-        dtype=dtype,
-        apply_bounds=True,
-    )
-    adamw_fit = torch_utils.AdamW_fit(
-        X=X,
-        y=y,
-        params=torch.nn.Parameter(initial_params),
-        bounds=bounds,
-        model=model,
-        model_func=model_func,
-        n_steps=adamw_config.n_steps,
-        n_starts=n_starts,
-        lr=adamw_config.lr,
-        weight_decay=adamw_config.weight_decay,
-        loss_fn=adamw_config.loss_fn,
-        smooth_l1_beta=adamw_config.smooth_l1_beta,
-    )
-    params_fit = adamw_fit.fit()
-    # transform the parameters back into stimulus data space
-    params_fit = torch_utils.decode_params(params_fit, model=model, bounds=bounds)
-    params_fit = params_fit.view(n_rois, n_starts, -1)
-
-    # get the top K parameters based on AdamW R^2
-    _, topk_indices = torch.topk(adamw_fit.r2, top_k, dim=1)
-    topk_popt = torch.gather(
-        params_fit, 1, topk_indices.unsqueeze(-1).expand(-1, -1, params_fit.shape[-1])
-    )
-    topk_popt = topk_popt.view(n_rois * top_k, -1)
-
-    # refine the top K parameters per ROI with TRF
-    trf_fit = torch_utils.Curve_fit(
-        X=X,
-        y=y,
-        params=topk_popt,
-        bounds=bounds,
-        model_func=model_func,
-        n_starts=top_k,
-        n_iters=curve_fit_config.n_iters,
-        method=curve_fit_config.method,
-    )
-    params_fit = trf_fit.fit()
-    r2_final = trf_fit.r2.view(n_rois, top_k)
-    best_r2, best_idx = r2_final.max(dim=1)
-    best_params = params_fit.view(n_rois, top_k, -1)[torch.arange(n_rois), best_idx]
-    return best_params, best_r2
+def _r2_per_roi(
+    y_true: torch.Tensor, y_pred: torch.Tensor, eps: float = 1e-12
+) -> torch.Tensor:
+    """Compute R^2 independently for each ROI column."""
+    ss_res = ((y_true - y_pred) ** 2).sum(dim=0)
+    y_mean = y_true.mean(dim=0, keepdim=True)
+    ss_tot = ((y_true - y_mean) ** 2).sum(dim=0).clamp_min(eps)
+    return 1.0 - ss_res / ss_tot
 
 
 def _per_roi_spearman(
@@ -1007,7 +915,6 @@ def fit_rs_of_tuning(
     trial_sfx: str = "",
     rs_thr: float = 0.01,
     n_starts: int = 5,
-    # top_k: int = 3,
     k_folds: int = 1,
     seed: int = 42,
     run_closedloop_only: bool = False,
@@ -1017,11 +924,6 @@ def fit_rs_of_tuning(
     min_valid_frames: Optional[int] = None,
     trial_average: bool = False,
     min_sigma: float = 0.25,
-    # adamw_lr: float = 0.05,
-    # adamw_weight_decay: float = 1e-6,
-    # adamw_n_steps: int = 1000,
-    # adamw_loss_fn: str = "mse",
-    # adamw_smooth_l1_beta: float = 1.0,
 ):
     """Run the RS/OF model fit on batches of neurons using PyTorch for gradient-based optimisation.
 
@@ -1181,20 +1083,7 @@ def fit_rs_of_tuning(
                     rs_valid, of_valid, responses_valid, torch_dtype, resolved_device
                 )
 
-                # best_params, best_r2 = _fit_adamw_then_refine(
-                #     X,
-                #     y,
-                #     model,
-                #     model_func,
-                #     bounds,
-                #     n_starts,
-                #     top_k,
-                #     seed,
-                #     resolved_device,
-                #     torch_dtype,
-                #     adamw_config=adamw_config,
-                #     refine_config=refine_config,
-                # )
+                
 
                 best_params, best_r2 = _fit_trf(
                     X,
@@ -1306,21 +1195,7 @@ def fit_rs_of_tuning(
                 X_test, y_test, _ = _make_fit_tensors(
                     rs_test, of_test, responses_test, torch_dtype, resolved_device
                 )
-
-                # best_params, best_r2 = _fit_adamw_then_refine(
-                #     X_train,
-                #     y_train,
-                #     model,
-                #     model_func,
-                #     bounds,
-                #     n_starts,
-                #     top_k,
-                #     seed,
-                #     resolved_device,
-                #     torch_dtype,
-                #     adamw_config=adamw_config,
-                #     refine_config=refine_config,
-                # )
+                
                 best_params, best_r2 = _fit_trf(
                     X_train,
                     y_train,
