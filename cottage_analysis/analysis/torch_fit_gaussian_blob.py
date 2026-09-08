@@ -37,6 +37,14 @@ except Exception as exc:
     ) from exc
 
 
+DEFAULT_PARAM_RANGE = {
+    "log_amplitude_max": 10.0,
+    "rs_min": 0.005,
+    "rs_max": 5,
+    "of_min": 0.03,
+    "of_max": 3000,
+}
+
 ## Class for specifying model parameters and bounds
 @dataclass
 class AdamWFitConfig:
@@ -616,6 +624,30 @@ def _validate_and_filter_fit_arrays(
     return rs, of, responses, depth
 
 
+def _calculate_param_range(rs: np.ndarray, of: np.ndarray) -> dict:
+    """Calculate rs/of fit bounds as one natural-log unit beyond the data range.
+
+    Pads `[min(rs), max(rs)]` and `[min(of), max(of)]` by 1 (in log space) at each
+    end, then maps back to linear space with `np.exp`. This replaces a fixed,
+    arbitrary rs/of range with one derived from the actual data being fit.
+
+    Args:
+        rs: 1D array of log-RS values (as returned by `process_rs_of_for_fit`).
+        of: 1D array of log-OF values (as returned by `process_rs_of_for_fit`).
+
+    Returns:
+        Dictionary with keys 'rs_min', 'rs_max', 'of_min', 'of_max' in linear
+        (non-log) space, suitable for `torch_utils.format_model_bounds` or
+        `initial_fit_conditions`'s `param_range` argument.
+    """
+    return {
+        "rs_min": np.exp(np.min(rs) - 1),
+        "rs_max": np.exp(np.max(rs) + 1),
+        "of_min": np.exp(np.min(of) - 1),
+        "of_max": np.exp(np.max(of) + 1),
+    }
+
+
 def _make_fit_tensors(
     rs: np.ndarray,
     of: np.ndarray,
@@ -932,6 +964,9 @@ def fit_rs_of_tuning(
         model: Model type to fit. Options are 'gaussian_2d', 'gaussian_RS', 'gaussian_OF',
             'gaussian_ratio', 'gaussian_additive', 'gaussian_multiplicative'.
         use_col: Column name in trials_df to use as the target variable for fitting.
+        param_range: Dict with keys 'rs_min', 'rs_max', 'of_min', 'of_max', and
+            'log_amplitude_max' passed to `torch_utils.format_model_bounds`. If
+            None, falls back to `DEFAULT_PARAM_RANGE`.
         choose_trials: Trials to include in the fit. Can be a list of trial indices. Defaults to None.
         trial_sfx: Suffix to append to saved column names in the output dataframe. Defaults to an empty string.
         rs_thr: Minimum running speed threshold for including data points in the fit. Defaults to 0.01.
@@ -955,20 +990,8 @@ def fit_rs_of_tuning(
 
     # Set the boundary conditions for the chosen model
     if param_range is None:
-        param_range = {
-            "log_amplitude_max": 10.0,
-            "rs_min": 0.005,
-            "rs_max": 5,
-            "of_min": 0.03,
-            "of_max": 3000,
-        }
-    # adamw_config = AdamWFitConfig(
-    #     lr=adamw_lr,
-    #     weight_decay=adamw_weight_decay,
-    #     n_steps=adamw_n_steps,
-    #     loss_fn=adamw_loss_fn,
-    #     smooth_l1_beta=adamw_smooth_l1_beta,
-    # )
+        param_range = DEFAULT_PARAM_RANGE
+
     curve_fit_config = CurveFitConfig(
         n_iters=500,
         method="trf",
@@ -1195,7 +1218,7 @@ def fit_rs_of_tuning(
                 X_test, y_test, _ = _make_fit_tensors(
                     rs_test, of_test, responses_test, torch_dtype, resolved_device
                 )
-                
+
                 best_params, best_r2 = _fit_trf(
                     X_train,
                     y_train,
