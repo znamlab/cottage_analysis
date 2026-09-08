@@ -551,11 +551,11 @@ def process_rs_of_for_fit(
             continue
 
         if trial_average:
-            rs_list.append(np.mean(rs[running]))
-            rs_eye_list.append(np.mean(rs_eye[running]))
-            of_list.append(np.mean(of[running]))
-            response_list.append(np.mean(responses[running, :], axis=0))
-            depth_list.append(np.mean(depths[running]))
+            rs_list.append(np.atleast_1d(np.mean(rs[running])))
+            rs_eye_list.append(np.atleast_1d(np.mean(rs_eye[running])))
+            of_list.append(np.atleast_1d(np.mean(of[running])))
+            response_list.append(np.mean(responses[running, :], axis=0, keepdims=True))
+            depth_list.append(np.atleast_1d(np.mean(depths[running])))
         else:
             rs_list.append(rs[running])
             rs_eye_list.append(rs_eye[running])
