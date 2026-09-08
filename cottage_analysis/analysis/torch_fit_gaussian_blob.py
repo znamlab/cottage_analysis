@@ -37,14 +37,6 @@ except Exception as exc:
     ) from exc
 
 
-DEFAULT_PARAM_RANGE = {
-    "log_amplitude_max": 10.0,
-    "rs_min": 0.005,
-    "rs_max": 5,
-    "of_min": 0.03,
-    "of_max": 3000,
-}
-
 ## Class for specifying model parameters and bounds
 @dataclass
 class AdamWFitConfig:
@@ -469,6 +461,23 @@ MODEL_ABBRV = {
     "gaussian_ratio": "gratio",
     "gaussian_multiplicative": "g2mult",
     "gaussian_additive": "gadd",
+}
+
+DEFAULT_PARAM_RANGE = {
+    "log_amplitude_max": 10.0,
+    "rs_min": 0.005,
+    "rs_max": 5,
+    "of_min": 0.03,
+    "of_max": 3000,
+}
+
+MODEL_K = {
+    "gaussian_2d": 14,
+    "gaussian_RS": 12,
+    "gaussian_OF": 12,
+    "gaussian_ratio": 12,
+    "gaussian_multiplicative": 18,
+    "gaussian_additive": 12,
 }
 
 
