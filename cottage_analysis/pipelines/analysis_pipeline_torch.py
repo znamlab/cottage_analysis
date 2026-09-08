@@ -197,15 +197,7 @@ def main(
     special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
     common_params = dict(
         rs_thr=0.01,
-        param_range={
-            "rs_min": 0.005,
-            "rs_max": 5,
-            "of_min": 0.03,
-            "of_max": 3000,
-            "log_amplitude_max": 10.0,
-        },
-        n_starts=5,
-        # top_k=3,
+        param_range=None,
         min_sigma=0.25,
         run_openloop_only=False,
         file_special_sfx=special_sfx_base,
@@ -235,6 +227,9 @@ def main(
         name += f"_k{k_folds}"
         name += "_torch"
         print(f"Fitting {model}...")
+
+        # n_starts = 10 if (k_folds > 1 or trials == "even") else 5
+        n_starts = 5
         out = pipeline_utils.load_and_fit_torch(
             project,
             session_name,
@@ -245,6 +240,7 @@ def main(
             slurm_folder=slurm_folder,
             scripts_name=name,
             k_folds=k_folds,
+            n_starts=n_starts,
             filter_datasets=filter_traces,
             protocol_base=protocol_base,
             **common_params,
