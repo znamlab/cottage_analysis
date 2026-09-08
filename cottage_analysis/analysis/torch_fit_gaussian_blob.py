@@ -674,7 +674,7 @@ def _calculate_chunk_size(
     n_params: int,
     n_fits: int,
     dtype_bytes: int = 8,
-    K: int = 12,
+    K: int = 18,
     target_fraction: float = 0.75,
     max_chunk_size: int | None = None,
 ) -> int:
@@ -1105,8 +1105,6 @@ def fit_rs_of_tuning(
                 X, y, n_rois = _make_fit_tensors(
                     rs_valid, of_valid, responses_valid, torch_dtype, resolved_device
                 )
-
-                
 
                 best_params, best_r2 = _fit_trf(
                     X,
