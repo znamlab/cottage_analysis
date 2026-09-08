@@ -971,7 +971,7 @@ class Curve_fit:
         step: torch.Tensor,
         lower: torch.Tensor,
         upper: torch.Tensor,
-        theta: float = 0.995,
+        theta: torch.Tensor | float = 0.995,
     ) -> torch.Tensor:
         """Calculate the maximum step size to keep params within bounds."""
 
@@ -1069,6 +1069,231 @@ class Curve_fit:
         bound_hit = ~within_region
         return delta_q, alpha, bound_hit
 
+    def _evaluate_quadratic(
+        self,
+        J: torch.Tensor,
+        g: torch.Tensor,
+        s: torch.Tensor,
+        diag: torch.Tensor,
+    ) -> torch.Tensor:
+        """Evaluate the quadratic model 0.5*(s.T(J.TJ + diag)s) + g.T s."""
+        Js = torch.einsum("bni,bi->bn", J, s)
+        q = (Js**2).sum(dim=1) + (s * diag * s).sum(dim=1)
+        l = (s * g).sum(dim=1)
+        return 0.5 * q + l
+
+    def _build_quadratic_1d(
+        self,
+        J: torch.Tensor,
+        g: torch.Tensor,
+        s: torch.Tensor,
+        diag: torch.Tensor,
+        s0: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build the quadratic model along the line s0 + s*t as a*t**2 + b*t (+ c if s0 is given)."""
+        v = torch.einsum("bni,bi->bn", J, s)
+        a = ((v * v).sum(dim=1) + (s * diag * s).sum(dim=1)) * 0.5
+        b = (g * s).sum(dim=1)
+        if s0 is None:
+            return a, b
+        u = torch.einsum("bni,bi->bn", J, s0)
+        b = b + (u * v).sum(dim=1) + (s0 * diag * s).sum(dim=1)
+        c = (
+            0.5 * (u * u).sum(dim=1)
+            + (g * s0).sum(dim=1)
+            + 0.5 * (s0 * diag * s0).sum(dim=1)
+        )
+        return a, b, c
+
+    def _minimize_quadratic_1d(
+        self,
+        a: torch.Tensor,
+        b: torch.Tensor,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+        c: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Minimise the quadratic a*t**2+b*t+c over t in within bounds [lb, ub]."""
+        if c is None:
+            c = torch.zeros_like(a)
+
+        def val(t: torch.Tensor) -> torch.Tensor:
+            return t * (a * t + b) + c
+
+        y_lb, y_ub = val(lb), val(ub)
+        best_t = torch.where(y_lb <= y_ub, lb, ub)
+        best_y = torch.minimum(y_lb, y_ub)
+
+        safe_a = torch.where(a != 0, a, torch.ones_like(a))
+        extremum = -0.5 * b / safe_a
+        valid = (a != 0) & (lb < extremum) & (extremum < ub)
+        y_ex = val(extremum)
+        use_ex = valid & (y_ex < best_y)
+        best_t = torch.where(use_ex, extremum, best_t)
+        best_y = torch.where(use_ex, y_ex, best_y)
+        return best_t, best_y
+
+    def _intersect_trust_region(
+        self, x: torch.Tensor, s: torch.Tensor, delta: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Find the roots of ||x + s*t|| = delta along direction s, assuming x lies within the trust region."""
+        eps = 1e-300
+        a = (s * s).sum(dim=1).clamp_min(eps)
+        b = (x * s).sum(dim=1)
+        c = ((x * x).sum(dim=1) - delta**2).clamp_max(0.0)
+        d = torch.sqrt((b * b - a * c).clamp_min(0.0))
+        q = -(b + torch.copysign(d, b))
+        safe_q = torch.where(q.abs() > eps, q, torch.full_like(q, eps))
+        t1 = q / a
+        t2 = c / safe_q
+        return torch.minimum(t1, t2), torch.maximum(t1, t2)
+
+    def _step_size_to_bound_hits(
+        self,
+        x: torch.Tensor,
+        s: torch.Tensor,
+        lower: torch.Tensor,
+        upper: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The largest non-negative multiplier t such that x + s*t stays within [lower, upper], plus which
+        bound is hit per parameter (-1 lower, 0 none, 1 upper).
+        """
+        eps = 1e-12
+        nonzero = s.abs() > eps
+        safe_s = torch.where(nonzero, s, torch.ones_like(s))
+        cand = torch.maximum(
+            (lower[None, :] - x) / safe_s, (upper[None, :] - x) / safe_s
+        )
+        steps = torch.where(nonzero, cand, torch.full_like(s, float("inf")))
+        min_step = steps.min(dim=1).values
+        hits = torch.where(
+            steps == min_step[:, None], torch.sign(s), torch.zeros_like(s)
+        )
+        return min_step, hits
+
+    def _select_step(
+        self,
+        x: torch.Tensor,
+        J_h: torch.Tensor,
+        diag_h: torch.Tensor,
+        g_h: torch.Tensor,
+        p: torch.Tensor,
+        p_h: torch.Tensor,
+        d: torch.Tensor,
+        delta: torch.Tensor,
+        lower: torch.Tensor,
+        upper: torch.Tensor,
+        theta: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Select the best trust-region step considering bounds and reflections.
+
+        Args:
+            x: current parameters (original space) [batch, n_params]
+            J_h: Coleman-Li-scaled Jacobian, no diagonal augmentation
+                [batch, n_samples, n_params]
+            diag_h: Coleman-Li diagonal term [batch, n_params]
+            g_h: scaled gradient [batch, n_params]
+            p, p_h: raw (unclipped) trust-region step, original/hat space
+                [batch, n_params]
+            d: Coleman-Li column scaling (sqrt(v)) [batch, n_params]
+            delta: trust-region radius [batch]
+            lower, upper: parameter bounds [n_params]
+            theta: boundary back-off factor [batch]
+
+        Returns:
+            step, step_h: the chosen step, original/hat space [batch, n_params]
+            predicted_reduction: on the same "full SSE" (2x scipy's 0.5-SSE)
+                scale as `cost` elsewhere in this file [batch]
+        """
+        in_bounds = (
+            (x + p >= lower[None, :]) & (x + p <= upper[None, :])
+        ).all(dim=1)
+        p_value_in = self._evaluate_quadratic(J_h, g_h, p_h, diag_h)
+
+        # --- candidate 1: clip the raw step to the bound it hits ---
+        p_stride, hits = self._step_size_to_bound_hits(x, p, lower, upper)
+        p_stride = p_stride.clamp_min(0.0)
+        p_clip = p * p_stride[:, None]
+        p_h_clip = p_h * p_stride[:, None]
+
+        # --- candidate 2: reflect off the bound and continue, 1-D minimised ---
+        r_h = torch.where(hits != 0, -p_h, p_h)
+        r = d * r_h
+        x_on_bound = x + p_clip
+        _, to_tr = self._intersect_trust_region(p_h_clip, r_h, delta)
+        to_bound, _ = self._step_size_to_bound_hits(x_on_bound, r, lower, upper)
+
+        r_stride_cand = torch.minimum(to_bound, to_tr)
+        r_stride_l = torch.where(
+            r_stride_cand > 0,
+            (1.0 - theta) * p_stride / r_stride_cand.clamp_min(1e-300),
+            torch.zeros_like(r_stride_cand),
+        )
+        r_stride_u = torch.where(
+            r_stride_cand > 0,
+            torch.where(r_stride_cand == to_bound, theta * to_bound, to_tr),
+            torch.full_like(r_stride_cand, -1.0),
+        )
+        reflect_available = r_stride_l <= r_stride_u
+        a_r, b_r, c_r = self._build_quadratic_1d(J_h, g_h, r_h, diag_h, s0=p_h_clip)
+        lo_r = torch.where(reflect_available, r_stride_l, torch.zeros_like(r_stride_l))
+        hi_r = torch.where(reflect_available, r_stride_u, torch.zeros_like(r_stride_u))
+        r_stride, r_value = self._minimize_quadratic_1d(a_r, b_r, lo_r, hi_r, c=c_r)
+        r_h_final = r_h * r_stride[:, None] + p_h_clip
+        r_final = r_h_final * d
+        r_value = torch.where(
+            reflect_available, r_value, torch.full_like(r_value, float("inf"))
+        )
+
+        # candidate 1, made strictly interior
+        p_h_theta = p_h_clip * theta[:, None]
+        p_theta = p_clip * theta[:, None]
+        p_value = self._evaluate_quadratic(J_h, g_h, p_h_theta, diag_h)
+
+        # --- candidate 3: steepest-descent fallback, 1-D minimised ---
+        ag_h = -g_h
+        ag = d * ag_h
+        ag_norm = torch.norm(ag_h, dim=1).clamp_min(1e-300)
+        to_tr_ag = delta / ag_norm
+        to_bound_ag, _ = self._step_size_to_bound_hits(x, ag, lower, upper)
+        ag_stride_bound = torch.where(
+            to_bound_ag < to_tr_ag, theta * to_bound_ag, to_tr_ag
+        )
+        a_ag, b_ag = self._build_quadratic_1d(J_h, g_h, ag_h, diag_h)
+        ag_stride, ag_value = self._minimize_quadratic_1d(
+            a_ag, b_ag, torch.zeros_like(ag_stride_bound), ag_stride_bound
+        )
+        ag_h_final = ag_h * ag_stride[:, None]
+        ag_final = ag * ag_stride[:, None]
+
+        # pick the best of the three candidates 
+        best_is_p = (p_value < r_value) & (p_value < ag_value)
+        best_is_r = (~best_is_p) & (r_value < p_value) & (r_value < ag_value)
+        step_bound = torch.where(
+            best_is_p[:, None],
+            p_theta,
+            torch.where(best_is_r[:, None], r_final, ag_final),
+        )
+        step_h_bound = torch.where(
+            best_is_p[:, None],
+            p_h_theta,
+            torch.where(best_is_r[:, None], r_h_final, ag_h_final),
+        )
+        value_bound = torch.where(
+            best_is_p, p_value, torch.where(best_is_r, r_value, ag_value)
+        )
+
+        step = torch.where(in_bounds[:, None], p, step_bound)
+        step_h = torch.where(in_bounds[:, None], p_h, step_h_bound)
+        value = torch.where(in_bounds, p_value_in, value_bound)
+
+        step = torch.nan_to_num(step, nan=0.0, posinf=0.0, neginf=0.0)
+        step_h = torch.nan_to_num(step_h, nan=0.0, posinf=0.0, neginf=0.0)
+        predicted_reduction = torch.nan_to_num(
+            -2.0 * value, nan=0.0, posinf=0.0, neginf=0.0
+        )
+        return step, step_h, predicted_reduction
+
     def _check_convergence(
         self,
         cost: torch.Tensor,
@@ -1117,11 +1342,7 @@ class Curve_fit:
         xtol: float = 1e-6,
         gtol: float = 1e-8,
     ) -> torch.Tensor:
-        """Convergence check for method="lm" (no trust-region ratio available here).
-
-        Only used to decide when to stop iterating early (see `fit`) -- it does not
-        gate whether a step is accepted, which is `improved` alone.
-        """
+        """Convergence check for method="lm". """
         p_norm = torch.norm(p_new, dim=1)
         step_norm = torch.norm(step, dim=1)
         p_converged = (step_norm / (p_norm + xtol)) < xtol
@@ -1134,11 +1355,6 @@ class Curve_fit:
     def fit(self) -> torch.Tensor:
         """Fit the model to the data using TRF (trust-region) or LM optimisation.
 
-        Which algorithm runs is controlled by `self.method` ("trf" or "lm"). Both
-        share the same Jacobian/Coleman-Li-scaling/SVD machinery and only differ in
-        how the regularised step is solved for and how the per-fit hyperparameter
-        (`radius` -- a trust-region radius for "trf", a damping factor for "lm") is
-        updated each iteration.
         """
 
         warnings.filterwarnings(
@@ -1238,6 +1454,9 @@ class Curve_fit:
                 g = torch.nan_to_num(g, nan=0.0, posinf=0.0, neginf=0.0)
                 # scale the gradient and the Jacobian
                 v, dv = self._cl_scaling_vector(p_a, g, lower, upper)
+                # allow fits that converge close to a boundary to actually approach it
+                g_norm = torch.norm(g * v, p=float("inf"), dim=1)
+                theta = torch.clamp(1.0 - g_norm, min=0.995) 
                 d_scale = v.sqrt()
                 J_h = (J * d_scale[:, None, :]).double()  # scale the columns of J
                 scaled_g = d_scale * g  # scale the parameter-column of the gradient
@@ -1265,7 +1484,7 @@ class Curve_fit:
 
                 if self.method == "trf":
                     # trust-region-radius step
-                    delta_q, _alpha, bound_hit = self._solve_lsq_trust_region(
+                    delta_q, _alpha, _bound_hit = self._solve_lsq_trust_region(
                         V, s, uf, radius_a
                     )
                 else:
@@ -1276,10 +1495,29 @@ class Curve_fit:
                     d_scale * delta_q
                 )  # map the scaled-space step back to the actual params
 
-                step_frac = self._step_size_to_bound(p_a, -delta_x, lower, upper)
-                # get the new parameters
-                step = -step_frac[:, None] * delta_x
-                p_new = p_a + step
+                if self.method == "trf":
+                    # raw (unclipped) trust-region step, hat- and original-space
+                    p_h_raw, p_raw = -delta_q, -delta_x
+                    step, step_h, predicted_reduction = self._select_step(
+                        p_a,
+                        J_h,
+                        diag_h,
+                        scaled_g,
+                        p_raw,
+                        p_h_raw,
+                        d_scale,
+                        radius_a,
+                        lower,
+                        upper,
+                        theta,
+                    )
+                    p_new = p_a + step
+                else:
+                    step_frac = self._step_size_to_bound(
+                        p_a, -delta_x, lower, upper, theta=theta
+                    )
+                    step = -step_frac[:, None] * delta_x
+                    p_new = p_a + step
                 # evaluate the new residuals and cost for p_new
                 r_new = res_func(p_new, self.X, t_a)
                 cost_new = (r_new**2).sum(dim=1)
@@ -1287,13 +1525,6 @@ class Curve_fit:
 
                 if self.method == "trf":
                     actual_reduction = cost_a - cost_new
-                    q_step = step_frac[:, None] * (-delta_q)
-                    Jq = torch.einsum("bni,bi->bn", J_aug, q_step)
-                    predicted_reduction = -(
-                        2.0 * torch.einsum("bi,bi->b", scaled_g, q_step)
-                        + (Jq**2).sum(dim=1)
-                    )
-
                     ratio = torch.where(
                         predicted_reduction > 0,
                         actual_reduction / predicted_reduction.clamp_min(1e-300),
@@ -1303,10 +1534,12 @@ class Curve_fit:
                             torch.zeros_like(cost_a),
                         ),
                     )
-                    step_h_norm = torch.norm(q_step, dim=1).double()
+                    step_h_norm = torch.norm(step_h, dim=1).double()
                     radius_a = torch.where(ratio < 0.25, 0.25 * step_h_norm, radius_a)
                     radius_a = torch.where(
-                        (ratio > 0.75) & bound_hit, 2.0 * radius_a, radius_a
+                        (ratio > 0.75) & (step_h_norm > 0.95 * radius_a),
+                        2.0 * radius_a,
+                        radius_a,
                     )
                     radius_a = radius_a.clamp_min(1e-10)
                     iter_converged = self._check_convergence(
@@ -1356,7 +1589,6 @@ class Curve_fit:
             total_cost_before += cost_before.sum().item()
             total_cost_after += cost.sum().item()
             params[start:end] = p
-            radius_all[start:end] = radius
             torch.cuda.synchronize()
 
         # printing some results
