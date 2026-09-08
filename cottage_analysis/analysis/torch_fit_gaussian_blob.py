@@ -779,7 +779,7 @@ def _fit_trf(
     initial_params = torch.tensor(np.stack(p0s), device=device, dtype=dtype).reshape(n_rois * n_starts, -1)
 
     chunk_size = _calculate_chunk_size(
-        y.shape[0], initial_params.shape[-1], initial_params.shape[0], dtype_bytes=8, K=12, target_fraction=0.75, max_chunk_size=8192
+        y.shape[0], initial_params.shape[-1], initial_params.shape[0], K=MODEL_K[model], dtype_bytes=8, target_fraction=0.75, max_chunk_size=8192
     )
 
     trf_fit = torch_utils.Curve_fit(
