@@ -40,9 +40,11 @@ def main(
         ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
         use_annotated(bool): Filter s2p dataset by "annotated=True", default False
     """
-    print(f"   ------------------------------- \n \
+    print(
+        f"   ------------------------------- \n \
         Start analysing {session_name}   \n \
-        -------------------------------")
+        -------------------------------"
+    )
     print(f"Using {protocol_base}")
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -183,8 +185,9 @@ def main(
         run_depth_fit = False
         run_rsof_fit = False
 
-    # Treadmill only parameter
+    # Treadmill only parameters
     max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
+    trial_average = protocol_base == "SpheresTubeMotor"
     if protocol_base == "SpheresTubeMotor":
         special_sfx_base = "_treadmill"
     else:
@@ -202,6 +205,7 @@ def main(
         run_openloop_only=False,
         file_special_sfx=special_sfx_base,
         max_rs2motor_diff=max_rs2motor_diff,
+        trial_average=trial_average,
     )
 
     to_do = [

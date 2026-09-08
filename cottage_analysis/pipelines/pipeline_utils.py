@@ -443,6 +443,7 @@ def load_and_fit_torch(
     ephys_kwargs=None,
     max_rs2motor_diff=None,
     max_acc=None,
+    trial_average=False,
 ):
     """Load data for a session and fit RS/OF tuning with the PyTorch (GPU) pipeline.
 
@@ -500,7 +501,9 @@ def load_and_fit_torch(
             (rs - motor_speed)/rs for frame selection. Defaults to None.
         max_acc (float, optional): Maximum acceleration ratio threshold for frame
             selection. Defaults to None.
-
+        trial_average (bool, optional): Whether to average rs/of/responses across
+            each trial's running frames before fitting, rather than fitting on
+            every frame individually.
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
             metrics for each ROI. The result is also saved as a parquet file.
@@ -554,7 +557,7 @@ def load_and_fit_torch(
             rs_all,
             of_all,
         )
-        param_range["log_amplitude_max"] = 10.
+        param_range["log_amplitude_max"] = 10.0
 
     fit_df = torch_fit.fit_rs_of_tuning(
         trials_df=trials_df_all,
@@ -570,6 +573,7 @@ def load_and_fit_torch(
         run_openloop_only=run_openloop_only,
         max_rs2motor_diff=max_rs2motor_diff,
         max_acc=max_acc,
+        trial_average=trial_average,
     )
     # save fit_df
     torch_dir = neurons_ds.path_full.parent / "torch"
