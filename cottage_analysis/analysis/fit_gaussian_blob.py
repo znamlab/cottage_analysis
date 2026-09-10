@@ -874,6 +874,7 @@ def fit_rs_of_tuning(
     max_rs2motor_diff=None,
     min_valid_frames=None,
     trial_average=False,
+    roi_batch=None,
 ):
     """Fit running speed and optic flow tuning with a specified model.
 
@@ -924,6 +925,9 @@ def fit_rs_of_tuning(
             to include it in the fit. Defaults to None.
         trial_average (bool, optional): Whether to fit on trial-averaged responses.
             Defaults to False.
+        roi_batch (slice, optional): Optional slice restricting which ROIs (columns
+            of `dff_stim`) to fit, for splitting the fit across parallel jobs. Leave
+            None (default) to fit every ROI.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -955,6 +959,8 @@ def fit_rs_of_tuning(
             trial_rs_eye = trial["RS_eye_stim"]
             trial_of = trial["OF_stim"]
             trial_dff = trial["dff_stim"]
+            if roi_batch is not None:
+                trial_dff = trial_dff[:, roi_batch]
             trial_depth_labels = trial["depth_labels"]
 
             # choose frames that are above a certain running speed threshold
@@ -999,6 +1005,8 @@ def fit_rs_of_tuning(
 
         if len(rs_list) == 0:
             n_rois = trials_df["dff_stim"].iloc[0].shape[1]
+            if roi_batch is not None:
+                n_rois = len(np.arange(n_rois)[roi_batch])
             return (
                 np.array([]),
                 np.array([]),
@@ -1033,9 +1041,10 @@ def fit_rs_of_tuning(
     )
 
     # initialize neurons_df with columns for ROI number
-    neurons_df_temp = pd.DataFrame(
-        columns=["roi"], data=np.arange(trials_df["dff_stim"].iloc[0].shape[1])
-    )
+    roi_ids = np.arange(trials_df["dff_stim"].iloc[0].shape[1])
+    if roi_batch is not None:
+        roi_ids = roi_ids[roi_batch]
+    neurons_df_temp = pd.DataFrame({"roi": roi_ids})
 
     # Choose trials
     if choose_trials is not None and isinstance(
