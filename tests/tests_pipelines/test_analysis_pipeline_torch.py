@@ -85,8 +85,8 @@ def test_main_uses_spheres_sync_for_default_protocol(patched_pipeline, monkeypat
     for kwargs in fit_calls:
         assert kwargs["max_rs2motor_diff"] is None
         assert kwargs["file_special_sfx"] == ""
-        expect_more_starts = kwargs["k_folds"] > 1 or kwargs["choose_trials"] == "even"
-        assert kwargs["n_starts"] == (10 if expect_more_starts else 5)
+        assert kwargs["n_starts"] == 5
+        assert kwargs["trial_average"] is False
 
 
 def test_main_uses_treadmill_sync_and_sets_treadmill_overrides(
@@ -122,3 +122,4 @@ def test_main_uses_treadmill_sync_and_sets_treadmill_overrides(
     for kwargs in fit_calls:
         assert kwargs["max_rs2motor_diff"] == 0.3
         assert kwargs["file_special_sfx"] == "_treadmill"
+        assert kwargs["trial_average"] is True
