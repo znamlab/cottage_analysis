@@ -411,6 +411,182 @@ def load_and_fit(
 
 @slurm_it(
     conda_env=CONDA_ENV,
+    slurm_options={
+        "mem": "64G",
+        "time": "2-00:00:00",
+        "partition": "ga100",
+        "gres": "gpu:1",
+        "cpus-per-task": 8,
+    },
+    print_job_id=True,
+)
+def load_and_fit_torch(
+    project,
+    session_name,
+    photodiode_protocol,
+    model,
+    choose_trials,
+    rs_thr,
+    param_range,
+    n_starts=10,
+    min_sigma=0.25,
+    k_folds=1,
+    trial_sfx="",
+    file_special_sfx="",
+    run_closedloop_only=False,
+    run_openloop_only=False,
+    base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
+    max_rs2motor_diff=None,
+    max_acc=None,
+    trial_average=False,
+):
+    """Load data for a session and fit RS/OF tuning with the PyTorch (GPU) pipeline.
+
+    Mirrors `load_and_fit`'s scipy path, but calls
+    `torch_fit_gaussian_blob.fit_rs_of_tuning` and saves results as parquet under a
+    `torch/` subdirectory. Requires a GPU (see slurm_options above -- confirm you
+    have `ga100` partition access before submitting at scale).
+
+    Note:
+        The results are saved as parquet files with names following the pattern:
+        `fit_rs_of_tuning_{model}[_crossval]_k{k_folds}{file_special_sfx}_torch.parquet`.
+        These are not picked up by `merge_fit_dataframes` (pickle-only); merging the
+        torch outputs into `neurons_df` is handled separately.
+
+    Args:
+        project (str): Project name in flexilims.
+        session_name (str): Session name in the format {Mouse}_{Session}.
+        photodiode_protocol (int): Photodiode protocol used for syncing.
+        model (str): Model to fit. One of "g2d", "grs", "gof", "gratio", "g2mult",
+            "gadd" -- see torch_utils.MODEL_N_PARAMS.
+        choose_trials (str or list): Trials to include in the fit. Can be a list of
+            trial indices or a string (e.g., "even", "odd").
+        rs_thr (float): Running speed threshold (m/s) to include frames.
+        param_range (dict, optional): Range of parameters for the fit. Must contain
+            "rs_min", "rs_max", "of_min", "of_max", and "log_amplitude_max" if given.
+            If None (default), bounds are computed from the actual rs/of data range
+            across all recordings in the session, padded by one natural-log unit at
+            each end (see `torch_fit_gaussian_blob._calculate_param_range`).
+        n_starts (int, optional): Number of random AdamW initialisations per ROI.
+            Defaults to 10.
+        min_sigma (float): Minimum sigma value for the gaussian model.
+        k_folds (int, optional): Number of folds for cross-validation. If > 1, the model
+            will be evaluated using cross-validation. Defaults to 1.
+        trial_sfx (str, optional): Suffix for saved column names in the output dataframe.
+            Defaults to "". Example: "_crossval".
+        file_special_sfx (str, optional): Suffix added to the saved filename.
+            Defaults to "". Example: "_openclosed0".
+        run_closedloop_only (bool, optional): Whether to fit only closed-loop protocols.
+            Defaults to False.
+        run_openloop_only (bool, optional): Whether to fit only open-loop protocols.
+            Defaults to False.
+        base_name (str, optional): Base name for the neurons_df dataset in flexilims.
+            Defaults to None.
+        filter_datasets (dict, optional): Dictionary to filter datasets from flexilims.
+            Defaults to {"anatomical_only": 3}.
+        exclude_datasets (dict, optional): Dictionary to exclude datasets from flexilims.
+            Defaults to None.
+        protocol_base (str, optional): Base protocol name (e.g., "SpheresPermTubeReward").
+            Defaults to "SpheresPermTubeReward".
+        recording_type (str, optional): Type of recording (e.g., "two_photon").
+            Defaults to "two_photon".
+        ephys_kwargs (dict, optional): Additional arguments for ephys data processing.
+            Defaults to None.
+        max_rs2motor_diff (float, optional): Maximum absolute ratio of
+            (rs - motor_speed)/rs for frame selection. Defaults to None.
+        max_acc (float, optional): Maximum acceleration ratio threshold for frame
+            selection. Defaults to None.
+        trial_average (bool, optional): Whether to average rs/of/responses across
+            each trial's running frames before fitting, rather than fitting on
+            every frame individually.
+    Returns:
+        pd.DataFrame: A dataframe containing the fitted parameters and performance
+            metrics for each ROI. The result is also saved as a parquet file.
+    """
+    import cottage_analysis.analysis.torch_fit_gaussian_blob as torch_fit
+
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    (
+        neurons_ds,
+        _,
+        _,
+        trials_df_all,
+    ) = load_session(
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=False,
+        base_name=base_name,
+        filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
+    )
+    # create name from model and choose_trials
+    suffix = f"{model}"
+    if isinstance(choose_trials, str):
+        suffix = suffix + f"_crossval"
+    suffix = suffix + f"_k{k_folds}"
+
+    # remove any multidepth experiment
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    trials_df_all = trials_df_all[~is_multidepth]
+
+    if param_range is None:
+        rs_all, of_all = torch_fit.process_rs_of_for_fit(
+            trials_df_all,
+            trial_list=[],
+            rs_col="RS_stim",
+            response_col="dff_stim",
+            rs_threshold=rs_thr,
+            max_acc=max_acc,
+            max_rs2motor_diff=max_rs2motor_diff,
+            trial_average=False,
+            min_valid_frames=10,
+        )[:2]
+        param_range = torch_fit._calculate_param_range(
+            rs_all,
+            of_all,
+        )
+        param_range["log_amplitude_max"] = 10.0
+
+    fit_df = torch_fit.fit_rs_of_tuning(
+        trials_df=trials_df_all,
+        model=model,
+        choose_trials=choose_trials,
+        trial_sfx=trial_sfx,
+        rs_thr=rs_thr,
+        param_range=param_range,
+        n_starts=n_starts,
+        min_sigma=min_sigma,
+        k_folds=k_folds,
+        run_closedloop_only=run_closedloop_only,
+        run_openloop_only=run_openloop_only,
+        max_rs2motor_diff=max_rs2motor_diff,
+        max_acc=max_acc,
+        trial_average=trial_average,
+    )
+    # save fit_df
+    torch_dir = neurons_ds.path_full.parent / "torch"
+    os.makedirs(torch_dir, exist_ok=True)
+    target = torch_dir / f"fit_rs_of_tuning_{suffix}{file_special_sfx}_torch.parquet"
+    fit_df.to_parquet(target)
+    print(f"Fit results saved to {target}")
+
+    return fit_df
+
+
+@slurm_it(
+    conda_env=CONDA_ENV,
     slurm_options={"mem": "16G", "time": "2:00:00", "partition": "ncpu"},
 )
 def merge_fit_dataframes(
