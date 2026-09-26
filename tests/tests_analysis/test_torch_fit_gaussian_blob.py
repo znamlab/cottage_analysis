@@ -6,6 +6,7 @@ torch = pytest.importorskip("torch")
 
 from cottage_analysis.analysis import torch_fit_gaussian_blob as tfgb
 
+
 ## Testing mathematical correctness of Gaussian functions
 def test_gaussian_1d_peak_value_and_symmetry():
     # amplitude=2, x0=1.0, sigma^2 (+min_sigma)=1.0, offset=0.5
@@ -88,7 +89,9 @@ def test_gaussian_ratio_uses_log_difference_of_rs_and_of():
 def test_calculate_chunk_size_respects_memory_budget_and_alignment(monkeypatch):
     # monkeypatch torch.cuda calls so it can be run on any machine without a real GPU
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
-    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (16 * 1024**3, 16 * 1024**3))
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda: (16 * 1024**3, 16 * 1024**3)
+    )
 
     chunk = tfgb._calculate_chunk_size(
         n_samples=1000, n_params=7, n_fits=500, max_chunk_size=8192
@@ -97,7 +100,9 @@ def test_calculate_chunk_size_respects_memory_budget_and_alignment(monkeypatch):
     assert chunk % 32 == 0
 
     # a tighter memory budget should yield a smaller chunk size
-    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda: (256 * 1024**2, 256 * 1024**2))
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda: (256 * 1024**2, 256 * 1024**2)
+    )
     tight_chunk = tfgb._calculate_chunk_size(
         n_samples=1000, n_params=7, n_fits=500, max_chunk_size=8192
     )
@@ -167,7 +172,9 @@ def test_process_rs_of_for_fit_trial_average_produces_one_row_per_trial():
     assert depth.shape == (2,)
     assert responses.shape == (2, 2)  # (n_trials, n_rois) -- stacked, not flattened
 
-    np.testing.assert_allclose(rs, np.log([np.mean([0.02, 0.03, 0.04]), np.mean([0.05, 0.06])]))
+    np.testing.assert_allclose(
+        rs, np.log([np.mean([0.02, 0.03, 0.04]), np.mean([0.05, 0.06])])
+    )
     np.testing.assert_allclose(
         of, np.log(np.degrees([np.mean([0.1, 0.2, 0.3]), np.mean([0.4, 0.5])]))
     )
@@ -200,7 +207,9 @@ def test_validate_and_filter_fit_arrays_raises_on_shape_mismatch():
     responses = np.zeros((2, 2))
     depth = np.array([1.0, 1.0])
     with pytest.raises(ValueError, match="same number of samples"):
-        tfgb._validate_and_filter_fit_arrays(rs, of, responses, depth, trial_average=False)
+        tfgb._validate_and_filter_fit_arrays(
+            rs, of, responses, depth, trial_average=False
+        )
 
 
 def test_validate_and_filter_fit_arrays_drops_non_finite_samples_unless_trial_averaged():
@@ -277,7 +286,9 @@ def test_fit_rs_of_tuning_falls_back_to_default_param_range_when_none(
         captured.update(kwargs)
         raise _StopEarly()
 
-    monkeypatch.setattr(tfgb.torch_utils, "format_model_bounds", fake_format_model_bounds)
+    monkeypatch.setattr(
+        tfgb.torch_utils, "format_model_bounds", fake_format_model_bounds
+    )
 
     with pytest.raises(_StopEarly):
         tfgb.fit_rs_of_tuning(minimal_trials_df, param_range=None)
@@ -301,7 +312,9 @@ def test_fit_rs_of_tuning_passes_explicit_param_range_through_unchanged(
         captured.update(kwargs)
         raise _StopEarly()
 
-    monkeypatch.setattr(tfgb.torch_utils, "format_model_bounds", fake_format_model_bounds)
+    monkeypatch.setattr(
+        tfgb.torch_utils, "format_model_bounds", fake_format_model_bounds
+    )
 
     with pytest.raises(_StopEarly):
         tfgb.fit_rs_of_tuning(minimal_trials_df, param_range=explicit_param_range)
@@ -309,9 +322,82 @@ def test_fit_rs_of_tuning_passes_explicit_param_range_through_unchanged(
     assert captured == explicit_param_range
 
 
+@pytest.mark.parametrize("model", list(tfgb.MODEL_SPECS))
+@pytest.mark.parametrize(
+    "param_range",
+    [
+        tfgb.DEFAULT_PARAM_RANGE,
+        # asymmetric, non-default range so linear and log bounds can't coincide
+        {
+            "log_amplitude_max": 10.0,
+            "rs_min": 0.02,
+            "rs_max": 3.0,
+            "of_min": 0.1,
+            "of_max": 500.0,
+        },
+    ],
+    ids=["default", "custom"],
+)
+def test_fit_trf_initial_params_lie_within_vectorised_bounds(
+    monkeypatch, model, param_range
+):
+    # _fit_trf starts TRF from scipy's p0_func, so every start must be feasible for
+    # the torch bounds (scipy's least_squares would raise "x0 is infeasible").
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda: (16 * 1024**3, 16 * 1024**3)
+    )
+    captured = {}
+
+    def fake_curve_fit(params, bounds, **kwargs):
+        captured["params"], captured["bounds"] = params, bounds
+        raise _StopEarly()
+
+    monkeypatch.setattr(tfgb.torch_utils, "Curve_fit", fake_curve_fit)
+
+    rng = np.random.default_rng(0)
+    n_samples, n_rois = 200, 3
+    rs = rng.uniform(
+        np.log(param_range["rs_min"]), np.log(param_range["rs_max"]), n_samples
+    )
+    of = rng.uniform(
+        np.log(param_range["of_min"]), np.log(param_range["of_max"]), n_samples
+    )
+    X = (torch.tensor(rs), torch.tensor(of))
+    y = torch.tensor(rng.normal(size=(n_samples, n_rois)))
+
+    bounds = tfgb.torch_utils.format_model_bounds(model, **param_range)
+    with pytest.raises(_StopEarly):
+        tfgb._fit_trf(
+            X,
+            y,
+            model,
+            tfgb.MODEL_SPECS[model],
+            bounds,
+            param_range,
+            n_starts=20,
+            seed=42,
+            device=torch.device("cpu"),
+            dtype=torch.float64,
+            curve_fit_config=tfgb.CurveFitConfig(n_iters=1, method="trf"),
+        )
+
+    lower, upper = tfgb.torch_utils.vectorise_bounds(captured["bounds"])
+    params = captured["params"]
+    lower, upper = lower.to(params.dtype), upper.to(params.dtype)
+    outside = (params < lower) | (params > upper)
+    assert not outside.any(), (
+        f"{model}: {int(outside.any(dim=1).sum())}/{params.shape[0]} starts outside "
+        f"bounds in param columns {torch.where(outside.any(dim=0))[0].tolist()}; "
+        f"lower={lower.tolist()}, upper={upper.tolist()}"
+    )
+
+
 ## Tests for end-to-end fitting with GPU
 @pytest.mark.slow
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="fit_rs_of_tuning requires a CUDA GPU")
+@pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="fit_rs_of_tuning requires a CUDA GPU"
+)
 def test_fit_rs_of_tuning_recovers_known_gaussian_rs_params():
     """End-to-end recovery test: simulate noiseless dff from a known gaussian_RS
     curve, run the real TRF fit, and check R^2 is high.
