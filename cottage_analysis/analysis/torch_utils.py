@@ -149,8 +149,8 @@ def format_model_bounds(
             log_amplitude_max=log_amplitude_max,
             x0_min=np.log(rs_min / of_max),
             x0_max=np.log(rs_max / of_min),
-            y0_min=rs_min,
-            y0_max=rs_max,
+            y0_min=np.log(rs_min),
+            y0_max=np.log(rs_max),
             theta_min=None,
             theta_max=None,
         )
@@ -337,9 +337,9 @@ def invert_bounded_softplus_upper(
 
 MODEL_N_PARAMS = {
     "gaussian_2d": 7,  # (Cholesky parameterisation)
-    "gaussian_multiplicative": 6,  
-    "gaussian_additive": 7, 
-    "gaussian_RS": 4,  
+    "gaussian_multiplicative": 6,
+    "gaussian_additive": 7,
+    "gaussian_RS": 4,
     "gaussian_OF": 4,
     "gaussian_ratio": 4,
 }
@@ -1089,7 +1089,10 @@ class Curve_fit:
         s: torch.Tensor,
         diag: torch.Tensor,
         s0: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> (
+        tuple[torch.Tensor, torch.Tensor]
+        | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ):
         """Build the quadratic model along the line s0 + s*t as a*t**2 + b*t (+ c if s0 is given)."""
         v = torch.einsum("bni,bi->bn", J, s)
         a = ((v * v).sum(dim=1) + (s * diag * s).sum(dim=1)) * 0.5
@@ -1205,9 +1208,7 @@ class Curve_fit:
             predicted_reduction: on the same "full SSE" (2x scipy's 0.5-SSE)
                 scale as `cost` elsewhere in this file [batch]
         """
-        in_bounds = (
-            (x + p >= lower[None, :]) & (x + p <= upper[None, :])
-        ).all(dim=1)
+        in_bounds = ((x + p >= lower[None, :]) & (x + p <= upper[None, :])).all(dim=1)
         p_value_in = self._evaluate_quadratic(J_h, g_h, p_h, diag_h)
 
         # --- candidate 1: clip the raw step to the bound it hits ---
@@ -1266,7 +1267,7 @@ class Curve_fit:
         ag_h_final = ag_h * ag_stride[:, None]
         ag_final = ag * ag_stride[:, None]
 
-        # pick the best of the three candidates 
+        # pick the best of the three candidates
         best_is_p = (p_value < r_value) & (p_value < ag_value)
         best_is_r = (~best_is_p) & (r_value < p_value) & (r_value < ag_value)
         step_bound = torch.where(
@@ -1342,7 +1343,7 @@ class Curve_fit:
         xtol: float = 1e-6,
         gtol: float = 1e-8,
     ) -> torch.Tensor:
-        """Convergence check for method="lm". """
+        """Convergence check for method="lm"."""
         p_norm = torch.norm(p_new, dim=1)
         step_norm = torch.norm(step, dim=1)
         p_converged = (step_norm / (p_norm + xtol)) < xtol
@@ -1353,9 +1354,7 @@ class Curve_fit:
         return p_converged | g_converged
 
     def fit(self) -> torch.Tensor:
-        """Fit the model to the data using TRF (trust-region) or LM optimisation.
-
-        """
+        """Fit the model to the data using TRF (trust-region) or LM optimisation."""
 
         warnings.filterwarnings(
             "ignore",
@@ -1408,7 +1407,7 @@ class Curve_fit:
             cost_before = cost.clone()
 
             if self.method == "trf":
-                # seed the trust-region radius with the Coleman-Li-scaled norm of 
+                # seed the trust-region radius with the Coleman-Li-scaled norm of
                 # the initial point
                 J0 = torch.nan_to_num(
                     jac_func(p, self.X, t), nan=0.0, posinf=0.0, neginf=0.0
@@ -1456,7 +1455,7 @@ class Curve_fit:
                 v, dv = self._cl_scaling_vector(p_a, g, lower, upper)
                 # allow fits that converge close to a boundary to actually approach it
                 g_norm = torch.norm(g * v, p=float("inf"), dim=1)
-                theta = torch.clamp(1.0 - g_norm, min=0.995) 
+                theta = torch.clamp(1.0 - g_norm, min=0.995)
                 d_scale = v.sqrt()
                 J_h = (J * d_scale[:, None, :]).double()  # scale the columns of J
                 scaled_g = d_scale * g  # scale the parameter-column of the gradient
