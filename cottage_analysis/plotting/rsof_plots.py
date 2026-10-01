@@ -515,11 +515,9 @@ def plot_RS_OF_matrix(
     )
     dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
 
+    valid = np.isfinite(rs_arr) & np.isfinite(of_arr) & np.isfinite(dff_arr)
     if max_acc_ratio is not None:
-        idx = acc_max_ratio < max_acc_ratio
-        rs_arr = rs_arr[idx]
-        of_arr = of_arr[idx]
-        dff_arr = dff_arr[idx]
+        valid &= acc_max_ratio < max_acc_ratio
 
     if (
         max_abs_rs2motor_diff_ratio is not None
@@ -527,14 +525,11 @@ def plot_RS_OF_matrix(
         rs2motor_diff_ratio = np.array(
             [j for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values for j in i]
         )
-        idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
-        rs_arr = rs_arr[idx]
-        of_arr = of_arr[idx]
-        dff_arr = dff_arr[idx]
-        valid = ~(np.isnan(dff_arr) | np.isinf(dff_arr))
-        rs_arr = rs_arr[valid]
-        of_arr = of_arr[valid]
-        dff_arr = dff_arr[valid]
+        valid &= rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+
+    rs_arr = rs_arr[valid]
+    of_arr = of_arr[valid]
+    dff_arr = dff_arr[valid]
 
     bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
         x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]
@@ -1855,11 +1850,9 @@ def plot_treadmill_vs_closedloop_matrix(
         )
         dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
 
+        valid = np.isfinite(rs_arr) & np.isfinite(of_arr) & np.isfinite(dff_arr)
         if max_acc_ratio is not None:
-            idx = acc_max_ratio < max_acc_ratio
-            rs_arr = rs_arr[idx]
-            of_arr = of_arr[idx]
-            dff_arr = dff_arr[idx]
+            valid &= acc_max_ratio < max_acc_ratio
         if (not idx_df) and max_abs_rs2motor_diff_ratio is not None:
             # apply filter on treadmill only
             rs2motor_diff_ratio = np.array(
@@ -1869,10 +1862,11 @@ def plot_treadmill_vs_closedloop_matrix(
                     for j in i
                 ]
             )
-            idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
-            rs_arr = rs_arr[idx]
-            of_arr = of_arr[idx]
-            dff_arr = dff_arr[idx]
+            valid &= rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+
+        rs_arr = rs_arr[valid]
+        of_arr = of_arr[valid]
+        dff_arr = dff_arr[valid]
 
         bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
             x=rs_arr,
