@@ -1,3 +1,4 @@
+from cottage_analysis.plotting.plotting_utils import density_scatter
 from cottage_analysis.plotting.style import (
     FONTSIZE_DICT,
     FONTSIZE_DICT_PRESENTATION,
@@ -24,4 +25,5 @@ __all__ = [
     "expand_font_shorthand",
     "rect_cm",
     "panel_letter",
+    "density_scatter",
 ]
