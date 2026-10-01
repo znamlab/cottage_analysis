@@ -1,12 +1,14 @@
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt, ticker as mticker
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, LogNorm
 from matplotlib import cm
 from sklearn.metrics import mutual_info_score
 from typing import Sequence, Dict, Any
 import scipy
 from scipy import stats
+from scipy.interpolate import interpn
+from scipy.ndimage import gaussian_filter
 from sklearn.linear_model import LinearRegression
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
@@ -705,3 +707,46 @@ def generate_cmap(cmap_name="WhRd"):
         cmap = ListedColormap(vals)
 
     return cmap
+
+
+def density_scatter(
+    x,
+    y,
+    ax=None,
+    bins=256,
+    sigma=1.5,
+    log=False,
+    log_scale=False,
+    normalize=True,
+    cmap="magma",
+    s=1,
+    **kwargs,
+):
+    """Scatter coloured by local point density (histogram + interpolation)."""
+    ax = ax or plt.gca()
+    x, y = np.asarray(x), np.asarray(y)
+    valid = np.isfinite(x) & np.isfinite(y)
+    if log_scale:
+        valid &= (x > 0) & (y > 0)
+    x, y = x[valid], y[valid]
+    bx, by = (np.log10(x), np.log10(y)) if log_scale else (x, y)
+    H, xe, ye = np.histogram2d(bx, by, bins=bins)
+    H = gaussian_filter(H, sigma, mode="constant")
+    xc, yc = (xe[1:] + xe[:-1]) / 2, (ye[1:] + ye[:-1]) / 2
+    z = interpn((xc, yc), H, np.c_[bx, by], bounds_error=False, fill_value=None)
+    if normalize and len(z) > 0 and np.nanmax(z) > 0:
+        z = z / np.nanmax(z)
+        if not log:
+            kwargs.setdefault("vmin", 0)
+            kwargs.setdefault("vmax", 1)
+    z = np.clip(z, 1e-3 if log else 0, None)
+    o = np.argsort(z)  # densest points drawn last
+    kwargs.setdefault("edgecolors", "none")
+    kwargs.setdefault("rasterized", True)
+    kwargs.setdefault(
+        "norm",
+        LogNorm(vmin=1e-3, vmax=1)
+        if (log and normalize)
+        else (LogNorm() if log else None),
+    )
+    return ax.scatter(x[o], y[o], c=z[o], s=s, cmap=cmap, **kwargs)
