@@ -1102,85 +1102,129 @@ def plot_scatter(
 
 
 def plot_2d_hist(
-    fig,
     neurons_df,
     xcol,
     ycol,
+    ax=None,
+    fig=None,
+    position=None,
     xlabel="Running speed (cm/s)",
     ylabel="Preferred depth (cm)",
-    plot_x=0,
-    plot_y=0,
-    plot_width=1,
-    plot_height=1,
     xlim=None,
     ylim=None,
-    aspect_equal=True,
-    plot_diagonal=False,
-    diagonal_linewidth=1,
-    diagonal_color="k",
-    contour_color="k",
-    fontsize_dict={"title": 15, "label": 10, "tick": 10},
     log_scale=True,
-    color="k",
-    linewidth=1,
+    aspect_equal=True,
+    fontsize_dict=None,
     plot_scatter=True,
-    s=3,
-    alpha=0.5,
-    edgecolors="none",
-    rasterized=False,
+    color_by_density=False,
+    plot_contours=True,
+    plot_diagonal=False,
+    scatter_kwargs=None,
+    density_kwargs=None,
+    contour_kwargs=None,
+    diagonal_kwargs=None,
 ):
-    # Plot scatter
-    ax = fig.add_axes([plot_x, plot_y, plot_width, plot_height])
+    if fontsize_dict is None:
+        fontsize_dict = {"title": 15, "label": 10, "tick": 10}
+
+    if ax is None:
+        if position is not None:
+            fig = fig or plt.gcf()
+            ax = fig.add_axes(position)
+        else:
+            ax = plt.gca()
+
+    if log_scale:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
     X = neurons_df[xcol].values
     y = neurons_df[ycol].values
-    # plota 2d histogram on log scale
-    sns.kdeplot(
-        x=X,
-        y=y,
-        color=contour_color,
-        log_scale=log_scale,
-        linewidths=linewidth,
-        cut=0,
-        levels=5,
-    )
+
+    plot_elements = {"ax": ax}
+    if plot_contours:
+        c_kwargs = dict(
+            color="k",
+            linewidths=1,
+            cut=0,
+            levels=5,
+        )
+        if contour_kwargs:
+            c_kwargs.update(contour_kwargs)
+            if "linewidth" in c_kwargs:
+                c_kwargs["linewidths"] = c_kwargs.pop("linewidth")
+        sns.kdeplot(
+            x=X,
+            y=y,
+            ax=ax,
+            log_scale=log_scale,
+            **c_kwargs,
+        )
+
     if plot_scatter:
-        ax.scatter(
-            X,
-            y,
-            s=s,
-            alpha=alpha,
-            c=color,
-            edgecolors=edgecolors,
+        s_kwargs = dict(
+            s=3,
+            alpha=0.5,
+            c="k",
+            edgecolors="none",
             linewidths=0.5,
-            rasterized=rasterized,
+            rasterized=False,
         )
-    if plot_diagonal:
-        diag = [
-            np.max((plt.xlim()[0], plt.ylim()[0])),
-            np.min((plt.xlim()[1], plt.ylim()[1])),
-        ]
-        ax.plot(
-            diag,
-            diag,
-            c=diagonal_color,
-            linestyle="dotted",
-            linewidth=diagonal_linewidth,
-        )
+        if scatter_kwargs:
+            if "color" in scatter_kwargs:
+                s_kwargs.pop("c", None)
+            s_kwargs.update(scatter_kwargs)
+
+        if color_by_density:
+            d_kwargs = dict(
+                bins=100,
+                sigma=5,
+                log=False,
+                cmap="magma",
+                s=s_kwargs.get("s", 3),
+                alpha=s_kwargs.get("alpha", 0.5),
+                edgecolors=s_kwargs.get("edgecolors", "none"),
+                linewidths=s_kwargs.get("linewidths", 0.5),
+                rasterized=s_kwargs.get("rasterized", False),
+            )
+            if density_kwargs:
+                d_kwargs.update(density_kwargs)
+            plot_elements["density_scatter"] = plotting_utils.density_scatter(
+                x=X,
+                y=y,
+                ax=ax,
+                log_scale=log_scale,
+                **d_kwargs,
+            )
+        else:
+            plot_elements["scatter"] = ax.scatter(X, y, **s_kwargs)
+
     if xlim is None:
-        xlim = [np.nanmin(X) * 0.9, np.nanmax(X) / 0.9]
+        x_valid = X[X > 0] if log_scale else X
+        xlim = [np.nanmin(x_valid) * 0.9, np.nanmax(x_valid) / 0.9]
     if ylim is None:
-        ylim = [np.nanmin(y) * 0.9, np.nanmax(y) / 0.9]
-    plt.xlim(xlim)
-    plt.ylim(ylim)
+        y_valid = y[y > 0] if log_scale else y
+        ylim = [np.nanmin(y_valid) * 0.9, np.nanmax(y_valid) / 0.9]
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+
+    if plot_diagonal:
+        diag_kwargs = dict(
+            c="k",
+            linestyle="dotted",
+            linewidth=1,
+        )
+        if diagonal_kwargs:
+            if "color" in diagonal_kwargs:
+                diag_kwargs.pop("c", None)
+            diag_kwargs.update(diagonal_kwargs)
+        diag = [
+            np.max((ax.get_xlim()[0], ax.get_ylim()[0])),
+            np.min((ax.get_xlim()[1], ax.get_ylim()[1])),
+        ]
+        ax.plot(diag, diag, **diag_kwargs)
 
     ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=1)
     ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=1)
-    # from matplotlib.ticker import LogLocator
-    # from matplotlib.ticker import MultipleLocator, AutoMinorLocator
-    # ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=10))
-    # ax.xaxis.set_major_locator(LogLocator(base=10.0, numticks=10))
-    # ax.yaxis.set_minor_locator(MultipleLocator(2))
-    # ax.xaxis.set_minor_locator(MultipleLocator(2))
     ax.minorticks_on()
     ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
     if aspect_equal:
@@ -1188,7 +1232,7 @@ def plot_2d_hist(
     plotting_utils.despine()
     r, p = scipy.stats.spearmanr(X, y)
     print(f"Correlation between {xcol} and {ycol}: R = {r}, p = {p}")
-    return r, p
+    return r, p, plot_elements
 
 
 def plot_speed_colored_by_depth(
