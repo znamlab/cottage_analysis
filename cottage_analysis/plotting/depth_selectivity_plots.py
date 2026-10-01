@@ -842,6 +842,8 @@ def plot_preferred_depth_hist(
     use_col="preferred_depth_closedloop",
     nbins=50,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    color="cornflowerblue",
+    edgecolor="royalblue",
 ):
     """Plot histogram of preferred depth.
 
@@ -850,6 +852,8 @@ def plot_preferred_depth_hist(
         use_col (str, optional): column name to use for plotting. Defaults to "preferred_depth_closedloop".
         nbins (int, optional): number of bins for histogram. Defaults to 50.
         fontsize_dict (dict, optional): dictionary of fontsize for title, label and tick. Defaults to {"title": 20, "label": 15, "tick": 15}.
+        color (str, optional): color for histogram bars. Defaults to "cornflowerblue".
+        edgecolor (str, optional): color for histogram edges. Defaults to "royalblue".
     """
     results_df = results_df[results_df["iscell"] == 1].copy()
     # convert to cm
@@ -874,22 +878,22 @@ def plot_preferred_depth_hist(
         results_df[use_col],
         bins=depth_bins,
         weights=np.ones(len(results_df)) / len(results_df),
-        color="cornflowerblue",
-        edgecolor="royalblue",
+        color=color,
+        edgecolor=edgecolor,
     )
     # plot proportion of rows with -inf and inf values as separate bars at min_depth/2 and max_depth*2
     plt.bar(
         min_depth - 1,
         np.sum(results_df[use_col] == -np.inf) / len(results_df),
-        color="cornflowerblue",
-        edgecolor="royalblue",
+        color=color,
+        edgecolor=edgecolor,
         width=(max_depth - min_depth) / nbins,
     )
     plt.bar(
         max_depth + 1,
         np.sum(results_df[use_col] == np.inf) / len(results_df),
-        color="cornflowerblue",
-        edgecolor="royalblue",
+        color=color,
+        edgecolor=edgecolor,
         width=(max_depth - min_depth) / nbins,
     )
 
@@ -997,6 +1001,9 @@ def plot_depth_neuron_perc_hist(
     ylim=None,
     markersize=10,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
+    color="cornflowerblue",
+    edgecolor="royalblue",
+    alpha=1,
 ):
     """Plot histogram of proportion of depth-tuned neurons for each session.
 
@@ -1010,10 +1017,7 @@ def plot_depth_neuron_perc_hist(
     """
     session_prop = results_df.groupby("session").agg({use_col: "mean"})
     plt.hist(
-        session_prop[use_col],
-        bins=bins,
-        color="cornflowerblue",
-        edgecolor="royalblue",
+        session_prop[use_col], bins=bins, color=color, edgecolor=edgecolor, alpha=alpha
     )
     ax = plt.gca()
     if xlim is None:
@@ -1039,8 +1043,9 @@ def plot_depth_neuron_perc_hist(
         ax.get_ylim()[1] * 0.95,
         marker="v",
         markersize=markersize,
-        markerfacecolor="cornflowerblue",
-        markeredgecolor="royalblue",
+        markerfacecolor=color,
+        markeredgecolor=edgecolor,
+        clip_on=False,
     )
     plotting_utils.despine()
 
