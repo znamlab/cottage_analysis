@@ -363,15 +363,17 @@ def load_sig_rf(
         print("Ignoring ast_neuropil filter for ROI selection")
         filter_datasets_rois.pop("ast_neuropil")
 
-    if use_multidepth and use_cols is not None:
+    if use_multidepth:
         sfx = "_closedloop_multidepth"
-        # add the columns
-        use_cols += [
-            "rf_coef_closedloop_multidepth",
-            "rf_coef_ipsi_closedloop_multidepth",
-            "rf_rsq_closedloop_multidepth",
-            "rf_rsq_ipsi_closedloop_multidepth",
-        ]
+        if use_cols is not None:
+            # add the columns (new list, so neither the caller's list nor the
+            # default argument is modified)
+            use_cols = use_cols + [
+                "rf_coef_closedloop_multidepth",
+                "rf_coef_ipsi_closedloop_multidepth",
+                "rf_rsq_closedloop_multidepth",
+                "rf_rsq_ipsi_closedloop_multidepth",
+            ]
     else:
         sfx = "_closedloop"
 
