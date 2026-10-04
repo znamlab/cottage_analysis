@@ -11,8 +11,10 @@ import os
 sys.path.append(os.getcwd())
 from cottage_analysis.analysis.gratings import (
     SFTF_CLEANING,
+    SFTF_SYNC,
     analyze_grating_responses,
     format_sftf_trials,
+    sftf_fit_outdated,
     summarize_sftf_fit,
 )
 from cottage_analysis.analysis.fit_gaussian_blob import fit_sftf_tuning
@@ -45,6 +47,7 @@ def write_meta(output_dir, niter, summary, source="cluster"):
     meta = {
         "source": source,
         "niter": niter,
+        "sync": SFTF_SYNC,
         "cleaning": SFTF_CLEANING,
         **summary,
         "fitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -68,7 +71,8 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
     print(f"Output Directory: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    trials_file = output_dir / "trials_df.pkl"
+    # Named by sync version, so trials cached with a misaligned sync are never reused
+    trials_file = output_dir / f"trials_df_{SFTF_SYNC}.pkl"
     neurons_file = output_dir / "neurons_df.pkl"
 
     #1b. Refuse to downgrade an existing fit
@@ -76,13 +80,11 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
     # and neither should a cluster re-run with fewer iterations. Run order stops
     # mattering; only fit quality does.
     existing = read_meta(output_dir)
-    # A fit made with different response cleaning is not comparable, whatever its
-    # niter (fits before "cleaning" was recorded filled NaN with 0 and clipped to +/-10)
-    if existing and existing.get("cleaning") != SFTF_CLEANING:
-        print(
-            f"Existing fit used cleaning={existing.get('cleaning')!r}, not "
-            f"{SFTF_CLEANING!r}; refitting regardless of niter."
-        )
+    # A fit made with a different sync or response cleaning is not comparable,
+    # whatever its niter
+    outdated = sftf_fit_outdated(existing) if neurons_file.exists() else None
+    if outdated:
+        print(f"Existing fit is outdated ({outdated}); refitting regardless of niter.")
     elif neurons_file.exists() and existing and not force:
         if existing.get("niter", 0) >= niter:
             print(

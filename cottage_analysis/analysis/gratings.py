@@ -79,6 +79,26 @@ def generate_trials_df(img_df, skip_first_n_volumes=2):
 # Recorded in fit_meta.json, so fits made before and after a change to how
 # responses are cleaned can be told apart
 SFTF_CLEANING = "drop_nonfinite_per_roi"
+# Likewise for stimulus/imaging synchronisation. Before 9f422c3 (on main), param
+# logs were matched to FrameLog row numbers instead of FrameIndex, so in
+# recordings whose FrameIndex does not start at 0 (Dec 2025 onwards) every
+# stimulus was labelled ~200-270 monitor frames (~1.5-1.9 s) late.
+SFTF_SYNC = "frameindex_9f422c3"
+
+
+def sftf_fit_outdated(meta):
+    """Why a saved SFTF fit must be redone, or None if it is current.
+
+    Args:
+        meta (dict or None): contents of fit_meta.json.
+    """
+    if meta is None:
+        return "no fit_meta.json"
+    if meta.get("sync") != SFTF_SYNC:
+        return f"sync={meta.get('sync')!r}, not {SFTF_SYNC!r} (stimulus labels misaligned)"
+    if meta.get("cleaning") != SFTF_CLEANING:
+        return f"cleaning={meta.get('cleaning')!r}, not {SFTF_CLEANING!r}"
+    return None
 
 
 def format_sftf_trials(trials_df):
