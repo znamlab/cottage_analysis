@@ -49,7 +49,24 @@ def analyze_grating_responses(
     return pd.concat(dfs, axis=0, ignore_index=True), dff_mean_all
 
 
-def generate_trials_df(img_df, skip_first_n_volumes=2):
+def generate_trials_df(img_df, skip_first_n_volumes=2, pre_s=2.0):
+    """One row per grating presentation.
+
+    Args:
+        img_df (pd.DataFrame): output of synchronisation.generate_imaging_df.
+        skip_first_n_volumes (int): volumes after onset left out of the response
+            window. Defaults to 2.
+        pre_s (float): seconds before stimulus onset covered by `RS_pre`.
+            Defaults to 2.
+
+    Returns:
+        trials_df (pd.DataFrame): stimulus parameters plus, per trial:
+            - dff_stim: dF/F (volumes x ROIs) from stim_start to stim_end
+            - RS_stim: running speed (m/s) for each of the same volumes
+            - RS_pre: running speed (m/s) for each volume in the pre_s seconds
+              before the stimulus appeared
+        dff_mean (list): dff_stim averaged over volumes, one array per trial.
+    """
     # select rows of img_df where SpatialFrequency, TemporalFrequency, Angle change
     trials_df = (
         img_df.loc[
@@ -72,6 +89,27 @@ def generate_trials_df(img_df, skip_first_n_volumes=2):
         ).squeeze(),
         axis=1,
     )
+
+    # Running speed per volume: RS_volume holds one speed per plane, so average them
+    if "RS_volume" in img_df.columns:
+        rs = img_df.RS_volume.apply(lambda x: np.nanmean(x) if np.size(x) else np.nan)
+    else:
+        rs = img_df.RS
+    trials_df["RS_stim"] = trials_df.apply(
+        lambda x: rs.loc[int(x.stim_start) : int(x.stim_end)].to_numpy(), axis=1
+    )
+    # Pre-stimulus speed, timed from when the stimulus actually changed (ParamLog)
+    # where available, since the onset volume can start up to a volume late
+    onset_s = (
+        trials_df.stimulus_harptime
+        if "stimulus_harptime" in trials_df.columns
+        else trials_df.imaging_harptime
+    )
+    vol_s = img_df.imaging_harptime.to_numpy()
+    first = np.searchsorted(vol_s, onset_s - pre_s, side="left")
+    last = np.searchsorted(vol_s, onset_s, side="left")
+    trials_df["RS_pre"] = [rs.iloc[a:b].to_numpy() for a, b in zip(first, last)]
+
     dff_mean = trials_df["dff_stim"].apply(lambda x: np.mean(x, axis=0)).to_list()
     return trials_df, dff_mean
 

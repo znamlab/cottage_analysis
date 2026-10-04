@@ -20,6 +20,8 @@ from cottage_analysis.analysis.gratings import (
 from cottage_analysis.analysis.fit_gaussian_blob import fit_sftf_tuning
 
 META_NAME = "fit_meta.json"
+# Columns a cached trials file must have to be reused
+TRIALS_COLUMNS = ["dff_stim", "RS_stim", "RS_pre"]
 
 
 def read_meta(output_dir):
@@ -100,10 +102,16 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
         )
 
     #2. Load or extract data
+    trials_df = None
     if trials_file.exists():
         print(f"Found existing trials file at {trials_file}")
         trials_df = pd.read_pickle(trials_file)
-    else:
+        # trials cached before generate_trials_df saved the running traces
+        missing = [c for c in TRIALS_COLUMNS if c not in trials_df.columns]
+        if missing:
+            print(f"Cached trials lack {missing}; regenerating.")
+            trials_df = None
+    if trials_df is None:
         print("Generating trials dataframe from raw data...")
         try:
             trials_df, _ = analyze_grating_responses(
