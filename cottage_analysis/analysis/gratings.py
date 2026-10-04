@@ -74,3 +74,52 @@ def generate_trials_df(img_df, skip_first_n_volumes=2):
     )
     dff_mean = trials_df["dff_stim"].apply(lambda x: np.mean(x, axis=0)).to_list()
     return trials_df, dff_mean
+
+
+# Recorded in fit_meta.json, so fits made before and after a change to how
+# responses are cleaned can be told apart
+SFTF_CLEANING = "drop_nonfinite_per_roi"
+
+
+def format_sftf_trials(trials_df):
+    """Turn trials_df into the layout fit_sftf_tuning expects.
+
+    Each ROI's response on a trial is its dF/F averaged over the stimulus
+    window, in an integer-named column (the ROI id). inf, which comes from a
+    near-zero F0, is set to NaN; nothing else is changed, and fit_sftf_tuning
+    leaves NaN trials out of that ROI's fit.
+
+    Args:
+        trials_df (pd.DataFrame): output of analyze_grating_responses.
+
+    Returns:
+        pd.DataFrame: `SpatialFrequency`, `TemporalFrequency`, `Angle` and one
+            column per ROI.
+    """
+    response_matrix = np.stack(
+        trials_df["dff_stim"].apply(lambda x: np.mean(x, axis=0)).values
+    )
+    response_matrix[~np.isfinite(response_matrix)] = np.nan
+    responses_df = pd.DataFrame(
+        response_matrix,
+        columns=np.arange(response_matrix.shape[1]),
+        index=trials_df.index,
+    )
+    return pd.concat(
+        [trials_df[["SpatialFrequency", "TemporalFrequency", "Angle"]], responses_df],
+        axis=1,
+    )
+
+
+def summarize_sftf_fit(neurons_df):
+    """Count ROIs affected by missing or extreme responses in a fit_sftf_tuning output.
+
+    Returns:
+        dict: counts, suitable for printing and for fit_meta.json.
+    """
+    return {
+        "n_rois": len(neurons_df),
+        "n_rois_with_nonfinite_trials": int((neurons_df["n_nonfinite_trials"] > 0).sum()),
+        "n_rois_with_extreme_trials": int((neurons_df["n_extreme_trials"] > 0).sum()),
+        "n_rois_not_fit": int(neurons_df["rsq"].isna().sum()),
+    }

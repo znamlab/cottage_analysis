@@ -9,7 +9,12 @@ import sys
 import os
 
 sys.path.append(os.getcwd())
-from cottage_analysis.analysis.gratings import analyze_grating_responses
+from cottage_analysis.analysis.gratings import (
+    SFTF_CLEANING,
+    analyze_grating_responses,
+    format_sftf_trials,
+    summarize_sftf_fit,
+)
 from cottage_analysis.analysis.fit_gaussian_blob import fit_sftf_tuning
 
 META_NAME = "fit_meta.json"
@@ -27,7 +32,7 @@ def read_meta(output_dir):
         return None
 
 
-def write_meta(output_dir, niter, n_rois, source="cluster"):
+def write_meta(output_dir, niter, summary, source="cluster"):
     """Record how this fit was produced, so a weak fit is never mistaken for a
     strong one. niter is what lets us refuse to overwrite a better fit."""
     try:
@@ -40,7 +45,8 @@ def write_meta(output_dir, niter, n_rois, source="cluster"):
     meta = {
         "source": source,
         "niter": niter,
-        "n_rois": n_rois,
+        "cleaning": SFTF_CLEANING,
+        **summary,
         "fitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": commit,
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -70,7 +76,14 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
     # and neither should a cluster re-run with fewer iterations. Run order stops
     # mattering; only fit quality does.
     existing = read_meta(output_dir)
-    if neurons_file.exists() and existing and not force:
+    # A fit made with different response cleaning is not comparable, whatever its
+    # niter (fits before "cleaning" was recorded filled NaN with 0 and clipped to +/-10)
+    if existing and existing.get("cleaning") != SFTF_CLEANING:
+        print(
+            f"Existing fit used cleaning={existing.get('cleaning')!r}, not "
+            f"{SFTF_CLEANING!r}; refitting regardless of niter."
+        )
+    elif neurons_file.exists() and existing and not force:
         if existing.get("niter", 0) >= niter:
             print(
                 f"Existing fit at {neurons_file} used niter={existing.get('niter')} "
@@ -111,35 +124,11 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
         print("Trials dataframe is empty. Check your raw data.")
         sys.exit(1)
 
-    # Stack the arrays (Response Matrix)
-    response_matrix = np.stack(trials_df['dff_stim'].apply(lambda x: np.mean(x, axis=0)).values)
-    
-    responses_df = pd.DataFrame(
-        response_matrix, 
-        columns=np.arange(response_matrix.shape[1]), 
-        index=trials_df.index
-    )
-    
-    # Combine Stimulus info + Neural Responses
-    trials_df_formatted = pd.concat(
-        [trials_df[['SpatialFrequency', 'TemporalFrequency', 'Angle']], responses_df], 
-        axis=1
-    )
+    # One integer column per ROI; inf becomes NaN. NaN trials are left out of
+    # each ROI's fit rather than filled, and nothing is clipped.
+    trials_df_formatted = format_sftf_trials(trials_df)
 
-    #4. Clean data
-    print("Clipping extremes to prevent overflows)...")
-    numeric_cols = trials_df_formatted.select_dtypes(include=[np.number]).columns
-    
-    # Replace Infinity with NaN
-    trials_df_formatted[numeric_cols] = trials_df_formatted[numeric_cols].replace([np.inf, -np.inf], np.nan)
-    
-    # Fill NaNs with 0 (assuming silence where data is missing)
-    trials_df_formatted[numeric_cols] = trials_df_formatted[numeric_cols].fillna(0)
-    
-    # Clip values to prevent exp() explosions (e.g. keeping dF/F between -10 and +10)
-    trials_df_formatted[numeric_cols] = trials_df_formatted[numeric_cols].clip(lower=-10, upper=10)
-
-    # 5. Run fitting
+    # 4. Run fitting
     print(f"Running Gaussian Fit with niter={niter}...")
 
     try:
@@ -148,10 +137,17 @@ def run_cluster_analysis(project, mouse, session, protocol, input_base_dir, nite
         print(f"Crash during fitting: {e}")
         sys.exit(1)
 
-    # 6. Save results
+    summary = summarize_sftf_fit(neurons_df)
+    print(
+        f"Data quality: {summary['n_rois_with_nonfinite_trials']}/{summary['n_rois']} ROIs had "
+        f"NaN/inf trials (left out), {summary['n_rois_with_extreme_trials']} had |dF/F| > 10 "
+        f"(kept, flagged in n_extreme_trials), {summary['n_rois_not_fit']} had too few trials to fit."
+    )
+
+    # 5. Save results
     print(f"Analysis Complete! Saving to {neurons_file}")
     neurons_df.to_pickle(neurons_file)
-    meta = write_meta(output_dir, niter=niter, n_rois=len(neurons_df), source="cluster")
+    meta = write_meta(output_dir, niter=niter, summary=summary, source="cluster")
     print(f"Wrote {output_dir / META_NAME}: {meta}")
     print("Done.")
 

@@ -1054,18 +1054,26 @@ def fit_rs_of_tuning(
     return neurons_df_temp
 
 
-def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
+def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25, extreme_dff=10):
     """
     Fit spatial frequency and temporal frequency tuning with 2d gaussian function.
+
+    Trials where an ROI's response is NaN or inf are left out of that ROI's fit
+    rather than imputed. Nothing is clipped: trials with |dF/F| > extreme_dff are
+    fitted as-is and only counted, so suspect ROIs can be filtered afterwards.
 
     Args:
         trials_df (pd.DataFrame): dataframe with `SpatialFrequency`, `TemporalFrequency` and `Angle` columns
             and integer column names for each ROI.
         niter (int, optional): Number of iterations for fitting the gaussian function. Defaults to 5.
         min_sigma (float, optional): Minimum value for sigma. Defaults to 0.25.
+        extreme_dff (float, optional): |dF/F| above which a trial is counted in
+            `n_extreme_trials`. Defaults to 10.
 
     Returns:
-        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
+        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI,
+            plus `n_trials_fit`, `n_nonfinite_trials` and `n_extreme_trials`. ROIs with too few
+            finite trials to constrain the model get NaN parameters and rsq.
 
     """
     trials_df["log_SF"] = np.log(trials_df["SpatialFrequency"])
@@ -1099,32 +1107,48 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
 
     def p0_func():
         # edit the code below to use a namedtupled instead of a list
+        # roi_df holds only this ROI's finite trials, so initial guesses ignore
+        # the trials left out of the fit
         return GratingParams(
             log_amplitude=np.random.normal(),
-            sf0=trials_df.groupby("log_SF")[roi].mean().idxmax(),
-            tf0=trials_df.groupby("log_TF")[roi].mean().idxmax(),
+            sf0=roi_df.groupby("log_SF")[roi].mean().idxmax(),
+            tf0=roi_df.groupby("log_TF")[roi].mean().idxmax(),
             log_sigma_x2=np.random.normal(),
             log_sigma_y2=np.random.normal(),
             theta=np.random.uniform(0, 0.5 * np.pi),
             offset=np.random.normal(),
-            alpha0=trials_df.groupby("Angle_rad")[roi].mean().idxmax(),
+            alpha0=roi_df.groupby("Angle_rad")[roi].mean().idxmax(),
             log_kappa=np.random.normal(),
             dsi=np.random.uniform(0, 1),
         )
 
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
+    nan_params = GratingParams(*[np.nan] * len(GratingParams._fields))
     params = []
     rsqs = []
+    n_fit, n_nonfinite, n_extreme = [], [], []
     # int type columns correspond to ROIs
     int_cols = [type(col) == int for col in trials_df.columns]
-    trials_df.columns[int_cols]
     for roi in tqdm(trials_df.columns[int_cols]):
+        # numpy, not Series: iterate_fit does y[np.newaxis, :], which pandas
+        # >= 2.0 rejects on a Series
+        y = trials_df[roi].to_numpy(dtype=float)
+        # Drop NaN/inf trials here: iterate_fit's own NaN-drop builds a 2-D mask
+        # when X is 2-D and y is 1-D, and it does not catch inf at all
+        finite = np.isfinite(y)
+        n_fit.append(int(finite.sum()))
+        n_nonfinite.append(int((~finite).sum()))
+        n_extreme.append(int((np.abs(y[finite]) > extreme_dff).sum()))
+        if finite.sum() <= len(GratingParams._fields):
+            # fewer trials than parameters: the fit is unconstrained
+            params.append(nan_params)
+            rsqs.append(np.nan)
+            continue
+        roi_df = trials_df.loc[finite]
         popt, rsq = common_utils.iterate_fit(
             grating_tuning_,
-            X.T,
-            # numpy, not Series: iterate_fit does y[np.newaxis, :], which pandas
-            # >= 2.0 rejects on a Series
-            trials_df[roi].to_numpy(dtype=float),
+            X[finite].T,
+            y[finite],
             lower_bounds,
             upper_bounds,
             niter=niter,
@@ -1136,4 +1160,7 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
 
     neurons_df = pd.DataFrame(params)
     neurons_df["rsq"] = rsqs
+    neurons_df["n_trials_fit"] = n_fit
+    neurons_df["n_nonfinite_trials"] = n_nonfinite
+    neurons_df["n_extreme_trials"] = n_extreme
     return neurons_df
