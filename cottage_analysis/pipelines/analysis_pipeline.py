@@ -158,7 +158,9 @@ def main(
             },
             flexilims_session=flexilims_session,
         )
-    else:
+    elif "multidepth" not in protocol_base:
+        # multidepth recordings must not overwrite the session trial counts, and
+        # their trials_df.depth is the radius of the sphere logged at trial start
         trial_no_closedloop = len(trials_df_all[trials_df_all["closed_loop"] == 1])
         trial_no_openloop = len(trials_df_all[trials_df_all["closed_loop"] == 0])
         ndepths = len(trials_df_all["depth"].unique())
@@ -423,7 +425,15 @@ def main(
         # Fit RF preferred depth using Gaussian fit across depths
         from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
 
-        depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+        if is_multidepth:
+            # trials_df.depth is the radius of the sphere logged at trial start, which
+            # is negative for sphere removals. Use the depths of the RF frames.
+            depth_list = np.sort(
+                imaging_df_all.depth[imaging_df_all.depth > 0].unique()
+            ).tolist()
+            assert len(depth_list) == frames_all.shape[0]
+        else:
+            depth_list = find_depth_neurons.find_depth_list(trials_df_all)
         print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
         fit_rf_preferred_depth(
             neurons_df,
