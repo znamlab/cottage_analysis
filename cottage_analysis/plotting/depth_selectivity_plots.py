@@ -16,12 +16,10 @@ from cottage_analysis.analysis import (
     size_control,
     fit_gaussian_blob,
     roi_location,
-    common_utils,
 )
-from cottage_analysis.analysis.spheres import rf_fitting
+from cottage_analysis.analysis.spheres import rf_fitting, rf_analysis
 from cottage_analysis.plotting import plotting_utils
 from cottage_analysis.pipelines import pipeline_utils
-from cottage_analysis.plotting import rf_plots
 
 
 def plot_raster_all_depths(
@@ -1008,7 +1006,7 @@ def plot_example_fov(
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
     fov_width=572.867,
 ):
-    rf_plots.find_rf_centers(
+    rf_analysis.find_rf_centers(
         neurons_df,
         ndepths=ndepths,
         frame_shape=(16, 24),

@@ -1,5 +1,6 @@
 from functools import partial
 import gc
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
@@ -182,7 +183,7 @@ def fit_3d_rfs(
     # calculate R2
     r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
     for isplit in range(n_splits):
-        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        use_idx = np.any(np.isfinite(Y_pred[:, :, isplit]), axis=1)
         residual_var = np.sum(
             (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
             axis=0,
@@ -298,7 +299,7 @@ def fit_3d_rfs_multidepth(
             validation_idx = np.isin(imaging_df.trial_idx, validation_trials)
         train_idx = np.isin(imaging_df.trial_idx, train_trials)
         test_idx = np.isin(imaging_df.trial_idx, test_trials)
-        
+
         X_train = np.concatenate(
             [X[train_idx, :], reg_xy * L, reg_depth * L_depth], axis=0
         )
@@ -324,7 +325,7 @@ def fit_3d_rfs_multidepth(
     # calculate R2
     r2 = np.zeros((resps.shape[1], n_splits)) * np.nan
     for isplit in range(n_splits):
-        use_idx = np.isfinite(Y_pred[:, 0, isplit])
+        use_idx = np.any(np.isfinite(Y_pred[:, :, isplit]), axis=1)
         residual_var = np.sum(
             (Y_pred[use_idx, :, isplit] - resps[use_idx, :]) ** 2,
             axis=0,
@@ -519,25 +520,45 @@ def fit_3d_rfs_ipsi(
     return coef, r2
 
 
-def find_sig_rfs(coef, coef_ipsi, n_std=5):
-    """Find the neurons with a significant RF (compared to ipsi side)
+def find_sig_rfs(coef, coef_ipsi, n_std=6):
+    """Find neurons with a significant RF compared to the ipsilateral side.
+
+    A neuron is significant if the peak of its mean contralateral RF exceeds
+    n_std standard deviations above the mean of the ipsilateral RF.
+    ROIs that are all-NaN across folds are marked as not significant.
 
     Args:
-        coef (_type_): _description_
-        coef_ipsi (_type_): _description_
-        n_std (int, optional): _description_. Defaults to 5.
+        coef (list of np.ndarray): Contralateral RF coefficients per fold,
+            each of shape (n_features, n_rois).
+        coef_ipsi (list of np.ndarray): Ipsilateral RF coefficients per fold,
+            each of shape (n_features, n_rois).
+        n_std (float, optional): Number of standard deviations above the
+            ipsilateral mean to use as the significance threshold. Defaults to 6.
 
     Returns:
-        _type_: _description_
+        sig (np.ndarray): Boolean array of shape (n_rois,), True if the
+            contralateral RF is significant.
+        sig_ipsi (np.ndarray): Boolean array of shape (n_rois,), True if the
+            ipsilateral RF exceeds its own threshold (sanity check).
     """
-    coef_mean = np.mean(np.stack(coef, axis=2), axis=2)
-    coef_ipsi_mean = np.mean(np.stack(coef_ipsi, axis=2), axis=2)
+    coef_stacked = np.stack(coef, axis=2)
+    coef_ipsi_stacked = np.stack(coef_ipsi, axis=2)
+    nrois = coef_stacked.shape[1]
 
-    threshold = n_std * np.std(coef_ipsi_mean[:-1, :], axis=0) + np.mean(
-        coef_ipsi_mean[:-1, :], axis=0
-    )
-    sig = np.max(coef_mean[:-1, :], axis=0) > threshold
-    sig_ipsi = np.max(coef_ipsi_mean[:-1, :], axis=0) > threshold
+    # ROIs that are all-NaN across folds get False
+    valid = ~np.all(np.isnan(coef_stacked), axis=(0, 2))
+    sig = np.zeros(nrois, dtype=bool)
+    sig_ipsi = np.zeros(nrois, dtype=bool)
+
+    if np.any(valid):
+        coef_mean = np.nanmean(coef_stacked[:, valid, :], axis=2)
+        coef_ipsi_mean = np.nanmean(coef_ipsi_stacked[:, valid, :], axis=2)
+
+        threshold = n_std * np.nanstd(coef_ipsi_mean[:-1, :], axis=0) + np.nanmean(
+            coef_ipsi_mean[:-1, :], axis=0
+        )
+        sig[valid] = np.nanmax(coef_mean[:-1, :], axis=0) > threshold
+        sig_ipsi[valid] = np.nanmax(coef_ipsi_mean[:-1, :], axis=0) > threshold
 
     return sig, sig_ipsi
 

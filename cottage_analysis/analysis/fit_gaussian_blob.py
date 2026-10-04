@@ -458,7 +458,6 @@ def grating_tuning(
     tuning = direction_tuning(alpha, alpha0, log_kappa, dsi)
     return gaussian * tuning + offset
 
-from cottage_analysis.analysis import common_utils, find_depth_neurons
 
 def initial_fit_conditions(
     model,
@@ -695,6 +694,57 @@ def fit_rs_of_tuning(
     max_acc=None,
     max_rs2motor_diff=None,
 ):
+    """Fit running speed and optic flow tuning with a specified model.
+
+    In the output dataframe the columns will be named:
+    `{metric}_{protocol}{rs_type}{trial_sfx}{model_sfx}`
+
+    - `metric`: e.g., `preferred_RS`, `preferred_OF`, `rsof_popt`, `rsof_rsq`, etc.
+    - `protocol`: `closedloop` or `openloop`.
+    - `rs_type`: `_actual` or `_virtual` (only for `openloop`).
+    - `trial_sfx`: user-defined suffix.
+    - `model_sfx`: `_g2d`, `_gadd`, `_gof`, `_grs`, or `_gratio` depending on the model.
+
+    Args:
+        trials_df (pd.DataFrame): Dataframe containing trial information, including:
+            - RS_stim: Actual running speed.
+            - OF_stim: Optic flow speed.
+            - dff_stim: Delta F/F neural responses.
+            - depth_labels: Labels for each depth.
+            - closed_loop: Boolean indicating closed-loop vs open-loop protocols.
+        model (str, optional): Model name to fit. One of "gaussian_2d",
+            "gaussian_additive", "gaussian_OF", "gaussian_RS", "gaussian_ratio".
+            Defaults to "gaussian_2d".
+        choose_trials (list or str, optional): Trials to include in the fit. Can be a
+            list of trial indices or a string (e.g., "even", "odd"). Defaults to None.
+        trial_sfx (str, optional): Suffix for saved column names in the output dataframe
+            Defaults to "".
+        rs_thr (float, optional): Running speed threshold (m/s) to include frames.
+            Defaults to 0.01.
+        param_range (dict, optional): Range of parameters for the fit.
+            Defaults to {"rs_min": 0.005, "rs_max": 5, "of_min": 0.03, "of_max": 3000}.
+        niter (int, optional): Number of iterations for stochastic fit optimization.
+            Defaults to 5.
+        min_sigma (float, optional): Minimum sigma value for the gaussian model.
+            Defaults to 0.25.
+        k_folds (int, optional): Number of folds for cross-validation. If > 1, the model
+            will be evaluated using cross-validation. Defaults to 1.
+        random_state (int, optional): Random state for cross-validation split.
+            Defaults to 42.
+        run_closedloop_only (bool, optional): Whether to fit only closed-loop protocols.
+            Defaults to False.
+        run_openloop_only (bool, optional): Whether to fit only open-loop protocols.
+            Defaults to False.
+        max_acc (float, optional): Maximum acceleration ratio threshold for frame
+            selection. Defaults to None.
+        max_rs2motor_diff (float, optional): Maximum absolute ratio of
+            (rs - motor_speed)/rs for frame selection. Defaults to None.
+
+    Returns:
+        pd.DataFrame: A dataframe containing the fitted parameters and performance
+            metrics (e.g., r-squared, spearman rho) for each ROI.
+    """
+
     def process_rs_of_for_fit(
         trials_df, trial_list=[], rs_thr=0.01, max_acc=None, max_rs2motor_diff=None
     ):
@@ -712,7 +762,7 @@ def fit_rs_of_tuning(
         depth_labels = np.concatenate(trials_df_part["depth_labels"].values)
 
         # choose frames that are above a certain running speed threshold
-        running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of))
+        running = (rs > rs_thr) & (rs_eye > rs_thr) & (~np.isnan(of)) & (of > 0)
         if max_acc is not None:
             acc = np.concatenate(trials_df_part["acceleration_ratio_max_stim"].values)
             running = running & (acc < max_acc)
@@ -1164,3 +1214,114 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25, extreme_dff=10):
     neurons_df["n_nonfinite_trials"] = n_nonfinite
     neurons_df["n_extreme_trials"] = n_extreme
     return neurons_df
+
+
+## UTILITIES
+# Small functions to interpret the fit parameters
+# Given that popt can be NaN if the fit fails, we need to handle this
+
+
+def get_gaussian_angle(popt):
+    """Calculate the angle of the major axis of the Gaussian.
+
+    This wraps the angle on the [-45, 135] range to avoid splitting cells with theta
+    along the RS axis between 0 and 180 degrees.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Angle in degrees.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 6:
+        return np.nan
+    log_sigma_x2 = popt[3]
+    log_sigma_y2 = popt[4]
+    theta = popt[5]
+    if log_sigma_x2 < log_sigma_y2:
+        angle = theta + np.pi / 2
+    else:
+        angle = theta
+    angle_deg = np.degrees(angle)
+    return (angle_deg + 45) % 180 - 45
+
+
+def get_gaussian_eccentricity(popt, min_sigma=0.25):
+    """Calculate the eccentricity of the Gaussian (1 - minor/major).
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Eccentricity value.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    # Log-variances (popt[3] and popt[4])
+    # The actual standard deviations used in the fit are sqrt(exp(log_sigma_i2) + min_sigma)
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+
+    # Major and minor axes
+    major = max(sigma_x, sigma_y)
+    minor = min(sigma_x, sigma_y)
+
+    # Eccentricity defined as 1 - (minor/major)
+    return 1 - (minor / major)
+
+
+def get_preferred_rs(popt):
+    """Calculate preferred running speed in cm/s.
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+
+    Returns:
+        float: Preferred RS in cm/s.
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 2:
+        return np.nan
+    # x0 (popt[1]) is log(RS) in m/s, convert to cm/s
+    return np.exp(popt[1]) * 100
+
+
+def get_semimajor_length(popt, min_sigma=0.25):
+    """Get the length of the semi-major axis
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Length of the semi-major axis
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    return max(sigma_x, sigma_y)
+
+
+def get_semiminor_length(popt, min_sigma=0.25):
+    """Get the length of the semi-major axis
+
+    Args:
+        popt (list or np.ndarray): Gaussian fit parameters.
+        min_sigma (float, optional): Minimum sigma value for the fit. Defaults to 0.25.
+
+    Returns:
+        float: Length of the semi-major axis
+    """
+    if not isinstance(popt, (list, np.ndarray)) or len(popt) < 5:
+        return np.nan
+    sigma_x = np.sqrt(np.exp(popt[3]) + min_sigma)
+    sigma_y = np.sqrt(np.exp(popt[4]) + min_sigma)
+    return min(sigma_x, sigma_y)
+
+
+# Imported last on purpose: common_utils -> find_depth_neurons -> size_control ->
+# spheres imports names from this module (fit_rs_of_tuning, Gabor3DRFParams, ...),
+# so every name must already be defined when that chain runs. Both modules are only
+# used inside functions, at call time.
+from cottage_analysis.analysis import common_utils, find_depth_neurons  # noqa: E402

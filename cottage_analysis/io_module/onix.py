@@ -1,5 +1,7 @@
 import warnings
 import os
+import json
+import logging
 from pathlib import Path
 from typing import Union
 import numpy as np
@@ -672,3 +674,87 @@ def load_npx_onix(
         raw_rec = spre.unsigned_to_signed(raw_rec, bit_depth=bit_depth)
 
     return raw_rec
+
+
+def export_onix_to_si(
+    data_directory,
+    output_directory,
+    bonsai_workflow="NpxData.bonsai",
+    suffix=0,
+    probe="ProbeA",
+    fs_hz=30000.0,
+    gain_to_uV=3.05176,
+    bit_depth=12,
+    return_signed=True,
+    verbose=False,
+):
+    """
+    Export ONIX Neuropixels data to a SpikeInterface binary folder.
+
+    Args:
+        data_directory (str or Path): Path to the raw data directory.
+        output_directory (str or Path): Path to save the SpikeInterface recording.
+        bonsai_workflow (str): Name of the .bonsai file.
+        suffix (int): Suffix for data files.
+        probe (str): "ProbeA" or "ProbeB".
+        fs_hz (float): Sampling frequency.
+        return_signed (bool): Whether to return signed voltage.
+        verbose (bool): Whether to print information.
+    """
+    logger = logging.getLogger(__name__)
+    if verbose:
+        logger.setLevel(logging.INFO)
+
+    data_directory = Path(data_directory)
+    output_directory = Path(output_directory)
+
+    logger.info(
+        f"Loading ONIX recording from {data_directory} (probe: {probe}, suffix: {suffix})"
+    )
+    recording = load_npx_onix(
+        data_directory=data_directory,
+        bonsai_workflow=bonsai_workflow,
+        suffix=suffix,
+        probe=probe,
+        fs_hz=fs_hz,
+        gain_to_uV=gain_to_uV,
+        bit_depth=bit_depth,
+        return_signed=return_signed,
+    )
+
+    logger.info(f"Saving SpikeInterface recording to {output_directory}")
+    recording.save(folder=output_directory, format="binary", overwrite=True)
+
+    # Determine binary path for the info file
+    binary_files = list(output_directory.glob("*.dat")) + list(
+        output_directory.glob("*.raw")
+    )
+    if not binary_files:
+        logger.warning("Could not find binary file in output directory after saving.")
+        binary_path = "SI_BINARY_FILE_MISSING"
+    else:
+        # Use relative path if possible, but absolute path is safer for the pipeline
+        binary_path = binary_files[0].name
+
+    info = {
+        "reader_type": "binary",
+        "reader_kwargs": {
+            "file_paths": [str((output_directory / binary_path).resolve())],
+            "sampling_frequency": fs_hz,
+            "num_channels": recording.get_num_channels(),
+            "dtype": str(recording.get_dtype()),
+            "gain_to_uV": float(recording.get_channel_gains()[0]),
+            "offset_to_uV": float(recording.get_channel_offsets()[0]),
+            "is_filtered": False,
+        },
+        "probe_paths": str((output_directory / "probe.json").resolve())
+        if (output_directory / "probe.json").exists()
+        else None,
+    }
+
+    info_path = output_directory / "spikeinterface_info.json"
+    with open(info_path, "w") as f:
+        json.dump(info, f, indent=4)
+
+    logger.info(f"Conversion complete. SpikeInterface info saved to {info_path}")
+    return recording, info_path

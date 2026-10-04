@@ -62,8 +62,8 @@ def sync_by_frame_alternating(
 
     # Get rid of framedrops
     photodiode_df["FramePeak"] = None
-    photodiode_df.FramePeak.iloc[high_peaks] = 1
-    photodiode_df.FramePeak.iloc[low_peaks] = 0
+    photodiode_df.loc[high_peaks, "FramePeak"] = 1
+    photodiode_df.loc[low_peaks, "FramePeak"] = 0
     frames_df = photodiode_df[photodiode_df.FramePeak.notnull()]
     frames_df = frames_df[frames_df.FramePeak.diff() != 0]
     frames_df["closest_frame"] = np.arange(len(frames_df))
@@ -795,10 +795,11 @@ def run_cross_correlation(
         # to find the match between photiodiode and frame log, we want to look at what
         # is the value of the lag-shifed sequence index in during the real frame.
         # The sync is made the closest computer frame log time
-        time_of_match = (
+        time_of_match = np.array(
             frame_log["ideal_switch_times"]
             .iloc[frames_df.closest_frame_log_index]
-            .values
+            .values,
+            copy=True,
         )
         # we remove the lag to frames_df instead of adding it to frame_log
         time_of_match -= frames_df["lag_%s" % which].values
@@ -1252,7 +1253,7 @@ def interpolate_sync(
         print(f"{np.sum(good_frames)}/{len(good_frames)} frames left for interpolation")
 
     # interpolate closest_frame
-    closest_frame = frames_df.closest_frame.values
+    closest_frame = np.copy(frames_df.closest_frame.values)
     out_of_order = 1
     while np.sum(out_of_order):
         goodi = np.where(good_frames)[0]

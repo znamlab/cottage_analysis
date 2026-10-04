@@ -247,15 +247,22 @@ def get_psth_crossval_all_sessions(
                 allow_multiple=False,
                 return_dataseries=False,
             )
-            iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
-            neurons_df["iscell"] = iscell
+            if "annotated" in suite2p_ds.full_name:
+                iscell = np.ones(len(neurons_df))
+            else:
+                iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
+            neurons_df.loc[:, "iscell"] = iscell
             neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
 
             # Calculate dff psth crossval
             # Get the responses for this session that are not included for calculating the cross-validated preferred depth
             choose_trials_resp = list(
-                set(neurons_df.depth_tuning_trials_closedloop.iloc[0])
-                - set(neurons_df.depth_tuning_trials_closedloop_crossval.iloc[0])
+                set(neurons_df.depth_tuning_trials_closedloop.mode()[0].tolist())
+                - set(
+                    neurons_df.depth_tuning_trials_closedloop_crossval.mode()[
+                        0
+                    ].tolist()
+                )
             )
             trials_df_resp, _, _ = common_utils.choose_trials_subset(
                 trials_df, choose_trials_resp, by_depth=True

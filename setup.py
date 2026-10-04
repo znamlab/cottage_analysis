@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="cottage_analysis",
-    version="v2.0.4",
+    version="v2.1.0",
     packages=find_packages(),
     url="https://github.com/znamlab/cottage_analysis",
     license="MIT",
@@ -32,8 +32,8 @@ setup(
         "lxml",
         "pyarrow",
         "fastparquet",
+        "seaborn",
         "flexiznam @ git+ssh://git@github.com/znamlab/flexiznam.git",
         "znamutils @ git+ssh://git@github.com/znamlab/znamutils.git",
-        "floras_helpers @ git+ssh://git@github.com/takacsflora/floras-helpers.git",
     ],
 )

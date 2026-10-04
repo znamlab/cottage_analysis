@@ -61,17 +61,22 @@ def main(
         slurm_folder.mkdir(exist_ok=True)
     else:
         slurm_folder = None
-    filter_datasets = {}
+    filter_rois = {}
     if anatomical_only:
         print("Only using anatomical datasets...")
-        filter_datasets["anatomical_only"] = 3
+        filter_rois["anatomical_only"] = 3
     if use_annotated:
-        filter_datasets["annotated"] = True
+        filter_rois["annotated"] = True
+        exclude_datasets = None
+    else:
+        exclude_datasets = {"annotated": True}
+    # Traces can be filtered by the same attributes as rois but have ASt too
+    filter_traces = dict(**filter_rois)
     if ast_neuropil:
         print("Using ASt neuropil correction...")
-        filter_datasets["ast_neuropil"] = True
+        filter_traces["ast_neuropil"] = True
     else:
-        filter_datasets["ast_neuropil"] = False
+        filter_traces["ast_neuropil"] = False
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -100,7 +105,8 @@ def main(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=project,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
+            exclude_datasets=exclude_datasets,
             conflicts=conflicts,
             recording_type="two_photon",
             photodiode_protocol=photodiode_protocol,
@@ -111,7 +117,8 @@ def main(
             session_name=session_name,
             flexilims_session=flexilims_session,
             project=project,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
+            exclude_datasets=exclude_datasets,
             conflicts=conflicts,
             recording_type="two_photon",
             protocol_base=protocol_base,
@@ -147,13 +154,40 @@ def main(
             flexilims_session=flexilims_session,
         )
 
+    # Check that neurons_df matches the number of ROIs in traces
+    if len(trials_df_all) > 0 and "dff_stim" in trials_df_all.columns:
+        nrois = trials_df_all.dff_stim.iloc[0].shape[1]
+        if neurons_df is not None and len(neurons_df) != nrois:
+            print(
+                f"   WARNING: neurons_df has {len(neurons_df)} ROIs, but traces have {nrois} ROIs."
+            )
+            print(
+                f"   Re-initializing neurons_df to match traces (overwriting previous state)."
+            )
+            neurons_df = None
+
+        if neurons_df is None:
+            print(f"   Initializing neurons_df with {nrois} ROIs.")
+            neurons_df = pd.DataFrame({"roi": np.arange(nrois)})
+
+        # Enforce that index and ROI array positions match perfectly
+        neurons_df.index = np.arange(len(neurons_df), dtype=int)
+        print(
+            f"   Saving neurons_df (ensuring 0-based contiguous index) to {neurons_ds.path_full}"
+        )
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
+        neurons_df.to_pickle(neurons_ds.path_full)
+    else:
+        print("   WARNING: No trials or traces found to verify ROI count.")
+
     suite2p_datasets = flz.get_datasets(
         origin_name=session_name,
         dataset_type="suite2p_rois",
         project_id=project,
         flexilims_session=flexilims_session,
         return_dataseries=False,
-        filter_datasets=filter_datasets,
+        filter_datasets=filter_rois,
+        exclude_datasets=exclude_datasets,
     )
     suite2p_dataset = suite2p_datasets[0]
     frame_rate = suite2p_dataset.extra_attributes["fs"]
@@ -163,6 +197,12 @@ def main(
         run_depth_fit = False
         run_rsof_fit = False
 
+    # Treadmill only parameter
+    max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
+    if protocol_base == "SpheresTubeMotor":
+        special_sfx_base = "_treadmill"
+    else:
+        special_sfx_base = ""
     if run_depth_fit:
         # finished = pipeline_utils.save_finish_time(finished,
         # col="depth_fit_started")
@@ -173,12 +213,9 @@ def main(
             "min_sigma": 0.5,
         }
         if protocol_base == "SpheresTubeMotor":
-            special_sfx_base = "_treadmill"
             # With treadmill, depth min and max can be lot smaller/larger
             depth_fit_params["depth_max"] = np.ceil(trials_df_all.depth.max())
             depth_fit_params["depth_min"] = np.round(trials_df_all.depth.min(), 4)
-        else:
-            special_sfx_base = ""
 
         # Find depth neurons and fit preferred depth
         print("---Start finding depth neurons...---")
@@ -190,6 +227,7 @@ def main(
             rs_thr=None,
             alpha=0.05,
             special_sfx=special_sfx_base,
+            max_rs2motor_diff=max_rs2motor_diff,
         )
 
         print("Fit preferred depth...")
@@ -221,6 +259,7 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # Find preferred depth of closed loop with half the data for plotting
@@ -242,6 +281,7 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=1,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
             # Find r-squared of k-fold cross validation
@@ -262,10 +302,18 @@ def main(
                 min_sigma=depth_fit_params["min_sigma"],
                 k_folds=5,
                 special_sfx=special_sfx + special_sfx_base,
+                max_rs2motor_diff=max_rs2motor_diff,
             )
 
         # Save neurons_df
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
+        # Save a copy with special_sfx_base in the name
+        target_file = neurons_ds.path_full.with_name(
+            f"neurons_df_for_depthfit{special_sfx_base}.pickle"
+        )
+        print(f"Saving separate depth tuning fitting files in {target_file}...")
+        neurons_df.to_pickle(target_file)
 
         # Update neurons_ds on flexilims
         neurons_ds.update_flexilims(mode="update")
@@ -288,7 +336,8 @@ def main(
                 session_name=session_name,
                 flexilims_session=flexilims_session,
                 project=None,
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_traces,
+                exclude_datasets=exclude_datasets,
                 recording_type="two_photon",
                 is_closedloop=is_closedloop,
                 is_multidepth=is_multidepth,
@@ -333,7 +382,9 @@ def main(
             )
 
             if not run_depth_fit:
-                neurons_df = pd.read_pickle(neurons_ds.path_full)
+                assert (
+                    len(neurons_df) == coef.shape[2]
+                ), f"neurons_df count {len(neurons_df)} does not match coef count {coef.shape[2]}"
             for col in [
                 f"rf_coef{sfx}",
                 f"rf_rsq{sfx}",
@@ -342,16 +393,39 @@ def main(
             ]:
                 neurons_df[col] = [[np.nan]] * len(neurons_df)
 
+            # Enforce that index and ROI array positions match perfectly
+            assert np.all(np.diff(neurons_df.index) == 1), "Index is not contiguous"
+            assert neurons_df.index[0] == 0, "Index does not start at 0"
+
             for i, _ in neurons_df.iterrows():
-                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i]
-                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i]
-                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :]
-                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :]
+                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i].copy()
+                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i].copy()
+                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :].copy()
+                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :].copy()
                 neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
+        # Fit RF preferred depth using Gaussian fit across depths
+        from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
+
+        depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+        print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
+        fit_rf_preferred_depth(
+            neurons_df,
+            depths=depth_list,
+            is_closed_loop=1,
+            use_multidepth=is_multidepth,
+        )
+
         # Save neurons_df
+        assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
         neurons_df.to_pickle(neurons_ds.path_full)
+        # Also save a copy with special_sfx_base in the name
+        target_file = neurons_ds.path_full.with_name(
+            f"neurons_df_for_rf{special_sfx_base}.pickle"
+        )
+        print(f"Saving separate RF tuning fitting files in {target_file}...")
+        neurons_df.to_pickle(target_file)
 
         # Update neurons_ds on flexilims
         # neurons_ds.update_flexilims(mode="update")
@@ -362,7 +436,6 @@ def main(
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
         special_sfx_base = "_treadmill" if protocol_base == "SpheresTubeMotor" else ""
-        max_rs2motor_diff = 0.3 if protocol_base == "SpheresTubeMotor" else None
         common_params = dict(
             rs_thr=0.01,
             param_range={
@@ -390,6 +463,8 @@ def main(
             ("gaussian_ratio", None, 5),
             ("gaussian_RS", None, 1),
             ("gaussian_RS", None, 5),
+            ("gaussian_multiplicative", None, 1),
+            ("gaussian_multiplicative", None, 5),
         ]
 
         for model, trials, k_folds in to_do:
@@ -408,7 +483,7 @@ def main(
                 slurm_folder=slurm_folder,
                 scripts_name=name,
                 k_folds=k_folds,
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_traces,
                 protocol_base=protocol_base,
                 **common_params,
             )
@@ -448,7 +523,7 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
+            exclude_keywords=["recording", "openclosed"],
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
@@ -470,7 +545,7 @@ def main(
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             job_dependency=job_dependency,
-            filter_datasets=filter_datasets,
+            filter_datasets=filter_traces,
             scripts_name=f"{session_name}_basic_vis_plots",
         )
         print("---Plotting finished. ---")
