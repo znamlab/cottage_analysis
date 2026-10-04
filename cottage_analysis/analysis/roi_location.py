@@ -4,15 +4,8 @@ from sklearn.linear_model import HuberRegressor
 import flexiznam as flz
 from matplotlib import pyplot as plt
 import numpy as np
+import pandas as pd
 from cottage_analysis.analysis import common_utils
-
-
-def find_roi_centers(neurons_df, stat):
-    for roi in neurons_df.roi:
-        ypix = stat[roi]["ypix"][~stat[roi]["overlap"]]
-        xpix = stat[roi]["xpix"][~stat[roi]["overlap"]]
-        neurons_df.at[roi, "center_x"] = np.mean(xpix)
-        neurons_df.at[roi, "center_y"] = np.mean(ypix)
 
 
 def align_across_mice(neurons_df, ref_mouse="PZAH10.2d"):
@@ -106,17 +99,41 @@ def load_overview_roi(flexilims_session, session):
 
 
 def find_roi_centers(neurons_df, stat):
-    for roi in neurons_df.roi:
-        ypix = stat[roi]["ypix"][~stat[roi]["overlap"]]
-        xpix = stat[roi]["xpix"][~stat[roi]["overlap"]]
-        neurons_df.at[roi, "center_x"] = np.mean(xpix)
-        neurons_df.at[roi, "center_y"] = np.mean(ypix)
+    """Add the centre of each ROI, in FOV pixels, to neurons_df in place.
+
+    The centre is the mean position of the ROI pixels that do not overlap other
+    ROIs. ROIs that are NaN or not in `stat` are skipped and keep their existing
+    centre, NaN if the columns did not exist.
+
+    Args:
+        neurons_df (pd.DataFrame): dataframe with a `roi` column of suite2p ROI
+            indices. `center_x` and `center_y` columns are added if missing.
+        stat (np.ndarray): suite2p `stat.npy` array, one dict per ROI.
+    """
+    if "center_x" not in neurons_df.columns:
+        neurons_df["center_x"] = np.nan
+    if "center_y" not in neurons_df.columns:
+        neurons_df["center_y"] = np.nan
+    for idx, roi in zip(neurons_df.index, neurons_df.roi):
+        if pd.isna(roi):
+            continue
+        roi_int = int(roi)
+        if roi_int < 0 or roi_int >= len(stat):
+            continue
+        ypix = stat[roi_int]["ypix"][~stat[roi_int]["overlap"]]
+        xpix = stat[roi_int]["xpix"][~stat[roi_int]["overlap"]]
+        neurons_df.loc[idx, "center_x"] = np.mean(xpix)
+        neurons_df.loc[idx, "center_y"] = np.mean(ypix)
 
 
-def determine_roi_locations(neurons_df, flexilims_session, session, suite2p_ds, filter_datasets):
+def determine_roi_locations(
+    neurons_df, flexilims_session, session, suite2p_ds, filter_datasets
+):
     stat = np.load(suite2p_ds.path_full / "plane0" / "stat.npy", allow_pickle=True)
     ops = np.load(suite2p_ds.path_full / "plane0" / "ops.npy", allow_pickle=True).item()
-    si_metadata = common_utils.get_si_metadata(flexilims_session, session, filter_datasets)
+    si_metadata = common_utils.get_si_metadata(
+        flexilims_session, session, filter_datasets
+    )
     if "FrameData" in si_metadata.keys():
         neurons_df["z_position"] = si_metadata["FrameData"][
             "SI.hMotors.samplePosition"
