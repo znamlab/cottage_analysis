@@ -5,6 +5,7 @@ import flexiznam as flz
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy.stats
 from cottage_analysis.analysis import common_utils
 
 
@@ -152,3 +153,48 @@ def determine_roi_locations(
         neurons_df["overview_y"] = (
             neurons_df["center_y"] / ops["Ly"] * fov_height + fov[0]
         )
+
+
+def spatial_gradient(x, y, values, n_perm=10000, seed=0):
+    """Fit a linear gradient of `values` over 2D position and test its significance.
+
+    Fits values ~ x + y jointly by least squares. Significance comes from the OLS
+    F-test and from a permutation test that shuffles values across positions.
+    Both assume independent observations, so for neighbouring cells, which are
+    spatially correlated, the p-values are optimistic.
+
+    Args:
+        x (np.ndarray): x position of each observation, e.g. neurons_df.center_x.
+        y (np.ndarray): y position of each observation, e.g. neurons_df.center_y.
+        values (np.ndarray): value at each position. Non-finite values are dropped.
+        n_perm (int): number of permutations. Defaults to 10000.
+        seed (int): seed for the permutations. Defaults to 0.
+
+    Returns:
+        dict: n (observations used), slope_x and slope_y (value units per position
+            unit), magnitude (norm of the slopes), direction (degrees,
+            atan2(slope_y, slope_x)), r2, pval_f (F-test) and pval_perm.
+    """
+    x, y, values = (np.asarray(a, dtype=float) for a in (x, y, values))
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(values)
+    X = np.column_stack([np.ones(ok.sum()), x[ok], y[ok]])
+    v = values[ok]
+    n = len(v)
+    rng = np.random.default_rng(seed)
+    # Column 0 is the data, the others its permutations, so one lstsq fits them all
+    V = np.column_stack([v] + [rng.permutation(v) for _ in range(n_perm)])
+    coefs = np.linalg.lstsq(X, V, rcond=None)[0]
+    resid = V - X @ coefs
+    r2 = 1 - np.sum(resid**2, axis=0) / np.sum((v - v.mean()) ** 2)
+    f_stat = (r2[0] / 2) / ((1 - r2[0]) / (n - 3))
+    slope_x, slope_y = coefs[1:, 0]
+    return dict(
+        n=n,
+        slope_x=slope_x,
+        slope_y=slope_y,
+        magnitude=np.hypot(slope_x, slope_y),
+        direction=np.degrees(np.arctan2(slope_y, slope_x)),
+        r2=r2[0],
+        pval_f=scipy.stats.f.sf(f_stat, 2, n - 3),
+        pval_perm=(np.sum(r2[1:] >= r2[0]) + 1) / (n_perm + 1),
+    )
