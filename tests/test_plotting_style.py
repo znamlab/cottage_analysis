@@ -138,3 +138,31 @@ def test_setup_figure_fonts_does_not_raise_on_a_missing_dir():
     assert matplotlib.rcParams["font.family"] == ["Arial"]
     assert matplotlib.rcParams["svg.fonttype"] == "none"
     assert matplotlib.rcParams["pdf.fonttype"] == 42
+
+
+def test_density_scatter_linear_and_log_and_nan_filtering(tmp_path):
+    """density_scatter sorts points by density, supports log scaling, and drops NaNs."""
+    import numpy as np
+    from matplotlib.colors import LogNorm
+    from cottage_analysis.plotting import density_scatter
+
+    rng = np.random.default_rng(0)
+    x, y = rng.multivariate_normal([0, 0], [[2.0, 1.2], [1.2, 1.0]], size=500).T
+    x_with_nan = np.append(x, [np.nan, np.inf])
+    y_with_nan = np.append(y, [0.0, np.nan])
+
+    fig, axes = plt.subplots(1, 2, figsize=(6, 2.5))
+    sc_lin = density_scatter(x_with_nan, y_with_nan, ax=axes[0], bins=30, log=False)
+    sc_log = density_scatter(x_with_nan, y_with_nan, ax=axes[1], bins=30, log=True)
+
+    # NaN / inf points are dropped
+    assert sc_lin.get_offsets().shape == (500, 2)
+    # Densest points are drawn last (monotonically non-decreasing colour array)
+    c_vals = sc_lin.get_array()
+    assert np.all(np.diff(c_vals) >= 0)
+    assert sc_lin.get_rasterized() is True
+    assert isinstance(sc_log.norm, LogNorm)
+
+    out_svg = style.savefig(tmp_path / "density_scatter.svg", fig=fig)
+    plt.close(fig)
+    assert out_svg.exists()
