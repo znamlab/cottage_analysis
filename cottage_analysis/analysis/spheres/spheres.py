@@ -536,6 +536,7 @@ def regenerate_frames_all_recordings(
     do_regenerate_frames=True,
     time_offset=0.0,
     verbose=True,
+    add_spikes=False,
 ):
     """Concatenate regenerated frames for all recordings in a session.
 
@@ -571,6 +572,8 @@ def regenerate_frames_all_recordings(
             which the stimulus is reconstructed, e.g. to sample within the frame.
             Defaults to 0.
         verbose (bool): if True, print progress. Defaults to True.
+        add_spikes (bool): if True, also load the suite2p spikes in imaging_df.spks.
+            Defaults to False.
 
     Returns:
         (np.array, pd.DataFrame): tuple, one concatenated regenerated frames for all
@@ -627,6 +630,7 @@ def regenerate_frames_all_recordings(
             return_volumes,
             ephys_kwargs,
             verbose=True,
+            add_spikes=add_spikes,
         )
 
         # Regenerate frames for this trial
