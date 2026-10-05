@@ -658,6 +658,7 @@ def regenerate_frames_all_recordings(
     ephys_kwargs=None,
     add_spikes=False,
     do_regenerate_frames=True,
+    time_offset=0.0,
     verbose=True,
 ):
     """Concatenate regenerated frames for all recordings in a session.
@@ -691,6 +692,9 @@ def regenerate_frames_all_recordings(
             `return_multiunit` or `exp_sd` for instance. Defaults to None.
         add_spikes (bool): if True, add spikes to trials_df for two_photon recordings. Defaults to False.
         do_regenerate_frames (bool): if True, regenerate frames. Defaults to True.
+        time_offset (float): time in seconds added to the imaging frame times at
+            which the stimulus is reconstructed, e.g. to sample within the frame.
+            Defaults to 0.
         verbose (bool): if True, print progress. Defaults to True.
 
     Returns:
@@ -768,7 +772,7 @@ def regenerate_frames_all_recordings(
             else:
                 separate_depth = None
             frames = regenerate_frames(
-                frame_times=imaging_df.imaging_harptime,
+                frame_times=imaging_df.imaging_harptime + time_offset,
                 trials_df=trials_df,
                 vs_df=vs_df,
                 param_logger=param_log,
