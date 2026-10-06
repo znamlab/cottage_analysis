@@ -616,6 +616,7 @@ def fit_rs_of_tuning(
     max_rs2motor_diff=None,
     min_valid_frames=None,
     trial_average=False,
+    use_col="dffs",
 ):
     """Fit running speed and optic flow tuning with a specified model.
 
@@ -632,7 +633,7 @@ def fit_rs_of_tuning(
         trials_df (pd.DataFrame): Dataframe containing trial information, including:
             - RS_stim: Actual running speed.
             - OF_stim: Optic flow speed.
-            - dff_stim: Delta F/F neural responses.
+            - dff_stim: Delta F/F neural responses (or spks_stim, see `use_col`).
             - depth_labels: Labels for each depth.
             - closed_loop: Boolean indicating closed-loop vs open-loop protocols.
         model (str, optional): Model name to fit. One of "gaussian_2d",
@@ -666,11 +667,14 @@ def fit_rs_of_tuning(
             trial to include it in the fit. Defaults to None.
         trial_average (bool, optional): Whether to fit on trial-averaged responses
             (one sample per trial) instead of per-frame responses. Defaults to False.
+        use_col (str, optional): response to fit, "dffs" (dF/F, `dff_stim`) or "spks"
+            (suite2p spikes, `spks_stim`). Defaults to "dffs".
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
             metrics (e.g., r-squared, spearman rho) for each ROI.
     """
+    resp_col = {"dffs": "dff_stim", "spks": "spks_stim"}[use_col]
 
     def process_rs_of_for_fit(
         trials_df,
@@ -699,7 +703,7 @@ def fit_rs_of_tuning(
             trial_rs = trial["RS_stim"]
             trial_rs_eye = trial["RS_eye_stim"]
             trial_of = trial["OF_stim"]
-            trial_dff = trial["dff_stim"]
+            trial_dff = trial[resp_col]
             trial_depth_labels = trial["depth_labels"]
 
             # choose frames that are above a certain running speed threshold
@@ -743,7 +747,7 @@ def fit_rs_of_tuning(
                 depth_labels_list.append(np.array(trial_depth_labels)[running])
 
         if len(rs_list) == 0:
-            n_rois = trials_df["dff_stim"].iloc[0].shape[1]
+            n_rois = trials_df[resp_col].iloc[0].shape[1]
             return (
                 np.array([]),
                 np.array([]),
@@ -779,7 +783,7 @@ def fit_rs_of_tuning(
 
     # initialize neurons_df with columns for ROI number
     neurons_df_temp = pd.DataFrame(
-        columns=["roi"], data=np.arange(trials_df["dff_stim"].iloc[0].shape[1])
+        columns=["roi"], data=np.arange(trials_df[resp_col].iloc[0].shape[1])
     )
 
     # Choose trials

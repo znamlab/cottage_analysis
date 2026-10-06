@@ -175,6 +175,7 @@ def load_session(
     recording_type="two_photon",
     ephys_kwargs=None,
     tread_kwargs=None,
+    add_spikes=False,
 ):
     """Load data from a single session.
 
@@ -199,6 +200,8 @@ def load_session(
             `treadmill.sync_all_recordings` (e.g. `acceleration_time`, `method`,
             `margin`, `cut_trial_end`, `trial_duration`). Only used when
             `protocol_base == "SpheresTubeMotor"`. Defaults to None.
+        add_spikes (bool, optional): if True, also load the suite2p spikes in
+            trials_df_all (`spks_stim` etc.). Defaults to False.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -236,6 +239,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
+            add_spikes=add_spikes,
             **(tread_kwargs or {}),
         )
     else:
@@ -250,6 +254,7 @@ def load_session(
             photodiode_protocol=photodiode_protocol,
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
+            add_spikes=add_spikes,
         )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
@@ -307,6 +312,7 @@ def load_and_fit(
     trial_average=False,
     min_valid_frames=None,
     tread_kwargs=None,
+    use_col="dffs",
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -365,6 +371,8 @@ def load_and_fit(
         tread_kwargs (dict, optional): additional kwargs for
             `treadmill.sync_all_recordings`, forwarded to `load_session`. Only used
             when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
+        use_col (str, optional): response to fit, "dffs" (dF/F) or "spks" (suite2p
+            spikes). Defaults to "dffs".
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -391,6 +399,7 @@ def load_and_fit(
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
         tread_kwargs=tread_kwargs,
+        add_spikes=use_col == "spks",
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -419,6 +428,7 @@ def load_and_fit(
         max_acc=max_acc,
         trial_average=trial_average,
         min_valid_frames=min_valid_frames,
+        use_col=use_col,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(

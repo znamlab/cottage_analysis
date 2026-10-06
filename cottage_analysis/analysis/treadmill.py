@@ -199,6 +199,7 @@ def sync_all_recordings(
     sim_tau_rise=0.15,
     sim_make_circular=True,
     sim_kernel_normalization="area",
+    add_spikes=False,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -250,6 +251,8 @@ def sync_all_recordings(
         sim_kernel_normalization (str, optional): "max" to normalize the calcium
             kernel's peak to 1, or "area" to normalize its sum (unit gain) to 1.
             Defaults to "area".
+        add_spikes (bool, optional): if True, also load the suite2p spikes (adds
+            `spks_stim` etc. to trials_df). Two-photon only. Defaults to False.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -302,6 +305,7 @@ def sync_all_recordings(
                 filter_datasets=filter_datasets,
                 exclude_datasets=exclude_datasets,
                 return_volumes=return_volumes,
+                add_spikes=add_spikes,
             )
         else:
             imaging_df, unit_ids = synchronisation.generate_spike_rate_df(
@@ -347,7 +351,7 @@ def sync_all_recordings(
         )
 
         trials_df = spheres.generate_trials_df(
-            recording=recording, imaging_df=imaging_df
+            recording=recording, imaging_df=imaging_df, add_spikes=add_spikes
         )
 
         # Slice the continuous simulated trace correctly into the cropped trials
