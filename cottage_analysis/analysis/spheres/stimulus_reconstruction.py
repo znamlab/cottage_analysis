@@ -1,7 +1,5 @@
 from functools import partial
 import numpy as np
-
-from cottage_analysis.analysis.spheres.rf_fitting import find_valid_frames
 from tqdm import tqdm
 
 print = partial(print, flush=True)
@@ -96,6 +94,46 @@ def draw_spheres(
     # When plotting output, the origin (for lowest azimuth and elevation) is at lower left
     frame = np.any(ok, axis=1).reshape((ele_n, azi_n))
     return frame, np.sum(in_screen)
+
+
+def find_valid_frames(frame_times, trials_df, verbose=True):
+    """Find frame numbers that are valid (not gray period, or not before or after the
+    imaging frames) and used for regenerating sphere stimuli.
+
+    Args:
+        frame_times (np.array): Array of time at which the frame should be regenerated
+        trials_df (pd.DataFrame): Dataframe contains information for each trial.
+        verbose (bool, optional): Print information. Defaults to True.
+
+    Returns:
+        frame_indices (np.array): Array of valid frame indices.
+    """
+    # for frames before and after the protocol, keep them 0s
+    before = frame_times < trials_df.imaging_harptime_stim_start.iloc[0]
+    after = frame_times > trials_df.imaging_harptime_stim_stop.iloc[-1]
+    if verbose:
+        print(
+            "Ignoring %d frames before and %d after the stimulus presentation"
+            % (np.sum(before), np.sum(after))
+        )
+    valid_frames = ~before & ~after
+
+    trial_index = (
+        trials_df.imaging_harptime_stim_start.searchsorted(frame_times, side="right")
+        - 1
+    )
+    trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
+    trial_end = trials_df["imaging_harptime_stim_stop"].iloc[trial_index].values
+    grey_time = frame_times - trial_end > 0
+    if verbose:
+        print(
+            "Ignoring %d frames in grey inter-trial intervals"
+            % np.sum(grey_time & valid_frames)
+        )
+    valid_frames = valid_frames & (~grey_time)
+    frame_indices = np.where(valid_frames)[0]
+
+    return frame_indices
 
 
 def regenerate_frames(

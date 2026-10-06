@@ -52,3 +52,17 @@ def test_trial_with_bad_offset_is_dropped_not_merged():
     # jitter check and must be excluded, not merged with the third trial
     trials = find_trials(make_param_log(late_offset=(20, 1, 3)))
     np.testing.assert_allclose(trials, [TRIALS[0], TRIALS[2], TRIALS[3]])
+
+
+def test_trial_index_rf_use_frame_keeps_trial_ids():
+    import pandas as pd
+    from cottage_analysis.analysis.spheres import rf_fitting
+
+    df = pd.DataFrame({"stim": [0, 1, 1, 1, 0, 1, 1, 0]})
+    full = rf_fitting._trial_index(df)
+    df["rf_use_frame"] = [True, True, False, True, True, False, True, True]
+    masked = rf_fitting._trial_index(df)
+    np.testing.assert_array_equal(
+        masked, [np.nan, 1, np.nan, 1, np.nan, np.nan, 2, np.nan]
+    )
+    assert np.all(np.isnan(masked) | (masked == full))

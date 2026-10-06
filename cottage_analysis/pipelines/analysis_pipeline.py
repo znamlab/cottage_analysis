@@ -32,6 +32,140 @@ def treadmill_special_sfx(protocol_base, tread_method="plateau"):
     return "_treadmill" if tread_method == "plateau" else f"_treadmill_{tread_method}"
 
 
+def fit_session_rfs(
+    neurons_df,
+    trials_df_all,
+    session_name,
+    flexilims_session,
+    filter_traces,
+    protocol_base="SpheresPermTubeReward",
+    photodiode_protocol=5,
+    check_nrois=True,
+    use_col="dffs",
+):
+    """RF fits of one session, as in the analysis pipeline.
+
+    For each closed-loop / open-loop condition of the session, regenerates the sphere
+    stimulus, fits the contra RFs with hyperparameter tuning and the ipsi RFs at the
+    same hyperparameters, writes the `rf_*{sfx}` columns of neurons_df, then fits the
+    RF preferred depth.
+
+    Args:
+        neurons_df (pd.DataFrame): neurons_df of the session (modified in place).
+        trials_df_all (pd.DataFrame): trials_df of the session.
+        session_name (str): {mouse}_{session}.
+        flexilims_session: flexilims session.
+        filter_traces (dict): filter for the suite2p_traces datasets.
+        protocol_base (str): protocol base name. Defaults to "SpheresPermTubeReward".
+        photodiode_protocol (int): 2 or 5. Defaults to 5.
+        check_nrois (bool): check that neurons_df has one row per ROI. Defaults to True.
+        use_col (str): response used for the fits, "dffs" or "spks" (suite2p spikes).
+            Defaults to "dffs".
+
+    Returns:
+        pd.DataFrame: neurons_df with the RF columns.
+    """
+    is_multidepth = "multidepth" in protocol_base
+    for is_closedloop in trials_df_all["closed_loop"].unique():
+        if is_closedloop:
+            sfx = "_closedloop"
+        else:
+            sfx = "_openloop"
+        if is_multidepth:
+            sfx += "_multidepth"
+
+        frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=None,
+            filter_datasets=filter_traces,
+            recording_type="two_photon",
+            is_closedloop=is_closedloop,
+            is_multidepth=is_multidepth,
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+            verbose=False,
+            resolution=5,
+            add_spikes=use_col == "spks",
+        )
+
+        print(f"Fitting RF{sfx}...")
+        (
+            coef,
+            r2,
+            best_reg_xys,
+            best_reg_depths,
+        ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
+            imaging_df_all,
+            frames_all[..., int(frames_all.shape[-1] // 2) :],
+            reg_xys=rf_fitting.DEFAULT_REG_GRID,
+            reg_depths=rf_fitting.DEFAULT_REG_GRID,
+            shift_stim=2,
+            use_col=use_col,
+            k_folds=5,
+        )
+
+        print("Fitting ipsi RF...")
+        (
+            coef_ipsi,
+            r2_ipsi,
+        ) = rf_fitting.fit_3d_rfs_ipsi(
+            imaging_df_all,
+            frames_all[..., : int(frames_all.shape[-1] // 2)],
+            best_reg_xys,
+            best_reg_depths,
+            shift_stim=2,
+            use_col=use_col,
+            k_folds=5,
+        )
+
+        if check_nrois:
+            assert (
+                len(neurons_df) == coef.shape[2]
+            ), f"neurons_df count {len(neurons_df)} does not match coef count {coef.shape[2]}"
+        for col in [
+            f"rf_coef{sfx}",
+            f"rf_rsq{sfx}",
+            f"rf_coef_ipsi{sfx}",
+            f"rf_rsq_ipsi{sfx}",
+        ]:
+            neurons_df[col] = [[np.nan]] * len(neurons_df)
+
+        # Enforce that index and ROI array positions match perfectly
+        assert np.all(np.diff(neurons_df.index) == 1), "Index is not contiguous"
+        assert neurons_df.index[0] == 0, "Index does not start at 0"
+
+        for i, _ in neurons_df.iterrows():
+            neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i].copy()
+            neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i].copy()
+            neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :].copy()
+            neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :].copy()
+            neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
+            neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
+
+    # Fit RF preferred depth using Gaussian fit across depths
+    from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
+
+    if is_multidepth:
+        # trials_df.depth is the radius of the sphere logged at trial start, which
+        # is negative for sphere removals. Use the depths of the RF frames.
+        depth_list = np.sort(
+            imaging_df_all.depth[imaging_df_all.depth > 0].unique()
+        ).tolist()
+        assert len(depth_list) == frames_all.shape[0]
+    else:
+        depth_list = find_depth_neurons.find_depth_list(trials_df_all)
+    print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
+    fit_rf_preferred_depth(
+        neurons_df,
+        depths=depth_list,
+        is_closed_loop=1,
+        use_multidepth=is_multidepth,
+    )
+    return neurons_df
+
+
 def main(
     project,
     session_name,
@@ -342,104 +476,15 @@ def main(
         print("---RF analysis...---")
         # finished = pipeline_utils.save_finish_time(finished, col="rf_started")
         print("Generating sphere stimuli...")
-        for is_closedloop in trials_df_all["closed_loop"].unique():
-            if is_closedloop:
-                sfx = "_closedloop"
-            else:
-                sfx = "_openloop"
-            if is_multidepth:
-                sfx += "_multidepth"
-
-            frames_all, imaging_df_all = spheres.regenerate_frames_all_recordings(
-                session_name=session_name,
-                flexilims_session=flexilims_session,
-                project=None,
-                filter_datasets=filter_traces,
-                recording_type="two_photon",
-                is_closedloop=is_closedloop,
-                is_multidepth=is_multidepth,
-                protocol_base=protocol_base,
-                photodiode_protocol=photodiode_protocol,
-                return_volumes=True,
-                verbose=False,
-                resolution=5,
-            )
-
-            print(f"Fitting RF{sfx}...")
-            (
-                coef,
-                r2,
-                best_reg_xys,
-                best_reg_depths,
-            ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
-                imaging_df_all,
-                frames_all[..., int(frames_all.shape[-1] // 2) :],
-                reg_xys=np.geomspace(2.5, 10240, 13),
-                reg_depths=np.geomspace(2.5, 10240, 13),
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                tune_separately=True,
-                validation=False,
-            )
-
-            print("Fitting ipsi RF...")
-            (
-                coef_ipsi,
-                r2_ipsi,
-            ) = rf_fitting.fit_3d_rfs_ipsi(
-                imaging_df_all,
-                frames_all[..., : int(frames_all.shape[-1] // 2)],
-                best_reg_xys,
-                best_reg_depths,
-                shift_stim=2,
-                use_col="dffs",
-                k_folds=5,
-                validation=False,
-            )
-
-            if not run_depth_fit:
-                assert (
-                    len(neurons_df) == coef.shape[2]
-                ), f"neurons_df count {len(neurons_df)} does not match coef count {coef.shape[2]}"
-            for col in [
-                f"rf_coef{sfx}",
-                f"rf_rsq{sfx}",
-                f"rf_coef_ipsi{sfx}",
-                f"rf_rsq_ipsi{sfx}",
-            ]:
-                neurons_df[col] = [[np.nan]] * len(neurons_df)
-
-            # Enforce that index and ROI array positions match perfectly
-            assert np.all(np.diff(neurons_df.index) == 1), "Index is not contiguous"
-            assert neurons_df.index[0] == 0, "Index does not start at 0"
-
-            for i, _ in neurons_df.iterrows():
-                neurons_df.at[i, f"rf_coef{sfx}"] = coef[:, :, i].copy()
-                neurons_df.at[i, f"rf_coef_ipsi{sfx}"] = coef_ipsi[:, :, i].copy()
-                neurons_df.at[i, f"rf_rsq{sfx}"] = r2[i, :].copy()
-                neurons_df.at[i, f"rf_rsq_ipsi{sfx}"] = r2_ipsi[i, :].copy()
-                neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
-                neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
-
-        # Fit RF preferred depth using Gaussian fit across depths
-        from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
-
-        if is_multidepth:
-            # trials_df.depth is the radius of the sphere logged at trial start, which
-            # is negative for sphere removals. Use the depths of the RF frames.
-            depth_list = np.sort(
-                imaging_df_all.depth[imaging_df_all.depth > 0].unique()
-            ).tolist()
-            assert len(depth_list) == frames_all.shape[0]
-        else:
-            depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-        print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
-        fit_rf_preferred_depth(
+        neurons_df = fit_session_rfs(
             neurons_df,
-            depths=depth_list,
-            is_closed_loop=1,
-            use_multidepth=is_multidepth,
+            trials_df_all,
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            filter_traces=filter_traces,
+            protocol_base=protocol_base,
+            photodiode_protocol=photodiode_protocol,
+            check_nrois=not run_depth_fit,
         )
 
         # Save neurons_df
