@@ -446,9 +446,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "hyperparam", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "hyperparam", n_tasks)
                 (
                     coef,
                     r2,
@@ -464,9 +462,7 @@ def main(
                 job_id, n_tasks = fit_rf_array.submit_ipsi_array(
                     work_dir=rf_work_dir,
                     imaging_df=imaging_df_all,
-                    frames=frames_all[
-                        ..., : int(frames_all.shape[2] // 2)
-                    ],
+                    frames=frames_all[..., : int(frames_all.shape[2] // 2)],
                     best_reg_xys=best_reg_xys,
                     best_reg_depths=best_reg_depths,
                     shift_stim=2,
@@ -474,9 +470,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "ipsi", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "ipsi", n_tasks)
                 (
                     coef_ipsi,
                     r2_ipsi,
@@ -497,13 +491,11 @@ def main(
                 ) = rf_fitting.fit_3d_rfs_hyperparam_tuning(
                     imaging_df_all,
                     frames_all[..., int(frames_all.shape[2] // 2) :],
-                    reg_xys=np.geomspace(2.5, 10240, 13),
-                    reg_depths=np.geomspace(2.5, 10240, 13),
+                    reg_xys=rf_fitting.DEFAULT_REG_GRID,
+                    reg_depths=rf_fitting.DEFAULT_REG_GRID,
                     shift_stim=2,
                     use_col="dffs",
                     k_folds=5,
-                    tune_separately=True,
-                    validation=False,
                 )
 
                 print("Fitting ipsi RF...")
@@ -518,7 +510,6 @@ def main(
                     shift_stim=2,
                     use_col="dffs",
                     k_folds=5,
-                    validation=False,
                 )
 
             if not run_depth_fit:
@@ -837,13 +828,11 @@ if False:
             ) = cottage_analysis.analysis.spheres.rf_fitting.fit_3d_rfs_hyperparam_tuning(
                 imaging_df_all,
                 frames_all[:, :, int(frames_all.shape[2] // 2) :],
-                reg_xys=np.geomspace(2.5, 10240, 13),
-                reg_depths=np.geomspace(2.5, 10240, 13),
+                reg_xys=cottage_analysis.analysis.spheres.rf_fitting.DEFAULT_REG_GRID,
+                reg_depths=cottage_analysis.analysis.spheres.rf_fitting.DEFAULT_REG_GRID,
                 shift_stim=2,
                 use_col="dffs",
                 k_folds=5,
-                tune_separately=True,
-                validation=False,
             )
 
             print("Fitting ipsi RF...")
@@ -858,7 +847,6 @@ if False:
                 shift_stim=2,
                 use_col="dffs",
                 k_folds=5,
-                validation=False,
             )
 
             for col in [
