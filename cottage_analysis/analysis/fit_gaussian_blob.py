@@ -881,6 +881,7 @@ def fit_rs_of_tuning(
     min_valid_frames=None,
     trial_average=False,
     roi_batch=None,
+    use_col="dffs",
 ):
     """Fit running speed and optic flow tuning with a specified model.
 
@@ -897,7 +898,7 @@ def fit_rs_of_tuning(
         trials_df (pd.DataFrame): Dataframe containing trial information, including:
             - RS_stim: Actual running speed.
             - OF_stim: Optic flow speed.
-            - dff_stim: Delta F/F neural responses.
+            - dff_stim: Delta F/F neural responses (or spks_stim, see `use_col`).
             - depth_labels: Labels for each depth.
             - closed_loop: Boolean indicating closed-loop vs open-loop protocols.
         model (str, optional): Model name to fit. One of "gaussian_2d",
@@ -934,11 +935,14 @@ def fit_rs_of_tuning(
         roi_batch (slice, optional): Optional slice restricting which ROIs (columns
             of `dff_stim`) to fit, for splitting the fit across parallel jobs. Leave
             None (default) to fit every ROI.
+        use_col (str, optional): response to fit, "dffs" (dF/F, `dff_stim`) or "spks"
+            (suite2p spikes, `spks_stim`). Defaults to "dffs".
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
             metrics (e.g., r-squared, spearman rho) for each ROI.
     """
+    resp_col = {"dffs": "dff_stim", "spks": "spks_stim"}[use_col]
 
     def process_rs_of_for_fit(
         trials_df,
@@ -964,7 +968,7 @@ def fit_rs_of_tuning(
             trial_rs = trial["RS_stim"]
             trial_rs_eye = trial["RS_eye_stim"]
             trial_of = trial["OF_stim"]
-            trial_dff = trial["dff_stim"]
+            trial_dff = trial[resp_col]
             if roi_batch is not None:
                 trial_dff = trial_dff[:, roi_batch]
             trial_depth_labels = trial["depth_labels"]
@@ -1010,7 +1014,7 @@ def fit_rs_of_tuning(
                 depth_labels_list.append(np.array(trial_depth_labels)[running])
 
         if len(rs_list) == 0:
-            n_rois = trials_df["dff_stim"].iloc[0].shape[1]
+            n_rois = trials_df[resp_col].iloc[0].shape[1]
             if roi_batch is not None:
                 n_rois = len(np.arange(n_rois)[roi_batch])
             return (
@@ -1047,7 +1051,7 @@ def fit_rs_of_tuning(
     )
 
     # initialize neurons_df with columns for ROI number
-    roi_ids = np.arange(trials_df["dff_stim"].iloc[0].shape[1])
+    roi_ids = np.arange(trials_df[resp_col].iloc[0].shape[1])
     if roi_batch is not None:
         roi_ids = roi_ids[roi_batch]
     neurons_df_temp = pd.DataFrame({"roi": roi_ids})

@@ -337,6 +337,7 @@ def load_and_fit(
     trial_average=False,
     min_valid_frames=None,
     tread_kwargs=None,
+    use_col="dffs",
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -395,6 +396,8 @@ def load_and_fit(
         tread_kwargs (dict, optional): additional kwargs for
             `treadmill.sync_all_recordings`, forwarded to `load_session`. Only used
             when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
+        use_col (str, optional): response to fit, "dffs" (dF/F) or "spks" (suite2p
+            spikes). Defaults to "dffs".
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -421,6 +424,7 @@ def load_and_fit(
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
         tread_kwargs=tread_kwargs,
+        add_spikes=use_col == "spks",
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -449,6 +453,7 @@ def load_and_fit(
         max_acc=max_acc,
         min_valid_frames=min_valid_frames,
         trial_average=trial_average,
+        use_col=use_col,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
