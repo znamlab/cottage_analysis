@@ -73,6 +73,38 @@ def create_neurons_ds(
     return neurons_ds
 
 
+def load_neurons_df(neurons_ds, rf_file=None):
+    """Load the neurons_df of a session, optionally with its RF columns from another
+    file.
+
+    Used mostly to combine the RF columns from a fit on spikes with the rest of the
+    neurons_df that used dF/F.
+
+    Args:
+        neurons_ds (Dataset): neurons_df dataset, from `create_neurons_ds`.
+        rf_file (str, optional): name of a file in the same folder (e.g.
+            "neurons_df_spks.pickle", RF fits on spikes) whose `rf_*` columns replace
+            those of neurons_df. Defaults to None (neurons_df as saved).
+
+    Returns:
+        pd.DataFrame: neurons_df.
+    """
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+    if rf_file is None or rf_file == neurons_ds.path_full.name:
+        return neurons_df
+    other = pd.read_pickle(neurons_ds.path_full.with_name(rf_file))
+    assert np.array_equal(
+        neurons_df["roi"].values, other["roi"].values, equal_nan=True
+    ), f"ROIs of {rf_file} do not match {neurons_ds.path_full.name}"
+    rf_cols = [c for c in other.columns if c.startswith("rf_")]
+    neurons_df = neurons_df.drop(
+        columns=[c for c in neurons_df.columns if c.startswith("rf_")]
+    )
+    for col in rf_cols:
+        neurons_df[col] = other[col].values
+    return neurons_df
+
+
 def sbatch_session(
     project,
     session_name,

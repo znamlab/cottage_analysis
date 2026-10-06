@@ -322,6 +322,7 @@ def load_sig_rf(
     filter_datasets=None,
     use_multidepth=False,
     sphere_presentation_mask=None,
+    rf_file=None,
 ):
     """
     Load significant RFs for each session in session_list.
@@ -342,6 +343,9 @@ def load_sig_rf(
             but `_closedloop` is always used for depth significance.
         sphere_presentation_mask (np.ndarray, optional): Mask to use for
             filtering out non-significant RFs. Defaults to None.
+        rf_file (str, optional): file next to neurons_df.pickle whose `rf_*` columns
+            are used instead (e.g. "neurons_df_spks.pickle"), see
+            `pipeline_utils.load_neurons_df`. Defaults to None.
 
     Returns:
         tuple: A tuple containing:
@@ -405,7 +409,7 @@ def load_sig_rf(
             conflicts="skip",
         )
         try:
-            neurons_df = pd.read_pickle(neurons_ds.path_full)
+            neurons_df = pipeline_utils.load_neurons_df(neurons_ds, rf_file=rf_file)
         except FileNotFoundError:
             print(f"ERROR: SESSION {session}: neurons_df not found")
             continue
