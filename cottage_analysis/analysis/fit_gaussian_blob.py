@@ -1163,7 +1163,7 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
         popt, rsq = common_utils.iterate_fit(
             grating_tuning_,
             X.T,
-            trials_df[roi],
+            trials_df[roi].to_numpy(),
             lower_bounds,
             upper_bounds,
             niter=niter,
