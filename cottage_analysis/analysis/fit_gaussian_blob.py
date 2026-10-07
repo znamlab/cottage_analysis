@@ -1095,24 +1095,132 @@ def fit_rs_of_tuning(
     return neurons_df_temp
 
 
-def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
+def _sftf_p0_func(X, y):
+    """Initial parameters for `grating_tuning`: SF0, TF0 and alpha0 at the stimulus value
+    with the largest mean response in `y`, the rest random."""
+    y = pd.Series(y)
+
+    def p0_func():
+        # the order of the random draws matches the original implementation
+        return GratingParams(
+            log_amplitude=np.random.normal(),
+            sf0=y.groupby(X[0]).mean().idxmax(),
+            tf0=y.groupby(X[1]).mean().idxmax(),
+            log_sigma_x2=np.random.normal(),
+            log_sigma_y2=np.random.normal(),
+            theta=np.random.uniform(0, 0.5 * np.pi),
+            offset=np.random.normal(),
+            alpha0=y.groupby(X[2]).mean().idxmax(),
+            log_kappa=np.random.normal(),
+            dsi=np.random.uniform(0, 1),
+        )
+
+    return p0_func
+
+
+def _fit_sftf_roi(X, y, lower_bounds, upper_bounds, niter, min_sigma, folds):
+    """Fit `grating_tuning` to one ROI, and to each training fold if `folds` is given.
+
+    Returns:
+        dict: GratingParams fields and `rsq` of the fit on all trials; with `folds`,
+            also `sftf_test_rsq`, `sftf_test_spearmanr_rval`, `sftf_test_spearmanr_pval`
+            (held-out predictions concatenated across folds) and `sftf_test_popts`.
+    """
+    func = partial(grating_tuning, min_sigma=min_sigma)
+    popt, rsq = common_utils.iterate_fit(
+        func,
+        X,
+        y,
+        lower_bounds,
+        upper_bounds,
+        niter=niter,
+        p0_func=_sftf_p0_func(X, y),
+        verbose=False,
+    )
+    out = dict(GratingParams(*popt)._asdict(), rsq=rsq)
+    if not folds:
+        return out
+    y_pred = np.full(len(y), np.nan)
+    popts = []
+    for train, test in folds:
+        # initial values from the training trials only
+        popt_fold, _ = common_utils.iterate_fit(
+            func,
+            X[:, train],
+            y[train],
+            lower_bounds,
+            upper_bounds,
+            niter=niter,
+            p0_func=_sftf_p0_func(X[:, train], y[train]),
+            verbose=False,
+        )
+        y_pred[test] = func(X[:, test], *popt_fold)
+        popts.append(popt_fold)
+    valid = np.isfinite(y) & np.isfinite(y_pred)
+    rval, pval = spearmanr(y[valid], y_pred[valid])
+    out["sftf_test_rsq"] = common_utils.calculate_r_squared(y[valid], y_pred[valid])
+    out["sftf_test_spearmanr_rval"] = rval
+    out["sftf_test_spearmanr_pval"] = pval
+    out["sftf_test_popts"] = np.stack(popts)
+    return out
+
+
+def _sftf_folds(trials_df, k_folds, fold_col):
+    """(train, test) trial indices: one fold per value of `fold_col` if given, otherwise
+    `k_folds` stratified folds on the stimulus condition (SF, TF, direction)."""
+    if fold_col is not None:
+        groups = trials_df[fold_col].to_numpy()
+        return [
+            (np.flatnonzero(groups != g), np.flatnonzero(groups == g))
+            for g in np.unique(groups)
+        ]
+    _, condition = np.unique(
+        trials_df[["SpatialFrequency", "TemporalFrequency", "Angle"]].to_numpy(float),
+        axis=0,
+        return_inverse=True,
+    )
+    kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+    return list(kfold.split(np.zeros(len(condition)), condition))
+
+
+def fit_sftf_tuning(
+    trials_df, niter=5, min_sigma=0.25, k_folds=1, fold_col=None, n_jobs=1
+):
     """
     Fit spatial frequency and temporal frequency tuning with 2d gaussian function.
+
+    The model is a 2D Gaussian in log SF x log TF multiplied by a von Mises direction
+    tuning (`grating_tuning`), fitted to single-trial responses.
+
+    With `k_folds > 1`, each ROI is also fitted on the training trials of each fold and
+    evaluated on the held-out trials, as for depth tuning in `find_depth_neurons`. Held-out
+    predictions are concatenated across folds before computing R² and the Spearman
+    correlation between responses and predictions.
 
     Args:
         trials_df (pd.DataFrame): dataframe with `SpatialFrequency`, `TemporalFrequency` and `Angle` columns
             and integer column names for each ROI.
         niter (int, optional): Number of iterations for fitting the gaussian function. Defaults to 5.
         min_sigma (float, optional): Minimum value for sigma. Defaults to 0.25.
+        k_folds (int, optional): Number of cross-validation folds; 1 for no
+            cross-validation. Defaults to 1.
+        fold_col (str, optional): Column of `trials_df` defining the folds (e.g.
+            "irecording", one fold per recording). If given and `k_folds > 1`, there is one
+            fold per unique value and `k_folds` is otherwise ignored. If None, `k_folds`
+            stratified folds on the stimulus condition. Defaults to None.
+        n_jobs (int, optional): Number of ROIs fitted in parallel (joblib). Defaults to 1.
 
     Returns:
-        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI.
+        neurons_df (DataFrame): A dataframe that contains the analysed properties for each ROI:
+            the GratingParams fields and `rsq` (in-sample R² of the fit on all trials),
+            plus `sftf_test_rsq`, `sftf_test_spearmanr_rval`, `sftf_test_spearmanr_pval`
+            and `sftf_test_popts` (one row of parameters per fold) if `k_folds > 1`.
 
     """
     trials_df["log_SF"] = np.log(trials_df["SpatialFrequency"])
     trials_df["log_TF"] = np.log(trials_df["TemporalFrequency"])
     trials_df["Angle_rad"] = np.deg2rad(trials_df["Angle"])
-    X = trials_df[["log_SF", "log_TF", "Angle_rad"]].to_numpy()
+    X = trials_df[["log_SF", "log_TF", "Angle_rad"]].to_numpy().T
     lower_bounds = GratingParams(
         log_amplitude=-np.inf,
         sf0=trials_df["log_SF"].min() - 1,
@@ -1137,45 +1245,28 @@ def fit_sftf_tuning(trials_df, niter=5, min_sigma=0.25):
         log_kappa=np.inf,
         dsi=1,
     )
+    folds = _sftf_folds(trials_df, k_folds, fold_col) if k_folds > 1 else None
 
-    def p0_func():
-        # edit the code below to use a namedtupled instead of a list
-        return GratingParams(
-            log_amplitude=np.random.normal(),
-            sf0=trials_df.groupby("log_SF")[roi].mean().idxmax(),
-            tf0=trials_df.groupby("log_TF")[roi].mean().idxmax(),
-            log_sigma_x2=np.random.normal(),
-            log_sigma_y2=np.random.normal(),
-            theta=np.random.uniform(0, 0.5 * np.pi),
-            offset=np.random.normal(),
-            alpha0=trials_df.groupby("Angle_rad")[roi].mean().idxmax(),
-            log_kappa=np.random.normal(),
-            dsi=np.random.uniform(0, 1),
-        )
-
-    grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
-    params = []
-    rsqs = []
     # int type columns correspond to ROIs
-    int_cols = [type(col) == int for col in trials_df.columns]
-    trials_df.columns[int_cols]
-    for roi in tqdm(trials_df.columns[int_cols]):
-        popt, rsq = common_utils.iterate_fit(
-            grating_tuning_,
-            X.T,
-            trials_df[roi].to_numpy(),
-            lower_bounds,
-            upper_bounds,
-            niter=niter,
-            p0_func=p0_func,
-            verbose=False,
-        )
-        params.append(GratingParams(*popt))
-        rsqs.append(rsq)
+    rois = [col for col in trials_df.columns if type(col) == int]
+    fit_roi = partial(
+        _fit_sftf_roi,
+        X=X,
+        lower_bounds=lower_bounds,
+        upper_bounds=upper_bounds,
+        niter=niter,
+        min_sigma=min_sigma,
+        folds=folds,
+    )
+    if n_jobs == 1:
+        results = [fit_roi(y=trials_df[roi].to_numpy(float)) for roi in tqdm(rois)]
+    else:
+        from joblib import Parallel, delayed
 
-    neurons_df = pd.DataFrame(params)
-    neurons_df["rsq"] = rsqs
-    return neurons_df
+        results = Parallel(n_jobs=n_jobs, verbose=5)(
+            delayed(fit_roi)(y=trials_df[roi].to_numpy(float)) for roi in rois
+        )
+    return pd.DataFrame(results)
 
 
 ## UTILITIES
