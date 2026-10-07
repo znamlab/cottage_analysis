@@ -836,8 +836,12 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         allow_multiple=False,
         filter_datasets=filter_datasets,
     )
+    # same file choice as generate_imaging_df
+    dff_fname = (
+        "dff_ast.npy" if suite2p_traces.extra_attributes["ast_neuropil"] else "dff.npy"
+    )
     dffs = []
     for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):
         plane_path = suite2p_traces.path_full / f"plane{iplane}"
-        dffs.append(np.load(plane_path / "dff_ast.npy"))
+        dffs.append(np.load(plane_path / dff_fname))
     return np.concatenate(dffs, axis=0).T
