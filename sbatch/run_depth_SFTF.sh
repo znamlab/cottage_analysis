@@ -16,5 +16,5 @@ source activate base
 conda activate v1_depth_map
 
 echo Processing ${SESSION_NAME} in project ${PROJECT}...
-cd "/camp/lab/znamenskiyp/home/users/hey2/codes/cottage_analysis/cottage_analysis/pipelines/"
+cd "/nemo/lab/znamenskiyp/home/users/blota/code/cottage_analysis/cottage_analysis/pipelines"
 python depth_SFTF.py ${PROJECT} ${SESSION_NAME} ${CONFLICTS} ${PHOTODIODE_PROTOCOL}
