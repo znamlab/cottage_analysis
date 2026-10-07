@@ -11,7 +11,14 @@ from cottage_analysis.plotting import grating_plots
 from cottage_analysis.pipelines import pipeline_utils
 
 
-def main(project, session_name, conflicts="skip", photodiode_protocol=5):
+def main(
+    project,
+    session_name,
+    conflicts="skip",
+    photodiode_protocol=5,
+    k_folds=5,
+    n_jobs=1,
+):
     """
     Main function to analyze a session.
 
@@ -20,6 +27,10 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
         session_name(str): {Mouse}_{Session}
         conflicts(str): "skip", "append", or "overwrite"
         photodiode_protocol(int): 2 or 5.
+        k_folds(int): >1 to also cross-validate the grating fit, with one fold per SFTF
+            recording (held-out R² and Spearman in `sftf_test_*` columns); 1 for no
+            cross-validation. Defaults to 5.
+        n_jobs(int): number of ROIs fitted in parallel. Defaults to 1.
     """
     print(
         f"------------------------------- \n \
@@ -49,7 +60,12 @@ def main(project, session_name, conflicts="skip", photodiode_protocol=5):
     # Anlyze SFTF responses
     print("---Fitting SFTF responses...---")
     neurons_df_sftf = fit_gaussian_blob.fit_sftf_tuning(
-        trials_df=trials_df_all_sftf, niter=10, min_sigma=0.25
+        trials_df=trials_df_all_sftf,
+        niter=10,
+        min_sigma=0.25,
+        k_folds=k_folds,
+        fold_col="irecording",
+        n_jobs=n_jobs,
     )
     neurons_df_sftf.to_pickle(neurons_ds.path_full.parent / "neurons_df_sftf.pickle")
 
