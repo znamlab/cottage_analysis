@@ -19,7 +19,6 @@ from cottage_analysis.preprocessing import find_frames
 from cottage_analysis.imaging.common.find_frames import find_imaging_frames
 from cottage_analysis.imaging.common import imaging_loggers_formatting as format_loggers
 
-
 print = partial(print, flush=True)
 
 
@@ -828,7 +827,18 @@ def fill_missing_imaging_volumes(df, nan_col="RS"):
     return img_df
 
 
-def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
+def load_imaging_data(
+    recording_name, flexilims_session, filter_datasets=None, use_col="dffs"
+):
+    """Suite2p traces of a recording, (n_volumes, n_rois).
+
+    Args:
+        recording_name (str): recording name.
+        flexilims_session: flexilims session.
+        filter_datasets (dict, optional): filter for the suite2p_traces dataset.
+        use_col (str, optional): "dffs" (dF/F) or "spks" (deconvolved spikes). Defaults
+            to "dffs".
+    """
     suite2p_traces = flz.get_datasets(
         flexilims_session=flexilims_session,
         origin_name=recording_name,
@@ -837,8 +847,11 @@ def load_imaging_data(recording_name, flexilims_session, filter_datasets=None):
         filter_datasets=filter_datasets,
     )
     # same file choice as generate_imaging_df
+    prefix = {"dffs": "dff", "spks": "spks"}[use_col]
     dff_fname = (
-        "dff_ast.npy" if suite2p_traces.extra_attributes["ast_neuropil"] else "dff.npy"
+        f"{prefix}_ast.npy"
+        if suite2p_traces.extra_attributes["ast_neuropil"]
+        else f"{prefix}.npy"
     )
     dffs = []
     for iplane in range(int(float(suite2p_traces.extra_attributes["nplanes"]))):

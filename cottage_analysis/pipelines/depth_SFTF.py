@@ -18,6 +18,7 @@ def main(
     photodiode_protocol=5,
     k_folds=5,
     n_jobs=1,
+    use_col="dffs",
 ):
     """
     Main function to analyze a session.
@@ -31,6 +32,9 @@ def main(
             recording (held-out R² and Spearman in `sftf_test_*` columns); 1 for no
             cross-validation. Defaults to 5.
         n_jobs(int): number of ROIs fitted in parallel. Defaults to 1.
+        use_col(str): response fitted, "dffs" (dF/F, saved as neurons_df_sftf.pickle) or
+            "spks" (deconvolved spikes, saved as neurons_df_sftf_spks.pickle). Defaults
+            to "dffs".
     """
     print(
         f"------------------------------- \n \
@@ -48,6 +52,7 @@ def main(
         filter_datasets={"anatomical_only": 3, "ast_neuropil": False},
         photodiode_protocol=photodiode_protocol,
         protocol_base="SFTF",
+        use_col=use_col,
     )
 
     neurons_ds = pipeline_utils.create_neurons_ds(
@@ -67,7 +72,12 @@ def main(
         fold_col="irecording",
         n_jobs=n_jobs,
     )
-    neurons_df_sftf.to_pickle(neurons_ds.path_full.parent / "neurons_df_sftf.pickle")
+    fname = (
+        "neurons_df_sftf.pickle"
+        if use_col == "dffs"
+        else f"neurons_df_sftf_{use_col}.pickle"
+    )
+    neurons_df_sftf.to_pickle(neurons_ds.path_full.parent / fname)
 
     # # Visualize all neurons
     # print("---Start visualisation---")
