@@ -49,7 +49,10 @@ def plot_sftf_fit(
         colorbar (bool, optional): whether to add colorbar. Defaults to True.
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {"title": 10, "label": 10, "tick": 10}.
     """
-    from cottage_analysis.analysis.fit_gaussian_blob import GratingParams, grating_tuning
+    from cottage_analysis.analysis.fit_gaussian_blob import (
+        GratingParams,
+        grating_tuning,
+    )
 
     neuron_series = neurons_df.iloc[roi]
     grating_tuning_ = partial(grating_tuning, min_sigma=min_sigma)
@@ -76,7 +79,12 @@ def plot_sftf_fit(
         each_panel_width = plot_width / 3
         each_panel_height = plot_height / 3
         ax = fig.add_axes(
-            [plot_x+each_panel_width, plot_y-each_panel_height, each_panel_width*0.75, each_panel_height*0.75],
+            [
+                plot_x + each_panel_width,
+                plot_y - each_panel_height,
+                each_panel_width * 0.75,
+                each_panel_height * 0.75,
+            ],
             projection="polar",
         )
     angles = np.linspace(0, 2 * np.pi, 100)
@@ -100,7 +108,6 @@ def plot_sftf_fit(
     ax.tick_params(labelsize=fontsize_dict["tick"])
     ax.tick_params(axis="x", pad=-5)
 
-
     angles = np.linspace(0, 2 * np.pi, 8, endpoint=False)
     angle_pos = [6, 3, 2, 1, 4, 7, 8, 9]
     if vmax is None:
@@ -119,7 +126,12 @@ def plot_sftf_fit(
             ax = plt.subplot(3, 3, angle_pos[i])
         elif plot_axes:
             ax = fig.add_axes(
-                [plot_x+(angle_pos[i]-1)%3*each_panel_width, plot_y-(angle_pos[i]-1)//3*each_panel_height, each_panel_width*0.85, each_panel_height*0.85]
+                [
+                    plot_x + (angle_pos[i] - 1) % 3 * each_panel_width,
+                    plot_y - (angle_pos[i] - 1) // 3 * each_panel_height,
+                    each_panel_width * 0.85,
+                    each_panel_height * 0.85,
+                ]
             )
         im = plt.imshow(
             responses,
@@ -137,12 +149,12 @@ def plot_sftf_fit(
             np.linspace(sf_range[0], sf_range[1], len(sf_ticks)),
             sf_ticks,
         )
-        if angle_pos[i] in [1,4,7]:
+        if angle_pos[i] in [1, 4, 7]:
             if angle_pos[i] == 4:
                 ax.set_ylabel("Temporal Frequency", fontsize=fontsize_dict["label"])
         else:
             ax.set_yticklabels([])
-        if i in [5,6,7]:
+        if i in [5, 6, 7]:
             if i == 6:
                 ax.set_xlabel("Spatial Frequency", fontsize=fontsize_dict["label"])
         else:
@@ -155,7 +167,7 @@ def plot_sftf_fit(
     if plot_subplots:
         plt.tight_layout(pad=0.4)
     if colorbar:
-        add_colorbar(im, x=plot_width/3, y=0, fontsize=fontsize_dict["tick"])
+        add_colorbar(im, x=plot_width / 3, y=0, fontsize=fontsize_dict["tick"])
     return vmax
 
 
@@ -227,10 +239,10 @@ def plot_sftf_tuning(
                 all_angles[i, isf, itf] = this_angle[isf, itf]
     if vmax is None:
         # vmax=dff_mean[roi].max()
-        vmax = np.round(np.nanmax(all_angles),1)
+        vmax = np.round(np.nanmax(all_angles), 1)
 
     # plot a polar plot of dff as a function of angle
-    dir_tuning = np.max(all_angles, axis=(1, 2))
+    dir_tuning = np.nanmax(all_angles, axis=(1, 2))
     dir_tuning = np.append(dir_tuning, dir_tuning[0])
     dirs = np.deg2rad([0, 45, 90, 135, 180, 225, 270, 315, 0])
 
@@ -244,7 +256,12 @@ def plot_sftf_tuning(
         each_panel_width = plot_width / 3
         each_panel_height = plot_height / 3
         ax = fig.add_axes(
-            [plot_x+each_panel_width, plot_y-each_panel_height, each_panel_width*0.75, each_panel_height*0.75],
+            [
+                plot_x + each_panel_width,
+                plot_y - each_panel_height,
+                each_panel_width * 0.75,
+                each_panel_height * 0.75,
+            ],
             projection="polar",
         )
     ax.plot(
@@ -273,7 +290,12 @@ def plot_sftf_tuning(
             ax = plt.subplot(3, 3, angle_pos[i])
         elif plot_axes:
             ax = fig.add_axes(
-                [plot_x+(angle_pos[i]-1)%3*each_panel_width, plot_y-(angle_pos[i]-1)//3*each_panel_height, each_panel_width*0.85, each_panel_height*0.85]
+                [
+                    plot_x + (angle_pos[i] - 1) % 3 * each_panel_width,
+                    plot_y - (angle_pos[i] - 1) // 3 * each_panel_height,
+                    each_panel_width * 0.85,
+                    each_panel_height * 0.85,
+                ]
             )
         # plot a colormap of this_angle with tick labels
         im = ax.imshow(
@@ -282,7 +304,7 @@ def plot_sftf_tuning(
             vmin=0,
             vmax=vmax,
         )
-        if angle_pos[i] in [1,4,7]:
+        if angle_pos[i] in [1, 4, 7]:
             ax.set_yticks(
                 range(len(tf_range)),
                 tf_range,
@@ -291,7 +313,7 @@ def plot_sftf_tuning(
                 ax.set_ylabel("Temporal Frequency", fontsize=fontsize_dict["label"])
         else:
             ax.set_yticklabels([])
-        if i in [5,6,7]:
+        if i in [5, 6, 7]:
             ax.set_xticks(
                 range(len(sf_range)),
                 sf_range,
@@ -309,7 +331,7 @@ def plot_sftf_tuning(
     if plot_subplots:
         plt.tight_layout(pad=0.4)
     if colorbar:
-        add_colorbar(im, x=plot_width/3, y=0, fontsize=fontsize_dict["tick"])
+        add_colorbar(im, x=plot_width / 3, y=0, fontsize=fontsize_dict["tick"])
     return vmax
 
 
@@ -328,7 +350,6 @@ def add_colorbar(im, x=0, y=0, fontsize=10):
     vmin, vmax = im.get_clim()
     cbar.ax.set_yticks([0, vmax])
     cbar.ax.set_ylabel("\u0394F/F", fontsize=fontsize)
-    
 
 
 def plot_tuning_stats(neurons_df, trials_df, rsq_thresh=0.1):
@@ -422,6 +443,7 @@ def basic_vis_SFTF_roi(
         fontsize_dict (dict, optional): dict containing fontsize settings. Defaults to {'title': 10, 'label': 10, 'tick': 10}.
     """
     from cottage_analysis.analysis.fit_gaussian_blob import grating_tuning
+
     plot_rows = 3
     if add_depth:
         plot_cols = 7
