@@ -73,8 +73,9 @@ def generate_trials_df(img_df, dff, skip_first_n_volumes=2, use_col="dffs"):
         .copy()
         .reset_index(drop=True)
     )
+    # skip the onset volumes; the window still ends at the next trial's onset
     trials_df["stim_start"] = trials_df["imaging_volume"] + skip_first_n_volumes
-    trials_df["stim_end"] = trials_df["stim_start"].shift(-1)
+    trials_df["stim_end"] = trials_df["imaging_volume"].shift(-1)
     # drop the last row
     trials_df = trials_df.iloc[:-1]
     # add a column with the mean dff spanning from stim_start to stim_end
