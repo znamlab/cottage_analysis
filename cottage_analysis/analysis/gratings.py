@@ -62,7 +62,7 @@ def analyze_grating_responses(
     return pd.concat(dfs, axis=0, ignore_index=True), dff_mean_all
 
 
-def generate_trials_df(img_df, dff, skip_first_n_volumes=2, use_col="dffs"):
+def generate_trials_df(img_df, dff, skip_first_n_volumes=8, use_col="dffs"):
     # select rows of img_df where SpatialFrequency, TemporalFrequency, Angle change
     trials_df = (
         img_df.loc[
