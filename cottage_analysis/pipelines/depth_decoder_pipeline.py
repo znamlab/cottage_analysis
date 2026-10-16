@@ -159,7 +159,7 @@ def main(
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
             job_dependency=job_dependency,
-            job_name=f"decoder_speedbins_{session_name}{sfx}",
+            slurm_options={"job-name": f"decoder_speedbins_{session_name}{sfx}"},
         )
         outputs_all.append(out)
 
@@ -177,7 +177,9 @@ def main(
         scripts_name=f"decoder_plots{params['special_sfx']}",
         job_dependency=job_dependency,
         filter_datasets=filter_datasets,
-        job_name=f"decoder_plots_{session_name}_{params['special_sfx']}",
+        slurm_options={
+            "job-name": f"decoder_plots_{session_name}_{params['special_sfx']}"
+        },
     )
 
 
