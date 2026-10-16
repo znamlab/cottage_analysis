@@ -1241,10 +1241,59 @@ def interpolate_sync(
     # remove double detected frames to avoid diff==0 later
     _remove_double_frames(frames_df, verbose=True)
 
-    consensus_frames = frames_df.sync_reason == f"consensus of {minimum_consensus}"
+    if isinstance(minimum_consensus, int):
+        allowed_consensus = [f"consensus of {n}" for n in range(minimum_consensus, 4)]
+        consensus_frames = frames_df.sync_reason.isin(allowed_consensus)
+    else:
+        consensus_frames = frames_df.sync_reason == f"consensus of {minimum_consensus}"
     ok_res = frames_df.residuals < residuals_threshold
     non_nan = frames_df.closest_frame.notna()
     good_frames = consensus_frames & ok_res & non_nan
+
+    # If seeds are too sparse (e.g. fewer than 100 seeds or gaps > 60s due to noisy photodiode),
+    # adaptively relax residuals_threshold and/or minimum_consensus
+    t_good = frames_df.loc[good_frames, "onset_time"].values
+    if (good_frames.sum() < 100) or (len(t_good) > 1 and np.diff(t_good).max() > 60):
+        if verbose:
+            print(
+                f"Warning: only {good_frames.sum()} seeds found with residuals < {residuals_threshold} "
+                f"and minimum_consensus={minimum_consensus}. Attempting adaptive relaxation..."
+            )
+        for test_mc in (
+            [minimum_consensus, 2]
+            if isinstance(minimum_consensus, int) and minimum_consensus > 2
+            else [minimum_consensus]
+        ):
+            test_allowed = (
+                [f"consensus of {n}" for n in range(test_mc, 4)]
+                if isinstance(test_mc, int)
+                else [f"consensus of {test_mc}"]
+            )
+            test_c = frames_df.sync_reason.isin(test_allowed)
+            for test_th in np.arange(residuals_threshold + 0.02, 0.22, 0.02):
+                test_good = test_c & (frames_df.residuals < test_th) & non_nan
+                if test_good.sum() >= 100:
+                    t_test = frames_df.loc[test_good, "onset_time"].values
+                    if np.diff(t_test).max() < 10:
+                        residuals_threshold = float(test_th)
+                        minimum_consensus = test_mc
+                        consensus_frames = test_c
+                        ok_res = frames_df.residuals < residuals_threshold
+                        good_frames = test_good
+                        if verbose:
+                            print(
+                                f"Adapted to minimum_consensus={minimum_consensus}, "
+                                f"residuals_threshold={residuals_threshold:.2f} "
+                                f"({good_frames.sum()} seeds, max gap {np.diff(t_test).max():.1f}s)"
+                            )
+                        break
+            if (
+                good_frames.sum() >= 100
+                and len(frames_df.loc[good_frames, "onset_time"].values) > 1
+                and np.diff(frames_df.loc[good_frames, "onset_time"].values).max() < 10
+            ):
+                break
+
     if verbose:
         print(f"Found {consensus_frames.sum()} consensus frames")
         print(f"Found {ok_res.sum()} frames with residuals < {residuals_threshold}")
