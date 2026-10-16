@@ -200,6 +200,7 @@ def sync_all_recordings(
     sim_make_circular=True,
     sim_kernel_normalization="area",
     add_spikes=False,
+    lag=0,
 ):
     """Concatenate synchronisation results for all recordings in a session.
 
@@ -253,6 +254,8 @@ def sync_all_recordings(
             Defaults to "area".
         add_spikes (bool, optional): if True, also load the suite2p spikes (adds
             `spks_stim` etc. to trials_df). Two-photon only. Defaults to False.
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `spheres.generate_trials_df`. Defaults to 0.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one concatenated vs_df
@@ -351,7 +354,10 @@ def sync_all_recordings(
         )
 
         trials_df = spheres.generate_trials_df(
-            recording=recording, imaging_df=imaging_df, add_spikes=add_spikes
+            recording=recording,
+            imaging_df=imaging_df,
+            add_spikes=add_spikes,
+            lag=lag,
         )
 
         # Slice the continuous simulated trace correctly into the cropped trials
@@ -361,8 +367,8 @@ def sync_all_recordings(
                 # Use absolute dataframe frame indices to find the exact offset
                 # within the fully simulated continuous array
                 # The continuous array aligns perfectly with imaging_df indices
-                start_offset = int(trial_crop.imaging_stim_start)
-                end_offset = int(trial_crop.imaging_stim_stop) + 1
+                start_offset = int(trial_crop.imaging_stim_start) + lag
+                end_offset = int(trial_crop.imaging_stim_stop) + 1 + lag
 
                 # Slicing from continuous array yields (n_trial_frames, n_rois)
                 fake_dff_crop.append(fake_dff_continuous[start_offset:end_offset, :])

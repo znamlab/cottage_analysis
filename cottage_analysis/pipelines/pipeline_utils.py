@@ -176,6 +176,7 @@ def load_session(
     ephys_kwargs=None,
     tread_kwargs=None,
     add_spikes=False,
+    lag=0,
 ):
     """Load data from a single session.
 
@@ -202,6 +203,8 @@ def load_session(
             `protocol_base == "SpheresTubeMotor"`. Defaults to None.
         add_spikes (bool, optional): if True, also load the suite2p spikes in
             trials_df_all (`spks_stim` etc.). Defaults to False.
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `sync_all_recordings`. Defaults to 0.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -240,6 +243,7 @@ def load_session(
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
             add_spikes=add_spikes,
+            lag=lag,
             **(tread_kwargs or {}),
         )
     else:
@@ -255,6 +259,7 @@ def load_session(
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
             add_spikes=add_spikes,
+            lag=lag,
         )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
@@ -313,6 +318,7 @@ def load_and_fit(
     min_valid_frames=None,
     tread_kwargs=None,
     use_col="dffs",
+    lag=0,
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -373,6 +379,8 @@ def load_and_fit(
             when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
         use_col (str, optional): response to fit, "dffs" (dF/F) or "spks" (suite2p
             spikes). Defaults to "dffs".
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `load_session`. Defaults to 0.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -400,6 +408,7 @@ def load_and_fit(
         ephys_kwargs=ephys_kwargs,
         tread_kwargs=tread_kwargs,
         add_spikes=use_col == "spks",
+        lag=lag,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
