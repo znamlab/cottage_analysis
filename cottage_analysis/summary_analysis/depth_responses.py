@@ -145,8 +145,18 @@ def get_psth_crossval_all_sessions(
     nbins=10,
     closed_loop=1,
     use_cols=[
+        "roi",
+        "is_depth_neuron",
+        "depth_neuron_anova_p",
+        "best_depth",
+        "preferred_depth_closedloop",
+        "depth_tuning_popt_closedloop",
+        "depth_tuning_trials_closedloop",
+        "depth_tuning_trials_closedloop_crossval",
         "preferred_depth_closedloop_crossval",
         "depth_tuning_test_rsq_closedloop",
+        "depth_tuning_test_spearmanr_rval_closedloop",
+        "depth_tuning_test_spearmanr_pval_closedloop",
     ],
     rs_thr_min=None,
     rs_thr_max=None,
@@ -206,11 +216,9 @@ def get_psth_crossval_all_sessions(
         except FileNotFoundError:
             print(f"ERROR: SESSION {session_name}: neurons_ds not found")
             continue
-        if (use_cols is None) or (set(use_cols).issubset(neurons_df.columns.tolist())):
-            if use_cols is None:
-                neurons_df = neurons_df
-            else:
-                neurons_df = neurons_df[use_cols]
+        if use_cols is not None:
+            cols_to_use = [c for c in use_cols if c in neurons_df.columns]
+            neurons_df = neurons_df[cols_to_use]
 
             _, trials_df = spheres.sync_all_recordings(
                 session_name=session_name,
@@ -243,7 +251,7 @@ def get_psth_crossval_all_sessions(
             neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
 
             # Calculate dff psth crossval
-            # Get the responses for this session that are not included for calculating 
+            # Get the responses for this session that are not included for calculating
             # the cross-validated preferred depth
             choose_trials_resp = list(
                 set(neurons_df.depth_tuning_trials_closedloop.iloc[0])

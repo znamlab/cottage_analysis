@@ -724,6 +724,26 @@ def find_acc_speed_bins(
     acc_speed_bins = []
     conmat_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"])
+    ndepths = len(trials_df.depth.unique())
+
+    def _eval_bin(idx, label):
+        if np.sum(idx) == 0:
+            acc_speed_bins.append(np.nan)
+            conmat_speed_bins.append(np.full((ndepths, ndepths), np.nan))
+            print(f"{label} accuracy: nan (no samples)")
+        else:
+            acc = accuracy_score(y_test[idx], y_preds[idx])
+            acc_speed_bins.append(acc)
+            conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+            missing_idx = fill_in_missing_depths_to_conmat(
+                y_test[idx], y_preds[idx], trials_df
+            )
+            for miss in missing_idx:
+                conmat = np.insert(conmat, miss, np.nan, axis=0)
+                conmat = np.insert(conmat, miss, np.nan, axis=1)
+            conmat_speed_bins.append(conmat)
+            print(f"{label} accuracy: {acc}")
+
     if continuous_still:
         idx = common_utils.find_thresh_sequence(
             array=rs_arr,
@@ -731,46 +751,15 @@ def find_acc_speed_bins(
             length=int(still_time * frame_rate),
             shift=int(still_time * frame_rate),
         )
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(
-            y_test[idx], y_preds[idx], trials_df
-        )
-        for miss in missing_idx:
-            conmat = np.insert(conmat, miss, np.nan, axis=0)
-            conmat = np.insert(conmat, miss, np.nan, axis=1)
-        conmat_speed_bins.append(conmat)
-        print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+        _eval_bin(idx, "Still")
     for i in range(len(speed_bins) - 1):
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i + 1])
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(
-            y_test[idx], y_preds[idx], trials_df
-        )
-        for miss in missing_idx:
-            conmat = np.insert(conmat, miss, np.nan, axis=0)
-            conmat = np.insert(conmat, miss, np.nan, axis=1)
-        conmat_speed_bins.append(conmat)
-        print(
-            f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
-        )
+        _eval_bin(idx, f"Speed bin {speed_bins[i]} - {speed_bins[i+1]}")
     for speed_bin in [
         speed_bins[-1]
     ]:  # speed that's larger than the max boundary of speed_bins
         idx = rs_arr >= speed_bin
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
-        missing_idx = fill_in_missing_depths_to_conmat(
-            y_test[idx], y_preds[idx], trials_df
-        )
-        for miss in missing_idx:
-            conmat = np.insert(conmat, miss, np.nan, axis=0)
-            conmat = np.insert(conmat, miss, np.nan, axis=1)
-        conmat_speed_bins.append(conmat)
-        print(
-            f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
-        )
+        _eval_bin(idx, f"Speed bin > {speed_bin}")
     decoder_dict[f"acc_speed_bins{recording_type}"] = acc_speed_bins
     decoder_dict[f"conmat_speed_bins{recording_type}"] = conmat_speed_bins
     with open(decoder_dict_path, "wb") as f:
