@@ -242,7 +242,7 @@ def sync_all_recordings(
     cut_trial_end=None,
     trial_duration=None,
     acceleration_time=0.13,
-    method="model",
+    method="plateau",
     margin=0.5,
     sim_popt_list=None,
     sim_tau_decay=0.8,
@@ -285,9 +285,9 @@ def sync_all_recordings(
         acceleration_time (float or None): Acceleration time in s per cm/s. If not None,
             overrides trial_duration. Default to 0.13 (aka 61cm/s reached in 8s)
         method (str, optional): Onset-detection method passed to `process_imaging_df`;
-            "model" (default, unchanged legacy behavior) or "plateau" (fits a
-            trapezoidal ramp template to the RS trace, falling back to the model
-            estimate per-trial if the fit is not possible). Defaults to "model".
+            "plateau" (default; fits a trapezoidal ramp template to the RS trace,
+            falling back to the model estimate per-trial if the fit is not possible)
+            or "model" (legacy fixed-formula estimate). Defaults to "plateau".
         margin (float, optional): Extra seconds added on top of the onset estimate
             before converting to a frame offset (formerly a hardcoded 0.5s). Applied
             identically for either method. Defaults to 0.5.
@@ -489,7 +489,7 @@ def process_imaging_df(
     cut_trial_end=None,
     motor_stability_window=0.5,
     acceleration_time=0.13,
-    method="model",
+    method="plateau",
     margin=0.5,
     treadmill_params=None,
 ):
@@ -528,7 +528,7 @@ def process_imaging_df(
                   back to the "model" estimate for any individual trial where the
                   detector cannot return a value (e.g. too few samples, or no room
                   for a valid ramp + plateau given that trial's speed/duration).
-            Defaults to "model".
+            Defaults to "plateau".
         margin (float, optional): Extra seconds added on top of the onset estimate
             (from either method) before converting to a frame offset, replacing the
             previously hardcoded `+ 0.5`. Applied identically regardless of method.

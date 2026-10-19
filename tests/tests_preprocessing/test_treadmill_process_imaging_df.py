@@ -297,3 +297,26 @@ def test_trial_duration_and_acceleration_time_mutually_exclusive_still_enforced(
     )
     with pytest.raises(ValueError):
         process_imaging_df(df, trial_duration=2.0, acceleration_time=ACCELERATION_TIME)
+
+
+def test_default_method_is_plateau():
+    true_shift = 0.6
+    acceleration = 1.0 / ACCELERATION_TIME
+    v = ACTUAL_MOTOR_SPEED[16]
+    df, _ = _build_imaging_df(
+        [
+            (2.0, 0, None),
+            (6.0, _sps_for_key(16), _ramp_rs(true_shift, acceleration, v)),
+            (2.0, 0, None),
+        ],
+        frame_rate=FRAME_RATE,
+    )
+    out_default = process_imaging_df(df.copy(), acceleration_time=ACCELERATION_TIME)
+    out_plateau = process_imaging_df(
+        df.copy(), acceleration_time=ACCELERATION_TIME, method="plateau"
+    )
+    out_model = process_imaging_df(
+        df.copy(), acceleration_time=ACCELERATION_TIME, method="model"
+    )
+    assert out_default.is_trial_start.equals(out_plateau.is_trial_start)
+    assert not out_default.is_trial_start.equals(out_model.is_trial_start)
