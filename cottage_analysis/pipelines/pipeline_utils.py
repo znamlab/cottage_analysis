@@ -157,6 +157,7 @@ def load_session(
     return_neurons_df=True,
     treadmill_params=None,
     add_spikes=False,
+    tread_kwargs=None,
 ):
     """Load data from a single session.
 
@@ -184,6 +185,10 @@ def load_session(
             Passed to ``treadmill.sync_all_recordings``. Defaults to
             ``DEFAULT_TREADMILL_PARAMS``.
         add_spikes (bool, optional): Whether to add spikes to the neurons dataframe. Defaults to False.
+        tread_kwargs (dict, optional): additional kwargs for
+            `treadmill.sync_all_recordings` (e.g. `acceleration_time`, `method`,
+            `margin`, `cut_trial_end`, `trial_duration`). Only used when
+            `protocol_base == "SpheresTubeMotor"`. Defaults to None.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -227,6 +232,7 @@ def load_session(
             ephys_kwargs=ephys_kwargs,
             treadmill_params=treadmill_params,
             add_spikes=add_spikes,
+            **(tread_kwargs or {}),
         )
     else:
         vs_df_all, trials_df_all = spheres.sync_all_recordings(
@@ -296,6 +302,9 @@ def load_and_fit(
     ephys_kwargs=None,
     max_rs2motor_diff=None,
     max_acc=None,
+    trial_average=False,
+    min_valid_frames=None,
+    tread_kwargs=None,
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -347,6 +356,13 @@ def load_and_fit(
             (rs - motor_speed)/rs for frame selection. Defaults to None.
         max_acc (float, optional): Maximum acceleration ratio threshold for frame
             selection. Defaults to None.
+        trial_average (bool, optional): Whether to fit on trial-averaged responses (one
+            sample per trial) instead of per-frame responses. Defaults to False.
+        min_valid_frames (int, optional): Minimum number of valid frames required in a
+            trial to include it in the fit. Defaults to None.
+        tread_kwargs (dict, optional): additional kwargs for
+            `treadmill.sync_all_recordings`, forwarded to `load_session`. Only used
+            when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -372,6 +388,7 @@ def load_and_fit(
         protocol_base=protocol_base,
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
+        tread_kwargs=tread_kwargs,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -398,6 +415,8 @@ def load_and_fit(
         run_openloop_only=run_openloop_only,
         max_rs2motor_diff=max_rs2motor_diff,
         max_acc=max_acc,
+        min_valid_frames=min_valid_frames,
+        trial_average=trial_average,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
