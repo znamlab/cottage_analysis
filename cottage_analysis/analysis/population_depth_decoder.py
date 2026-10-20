@@ -28,6 +28,35 @@ from znamutils.decorators import slurm_it
 CONDA_ENV = "v1_depth_map"
 
 
+def calculate_error(conmat):
+    """Mean depth-step error of a confusion matrix (see summary_analysis.depth_decoder_stats).
+
+    Imported when called, as depth_decoder_stats imports the pipelines.
+    """
+    from cottage_analysis.summary_analysis.depth_decoder_stats import (
+        calculate_error as _calculate_error,
+    )
+
+    return _calculate_error(conmat)
+
+
+def _accuracy_or_nan(y_true, y_pred):
+    """Accuracy, or NaN for a speed bin without frames (newer scikit-learn raises on empty input)."""
+    if len(y_true) == 0:
+        return np.nan
+    return accuracy_score(y_true, y_pred)
+
+
+def _confusion_matrix_or_empty(y_true, y_pred):
+    """Confusion matrix as float, a 0 x 0 matrix for a speed bin without frames.
+
+    The caller pads the missing depths with NaN, which gives a matrix of NaNs for an empty bin.
+    """
+    if len(y_true) == 0:
+        return np.zeros((0, 0))
+    return confusion_matrix(y_true, y_pred).astype("float")
+
+
 def rolling_average(arr, window, axis=0):
     # calculate rolling average along an axis
     if arr.ndim == 1:
@@ -903,8 +932,8 @@ def find_acc_speed_bins(
             length=int(still_time * frame_rate),
             shift=int(still_time * frame_rate),
         )
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        acc_speed_bins.append(_accuracy_or_nan(y_test[idx], y_preds[idx]))
+        conmat = _confusion_matrix_or_empty(y_test[idx], y_preds[idx])
         missing_idx = fill_in_missing_depths_to_conmat(
             y_test[idx], y_preds[idx], trials_df
         )
@@ -912,7 +941,7 @@ def find_acc_speed_bins(
             conmat = np.insert(conmat, miss, np.nan, axis=0)
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
-        print(f"Still accuracy: {accuracy_score(y_test[idx], y_preds[idx])}")
+        print(f"Still accuracy: {_accuracy_or_nan(y_test[idx], y_preds[idx])}")
 
         if add_errors:
             # calculating the error of the confusion matrix during stationary periods
@@ -920,8 +949,8 @@ def find_acc_speed_bins(
 
     for i in range(len(speed_bins) - 1):
         idx = (rs_arr >= speed_bins[i]) & (rs_arr < speed_bins[i + 1])
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        acc_speed_bins.append(_accuracy_or_nan(y_test[idx], y_preds[idx]))
+        conmat = _confusion_matrix_or_empty(y_test[idx], y_preds[idx])
         missing_idx = fill_in_missing_depths_to_conmat(
             y_test[idx], y_preds[idx], trials_df
         )
@@ -930,7 +959,7 @@ def find_acc_speed_bins(
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
         print(
-            f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
+            f"Speed bin {speed_bins[i]} - {speed_bins[i+1]} accuracy: {_accuracy_or_nan(y_test[idx], y_preds[idx])}"
         )
         if add_errors:
             # calculating the error of the confusion matrix for each speed bin
@@ -940,8 +969,8 @@ def find_acc_speed_bins(
         speed_bins[-1]
     ]:  # speed that's larger than the max boundary of speed_bins
         idx = rs_arr >= speed_bin
-        acc_speed_bins.append(accuracy_score(y_test[idx], y_preds[idx]))
-        conmat = confusion_matrix(y_test[idx], y_preds[idx]).astype("float")
+        acc_speed_bins.append(_accuracy_or_nan(y_test[idx], y_preds[idx]))
+        conmat = _confusion_matrix_or_empty(y_test[idx], y_preds[idx])
         missing_idx = fill_in_missing_depths_to_conmat(
             y_test[idx], y_preds[idx], trials_df
         )
@@ -950,7 +979,7 @@ def find_acc_speed_bins(
             conmat = np.insert(conmat, miss, np.nan, axis=1)
         conmat_speed_bins.append(conmat)
         print(
-            f"Speed bin > {speed_bin} accuracy: {accuracy_score(y_test[idx], y_preds[idx])}"
+            f"Speed bin > {speed_bin} accuracy: {_accuracy_or_nan(y_test[idx], y_preds[idx])}"
         )
         if add_errors:
             # calculating the error of the confusion matrix in the last speed bin
