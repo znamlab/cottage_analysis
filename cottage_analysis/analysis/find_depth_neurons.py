@@ -286,13 +286,25 @@ def find_depth_neurons(
         neurons_df["unit_id"] = [int(ui) for ui in unit_ids]
 
     for roi in tqdm(np.arange(nrois)):
-        _, p = scipy.stats.f_oneway(*mean_dff_arr[:, :, roi])
+        # Trials whose frames were all filtered out (e.g. by max_rs2motor_diff) are NaN.
+        # Ignore them, otherwise a single NaN trial makes the mean of its depth NaN, argmax
+        # returns that depth and f_oneway returns NaN.
+        groups_all = [x[~np.isnan(x)] for x in mean_dff_arr[:, :, roi]]
+        groups = [x for x in groups_all if len(x) > 0]
+        if len(groups) > 1:
+            _, p = scipy.stats.f_oneway(*groups)
+        else:
+            p = np.nan
 
         neurons_df.loc[roi, f"depth_neuron_anova_p{special_sfx}"] = p
         neurons_df.loc[roi, f"is_depth_neuron{special_sfx}"] = p < alpha
-        neurons_df.loc[roi, f"best_depth{special_sfx}"] = depth_list[
-            np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
-        ]
+        depth_means = np.array([np.mean(x) if len(x) else np.nan for x in groups_all])
+        if np.isnan(depth_means).all():
+            # no valid trial at any depth: keep the first depth to initialise the fit
+            best_idx = 0
+        else:
+            best_idx = np.nanargmax(depth_means)
+        neurons_df.loc[roi, f"best_depth{special_sfx}"] = depth_list[best_idx]
 
     return neurons_df, neurons_ds
 
