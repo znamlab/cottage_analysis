@@ -14,6 +14,7 @@ from tqdm import tqdm
 print = partial(print, flush=True)
 
 from cottage_analysis.preprocessing import synchronisation
+from cottage_analysis.utilities.misc import protocol_base_regex
 
 PROJECT = "663214d08993fd0b6e6b5f1d"
 PROTOCOL = "KellerTube"
@@ -316,7 +317,9 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    recordings = recordings[
+        recordings.name.str.contains(protocol_base_regex(protocol_base))
+    ]
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
 

@@ -13,6 +13,7 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.utilities.misc import normalise_protocol_base
 from znamutils import slurm_it
 
 
@@ -89,6 +90,7 @@ def main(
     for arg, value in locals().items():
         print(f"{arg}: {value}")
     print("")
+    protocol_base = normalise_protocol_base(protocol_base)
     if filter_datasets is None:
         filter_datasets = {}
     frame_rate = 1 / rate_bin
@@ -446,9 +448,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "hyperparam", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "hyperparam", n_tasks)
                 (
                     coef,
                     r2,
@@ -464,9 +464,7 @@ def main(
                 job_id, n_tasks = fit_rf_array.submit_ipsi_array(
                     work_dir=rf_work_dir,
                     imaging_df=imaging_df_all,
-                    frames=frames_all[
-                        ..., : int(frames_all.shape[2] // 2)
-                    ],
+                    frames=frames_all[..., : int(frames_all.shape[2] // 2)],
                     best_reg_xys=best_reg_xys,
                     best_reg_depths=best_reg_depths,
                     shift_stim=2,
@@ -474,9 +472,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "ipsi", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "ipsi", n_tasks)
                 (
                     coef_ipsi,
                     r2_ipsi,

@@ -12,6 +12,7 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.utilities.misc import normalise_protocol_base
 
 
 def main(
@@ -53,6 +54,7 @@ def main(
         Start analysing {session_name}   \n \
         -------------------------------"
     )
+    protocol_base = normalise_protocol_base(protocol_base)
     print(f"Using {protocol_base}")
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -369,9 +371,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "hyperparam", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "hyperparam", n_tasks)
                 (
                     coef,
                     r2,
@@ -387,9 +387,7 @@ def main(
                 job_id, n_tasks = fit_rf_array.submit_ipsi_array(
                     work_dir=rf_work_dir,
                     imaging_df=imaging_df_all,
-                    frames=frames_all[
-                        ..., : int(frames_all.shape[-1] // 2)
-                    ],
+                    frames=frames_all[..., : int(frames_all.shape[-1] // 2)],
                     best_reg_xys=best_reg_xys,
                     best_reg_depths=best_reg_depths,
                     shift_stim=2,
@@ -397,9 +395,7 @@ def main(
                     k_folds=5,
                     validation=False,
                 )
-                fit_rf_array.wait_for_results(
-                    rf_work_dir / "ipsi", n_tasks
-                )
+                fit_rf_array.wait_for_results(rf_work_dir / "ipsi", n_tasks)
                 (
                     coef_ipsi,
                     r2_ipsi,

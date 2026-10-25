@@ -13,6 +13,7 @@ from znamutils import slurm_it
 
 from . import spheres
 from ..preprocessing import synchronisation
+from ..utilities.misc import protocol_base_regex
 from .fit_gaussian_blob import fit_rs_of_tuning
 
 DEFAULT_TREADMILL_PARAMS = {
@@ -225,13 +226,15 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    recordings = recordings[
+        recordings.name.str.contains(protocol_base_regex(protocol_base))
+    ]
     if "exclude_reason" in recordings.columns:
         recordings = recordings[recordings["exclude_reason"].isna()]
     if len(recordings) == 0:
         raise ValueError(
             f"No recordings found for session '{session_name}' matching "
-            f"protocol_base '{protocol_base_filter}' and "
+            f"protocol_base '{protocol_base}' and "
             f"recording_type '{recording_type}'. "
             f"Check that protocol_base matches the actual recording names in flexilims."
         )
@@ -254,6 +257,7 @@ def sync_all_recordings(
             protocol_base=protocol_base,
         )
 
+        unit_ids = None
         if recording_type == "two_photon":
             imaging_df = synchronisation.generate_imaging_df(
                 vs_df=vs_df,
@@ -297,7 +301,7 @@ def sync_all_recordings(
                 make_circular=sim_make_circular,
             )
         if do_process_imaging_df:
-        # Add the treadmill specific part
+            # Add the treadmill specific part
             imaging_df = process_imaging_df(
                 imaging_df,
                 trial_duration=trial_duration,
@@ -307,7 +311,9 @@ def sync_all_recordings(
             )
 
         trials_df = spheres.generate_trials_df(
-            recording=recording, imaging_df=imaging_df, add_spikes=add_spikes,
+            recording=recording,
+            imaging_df=imaging_df,
+            add_spikes=add_spikes,
         )
 
         # Slice the continuous simulated trace correctly into the cropped trials
@@ -332,6 +338,16 @@ def sync_all_recordings(
             is_multidepth="multidepth" in recording.protocol,
             imaging_df=imaging_df,
         )
+        if unit_ids is not None:
+            # We have an ephys recording, add spike times and unit ids
+            trials_df = spheres.add_spikes_to_trials_df(
+                trials_df=trials_df,
+                unit_ids=unit_ids,
+                units_harp=units_harp,
+                dataset_type=ephys_kwargs.get("dataset_type", "kilosort4"),
+                exclude_datasets=exclude_datasets,
+                filter_datasets=filter_datasets,
+            )
         trials_df["recording"] = recording_name
 
         if i == 0:
