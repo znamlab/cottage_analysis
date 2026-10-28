@@ -1,0 +1,266 @@
+import warnings
+
+import numpy as np
+import pandas as pd
+import pytest
+from scipy.stats import zscore
+
+from cottage_analysis.analysis.spheres import rf_fitting as rf
+from tests import rf_fitting_legacy as legacy
+
+REG_XYS = np.array([0.5, 5.0, 50.0])
+REG_DEPTHS = np.array([1.0, 10.0])
+
+
+def reference_fit(imaging_df, frames, reg_xy, reg_depth, k_folds=5):
+    """Exhaustive fit at one (reg_xy, reg_depth), as the solver before `_ridge_cv`.
+
+    Solves the stacked least squares [X_train; reg_xy L; reg_depth D] c = [Y_train; 0; 0]
+    with an explicit inverse for each fold, on the design and folds of rf_fitting.
+    """
+    Y = zscore(np.concatenate(imaging_df["dffs"]), axis=0)
+    X, L, D, fold = rf._design_and_folds(imaging_df, frames, 2, k_folds)
+    coefs = []
+    pred_train = np.full_like(Y, np.nan)
+    pred_test = np.full_like(Y, np.nan)
+    for ifold in range(k_folds):
+        train, test = np.isfinite(fold) & (fold != ifold), fold == ifold
+        A = np.concatenate([X[train], reg_xy * L, reg_depth * D])
+        Y_aug = np.concatenate(
+            [Y[train], np.zeros((L.shape[0] + D.shape[0], Y.shape[1]))]
+        )
+        coef = np.linalg.inv(A.T @ A) @ A.T @ Y_aug
+        coefs.append(coef)
+        pred_train[train] = X[train] @ coef
+        pred_test[test] = X[test] @ coef
+    r2 = np.zeros((Y.shape[1], 2))
+    for isplit, pred in enumerate([pred_train, pred_test]):
+        ok = np.isfinite(pred[:, 0])
+        sse = np.sum((pred[ok] - Y[ok]) ** 2, axis=0)
+        r2[:, isplit] = 1 - sse / np.sum((Y[ok] - Y[ok].mean(axis=0)) ** 2, axis=0)
+    return np.stack(coefs), r2
+
+
+def reference_tuning(imaging_df, frames, reg_xys, reg_depths):
+    """Exhaustive grid search: refit at every pair, best test R2 per ROI."""
+    grid = np.array([[a, b] for a in reg_xys for b in reg_depths])
+    fits = [reference_fit(imaging_df.copy(), frames, a, b) for a, b in grid]
+    best = np.argmax(np.stack([r2[:, 1] for _, r2 in fits]), axis=0)
+    coef = np.stack([fits[b][0][:, :, i] for i, b in enumerate(best)], axis=2)
+    r2 = np.stack([fits[b][1][i] for i, b in enumerate(best)])
+    return coef, r2, grid[best, 0], grid[best, 1]
+
+
+def make_session(seed=1):
+    """Small multidepth session: 3 tuned and 3 untuned ROIs, 30 trials."""
+    rng = np.random.default_rng(seed)
+    ndepths, nele, nazi, ncells = 3, 3, 4, 6
+    depth = []
+    for _ in range(30):
+        depth += [np.nan] * 3 + [1.0] * rng.integers(15, 30)
+    depth = np.array(depth)
+    frames = (rng.random((ndepths, len(depth), nele, nazi)) > 0.7).astype(float)
+    frames[:, np.isnan(depth)] = 0
+    stim = ~np.isnan(depth)
+    depth[stim] = 1 + (np.cumsum(stim)[stim] % ndepths)
+    weights = rng.normal(size=(ndepths * nele * nazi, ncells)) * (np.arange(ncells) < 3)
+    drive = np.roll(frames, 2, axis=1).swapaxes(0, 1).reshape(len(depth), -1)
+    resp = drive @ weights + rng.normal(size=(len(depth), ncells))
+    imaging_df = pd.DataFrame(
+        {"depth": depth, "stim": stim.astype(int), "dffs": list(resp[:, None, :])}
+    )
+    return imaging_df, frames
+
+
+def test_grid_search_matches_hyperparam_tuning():
+    imaging_df, frames = make_session()
+    _, r2, best_xy, best_depth = reference_tuning(
+        imaging_df, frames, REG_XYS, REG_DEPTHS
+    )
+    best_r2, best_reg = rf.fit_3d_rfs_grid_search(
+        imaging_df.copy(), frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS
+    )
+    grid = np.array([[a, b] for a in REG_XYS for b in REG_DEPTHS])
+    np.testing.assert_allclose(best_r2, r2[:, 1], atol=1e-10)
+    np.testing.assert_array_equal(grid[best_reg, 0], best_xy)
+    np.testing.assert_array_equal(grid[best_reg, 1], best_depth)
+
+
+def make_single_depth_session(seed=2, start_in_trial=False):
+    """Small single-depth session: one depth per trial, gray (depth -99.99) between trials."""
+    rng = np.random.default_rng(seed)
+    depths, nele, nazi, ncells = [0.1, 0.4, 1.6], 3, 4, 6
+    depth = [] if start_in_trial else [-99.99] * 2
+    for itrial in range(30):
+        depth += [depths[itrial % 3]] * rng.integers(15, 30) + [-99.99] * 3
+    depth = np.array(depth)
+    frames = (rng.random((len(depth), nele, nazi)) > 0.7).astype(float)
+    frames[depth < 0] = 0
+    drive = np.zeros((len(depth), len(depths) * nele * nazi))
+    lagged = np.roll(frames, 2, axis=0).reshape(len(depth), -1)
+    for i, d in enumerate(depths):
+        m = depth == d
+        drive[m, i * nele * nazi : (i + 1) * nele * nazi] = lagged[m]
+    weights = rng.normal(size=(drive.shape[1], ncells)) * (np.arange(ncells) < 3)
+    resp = drive @ weights + rng.normal(size=(len(depth), ncells))
+    imaging_df = pd.DataFrame({"depth": depth, "dffs": list(resp[:, None, :])})
+    return imaging_df, frames
+
+
+@pytest.mark.parametrize(
+    "maker",
+    [
+        make_session,
+        make_single_depth_session,
+        lambda: make_single_depth_session(start_in_trial=True),
+    ],
+    ids=["multidepth", "single_depth", "single_depth_trial_at_start"],
+)
+def test_hyperparam_tuning_matches_exhaustive_search(maker):
+    imaging_df, frames = maker()
+    fast = rf.fit_3d_rfs_hyperparam_tuning(
+        imaging_df.copy(), frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS, k_folds=5
+    )
+    slow = reference_tuning(imaging_df, frames, REG_XYS, REG_DEPTHS)
+    for quick, ref in zip(fast, slow):
+        np.testing.assert_allclose(quick, ref, atol=1e-8)
+
+
+@pytest.mark.parametrize(
+    "maker",
+    [make_session, make_single_depth_session],
+    ids=["multidepth", "single_depth"],
+)
+def test_fits_at_given_regs_match_reference(maker):
+    imaging_df, frames = maker()
+    # fit_3d_rfs: one pair for all ROIs, on a subset of ROIs
+    coef, r2 = rf.fit_3d_rfs(
+        imaging_df.copy(), frames, reg_xy=5.0, reg_depth=10.0, choose_rois=[1, 4]
+    )
+    coef_ref, r2_ref = reference_fit(imaging_df.copy(), frames, 5.0, 10.0)
+    np.testing.assert_allclose(coef, coef_ref[:, :, [1, 4]], atol=1e-8)
+    np.testing.assert_allclose(r2, r2_ref[[1, 4]], atol=1e-8)
+    # fit_3d_rfs_ipsi: a different pair for each ROI
+    ncells = r2_ref.shape[0]
+    best_xy = REG_XYS[np.arange(ncells) % len(REG_XYS)]
+    best_depth = REG_DEPTHS[np.arange(ncells) % len(REG_DEPTHS)]
+    coef, r2 = rf.fit_3d_rfs_ipsi(imaging_df.copy(), frames, best_xy, best_depth)
+    for iroi in range(ncells):
+        coef_ref, r2_ref = reference_fit(
+            imaging_df.copy(), frames, best_xy[iroi], best_depth[iroi]
+        )
+        np.testing.assert_allclose(coef[:, :, iroi], coef_ref[:, :, iroi], atol=1e-8)
+        np.testing.assert_allclose(r2[iroi], r2_ref[iroi], atol=1e-8)
+
+
+def make_session_with_sphere_removals(seed=3):
+    """Multidepth session where depth is negative on some frames inside trials."""
+    imaging_df, frames = make_session(seed)
+    rng = np.random.default_rng(seed)
+    in_trial = np.flatnonzero(imaging_df.stim.values == 1)
+    removals = rng.choice(in_trial, len(in_trial) // 5, replace=False)
+    imaging_df.loc[removals, "depth"] = -1.0
+    return imaging_df, frames
+
+
+@pytest.mark.parametrize(
+    "maker",
+    [
+        make_session,
+        make_session_with_sphere_removals,
+        make_single_depth_session,
+        lambda: make_single_depth_session(start_in_trial=True),
+    ],
+    ids=[
+        "multidepth",
+        "multidepth_sphere_removals",
+        "single_depth",
+        "single_depth_trial_at_start",
+    ],
+)
+def test_matches_legacy_implementation(maker):
+    imaging_df, frames = maker()
+    fast = rf.fit_3d_rfs_hyperparam_tuning(
+        imaging_df.copy(), frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS
+    )
+    slow = legacy.fit_3d_rfs_hyperparam_tuning(
+        imaging_df.copy(),
+        frames,
+        reg_xys=REG_XYS,
+        reg_depths=REG_DEPTHS,
+        tune_separately=True,
+        validation=False,
+    )
+    for quick, ref in zip(fast, slow):
+        np.testing.assert_allclose(quick, ref, atol=1e-10)
+    _, _, best_xy, best_depth = slow
+    fast = rf.fit_3d_rfs_ipsi(imaging_df.copy(), frames, best_xy, best_depth)
+    slow = legacy.fit_3d_rfs_ipsi(imaging_df.copy(), frames, best_xy, best_depth)
+    for quick, ref in zip(fast, slow):
+        np.testing.assert_allclose(quick, ref, atol=1e-10)
+
+
+def test_silent_roi_does_not_break_other_rois():
+    imaging_df, frames = make_session()
+    resp = np.concatenate(imaging_df.dffs)
+    resp[:, 5] = 0  # silent ROI: NaN after zscore
+    imaging_df["dffs"] = list(resp[:, None, :])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        _, r2, _, _ = rf.fit_3d_rfs_hyperparam_tuning(
+            imaging_df.copy(), frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS
+        )
+    assert np.all(np.isfinite(r2[:5])), r2
+    assert np.all(np.isnan(r2[5]))
+
+
+@pytest.mark.parametrize(
+    "maker",
+    [make_session, make_single_depth_session],
+    ids=["multidepth", "single_depth"],
+)
+def test_fits_do_not_modify_imaging_df(maker):
+    imaging_df, frames = maker()
+    before = imaging_df.copy()
+    coef, _, best_xy, best_depth = rf.fit_3d_rfs_hyperparam_tuning(
+        imaging_df, frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS
+    )
+    rf.fit_3d_rfs_ipsi(imaging_df, frames, best_xy, best_depth)
+    rf.fit_3d_rfs_grid_search(
+        imaging_df, frames, reg_xys=REG_XYS, reg_depths=REG_DEPTHS
+    )
+    pd.testing.assert_frame_equal(imaging_df, before)
+
+
+def test_deprecated_flags_warn():
+    imaging_df, frames = make_session()
+    with pytest.warns(FutureWarning, match="tune_separately=False is deprecated"):
+        rf.fit_3d_rfs_hyperparam_tuning(
+            imaging_df,
+            frames,
+            reg_xys=REG_XYS,
+            reg_depths=REG_DEPTHS,
+            tune_separately=False,
+        )
+    with pytest.warns(FutureWarning, match="validation=True is deprecated"):
+        rf.fit_3d_rfs_hyperparam_tuning(
+            imaging_df,
+            frames,
+            reg_xys=REG_XYS,
+            reg_depths=REG_DEPTHS,
+            validation=True,
+        )
+    nrois = imaging_df["dffs"].iloc[0].shape[1]
+    with pytest.warns(FutureWarning, match="validation=True is deprecated"):
+        rf.fit_3d_rfs_ipsi(
+            imaging_df,
+            frames,
+            [REG_XYS[0]] * nrois,
+            [REG_DEPTHS[0]] * nrois,
+            validation=True,
+        )
+    # used by the slurm array workers
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        rf.fit_3d_rfs(imaging_df, frames, validation=False)
+    with pytest.warns(FutureWarning, match="validation=True is deprecated"):
+        rf.fit_3d_rfs(imaging_df, frames, validation=True)
