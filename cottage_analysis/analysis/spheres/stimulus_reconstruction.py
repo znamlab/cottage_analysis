@@ -123,7 +123,7 @@ def find_valid_frames(frame_times, trials_df, verbose=True):
         - 1
     )
     trial_index = np.clip(trial_index, 0, len(trials_df) - 1)
-    trial_end = trials_df["imaging_harptime_stim_stop"].iloc[trial_index].values
+    trial_end = trials_df.loc[trial_index, "imaging_harptime_stim_stop"].values
     grey_time = frame_times - trial_end > 0
     if verbose:
         print(
