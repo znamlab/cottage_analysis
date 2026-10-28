@@ -159,6 +159,10 @@ def _trial_index(imaging_df):
     A trial still running at the end of the recording is excluded, as in
     `trials_df`.
 
+    If imaging_df has a boolean `rf_use_frame` column (e.g. running frames only),
+    frames where it is False are also set to NaN. Trials are numbered before this
+    selection, so cross-validation folds still split whole trials.
+
     Args:
         imaging_df (pd.DataFrame): dataframe that contains info for each monitor
             frame, with a `stim` column.
@@ -179,6 +183,8 @@ def _trial_index(imaging_df):
     trial_start = np.hstack([in_trial[0], in_trial[1:] & ~in_trial[:-1]])
     trial_idx = np.cumsum(trial_start).astype(float)
     trial_idx[~in_trial] = np.nan
+    if "rf_use_frame" in imaging_df.columns:
+        trial_idx[~imaging_df.rf_use_frame.values.astype(bool)] = np.nan
     return trial_idx
 
 

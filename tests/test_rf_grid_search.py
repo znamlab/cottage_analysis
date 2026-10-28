@@ -284,6 +284,17 @@ def test_fits_do_not_modify_imaging_df(maker):
     pd.testing.assert_frame_equal(imaging_df, before)
 
 
+def test_trial_index_rf_use_frame_keeps_trial_ids():
+    df = pd.DataFrame({"stim": [0, 1, 1, 1, 0, 1, 1, 0]})
+    full = rf._trial_index(df)
+    df["rf_use_frame"] = [True, True, False, True, True, False, True, True]
+    masked = rf._trial_index(df)
+    np.testing.assert_array_equal(
+        masked, [np.nan, 1, np.nan, 1, np.nan, np.nan, 2, np.nan]
+    )
+    assert np.all(np.isnan(masked) | (masked == full))
+
+
 def test_deprecated_flags_warn():
     imaging_df, frames = make_session()
     with pytest.warns(FutureWarning, match="tune_separately=False is deprecated"):
