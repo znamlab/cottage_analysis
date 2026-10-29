@@ -82,6 +82,7 @@ def find_trial_times(param_log, jitter=2, verbose=True, debug=False):
             min_on = len(v)
     # For each of the putative onset times, check that all depth have an onset
     onset_times = []
+    onset_refs = []
     skipped = 0
     t0 = param_log.HarpTime.min()
     for i_onset, ref_onset in enumerate(all_onsets[depth_with_least_onsets]):
@@ -95,6 +96,7 @@ def find_trial_times(param_log, jitter=2, verbose=True, debug=False):
             continue
         # keep the first
         onset_times.append(np.min(batch))
+        onset_refs.append(ref_onset)
     print(f"Skipped {skipped} onsets with bad jitter")
     onset_times = np.array(onset_times)
     # Same for offsets
@@ -107,6 +109,7 @@ def find_trial_times(param_log, jitter=2, verbose=True, debug=False):
 
     # For each of the putative offset times, check that all depth have an offset
     offset_times = []
+    offset_refs = []
     skipped = 0
     for i_offset, ref_offset in enumerate(all_offsets[depth_with_least_offsets]):
         # find closest time in each element of all_offsets
@@ -119,28 +122,37 @@ def find_trial_times(param_log, jitter=2, verbose=True, debug=False):
             continue
         # keep the last
         offset_times.append(np.max(batch))
+        offset_refs.append(ref_offset)
     print(f"Skipped {skipped} offsets with bad jitter")
     offset_times = np.array(offset_times)
 
-    # Cut onset after the last offset (there shouldn't be more than one)
-    too_late = onset_times > offset_times[-1]
-    if np.sum(too_late) > 1:
-        raise ValueError(f"{np.sum(too_late)} corridors start after the last offset.")
-    onset_times = onset_times[~too_late]
-
-    closest_offset = offset_times.searchsorted(onset_times)
-    # If all went well we should have 1 for 1 matches and diff==1
-    matching = np.diff(closest_offset)
-    if np.any(matching == 0):
-        # We have 2 onsets in a row. That means one offset was not quite in sync
-        print(f"{np.sum(matching==0)} onsets with no offset")
-        to_remove = np.where(matching == 0)[0] + 1
-        onset_times = np.delete(onset_times, to_remove)
-        # redo the matching
-        closest_offset = offset_times.searchsorted(onset_times)
-
-    if not np.all(np.diff(closest_offset) == 1):
-        raise NotImplementedError("Offsets and onsets are not matching")
+    # Pair each valid onset with the offset of the same trial. A trial is kept only
+    # if the next offset after its onset is valid and no other onset (valid or not)
+    # comes before that offset. Otherwise, the onset would be paired with the offset
+    # of a later trial and the trials in between, which failed the jitter check,
+    # would be merged into it.
+    ref_onsets = all_onsets[depth_with_least_onsets]
+    ref_offsets = all_offsets[depth_with_least_offsets]
+    onset_refs = np.array(onset_refs)
+    offset_refs = np.array(offset_refs)
+    keep = np.zeros(len(onset_times), dtype=bool)
+    closest_offset = np.zeros(len(onset_times), dtype=int)
+    for i_onset, ref_onset in enumerate(onset_refs):
+        next_offset = ref_offsets[ref_offsets > ref_onset]
+        if not len(next_offset):
+            continue
+        next_offset = next_offset[0]
+        if np.any((ref_onsets > ref_onset) & (ref_onsets < next_offset)):
+            continue
+        if next_offset not in offset_refs:
+            continue
+        keep[i_onset] = True
+        closest_offset[i_onset] = np.flatnonzero(offset_refs == next_offset)[0]
+    n_merged = len(onset_times) - keep.sum()
+    if n_merged:
+        print(f"{n_merged} onsets without a valid offset in the same trial")
+    onset_times = onset_times[keep]
+    closest_offset = closest_offset[keep]
     trial_on_off = np.vstack([onset_times, offset_times[closest_offset]])
     param_log_index = param_log.HarpTime.searchsorted(trial_on_off)
 
