@@ -145,32 +145,46 @@ def single_depth_cv_folds(imaging_df, k_folds=5):
     for ifold, (_, test_trials) in enumerate(
         stratified_kfold.split(depths_by_trial.index, categorical)
     ):
-        # TODO: test_trials are positions in depths_by_trial but are matched to trial
-        # indices, which is wrong when trials do not count from 0. Kept to reproduce
-        # previous fits, fixed separately.
-        fold[np.isin(trial_idx, test_trials)] = ifold
+        # positions in depths_by_trial, converted to trial indices
+        fold[np.isin(trial_idx, depths_by_trial.index[test_trials])] = ifold
     return fold
 
 
 def _trial_index(imaging_df):
     """Trial index of each frame of a multidepth session, NaN outside trials.
 
-    A new trial starts when the depth becomes positive. Frames with a negative or NaN
-    depth are NaN.
+    Trials are runs of `stim == 1`, set by `find_stim_time` from the protocol trial
+    times. `depth` cannot be used: in multidepth protocols it is the radius of the
+    last logged sphere, which is negative for sphere removals, also during trials.
+    A trial still running at the end of the recording is excluded, as in
+    `trials_df`.
+
+    If imaging_df has a boolean `rf_use_frame` column (e.g. running frames only),
+    frames where it is False are also set to NaN. Trials are numbered before this
+    selection, so cross-validation folds still split whole trials.
 
     Args:
-        imaging_df (pd.DataFrame): dataframe that contains info for each monitor frame.
+        imaging_df (pd.DataFrame): dataframe that contains info for each monitor
+            frame, with a `stim` column.
 
     Returns:
-        np.array: trial index of each frame, NaN outside trials.
+        np.array: trial index of each frame, counting from 1, NaN outside trials.
     """
-    # TODO: in multidepth protocols depth is negative for sphere removals, also
-    # during trials, which splits trials. Kept to reproduce previous fits, fixed
-    # separately.
-    depth = imaging_df.depth
-    is_stim = (depth > 0).values.astype(int)
-    trial_idx = np.cumsum(np.hstack([0, np.diff(is_stim) == 1])).astype(float)
-    trial_idx[(depth.isna() | (depth < 0)).values] = np.nan
+    if "stim" not in imaging_df.columns:
+        raise ValueError(
+            "imaging_df has no `stim` column, needed to find multidepth trials"
+        )
+    in_trial = (imaging_df.stim == 1).values.copy()
+    if in_trial[-1]:
+        # the recording stopped during the last trial, which is excluded from
+        # trials_df and so not reconstructed in the stimulus frames
+        last_start = np.flatnonzero(~in_trial)[-1] + 1 if not in_trial.all() else 0
+        in_trial[last_start:] = False
+    trial_start = np.hstack([in_trial[0], in_trial[1:] & ~in_trial[:-1]])
+    trial_idx = np.cumsum(trial_start).astype(float)
+    trial_idx[~in_trial] = np.nan
+    if "rf_use_frame" in imaging_df.columns:
+        trial_idx[~imaging_df.rf_use_frame.values.astype(bool)] = np.nan
     return trial_idx
 
 
@@ -189,10 +203,7 @@ def multidepth_cv_folds(imaging_df, k_folds=5):
     kfold = KFold(n_splits=k_folds, random_state=42, shuffle=True)
     fold = np.full(len(trial_idx), np.nan)
     for ifold, (_, test_trials) in enumerate(kfold.split(trials)):
-        # TODO: test_trials are positions in trials but are matched to trial indices,
-        # which is wrong when trials do not count from 0. Kept to reproduce previous
-        # fits, fixed separately.
-        fold[np.isin(trial_idx, test_trials)] = ifold
+        fold[np.isin(trial_idx, trials[test_trials])] = ifold
     return fold
 
 
