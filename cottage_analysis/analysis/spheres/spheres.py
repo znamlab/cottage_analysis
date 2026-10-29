@@ -7,7 +7,11 @@ from znamutils import slurm_it
 from cottage_analysis.analysis.spheres import multidepth
 from cottage_analysis.preprocessing import synchronisation
 from cottage_analysis.analysis.spheres.stimulus_reconstruction import regenerate_frames
-from cottage_analysis.utilities.misc import get_str_or_recording
+from cottage_analysis.utilities.misc import (
+    get_str_or_recording,
+    normalise_protocol_base,
+    protocol_base_regex,
+)
 from cottage_analysis.io_module.visstim import get_param_log
 from cottage_analysis.io_module.spikes import load_kilosort_folder
 from cottage_analysis.analysis.fit_gaussian_blob import fit_rs_of_tuning
@@ -587,7 +591,10 @@ def sync_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    protocol_base = normalise_protocol_base(protocol_base)
+    recordings = recordings[
+        recordings.name.str.contains(protocol_base_regex(protocol_base))
+    ]
     # Special case for multidepth, the protocol_base contains the normal sphere
     if protocol_base == "SpheresPermTubeReward":
         recordings = recordings[~recordings.name.str.contains("multidepth")]
@@ -706,7 +713,9 @@ def regenerate_frames_all_recordings(
         query_value=recording_type,
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    recordings = recordings[
+        recordings.name.str.contains(protocol_base_regex(protocol_base))
+    ]
     playback_rec = recordings.name.str.contains("Playback")
     if is_closedloop:
         recordings = recordings[~playback_rec]
@@ -1061,7 +1070,9 @@ def simulate_and_fit_session(
         query_value="two_photon",
         flexilims_session=flexilims_session,
     )
-    recordings = recordings[recordings.name.str.contains(protocol_base)]
+    recordings = recordings[
+        recordings.name.str.contains(protocol_base_regex(protocol_base))
+    ]
     # Exclude Playback and multidepth recordings (closed-loop spheres only)
     recordings = recordings[~recordings.name.str.contains("Playback")]
     recordings = recordings[~recordings.name.str.contains("multidepth")]

@@ -13,6 +13,7 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.utilities.misc import normalise_protocol_base
 from znamutils import slurm_it
 
 
@@ -89,6 +90,7 @@ def main(
     for arg, value in locals().items():
         print(f"{arg}: {value}")
     print("")
+    protocol_base = normalise_protocol_base(protocol_base)
     if filter_datasets is None:
         filter_datasets = {}
     frame_rate = 1 / rate_bin
@@ -384,7 +386,8 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
+            exclude_keywords=["recording", "openclosed", "openloop"]
+            + (["treadmill"] if special_sfx_base == "" else []),
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
@@ -558,7 +561,8 @@ def main(
                 conflicts=conflicts,
                 prefix="fit_rs_of_tuning_",
                 suffix=special_sfx_base,
-                exclude_keywords=["recording", "openclosed", "openloop"],
+                exclude_keywords=["recording", "openclosed", "openloop"]
+                + (["treadmill"] if special_sfx_base == "" else []),
                 include_keywords=[],
                 target_column_suffix=special_sfx_base,
                 filetype=".pickle",

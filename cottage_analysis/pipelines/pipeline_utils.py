@@ -16,6 +16,7 @@ from cottage_analysis.analysis import (
     treadmill,
 )
 from cottage_analysis.plotting import basic_vis_plots, sta_plots
+from cottage_analysis.utilities.misc import normalise_protocol_base
 
 print = partial(print, flush=True)
 
@@ -219,6 +220,7 @@ def load_session(
         neurons_df = pd.read_pickle(neurons_ds.path_full)
     else:
         neurons_df = None
+    protocol_base = normalise_protocol_base(protocol_base)
     if protocol_base == "SpheresTubeMotor":
         vs_df_all, trials_df_all = treadmill.sync_all_recordings(
             session_name=session_name,
@@ -573,6 +575,7 @@ def run_basic_plots(
             ``DEFAULT_TREADMILL_PARAMS``.
     """
 
+    protocol_base = normalise_protocol_base(protocol_base)
     _needs_frames = do_sta and (protocol_base != "SpheresTubeMotor")
     session_data = load_session(
         project,

@@ -12,6 +12,7 @@ from cottage_analysis.analysis import (
 )
 from cottage_analysis.analysis.spheres import rf_fitting
 from cottage_analysis.pipelines import pipeline_utils
+from cottage_analysis.utilities.misc import normalise_protocol_base
 
 
 def main(
@@ -53,6 +54,7 @@ def main(
         Start analysing {session_name}   \n \
         -------------------------------"
     )
+    protocol_base = normalise_protocol_base(protocol_base)
     print(f"Using {protocol_base}")
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
