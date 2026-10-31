@@ -140,6 +140,69 @@ def downsample_dff(
     return trials_df
 
 
+def find_stationary_samples(
+    trials_df,
+    frame_rate=15,
+    downsample_window=0.5,
+    still_thr=0.05,
+    still_time=1,
+):
+    """Find stationary decoder samples: maximum running speed during the preceding
+    `still_time` s is < `still_thr` m/s.
+
+    Uses the raw per-frame running speed, not the smoothed and downsampled one. For
+    volumetric imaging (`RS_volume_*` columns), the speed of a volume is the maximum over
+    its frames. A sample of round(downsample_window * frame_rate) frames (as in
+    downsample_dff; one frame if downsample_window is None) is stationary if the
+    int(still_time * frame_rate) frames ending on its last frame are. The window extends
+    into the preceding blank (`*_blank_pre`) for the first samples of a trial; samples
+    without a full window are not stationary.
+
+    Args:
+        trials_df (pd.DataFrame): trials_df after downsample_dff.
+        frame_rate (float): imaging frame (or volume) rate. Truncated to int as in
+            preprocess_data.
+        downsample_window (float): downsample window in s used in downsample_dff, or
+            None if the samples were not downsampled.
+        still_thr (float): running speed threshold in m/s.
+        still_time (float): duration in s the mouse must have been stationary.
+
+    Returns:
+        np.ndarray: boolean mask in the sample order of np.hstack(dff_stim_downsample).
+    """
+    frame_rate = int(frame_rate)
+    bin_frames = (
+        1 if downsample_window is None else round(downsample_window * frame_rate)
+    )
+    still_frames = int(still_time * frame_rate)
+    use_volume = "RS_volume_stim" in trials_df.columns
+
+    def _speed(trial, epoch):
+        col = f"RS_volume_{epoch}" if use_volume else f"RS_{epoch}"
+        if col not in trial or len(trial[col]) == 0:
+            return np.array([])
+        if use_volume:
+            return np.nanmax(np.asarray(trial[col], dtype=float), axis=1)
+        return np.asarray(trial[col], dtype=float)
+
+    masks = []
+    for _, trial in trials_df.iterrows():
+        rs_pre = _speed(trial, "blank_pre")
+        rs = np.concatenate([rs_pre, _speed(trial, "stim")])
+        n_samples = trial["dff_stim_downsample"].shape[0]
+        sample_end = len(rs_pre) + (np.arange(n_samples) + 1) * bin_frames
+        trial_mask = np.zeros(n_samples, dtype=bool)
+        for i, end in enumerate(sample_end):
+            window = rs[max(end - still_frames, 0) : end]
+            trial_mask[i] = (
+                len(window) == still_frames
+                and np.isfinite(window).any()
+                and np.nanmax(window) < still_thr
+            )
+        masks.append(trial_mask)
+    return np.concatenate(masks)
+
+
 def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=False):
     # train test val split based on trials
     depth_list = np.sort(trials_df.depth.unique())
@@ -899,6 +962,7 @@ def find_acc_speed_bins(
     still_time=1,
     frame_rate=15,
     add_errors=False,
+    downsample_window=0.5,
 ):
     speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
@@ -922,15 +986,12 @@ def find_acc_speed_bins(
         error_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"])
     if continuous_still:
-        # for volumetric imaging, take the indices of running volumes where the maximum running speed for each frame is below threshold
-        # but for all other speed bins, take the average running speed across the volume
-        idx = common_utils.find_thresh_sequence(
-            array=rs_arr
-            if not trials_df.columns.str.contains("RS_volume").any()
-            else np.hstack(trials_df["RS_volume_max_stim_downsample"]),
-            threshold_max=still_thr,
-            length=int(still_time * frame_rate),
-            shift=int(still_time * frame_rate),
+        idx = find_stationary_samples(
+            trials_df,
+            frame_rate=frame_rate,
+            downsample_window=downsample_window,
+            still_thr=still_thr,
+            still_time=still_time,
         )
         acc_speed_bins.append(_accuracy_or_nan(y_test[idx], y_preds[idx]))
         conmat = _confusion_matrix_or_empty(y_test[idx], y_preds[idx])

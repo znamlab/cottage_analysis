@@ -157,6 +157,7 @@ def main(
             still_time=params["still_time"],
             frame_rate=frame_rate,
             add_errors=True,
+            downsample_window=params["downsample_window"],
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
