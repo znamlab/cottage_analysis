@@ -154,13 +154,13 @@ def decoder_accuracy(
                 decoder_results["ndepths"] == ndepths
             ]
             print(
-                f"decoder accuracy {ndepths} depths: {len(decoder_results_ndepths)} sessions)"
+                f"decoder {mode} {ndepths} depths: {len(decoder_results_ndepths)} sessions)"
             )
 
-            # plot scatter of closed loop vs open loop decoding accuracy
+            # plot scatter of closed loop vs open loop decoding accuracy/error
             ax.scatter(
-                decoder_results_ndepths["accuracy_closedloop"].values.flatten(),
-                decoder_results_ndepths["accuracy_openloop"].values.flatten(),
+                decoder_results_ndepths[f"{mode}_closedloop"].values.flatten(),
+                decoder_results_ndepths[f"{mode}_openloop"].values.flatten(),
                 marker=marker,
                 s=markersize,
                 alpha=0.5,
@@ -189,8 +189,8 @@ def decoder_accuracy(
             frameon=False,
         )
 
-        ax.set_xlabel("Closed loop decoding accuracy", fontsize=fontsize_dict["label"])
-        ax.set_ylabel("Open loop decoding accuracy", fontsize=fontsize_dict["label"])
+        ax.set_xlabel(f"Closed loop decoding {mode}", fontsize=fontsize_dict["label"])
+        ax.set_ylabel(f"Open loop decoding {mode}", fontsize=fontsize_dict["label"])
         ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
         sns.despine(ax=ax)
     return ax
