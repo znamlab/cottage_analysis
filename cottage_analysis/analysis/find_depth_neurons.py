@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -305,9 +306,15 @@ def find_depth_neurons(
 
         neurons_df.loc[roi, f"depth_neuron_anova_p{special_sfx}"] = p
         neurons_df.loc[roi, f"is_depth_neuron{special_sfx}"] = p < alpha
-        neurons_df.loc[roi, f"best_depth{special_sfx}"] = depth_list[
-            np.argmax(np.mean(mean_dff_arr[:, :, roi], axis=1))
-        ]
+        # NaN-aware: a trial whose frames were all removed is NaN, and a plain mean /
+        # argmax returns the first NaN depth, which then seeds `fit_preferred_depth` at a
+        # depth unrelated to the response (treadmill plateau fits came out flat).
+        depth_means = np.nanmean(mean_dff_arr[:, :, roi], axis=1)
+        neurons_df.loc[roi, f"best_depth{special_sfx}"] = (
+            depth_list[np.nanargmax(depth_means)]
+            if np.isfinite(depth_means).any()
+            else np.nan
+        )
 
     return neurons_df, neurons_ds
 
@@ -385,11 +392,27 @@ def fit_preferred_depth(
                 "neurons_df; run find_depth_neurons with the same suffix first"
             )
 
+        # Multi-start: `iterate_fit` calls `p0_func` `niter` times per fit. The first
+        # start is seeded at the best depth, the others at preferred depths spread over the
+        # tested range, so that one bad seed cannot decide the fit (all starts used to
+        # share the best-depth seed and settled in the same flat local minimum). The best
+        # R^2 start is kept, so the fit is never worse in-sample than the best-depth start.
+        start = itertools.count()
+
         def p0_func():
+            i_start = next(start) % niter
+            best = neurons_df.loc[roi, p0_depth]
+            if i_start == 0 and np.isfinite(best) and best > 0:
+                x0 = np.log(best)
+            else:
+                log_depths = np.log(depth_list)
+                x0 = np.linspace(log_depths[0], log_depths[-1], max(niter - 1, 1))[
+                    (i_start - 1) % max(niter - 1, 1)
+                ]
             return np.concatenate(
                 (
                     np.random.normal(size=1),
-                    np.atleast_1d(np.log(neurons_df.loc[roi, p0_depth])),
+                    np.atleast_1d(x0),
                     np.random.normal(size=1),
                     np.random.normal(size=1),
                 )
