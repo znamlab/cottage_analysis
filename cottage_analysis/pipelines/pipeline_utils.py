@@ -281,6 +281,65 @@ def load_session(
     return tuple(out)
 
 
+def load_trials_for_rsof_fit(
+    project,
+    session_name,
+    photodiode_protocol,
+    base_name=None,
+    filter_datasets=None,
+    exclude_datasets=None,
+    protocol_base="SpheresPermTubeReward",
+    recording_type="two_photon",
+    ephys_kwargs=None,
+    tread_kwargs=None,
+    use_col="dffs",
+    lag=0,
+):
+    """Load the trials used to fit running speed and optic flow tuning.
+
+    Multidepth recordings are removed. See `load_and_fit` for the arguments.
+
+    Returns:
+        tuple: (neurons_ds, trials_df)
+    """
+    if filter_datasets is None:
+        filter_datasets = {"anatomical_only": 3}
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    (
+        neurons_ds,
+        _,
+        _,
+        trials_df_all,
+    ) = load_session(
+        project,
+        session_name,
+        photodiode_protocol,
+        regenerate_frames=False,
+        base_name=base_name,
+        filter_datasets=filter_datasets,
+        exclude_datasets=exclude_datasets,
+        protocol_base=protocol_base,
+        recording_type=recording_type,
+        ephys_kwargs=ephys_kwargs,
+        tread_kwargs=tread_kwargs,
+        add_spikes=use_col == "spks",
+        lag=lag,
+    )
+    # remove any multidepth experiment
+    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
+    return neurons_ds, trials_df_all[~is_multidepth]
+
+
+def rsof_fit_filename(model, choose_trials, k_folds, file_special_sfx=""):
+    """Filename of the fit dataframe saved by `load_and_fit`."""
+    suffix = f"{model}"
+    if isinstance(choose_trials, str):
+        suffix = suffix + "_crossval"
+    suffix = suffix + f"_k{k_folds}"
+    return f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
+
+
 @slurm_it(
     conda_env=CONDA_ENV,
     slurm_options={
@@ -386,20 +445,10 @@ def load_and_fit(
         pd.DataFrame: A dataframe containing the fitted parameters and performance
             metrics for each ROI. The result is also saved as a pickle file.
     """
-    if filter_datasets is None:
-        filter_datasets = {"anatomical_only": 3}
-
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    (
-        neurons_ds,
-        _,
-        _,
-        trials_df_all,
-    ) = load_session(
+    neurons_ds, trials_df_all = load_trials_for_rsof_fit(
         project,
         session_name,
         photodiode_protocol,
-        regenerate_frames=False,
         base_name=base_name,
         filter_datasets=filter_datasets,
         exclude_datasets=exclude_datasets,
@@ -407,18 +456,9 @@ def load_and_fit(
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
         tread_kwargs=tread_kwargs,
-        add_spikes=use_col == "spks",
+        use_col=use_col,
         lag=lag,
     )
-    # create name from model and choose_trials
-    suffix = f"{model}"
-    if isinstance(choose_trials, str):
-        suffix = suffix + f"_crossval"
-    suffix = suffix + f"_k{k_folds}"
-
-    # remove any multidepth experiment
-    is_multidepth = trials_df_all.recording_name.str.contains("multidepth")
-    trials_df_all = trials_df_all[~is_multidepth]
 
     # do the fit
     fit_df = fit_gaussian_blob.fit_rs_of_tuning(
@@ -441,7 +481,7 @@ def load_and_fit(
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
-        f"fit_rs_of_tuning_{suffix}{file_special_sfx}.pickle"
+        rsof_fit_filename(model, choose_trials, k_folds, file_special_sfx)
     )
     fit_df.to_pickle(target)
     print(f"Fit results saved to {target}")
