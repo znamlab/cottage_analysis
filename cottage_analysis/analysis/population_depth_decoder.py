@@ -91,37 +91,53 @@ def downsample(arr, factor, mode="average"):
 
 def downsample_dff(
     trials_df,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
 ):
-    trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
-        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
-        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["dff_stim_downsample"] = trials_df["dff_stim_rolling"].apply(
+    if rolling_window is not None and rolling_window > 0:
+        trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
+            lambda x: rolling_average(
+                x, window=round(rolling_window * frame_rate), axis=0
+            )
+        )
+        trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
+            lambda x: rolling_average(
+                x, window=round(rolling_window * frame_rate), axis=0
+            )
+        )
+        dff_col, rs_col = "dff_stim_rolling", "RS_stim_rolling"
+    else:
+        dff_col, rs_col = "dff_stim", "RS_stim"
+
+    trials_df["dff_stim_downsample"] = trials_df[dff_col].apply(
         lambda x: downsample(
             x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
-    trials_df["RS_stim_downsample"] = trials_df["RS_stim_rolling"].apply(
+    trials_df["RS_stim_downsample"] = trials_df[rs_col].apply(
         lambda x: downsample(
             x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
     if any(trials_df.columns.str.contains("RS_volume")):
         # Take the maximum running speed in each imaging volume and then compute the rolling average across imaging volumes
-        trials_df["RS_volume_max_stim_rolling"] = trials_df["RS_volume_stim"].apply(
-            lambda x: rolling_average(
-                np.nanmax(x, axis=1), window=round(rolling_window * frame_rate), axis=0
+        if rolling_window is not None and rolling_window > 0:
+            trials_df["RS_volume_max_stim_rolling"] = trials_df["RS_volume_stim"].apply(
+                lambda x: rolling_average(
+                    np.nanmax(x, axis=1),
+                    window=round(rolling_window * frame_rate),
+                    axis=0,
+                )
             )
-        )
-        # Downsample the rolling average of the maximum running speed
-        trials_df["RS_volume_max_stim_downsample"] = trials_df[
-            "RS_volume_max_stim_rolling"
-        ].apply(
+            rs_volume_col = "RS_volume_max_stim_rolling"
+        else:
+            trials_df["RS_volume_max_stim"] = trials_df["RS_volume_stim"].apply(
+                lambda x: np.nanmax(x, axis=1)
+            )
+            rs_volume_col = "RS_volume_max_stim"
+        # Downsample the (rolling average of the) maximum running speed
+        trials_df["RS_volume_max_stim_downsample"] = trials_df[rs_volume_col].apply(
             lambda x: downsample(
                 x, factor=round(downsample_window * frame_rate), mode="average"
             )
@@ -418,7 +434,7 @@ def preprocess_data(
     closed_loop=1,
     n_rois=None,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,
@@ -444,7 +460,7 @@ def preprocess_data(
     iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
 
     # process dff and trials_df
-    if None not in (rolling_window, downsample_window):
+    if downsample_window is not None:
         trials_df = downsample_dff(
             trials_df,
             rolling_window=rolling_window,
@@ -763,7 +779,7 @@ def depth_decoder(
     closed_loop=1,
     n_rois=None,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,

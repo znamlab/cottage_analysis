@@ -16,7 +16,8 @@ from cottage_analysis.plotting import depth_decoder_plots
 
 from cottage_analysis.pipelines import pipeline_utils
 
-k_folds=4
+k_folds = 4
+
 
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
@@ -38,7 +39,7 @@ def main(
     )
     params = {
         "trial_average": False,
-        "rolling_window": 0.5,
+        "rolling_window": None,
         "downsample_window": 0.5,
         "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
