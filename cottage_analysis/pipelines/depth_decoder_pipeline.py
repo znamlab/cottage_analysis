@@ -140,6 +140,7 @@ def main(
             decoder_dict_path=neurons_ds.path_full.parent
             / f"decoder_results{params['special_sfx']}.pickle",
             special_sfx=params["special_sfx"],
+            job_dependency=outputs_all.copy() if use_slurm else None,
         )
         outputs.append(out)
         outputs_all.append(out)

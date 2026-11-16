@@ -593,8 +593,6 @@ def fit_each_fold(
             )["roi_vector"]
             decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
 
-    decoder_dict = pd.read_pickle(decoder_dict_path)
-
     (
         trials_df,
         dff_train_all,
@@ -683,7 +681,7 @@ def fit_each_fold(
         "wb",
     ) as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return decoder_dict
+    return decoder_outputs
 
 
 @slurm_it(
@@ -791,13 +789,20 @@ def depth_decoder(
     neurons_ds=None,
     decoder_dict_path=None,
     special_sfx="",
+    job_dependency=None,
 ):
-    if decoder_dict_path is not None:
-        if os.path.exists(decoder_dict_path):
-            with open(decoder_dict_path, "rb") as f:
-                decoder_dict = pickle.load(f)
-        else:
-            decoder_dict = {}
+    if decoder_dict_path is None:
+        assert (
+            neurons_ds is not None
+        ), "ERROR: neurons_ds or decoder_dict_path must be provided."
+        decoder_dict_path = (
+            neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
+        )
+    if os.path.exists(decoder_dict_path):
+        with open(decoder_dict_path, "rb") as f:
+            decoder_dict = pickle.load(f)
+    else:
+        decoder_dict = {}
     # set slurm folder
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -938,7 +943,10 @@ def depth_decoder(
         outputs.append(out)
 
     # calculate the accuracy on all test data
-    job_dependency = outputs if use_slurm else None
+    if use_slurm:
+        acc_dependency = outputs + (list(job_dependency) if job_dependency else [])
+    else:
+        acc_dependency = None
     decoder_dict = calculate_acc_conmat(
         decoder_dict_path=decoder_results_path,
         recording_type=recording_type,
@@ -954,7 +962,7 @@ def depth_decoder(
         scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy"
         if n_rois is None
         else f"decoder_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}_accuracy",
-        job_dependency=job_dependency,
+        job_dependency=acc_dependency,
     )
 
     return decoder_dict
