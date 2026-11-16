@@ -152,6 +152,7 @@ def main(
             neurons_ds=neurons_ds,
             decoder_dict_path=decoder_dict_path,
             special_sfx=params["special_sfx"],
+            job_dependency=outputs_all.copy() if use_slurm else None,
         )
         outputs.append(out)
         outputs_all.append(out)

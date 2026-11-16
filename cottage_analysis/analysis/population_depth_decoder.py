@@ -448,7 +448,6 @@ def fit_each_fold(
         if os.path.exists(decoder_inputs_path):
             with open(decoder_inputs_path, "rb") as f:
                 decoder_inputs = pickle.load(f)
-    decoder_dict = pd.read_pickle(decoder_dict_path)
     (
         trials_df,
         dff_train_all,
@@ -528,7 +527,7 @@ def fit_each_fold(
         "wb",
     ) as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return decoder_dict
+    return decoder_outputs
 
 
 @slurm_it(
@@ -584,9 +583,7 @@ def calculate_acc_conmat(
     decoder_dict[f"accuracy_{recording_type}"] = acc
     decoder_dict[f"conmat_{recording_type}"] = conmat
     print(f"Accuracy {recording_type}: {acc}")
-    with open(
-        Path(decoder_dict_path).parent / f"decoder_results{special_sfx}.pickle", "wb"
-    ) as f:
+    with open(decoder_dict_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
     return decoder_dict
 
@@ -609,13 +606,20 @@ def depth_decoder(
     neurons_ds=None,
     decoder_dict_path=None,
     special_sfx="",
+    job_dependency=None,
 ):
-    if decoder_dict_path is not None:
-        if os.path.exists(decoder_dict_path):
-            with open(decoder_dict_path, "rb") as f:
-                decoder_dict = pickle.load(f)
-        else:
-            decoder_dict = {}
+    if decoder_dict_path is None:
+        assert (
+            neurons_ds is not None
+        ), "ERROR: neurons_ds or decoder_dict_path must be provided."
+        decoder_dict_path = (
+            neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
+        )
+    if os.path.exists(decoder_dict_path):
+        with open(decoder_dict_path, "rb") as f:
+            decoder_dict = pickle.load(f)
+    else:
+        decoder_dict = {}
     # set slurm folder
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -697,7 +701,7 @@ def depth_decoder(
             neurons_ds is not None
         ), "ERROR: neurons_ds must be provided when use_slurm is True."
         decoder_inputs_path = (
-            neurons_ds.path_full.parent
+            Path(decoder_dict_path).parent
             / f"decoder_inputs_{recording_type}{special_sfx}.pickle"
         )
         with open(decoder_inputs_path, "wb") as f:
@@ -711,9 +715,7 @@ def depth_decoder(
     decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
     decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
     decoder_dict[f"trials_df_{recording_type}"] = trials_df
-    with open(
-        neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle", "wb"
-    ) as f:
+    with open(decoder_dict_path, "wb") as f:
         pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     # fit each fold
@@ -723,8 +725,7 @@ def depth_decoder(
             i,
             decoder_inputs=decoder_inputs,
             decoder_inputs_path=decoder_inputs_path,
-            decoder_dict_path=neurons_ds.path_full.parent
-            / f"decoder_results{special_sfx}.pickle",
+            decoder_dict_path=decoder_dict_path,
             recording_type=recording_type,
             special_sfx=special_sfx,
             use_slurm=use_slurm,
@@ -734,10 +735,12 @@ def depth_decoder(
         outputs.append(out)
 
     # calculate the accuracy on all test data
-    job_dependency = outputs if use_slurm else None
+    if use_slurm:
+        acc_dependency = outputs + (list(job_dependency) if job_dependency else [])
+    else:
+        acc_dependency = None
     decoder_dict = calculate_acc_conmat(
-        decoder_dict_path=neurons_ds.path_full.parent
-        / f"decoder_results{special_sfx}.pickle",
+        decoder_dict_path=decoder_dict_path,
         recording_type=recording_type,
         depth_list=depth_list.tolist(),
         decoder_inputs=decoder_inputs,
@@ -747,7 +750,7 @@ def depth_decoder(
         use_slurm=use_slurm,
         slurm_folder=slurm_folder,
         scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy",
-        job_dependency=job_dependency,
+        job_dependency=acc_dependency,
     )
 
     return decoder_dict
