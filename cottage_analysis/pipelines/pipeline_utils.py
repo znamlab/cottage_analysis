@@ -546,6 +546,12 @@ def merge_fit_dataframes(
             tmp = pd.read_pickle(df_name)
             dfs_to_merge.append(tmp)
 
+    if not dfs_to_merge:
+        # e.g. the pipeline run with run_rsof_fit=False: nothing to merge, and reduce()
+        # below would fail on an empty list. neurons_df is left as it is on disk.
+        print(f"No file matching {search_str} to merge, neurons_df unchanged")
+        return neurons_df
+
     # Checking that the number of ROIs is the same across dataframes with fit results
     assert all(
         [df["roi"].equals(neurons_df["roi"]) for df in dfs_to_merge]
