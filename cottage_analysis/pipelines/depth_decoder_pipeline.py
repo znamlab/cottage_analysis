@@ -5,6 +5,7 @@ import defopt
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pickle
+from typing import Optional
 import warnings
 
 import flexiznam as flz
@@ -25,6 +26,9 @@ def main(
     use_slurm=False,
     anatomical_only=True,
     ast_neuropil=False,
+    downsample_window: Optional[float] = 0.5,
+    rolling_window: Optional[float] = None,
+    output_subdir: Optional[str] = None,
 ):
     """
     Main function to analyze a session.
@@ -37,6 +41,9 @@ def main(
         use_slurm(bool): whether to use slurm to run the fit in the pipeline. Default False.
         anatomical_only(bool): whether to only use anatomical datasets. Default True.
         ast_neuropil(bool): whether to use ASt neuropil correction. Default False.
+        downsample_window(Optional[float]): non-overlapping downsample window in s (None or <=0 for frame-by-frame). Default 0.5.
+        rolling_window(Optional[float]): optional rolling average window in s before downsampling. Default None.
+        output_subdir(Optional[str]): optional subdirectory under neurons_ds.path_full.parent for outputs. Default None.
 
     """
     print(
@@ -46,8 +53,8 @@ def main(
     )
     params = {
         "trial_average": False,
-        "rolling_window": None,
-        "downsample_window": 0.5,
+        "rolling_window": rolling_window,
+        "downsample_window": downsample_window,
         "Cs": np.logspace(-3, 3, 7),
         "continuous_still": 1,
         "still_time": 1,
@@ -82,6 +89,13 @@ def main(
         project=project,
         conflicts=conflicts,
     )
+    output_dir = (
+        neurons_ds.path_full.parent / output_subdir
+        if output_subdir
+        else neurons_ds.path_full.parent
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    decoder_dict_path = output_dir / f"decoder_results{params['special_sfx']}.pickle"
     suite2p_datasets = flz.get_datasets(
         origin_name=session_name,
         dataset_type="suite2p_rois",
@@ -136,8 +150,7 @@ def main(
             k_folds=5,
             use_slurm=use_slurm,
             neurons_ds=neurons_ds,
-            decoder_dict_path=neurons_ds.path_full.parent
-            / f"decoder_results{params['special_sfx']}.pickle",
+            decoder_dict_path=decoder_dict_path,
             special_sfx=params["special_sfx"],
         )
         outputs.append(out)
@@ -147,8 +160,7 @@ def main(
         print(f"Calculating accuracy for depth decoder at different speed bins{sfx}")
         job_dependency = outputs if use_slurm else None
         out = population_depth_decoder.find_acc_speed_bins(
-            decoder_dict_path=neurons_ds.path_full.parent
-            / f"decoder_results{params['special_sfx']}.pickle",
+            decoder_dict_path=decoder_dict_path,
             recording_type=sfx,
             speed_bins=params["speed_bins"].tolist(),
             continuous_still=params["continuous_still"],
@@ -166,9 +178,8 @@ def main(
 
     job_dependency = outputs_all if use_slurm else None
     depth_decoder_plots.plot_decoder_session(
-        decoder_dict_path=neurons_ds.path_full.parent
-        / f"decoder_results{params['special_sfx']}.pickle",
-        save_path=str(neurons_ds.path_full.parent),
+        decoder_dict_path=decoder_dict_path,
+        save_path=str(output_dir),
         session_name=session_name,
         project=project,
         photodiode_protocol=photodiode_protocol,

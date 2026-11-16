@@ -76,3 +76,29 @@ def test_downsample_dff_with_rolling_window():
     # 5-frame non-overlapping means: mean([0, 0.5, 1, 1.5, 2])=1.0, mean([3, 4, 5, 6, 7])=5.0
     np.testing.assert_allclose(out_roll["dff_stim_downsample"].iloc[0], [[1.0], [5.0]])
     np.testing.assert_allclose(out_roll["RS_stim_downsample"].iloc[0], [1.0, 5.0])
+
+
+def test_downsample_dff_no_downsample_frame_by_frame():
+    dff = np.arange(10, dtype=float)[:, None]
+    rs = np.zeros(10, dtype=float)
+    rs[4] = 0.06
+    trials_df = pd.DataFrame(
+        {
+            "depth": [0.1],
+            "RS_blank_pre": [np.zeros(5)],
+            "RS_stim": [rs],
+            "dff_stim": [dff],
+        }
+    )
+
+    out = downsample_dff(trials_df.copy(), frame_rate=10, downsample_window=None)
+    assert out["dff_stim_downsample"].iloc[0].shape == (10, 1)
+    np.testing.assert_allclose(out["dff_stim_downsample"].iloc[0], dff)
+    np.testing.assert_allclose(out["RS_stim_downsample"].iloc[0], rs)
+    assert len(out["depth_labels"].iloc[0]) == 10
+
+    mask = find_stationary_samples(
+        out, frame_rate=10, downsample_window=None, still_thr=0.05, still_time=0.5
+    )
+    # 5-frame still window: fast frame 4 excludes frames 4, 5, 6, 7, 8
+    np.testing.assert_array_equal(mask, [1, 1, 1, 1, 0, 0, 0, 0, 0, 1])

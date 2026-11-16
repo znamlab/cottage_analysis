@@ -80,16 +80,20 @@ def downsample_dff(
     else:
         dff_col, rs_col = "dff_stim", "RS_stim"
 
-    trials_df["dff_stim_downsample"] = trials_df[dff_col].apply(
-        lambda x: downsample(
-            x, factor=int(downsample_window * frame_rate), mode="average"
+    if downsample_window is not None and downsample_window > 0:
+        trials_df["dff_stim_downsample"] = trials_df[dff_col].apply(
+            lambda x: downsample(
+                x, factor=int(downsample_window * frame_rate), mode="average"
+            )
         )
-    )
-    trials_df["RS_stim_downsample"] = trials_df[rs_col].apply(
-        lambda x: downsample(
-            x, factor=int(downsample_window * frame_rate), mode="average"
+        trials_df["RS_stim_downsample"] = trials_df[rs_col].apply(
+            lambda x: downsample(
+                x, factor=int(downsample_window * frame_rate), mode="average"
+            )
         )
-    )
+    else:
+        trials_df["dff_stim_downsample"] = trials_df[dff_col]
+        trials_df["RS_stim_downsample"] = trials_df[rs_col]
     depth_list = np.sort(trials_df.depth.unique())
     trials_df["depth_label"] = trials_df["depth"].apply(
         lambda x: np.where(depth_list == x)[0]
@@ -131,7 +135,11 @@ def find_stationary_samples(
         np.ndarray: boolean mask in the sample order of np.hstack(dff_stim_downsample).
     """
     frame_rate = int(frame_rate)
-    bin_frames = int(downsample_window * frame_rate)
+    bin_frames = (
+        int(downsample_window * frame_rate)
+        if downsample_window is not None and downsample_window > 0
+        else 1
+    )
     still_frames = int(still_time * frame_rate)
     masks = []
     for _, trial in trials_df.iterrows():
