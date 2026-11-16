@@ -549,6 +549,17 @@ def preprocess_data(
     )
 
 
+def _save_decoder_dict(decoder_dict, decoder_dict_path):
+    """Write decoder_dict atomically so concurrent readers never see a partial file."""
+    decoder_dict_path = Path(decoder_dict_path)
+    tmp_path = decoder_dict_path.with_name(
+        f".{decoder_dict_path.name}.{os.getpid()}.tmp"
+    )
+    with open(tmp_path, "wb") as f:
+        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp_path, decoder_dict_path)
+
+
 @slurm_it(
     conda_env=CONDA_ENV,
     slurm_options={
@@ -764,9 +775,9 @@ def calculate_acc_conmat(
     elif n_rois is not None and random_state is not None:
         decoder_results_str = f"decoder_results_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}.pickle"
     print(f"Writing decoder results to {decoder_results_str}")
-    with open(Path(decoder_dict_path).parent / decoder_results_str, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
-
+    _save_decoder_dict(
+        decoder_dict, Path(decoder_dict_path).parent / decoder_results_str
+    )
     return decoder_dict
 
 
@@ -798,11 +809,6 @@ def depth_decoder(
         decoder_dict_path = (
             neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
         )
-    if os.path.exists(decoder_dict_path):
-        with open(decoder_dict_path, "rb") as f:
-            decoder_dict = pickle.load(f)
-    else:
-        decoder_dict = {}
     # set slurm folder
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -904,7 +910,14 @@ def depth_decoder(
     else:
         decoder_inputs_path = None
 
-    # save temp decoder results
+    # save temp decoder results. Load the existing results only now, after the
+    # slow preprocessing, so we don't overwrite results that jobs from a previous
+    # depth_decoder call (e.g. openloop) wrote in the meantime.
+    if os.path.exists(decoder_dict_path):
+        with open(decoder_dict_path, "rb") as f:
+            decoder_dict = pickle.load(f)
+    else:
+        decoder_dict = {}
     decoder_dict[f"best_params_all_{recording_type}"] = best_params_all
     decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
     decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
@@ -919,8 +932,7 @@ def depth_decoder(
             / "decoder_subsets"
             / f"decoder_results_{recording_type}_n{n_rois}_seed{random_state}.pickle"
         )
-    with open(decoder_results_path, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    _save_decoder_dict(decoder_dict, decoder_results_path)
 
     # fit each fold
     outputs = []
@@ -1077,6 +1089,5 @@ def find_acc_speed_bins(
     decoder_dict[f"error{recording_type}"] = (
         calculate_error(decoder_dict[f"conmat{recording_type}"]) if add_errors else None
     )
-    with open(decoder_dict_path, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    _save_decoder_dict(decoder_dict, decoder_dict_path)
     return decoder_dict
