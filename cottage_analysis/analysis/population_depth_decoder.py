@@ -61,22 +61,31 @@ def downsample(arr, factor, mode="average"):
 
 def downsample_dff(
     trials_df,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
 ):
-    trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
-        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
-        lambda x: rolling_average(x, window=int(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["dff_stim_downsample"] = trials_df["dff_stim_rolling"].apply(
+    if rolling_window is not None and rolling_window > 0:
+        trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
+            lambda x: rolling_average(
+                x, window=int(rolling_window * frame_rate), axis=0
+            )
+        )
+        trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
+            lambda x: rolling_average(
+                x, window=int(rolling_window * frame_rate), axis=0
+            )
+        )
+        dff_col, rs_col = "dff_stim_rolling", "RS_stim_rolling"
+    else:
+        dff_col, rs_col = "dff_stim", "RS_stim"
+
+    trials_df["dff_stim_downsample"] = trials_df[dff_col].apply(
         lambda x: downsample(
             x, factor=int(downsample_window * frame_rate), mode="average"
         )
     )
-    trials_df["RS_stim_downsample"] = trials_df["RS_stim_rolling"].apply(
+    trials_df["RS_stim_downsample"] = trials_df[rs_col].apply(
         lambda x: downsample(
             x, factor=int(downsample_window * frame_rate), mode="average"
         )
@@ -337,7 +346,7 @@ def preprocess_data(
     session_name,
     closed_loop=1,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,
@@ -580,7 +589,7 @@ def depth_decoder(
     session_name,
     closed_loop=1,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,

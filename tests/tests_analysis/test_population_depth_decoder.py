@@ -45,3 +45,34 @@ def test_stationary_threshold_is_strict_and_matches_sample_count():
     mask = find_stationary_samples(trials_df, frame_rate=10, downsample_window=0.5)
     assert len(mask) == trials_df["dff_stim_downsample"].iloc[0].shape[0] == 4
     assert not mask.any()
+
+
+def test_downsample_dff_defaults_to_non_overlapping_window_only():
+    dff = np.arange(10, dtype=float)[:, None]
+    rs = np.arange(10, dtype=float)
+    trials_df = pd.DataFrame({"depth": [0.1], "RS_stim": [rs], "dff_stim": [dff]})
+
+    out_default = downsample_dff(trials_df.copy(), frame_rate=10, downsample_window=0.5)
+    assert "dff_stim_rolling" not in out_default.columns
+    assert "RS_stim_rolling" not in out_default.columns
+    # Direct 5-frame non-overlapping means: [0..4]->2.0, [5..9]->7.0
+    np.testing.assert_allclose(
+        out_default["dff_stim_downsample"].iloc[0], [[2.0], [7.0]]
+    )
+    np.testing.assert_allclose(out_default["RS_stim_downsample"].iloc[0], [2.0, 7.0])
+
+
+def test_downsample_dff_with_rolling_window():
+    dff = np.arange(10, dtype=float)[:, None]
+    rs = np.arange(10, dtype=float)
+    trials_df = pd.DataFrame({"depth": [0.1], "RS_stim": [rs], "dff_stim": [dff]})
+
+    out_roll = downsample_dff(
+        trials_df.copy(), rolling_window=0.5, frame_rate=10, downsample_window=0.5
+    )
+    assert "dff_stim_rolling" in out_roll.columns
+    assert "RS_stim_rolling" in out_roll.columns
+    # Rolling mean (window=5, min_periods=1) on 0..9 gives [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7]
+    # 5-frame non-overlapping means: mean([0, 0.5, 1, 1.5, 2])=1.0, mean([3, 4, 5, 6, 7])=5.0
+    np.testing.assert_allclose(out_roll["dff_stim_downsample"].iloc[0], [[1.0], [5.0]])
+    np.testing.assert_allclose(out_roll["RS_stim_downsample"].iloc[0], [1.0, 5.0])
