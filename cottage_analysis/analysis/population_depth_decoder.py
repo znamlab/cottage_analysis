@@ -17,7 +17,7 @@ from sklearn.model_selection import (
     StratifiedKFold,
     StratifiedShuffleSplit,
 )
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
 from joblib import Parallel, delayed
 from sklearn.metrics import accuracy_score, confusion_matrix
 
@@ -28,6 +28,7 @@ from cottage_analysis.io_module import suite2p as s2p_io
 from znamutils.decorators import slurm_it
 
 CONDA_ENV = "v1_depth_map"
+LINEAR_SVC_RANDOM_STATE = 42
 
 
 def rolling_average(arr, window, axis=0):
@@ -291,7 +292,17 @@ def _svm_param_grid(kernel, Cs, gammas):
 
 
 def _fit_svm(X, y, kernel, params):
-    clf = SVC(kernel=kernel, **params)
+    """Fit one SVM classifier.
+
+    kernel "linear" uses LinearSVC (liblinear): squared hinge loss, one-vs-rest,
+    default settings. It gives accuracies and confusion matrices close to
+    SVC(kernel="linear") (libsvm: hinge loss, one-vs-one), in a fraction of the time.
+    Other kernels use SVC.
+    """
+    if kernel == "linear":
+        clf = LinearSVC(random_state=LINEAR_SVC_RANDOM_STATE, **params)
+    else:
+        clf = SVC(kernel=kernel, **params)
     clf.fit(X, y)
     return clf
 
@@ -388,12 +399,13 @@ def tune_and_test_svm_classifier(
 
     Equivalent to svm_classifier_hyperparam_tuning followed by test_svm_classifier.
     With n_jobs > 1, the final train+val fits are also started for every candidate
-    except the largest C (the slowest to fit and rarely selected), alongside the grid,
-    so the final model is usually ready when the grid finishes. Selection and fits are
-    unchanged, so best_params and y_pred are identical to the sequential version.
+    except the largest C (the slowest to fit with SVC, and rarely selected), alongside
+    the grid, so the final model is usually ready when the grid finishes. Selection and
+    fits are unchanged, so best_params and y_pred are identical to the sequential
+    version.
 
     Returns:
-        best_params (dict), clf (fitted SVC), y_pred (np.ndarray)
+        best_params (dict), clf (fitted LinearSVC or SVC), y_pred (np.ndarray)
     """
     if n_jobs == 1:
         best_params = svm_classifier_hyperparam_tuning(
