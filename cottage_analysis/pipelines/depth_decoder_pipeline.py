@@ -49,7 +49,7 @@ def main(
         "trial_average": False,
         "rolling_window": None,
         "downsample_window": None,
-        "Cs": np.logspace(-3, 3, 7),
+        "Cs": np.logspace(-5, 3, 9),
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,

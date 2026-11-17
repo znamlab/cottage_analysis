@@ -80,19 +80,19 @@ def test_downsample_dff_with_rolling_window():
 
 
 def _reference_tune_and_test(X_train, y_train, X_val, y_val, X_test, Cs):
-    """Original sequential implementation (linear kernel), kept as the reference."""
+    """Sequential implementation (linear kernel), kept as the reference."""
     from sklearn.metrics import accuracy_score
-    from sklearn.svm import SVC
+    from sklearn.svm import LinearSVC
 
     best_acc = 0
     best_params = {"C": Cs[0], "gamma": 1}
     for C in Cs:
-        clf = SVC(C=C, kernel="linear").fit(X_train, y_train)
+        clf = LinearSVC(C=C, random_state=42).fit(X_train, y_train)
         acc = accuracy_score(y_val, clf.predict(X_val))
         if acc > best_acc:
             best_acc = acc
             best_params = {"C": C}
-    clf = SVC(C=best_params["C"], kernel="linear").fit(
+    clf = LinearSVC(C=best_params["C"], random_state=42).fit(
         np.vstack([X_train, X_val]), np.hstack([y_train, y_val])
     )
     return best_params, clf.predict(X_test), clf.decision_function(X_test)
@@ -117,7 +117,7 @@ def test_tune_and_test_svm_matches_sequential_reference(n_jobs, seed):
     )
 
     X_train, y_train, X_val, y_val, X_test = _decoder_like_data(seed)
-    Cs = np.logspace(-3, 3, 7)
+    Cs = np.logspace(-5, 3, 9)
     ref_params, ref_pred, ref_dec = _reference_tune_and_test(
         X_train, y_train, X_val, y_val, X_test, Cs
     )
@@ -180,3 +180,23 @@ def test_tune_and_test_svm_memmapped_inputs():
     assert params == ref[0]
     np.testing.assert_array_equal(y_pred, ref[1])
     np.testing.assert_array_equal(clf.decision_function(X_test), ref[2])
+
+
+def test_linear_kernel_uses_linear_svc_and_other_kernels_use_svc():
+    from sklearn.svm import SVC, LinearSVC
+
+    from cottage_analysis.analysis.population_depth_decoder import (
+        tune_and_test_svm_classifier,
+    )
+
+    X_train, y_train, X_val, y_val, X_test = _decoder_like_data(5)
+    _, clf, _ = tune_and_test_svm_classifier(
+        X_train, y_train, X_val, y_val, X_test, kernel="linear", Cs=[0.1]
+    )
+    assert isinstance(clf, LinearSVC)
+    assert clf.loss == "squared_hinge" and clf.multi_class == "ovr"
+    params, clf, _ = tune_and_test_svm_classifier(
+        X_train, y_train, X_val, y_val, X_test, kernel="rbf", Cs=[1], gammas=[0.01]
+    )
+    assert isinstance(clf, SVC) and clf.kernel == "rbf"
+    assert params == {"C": 1, "gamma": 0.01}
