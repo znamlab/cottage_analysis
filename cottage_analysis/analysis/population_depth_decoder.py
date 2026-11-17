@@ -3,6 +3,7 @@ import functools
 print = functools.partial(print, flush=True)
 
 import os
+import time
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -17,6 +18,7 @@ from sklearn.model_selection import (
     StratifiedShuffleSplit,
 )
 from sklearn.svm import SVC
+from joblib import Parallel, delayed
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 import flexiznam as flz
@@ -360,6 +362,51 @@ def subset_decoder_inputs(decoder_inputs, roi_vector, k_folds=5):
     return subset
 
 
+def _svm_param_grid(kernel, Cs, gammas):
+    """Hyperparameter combinations in the order they are evaluated."""
+    if kernel == "linear":
+        return [{"C": C} for C in Cs]
+    return [{"C": C, "gamma": gamma} for C in Cs for gamma in gammas]
+
+
+def _fit_svm(X, y, kernel, params):
+    clf = SVC(kernel=kernel, **params)
+    clf.fit(X, y)
+    return clf
+
+
+def _grid_task(X_train, y_train, X_val, y_val, kernel, params):
+    t0 = time.time()
+    clf = _fit_svm(X_train, y_train, kernel, params)
+    acc = accuracy_score(y_val, clf.predict(X_val))
+    label = f"C{params['C']}" + (
+        f" gamma{params['gamma']}" if "gamma" in params else ""
+    )
+    print(f"Accuracy for {label}: {acc} ({time.time() - t0:.0f} s)")
+    return acc
+
+
+def _refit_task(X_train_val, y_train_val, X_test, kernel, params):
+    t0 = time.time()
+    clf = _fit_svm(X_train_val, y_train_val, kernel, params)
+    return clf, clf.predict(X_test), time.time() - t0
+
+
+def _select_best_params(grid, accs, kernel, Cs, gammas):
+    """Same rule as the original sequential loop: first best in grid order."""
+    best_acc = 0
+    best_params = {"C": Cs[0], "gamma": gammas[0]}
+    for params, acc in zip(grid, accs):
+        if acc > best_acc:
+            best_acc = acc
+            best_params = dict(params)
+    if kernel == "linear":
+        print(f"Best C: {best_params['C']}")
+    else:
+        print(f"Best C: {best_params['C']}, Best gamma: {best_params['gamma']}")
+    return best_params
+
+
 def svm_classifier_hyperparam_tuning(
     X_train,
     y_train,
@@ -369,36 +416,18 @@ def svm_classifier_hyperparam_tuning(
     kernel="linear",
     Cs=[0.1, 1, 10],
     gammas=[1, 0.1, 0.01],
+    n_jobs=1,
 ):
-    # tune hyperparameters:
-    best_acc = 0
-    best_params = {"C": Cs[0], "gamma": gammas[0]}
-    if kernel == "linear":
-        for C in Cs:
-            clf = SVC(C=C, kernel=kernel)
-            clf.fit(X_train, y_train)
-            y_pred = clf.predict(X_val)
-            acc = accuracy_score(y_val, y_pred)
-            print(f"Accuracy for C{C}: {acc}")
+    """Select SVM hyperparameters on the validation set.
 
-            if acc > best_acc:
-                best_acc = acc
-                best_params = {"C": C}
-        print(f"Best C: {best_params['C']}")
-    else:
-        for C in Cs:
-            for gamma in gammas:
-                clf = SVC(C=C, gamma=gamma, kernel=kernel)
-                clf.fit(X_train, y_train)
-                y_pred = clf.predict(X_val)
-                acc = accuracy_score(y_val, y_pred)
-
-                if acc > best_acc:
-                    best_acc = acc
-                    best_params = {"C": C, "gamma": gamma}
-        print(f"Best C: {best_params['C']}, Best gamma: {best_params['gamma']}")
-
-    return best_params
+    The grid is fitted in parallel when n_jobs > 1; selection is unchanged (first
+    best accuracy in grid order), so results do not depend on n_jobs.
+    """
+    grid = _svm_param_grid(kernel, Cs, gammas)
+    accs = Parallel(n_jobs=n_jobs)(
+        delayed(_grid_task)(X_train, y_train, X_val, y_val, kernel, p) for p in grid
+    )
+    return _select_best_params(grid, accs, kernel, Cs, gammas)
 
 
 def test_svm_classifier(
@@ -414,17 +443,100 @@ def test_svm_classifier(
 ):
     # Train the final classifier on the best hyperparameters
     if kernel == "linear":
-        clf = SVC(C=best_params["C"], kernel=kernel)
+        params = {"C": best_params["C"]}
     else:
-        clf = SVC(C=best_params["C"], gamma=best_params["gamma"], kernel=kernel)
+        params = {"C": best_params["C"], "gamma": best_params["gamma"]}
     X_train_val = np.vstack([X_train, X_val])
     y_train_val = np.hstack([y_train, y_val])
-    clf.fit(X_train_val, y_train_val)
-
-    # Test on the test set
-    y_pred = clf.predict(X_test)
-
+    clf, y_pred, _ = _refit_task(X_train_val, y_train_val, X_test, kernel, params)
     return clf, y_pred
+
+
+def tune_and_test_svm_classifier(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    X_test,
+    kernel="linear",
+    Cs=[0.1, 1, 10],
+    gammas=[1, 0.1, 0.01],
+    n_jobs=1,
+):
+    """Hyperparameter search and final train+val fit, in parallel when n_jobs > 1.
+
+    Equivalent to svm_classifier_hyperparam_tuning followed by test_svm_classifier.
+    With n_jobs > 1, the final train+val fits are also started for every candidate
+    except the largest C (the slowest to fit and rarely selected), alongside the grid,
+    so the final model is usually ready when the grid finishes. Selection and fits are
+    unchanged, so best_params and y_pred are identical to the sequential version.
+
+    Returns:
+        best_params (dict), clf (fitted SVC), y_pred (np.ndarray)
+    """
+    if n_jobs == 1:
+        best_params = svm_classifier_hyperparam_tuning(
+            X_train, y_train, X_val, y_val, None, kernel, Cs, gammas, 1
+        )
+        clf, y_pred = test_svm_classifier(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            X_test,
+            None,
+            None,
+            kernel,
+            best_params,
+        )
+        return best_params, clf, y_pred
+
+    grid = _svm_param_grid(kernel, Cs, gammas)
+    X_train_val = np.vstack([X_train, X_val])
+    y_train_val = np.hstack([y_train, y_val])
+    max_C = max(Cs)
+    tasks = [("grid", i) for i in range(len(grid))] + [
+        ("refit", i) for i, p in enumerate(grid) if p["C"] != max_C
+    ]
+    # start the slowest fits (largest C) first
+    tasks.sort(key=lambda t: -grid[t[1]]["C"])
+    results = Parallel(n_jobs=n_jobs)(
+        (
+            delayed(_grid_task)(X_train, y_train, X_val, y_val, kernel, grid[i])
+            if kind == "grid"
+            else delayed(_refit_task)(X_train_val, y_train_val, X_test, kernel, grid[i])
+        )
+        for kind, i in tasks
+    )
+    out = dict(zip(tasks, results))
+    accs = [out[("grid", i)] for i in range(len(grid))]
+    best_params = _select_best_params(grid, accs, kernel, Cs, gammas)
+    best_i = next(
+        (
+            i
+            for i, p in enumerate(grid)
+            if all(best_params.get(k) == v for k, v in p.items())
+        ),
+        None,
+    )
+    if best_i is not None and ("refit", best_i) in out:
+        clf, y_pred, duration = out[("refit", best_i)]
+        print(f"Final fit (started in parallel): {duration:.0f} s")
+    else:
+        t0 = time.time()
+        clf, y_pred = test_svm_classifier(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            X_test,
+            None,
+            None,
+            kernel,
+            best_params,
+        )
+        print(f"Final fit: {time.time() - t0:.0f} s")
+    return best_params, clf, y_pred
 
 
 def preprocess_data(
@@ -654,29 +766,19 @@ def fit_each_fold(
         dff_val = dff_val[:, iscell]
         dff_test = dff_test[:, iscell]
 
-    # get best hyperparameters for this fold
-    best_params = svm_classifier_hyperparam_tuning(
-        X_train=dff_train,
-        y_train=depth_train,
-        X_val=dff_val,
-        y_val=depth_val,
-        class_labels=np.arange(len(depth_list)),
-        kernel=kernel,
-        Cs=Cs,
-        gammas=gammas,
-    )
-
-    # train and test on the current fold (train on combined train and val data)
-    clf, y_pred = test_svm_classifier(
+    # get best hyperparameters for this fold, then train on combined train and val
+    # data and test on the current fold. Uses the CPUs allocated by slurm, if any.
+    n_jobs = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+    best_params, clf, y_pred = tune_and_test_svm_classifier(
         X_train=dff_train,
         y_train=depth_train,
         X_val=dff_val,
         y_val=depth_val,
         X_test=dff_test,
-        y_test=depth_test,
-        class_labels=np.arange(len(depth_list)),
         kernel=kernel,
-        best_params=best_params,
+        Cs=Cs,
+        gammas=gammas,
+        n_jobs=n_jobs,
     )
 
     decoder_outputs = {
