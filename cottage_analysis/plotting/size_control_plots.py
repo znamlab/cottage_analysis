@@ -121,14 +121,14 @@ def plot_preferred_depths_sizes_scatter(
             [plot_x + i * plot_width, plot_y, plot_width * 0.58, plot_height * 0.58]
         )
         ax.scatter(
-            neurons_df[f"preferred_depth_size{size_x}"],
-            neurons_df[f"preferred_depth_size{size_y}"],
+            neurons_df[f"preferred_depth_size{size_x}"] * 100,
+            neurons_df[f"preferred_depth_size{size_y}"] * 100,
             **scatter_kwargs,
         )
-        xlim = (0.02, 50)
+        xlim = (2, 5000)
         ax.set_xlim(xlim)
         ax.set_ylim(xlim)
-        ax.plot([0.02, 20], [0.02, 20], "k:", linewidth=1)
+        ax.plot([2, 2000], [2, 2000], "k:", linewidth=1)
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel(
