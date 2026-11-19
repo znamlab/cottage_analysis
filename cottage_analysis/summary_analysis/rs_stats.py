@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from scipy.stats import pearsonr
@@ -60,6 +62,7 @@ def get_rs_stats_all_sessions(
     blank_length=3,
     overwrite=False,
     filter_datasets=None,
+    cache_root=None,
 ):
     """Calculate the PSTH for all sessions in session_list.
     Also calculate running speed PSTH; the correlation between actual and virtual running speeds for openloop sessions.
@@ -79,6 +82,10 @@ def get_rs_stats_all_sessions(
         blank_length (float, optional): length of blank period at each end of the corridor. Defaults to 0.
         overwrite (bool, optional): whether to overwrite the existing results or not. Defaults to False.
         filter_datasets (dict, optional): filter datasets. Defaults to None.
+        cache_root (str or Path, optional): folder for the per-session cache, saved as
+            <cache_root>/<session>/rs_stats.pkl. If None, it is saved next to the
+            session's neurons_df. A cache next to neurons_df is still read when there is
+            none in cache_root, but is never written. Defaults to None.
 
     Returns:
         pd.DataFrame: concatenated neurons_df dataframe
@@ -133,9 +140,14 @@ def get_rs_stats_all_sessions(
             flexilims_session=flexilims_session,
             conflicts="skip",
         )
-        save_path = neurons_ds.path_full.parent / "rs_stats.pkl"
-        if save_path.exists() and not overwrite:
-            results_all.iloc[isess] = pd.read_pickle(save_path)
+        legacy_path = neurons_ds.path_full.parent / "rs_stats.pkl"
+        if cache_root is None:
+            save_path = legacy_path
+        else:
+            save_path = Path(cache_root) / session_name / "rs_stats.pkl"
+        existing = [p for p in (save_path, legacy_path) if p.exists()]
+        if existing and not overwrite:
+            results_all.iloc[isess] = pd.read_pickle(existing[0])
             continue
         # Load all data
         if ("PZAH6.4b" in session_name) or ("PZAG3.4f" in session_name):
@@ -146,7 +158,7 @@ def get_rs_stats_all_sessions(
             flexilims_session=flexilims_session,
             origin_name=session_name,
             dataset_type="suite2p_traces",
-            filter_datasets=filter_datasets
+            filter_datasets=filter_datasets,
         )
         fs = list(suite2p_ds.values())[0][-1].extra_attributes["fs"]
         _, trials_df = spheres.sync_all_recordings(
@@ -257,15 +269,16 @@ def get_rs_stats_all_sessions(
             r_all, p_all = calculate_openloop_rs_correlation(
                 imaging_df_openloop, trials_df_original, separate_depths=True
             )
-            results_all.at[isess, "rs_correlation_rval_openloop_alldepths"] = (
-                np.expand_dims(np.expand_dims(r_all, 0), 0)
-            )
-            results_all.at[isess, "rs_correlation_pval_openloop_alldepths"] = (
-                np.expand_dims(np.expand_dims(p_all, 0), 0)
-            )
+            results_all.at[
+                isess, "rs_correlation_rval_openloop_alldepths"
+            ] = np.expand_dims(np.expand_dims(r_all, 0), 0)
+            results_all.at[
+                isess, "rs_correlation_pval_openloop_alldepths"
+            ] = np.expand_dims(np.expand_dims(p_all, 0), 0)
 
         # append results_df
         results_all.iloc[isess] = results_all.iloc[isess].apply(np.squeeze)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
         results_all.iloc[isess].to_pickle(save_path)
 
     return results_all
@@ -290,7 +303,9 @@ def get_rs_of_all_sessions(
     results_all["RS_stim"] = [[np.nan]] * len(results_all)
 
     for isess, session_name in enumerate(session_list):
-        print(f"{isess}/{len(session_list)}: concatenating RS & OF values for {session_name}")
+        print(
+            f"{isess}/{len(session_list)}: concatenating RS & OF values for {session_name}"
+        )
         neurons_ds = pipeline_utils.create_neurons_ds(
             session_name=session_name,
             flexilims_session=flexilims_session,
@@ -328,12 +343,20 @@ def get_rs_of_all_sessions(
                 sfx = "openloop"
             results_all.at[isess, "session"] = session_name
             results_all.at[isess, "is_closedloop"] = closed_loop
-            results_all.at[isess, "RS_stim"] = np.concatenate(trials_df["RS_stim"].values).reshape(1,1,-1)
+            results_all.at[isess, "RS_stim"] = np.concatenate(
+                trials_df["RS_stim"].values
+            ).reshape(1, 1, -1)
             for depth in np.sort(trials_df.depth.unique()):
                 if f"OF_stim_depth_{depth}" not in results_all.columns:
-                    results_all[f"OF_stim_depth_{np.round(depth,2)}"] = [[np.nan]] * len(results_all)
-                results_all.at[isess, f"OF_stim_depth_{np.round(depth,2)}"] = np.concatenate(
+                    results_all[f"OF_stim_depth_{np.round(depth,2)}"] = [
+                        [np.nan]
+                    ] * len(results_all)
+                results_all.at[
+                    isess, f"OF_stim_depth_{np.round(depth,2)}"
+                ] = np.concatenate(
                     trials_df[trials_df.depth == depth]["OF_stim"].values
-                ).reshape(1,1,-1)
-                
+                ).reshape(
+                    1, 1, -1
+                )
+
     return results_all
