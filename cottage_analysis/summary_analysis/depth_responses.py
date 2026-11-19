@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scipy
+from pathlib import Path
 from tqdm import tqdm
 
 import flexiznam as flz
@@ -168,6 +169,7 @@ def get_psth_crossval_all_sessions(
     overwrite=False,
     filter_datasets=None,
     exclude_datasets=None,
+    cache_root=None,
 ):
     """Calculate the PSTH for all sessions in session_list.
     Also calculate running speed PSTH; the correlation between actual and virtual running speeds for openloop sessions.
@@ -186,6 +188,10 @@ def get_psth_crossval_all_sessions(
         corridor_length (float, optional): corridor length for one trial. Defaults to 6.
         blank_length (float, optional): length of blank period at each end of the corridor. Defaults to 0.
         overwrite (bool, optional): whether to overwrite the existing results or not. Defaults to False.
+        cache_root (str or Path, optional): folder for the per-session cache, saved as
+            <cache_root>/<session>/psth_crossval.pkl. If None, it is saved next to the
+            session's neurons_df. A cache next to neurons_df is still read when there is
+            none in cache_root, but is never written. Defaults to None.
 
     Returns:
         pd.DataFrame: concatenated neurons_df dataframe
@@ -201,9 +207,14 @@ def get_psth_crossval_all_sessions(
             exclude_datasets=exclude_datasets,
         )
         print(f"Loading {neurons_ds.path_full}", flush=True)
-        psth_path = neurons_ds.path_full.parent / "psth_crossval.pkl"
-        if psth_path.exists() and not overwrite:
-            results_all.append(pd.read_pickle(psth_path))
+        legacy_path = neurons_ds.path_full.parent / "psth_crossval.pkl"
+        if cache_root is None:
+            psth_path = legacy_path
+        else:
+            psth_path = Path(cache_root) / session_name / "psth_crossval.pkl"
+        existing = [p for p in (psth_path, legacy_path) if p.exists()]
+        if existing and not overwrite:
+            results_all.append(pd.read_pickle(existing[0]))
             continue
         # Load all data
         if ("PZAH6.4b" in session_name) or ("PZAG3.4f" in session_name):
@@ -295,6 +306,7 @@ def get_psth_crossval_all_sessions(
                 )
                 neurons_df.at[roi, "psth_crossval"] = psth
 
+            psth_path.parent.mkdir(parents=True, exist_ok=True)
             neurons_df.to_pickle(psth_path)
             results_all.append(neurons_df)
             if verbose:
