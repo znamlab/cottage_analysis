@@ -195,14 +195,23 @@ def find_monitor_frames(
 # `FrameIndex`. The two differ when `FrameIndex` does not start at 0: the stimulus of
 # each monitor frame is then read `FrameIndex[0]` rows early. Empty by default; a project
 # adds its name to reproduce results computed before the match used `FrameIndex`.
+# Recordings whose name starts with one of `FRAMEINDEX_MATCHED_PREFIXES` (e.g. a mouse
+# name) are matched by `FrameIndex` even in those projects.
 ROW_MATCHED_PROJECTS = set()
+FRAMEINDEX_MATCHED_PREFIXES = set()
 
 
-def _matches_frames_by_row(flexilims_session):
-    """Whether the project of `flexilims_session` is in `ROW_MATCHED_PROJECTS`."""
+def _matches_frames_by_row(flexilims_session, recording_name):
+    """Whether the monitor frames of `recording_name` are matched by row number.
+
+    True if the project of `flexilims_session` is in `ROW_MATCHED_PROJECTS` and the
+    recording name starts with none of `FRAMEINDEX_MATCHED_PREFIXES`.
+    """
     project_ids = flz.PARAMETERS["project_ids"]
     row_matched = {project_ids.get(p, p) for p in ROW_MATCHED_PROJECTS}
-    return flexilims_session.project_id in row_matched
+    if flexilims_session.project_id not in row_matched:
+        return False
+    return not recording_name.startswith(tuple(FRAMEINDEX_MATCHED_PREFIXES))
 
 
 def generate_vs_df(
@@ -280,7 +289,7 @@ def generate_vs_df(
 
         # find_monitor_frames returns row index of the frame_log, but we want FrameIndex
         # so that the merge works
-        if not _matches_frames_by_row(flexilims_session):
+        if not _matches_frames_by_row(flexilims_session, recording.name):
             monitor_frames_df.closest_frame = frame_log.FrameIndex.iloc[
                 monitor_frames_df.closest_frame.values
             ].values
