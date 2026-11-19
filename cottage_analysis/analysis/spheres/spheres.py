@@ -84,7 +84,11 @@ def find_stim_time(
         # first put all stim during protocol to 0
         imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 0
         # then get trial start and stop, in frame logger time
-        if diagnostics_folder is not None:
+        # the diagnostic plot is saved once: an existing one is left untouched
+        if (
+            diagnostics_folder is not None
+            and not (diagnostics_folder / "trial_diagnostic.png").exists()
+        ):
             diagnostics_folder.mkdir(parents=True, exist_ok=True)
             (
                 harpstim_time,
@@ -97,6 +101,9 @@ def find_stim_time(
                 param_log, harpstim_time, all_offsets, all_onsets
             )
             fig.savefig(diagnostics_folder / "trial_diagnostic.png")
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
         else:
             harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
         # We know when are trial in the frame logger, find where it fits in the
