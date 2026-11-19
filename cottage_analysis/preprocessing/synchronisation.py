@@ -508,10 +508,20 @@ def generate_imaging_df(
     if "nframes" in suite2p_ds.extra_attributes:
         volume_number = float(suite2p_ds.extra_attributes["nframes"])
     else:
-        # volume number is the number of frames per plane. Look at the first plane
-        volume_number = float(
-            np.load(suite2p_ds.path_full / "plane0" / "dff_ast.npy").shape[1]
-        )
+        # volume number is the number of frames per plane. Look at the first plane,
+        # reading only the header of the trace this dataset holds
+        if suite2p_ds.extra_attributes.get("ast_neuropil", True):
+            dff_names = ("dff_ast.npy", "dff.npy")
+        else:
+            dff_names = ("dff.npy", "dff_ast.npy")
+        plane0 = suite2p_ds.path_full / "plane0"
+        dff_path = next((plane0 / n for n in dff_names if (plane0 / n).exists()), None)
+        if dff_path is None:
+            raise FileNotFoundError(
+                f"No nframes attribute and no dff file in {plane0} to count the "
+                f"frames of recording {recording.name}."
+            )
+        volume_number = float(np.load(dff_path, mmap_mode="r").shape[1])
 
     nplanes = float(suite2p_ds.extra_attributes["nplanes"])
     fs = float(suite2p_ds.extra_attributes["fs"])
