@@ -5,6 +5,7 @@ rcParams, and :func:`savefig` instead of ``fig.savefig``/``plt.savefig`` for SVG
 output. See :func:`expand_font_shorthand` for why the latter is needed.
 """
 
+import os
 import re
 import warnings
 from pathlib import Path
@@ -13,12 +14,20 @@ import matplotlib as mpl
 
 CM = 1 / 2.54
 
+# Environment variable naming a directory of font files. When set, it is searched
+# before :data:`FONT_SEARCH_DIRS`.
+FONT_DIR_ENV = "COTTAGE_FONT_DIR"
+
 # Directories searched by :func:`setup_figure_fonts` for the Arial ``.ttf`` faces,
 # in order. The first one that exists wins.
 FONT_SEARCH_DIRS = (
     "/Volumes/BlackPasspo/v1_depth_map/processed/v1_manuscript_figures/fonts",
     "/nemo/lab/znamenskiyp/home/shared/resources/fonts",
 )
+
+# Families tried, in order, when the requested one is not available. The first two
+# are free fonts with the same metrics as Arial; DejaVu Sans ships with matplotlib.
+FALLBACK_FAMILIES = ("Liberation Sans", "Arimo", "Helvetica", "DejaVu Sans")
 
 # Default manuscript figure font sizes (panel=10, labels/titles=7, ticks/legends=5)
 FONTSIZE_DICT = {
@@ -117,7 +126,8 @@ def setup_figure_fonts(font_dir=None, font_dict=None, family="Arial", verbose=Fa
     **It never raises on a missing font directory.** The fonts live on an external
     drive, so three of the old variants failed at import time whenever it was not
     mounted. A missing directory is a warning here, and the requested family is
-    used as-is in the hope that the system provides it.
+    used if the system provides it. If it does not, the first available family of
+    :data:`FALLBACK_FAMILIES` is used instead, with a warning.
 
     ``font.family`` is set to a single family name rather than ``"sans-serif"``: with
     the generic alias, matplotlib writes the whole ``font.sans-serif`` fallback
@@ -128,8 +138,9 @@ def setup_figure_fonts(font_dir=None, font_dict=None, family="Arial", verbose=Fa
     Args:
         font_dir (str or Path): Directory holding the ``.ttf``/``.otf`` faces. Every
             font file in it is registered, so Arial Narrow and Arial Black come
-            along too. Defaults to the first existing entry of
-            :data:`FONT_SEARCH_DIRS`.
+            along too. Defaults to the directory named by the environment variable
+            :data:`FONT_DIR_ENV` (``COTTAGE_FONT_DIR``) if it is set, otherwise to
+            the first existing entry of :data:`FONT_SEARCH_DIRS`.
         font_dict (dict): Font sizes, forwarded to :func:`setup_matplotlib_style`.
             Defaults to :data:`FONTSIZE_DICT`.
         family (str): Font family to use for all text. Defaults to ``"Arial"``.
@@ -137,14 +148,17 @@ def setup_figure_fonts(font_dir=None, font_dict=None, family="Arial", verbose=Fa
             to False.
 
     Returns:
-        str: The family name that was applied, so a caller can assert on it.
+        str: The family name that was applied (the requested one, or a fallback),
+        so a caller can assert on it.
     """
     import matplotlib.font_manager as fm
 
     if font_dir is None:
+        font_dir = os.environ.get(FONT_DIR_ENV) or None
+    if font_dir is None:
         font_dir = next((d for d in FONT_SEARCH_DIRS if Path(d).is_dir()), None)
         if font_dir is None and verbose:
-            print(f"No font directory found in {FONT_SEARCH_DIRS}")
+            print(f"No font directory found in {FONT_DIR_ENV} or {FONT_SEARCH_DIRS}")
 
     registered = []
     if font_dir is not None:
@@ -162,19 +176,26 @@ def setup_figure_fonts(font_dir=None, font_dict=None, family="Arial", verbose=Fa
                 f"system-installed {family!r}."
             )
 
+    faces = _registered_faces(family)
+    if not faces:
+        requested = family
+        family = next(
+            (f for f in FALLBACK_FAMILIES if _registered_faces(f)), "DejaVu Sans"
+        )
+        faces = _registered_faces(family)
+        warnings.warn(
+            f"No {requested!r} face is available to matplotlib; using {family!r} "
+            f"instead. Pass font_dir= or set {FONT_DIR_ENV} to a directory holding "
+            f"the {requested!r} font files."
+        )
+
     setup_matplotlib_style(font_sans_serif=family, font_dict=font_dict)
     # Name the one family directly, rather than leaving the "sans-serif" alias that
     # setup_matplotlib_style sets - see the note on font.family above.
     mpl.rcParams["font.family"] = family
     mpl.rcParams["mathtext.default"] = "regular"  # keep math mode in the same font
 
-    faces = _registered_faces(family)
-    if not faces:
-        warnings.warn(
-            f"No {family!r} face is available to matplotlib; text will fall back to "
-            f"another font. Pass font_dir= to point at the manuscript fonts."
-        )
-    elif not any(weight >= 700 and style == "normal" for weight, style in faces):
+    if not any(weight >= 700 and style == "normal" for weight, style in faces):
         warnings.warn(
             f"No bold {family!r} face is available to matplotlib; text drawn with "
             f'fontweight="bold" (typically the panel letters) will not be bold in '
