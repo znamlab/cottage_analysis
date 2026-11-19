@@ -191,6 +191,20 @@ def find_monitor_frames(
     return frames_df
 
 
+# Projects whose monitor frames are matched to the frame log by row number, not by
+# `FrameIndex`. The two differ when `FrameIndex` does not start at 0: the stimulus of
+# each monitor frame is then read `FrameIndex[0]` rows early. Empty by default; a project
+# adds its name to reproduce results computed before the match used `FrameIndex`.
+ROW_MATCHED_PROJECTS = set()
+
+
+def _matches_frames_by_row(flexilims_session):
+    """Whether the project of `flexilims_session` is in `ROW_MATCHED_PROJECTS`."""
+    project_ids = flz.PARAMETERS["project_ids"]
+    row_matched = {project_ids.get(p, p) for p in ROW_MATCHED_PROJECTS}
+    return flexilims_session.project_id in row_matched
+
+
 def generate_vs_df(
     recording,
     photodiode_protocol=5,
@@ -266,9 +280,10 @@ def generate_vs_df(
 
         # find_monitor_frames returns row index of the frame_log, but we want FrameIndex
         # so that the merge works
-        monitor_frames_df.closest_frame = frame_log.FrameIndex.iloc[
-            monitor_frames_df.closest_frame.values
-        ].values
+        if not _matches_frames_by_row(flexilims_session):
+            monitor_frames_df.closest_frame = frame_log.FrameIndex.iloc[
+                monitor_frames_df.closest_frame.values
+            ].values
 
         if protocol_base == "KellerTube":
             # Define the columns to extract from the frame_log dataframe
