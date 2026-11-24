@@ -200,3 +200,106 @@ def test_linear_kernel_uses_linear_svc_and_other_kernels_use_svc():
     )
     assert isinstance(clf, SVC) and clf.kernel == "rbf"
     assert params == {"C": 1, "gamma": 0.01}
+
+
+def test_calculate_acc_conmat_creates_and_preserves_decoder_dict(tmp_path):
+    """calculate_acc_conmat initializes decoder_dict when absent and preserves
+    earlier recording_type keys when present."""
+    import pickle
+
+    from cottage_analysis.analysis.population_depth_decoder import calculate_acc_conmat
+
+    decoder_dict_path = tmp_path / "decoder_results.pickle"
+    assert not decoder_dict_path.exists()
+
+    def _run(recording_type, y_test, y_pred_folds):
+        k_folds = len(y_pred_folds)
+        test_idx = np.array_split(np.arange(len(y_test)), k_folds)
+        for i, y_pred in enumerate(y_pred_folds):
+            with open(
+                tmp_path / f"decoder_outputs_{recording_type}_fold{i}.pickle", "wb"
+            ) as f:
+                pickle.dump({"best_params": {"C": 0.1 * (i + 1)}, "y_pred": y_pred}, f)
+        decoder_inputs = {
+            "trials_df": pd.DataFrame({"depth": [0.1, 0.2]}),
+            "kernel": "linear",
+            "y_test_all": y_test,
+            "test_frame_indices": test_idx,
+        }
+        return calculate_acc_conmat(
+            decoder_dict_path=decoder_dict_path,
+            recording_type=recording_type,
+            depth_list=[0.1, 0.2],
+            decoder_inputs=decoder_inputs,
+            k_folds=k_folds,
+            use_slurm=False,
+        )
+
+    y_ol = np.array([0, 1, 0, 1])
+    _run("openloop", y_ol, [np.array([0, 1]), np.array([0, 0])])
+    assert decoder_dict_path.exists()
+
+    y_cl = np.array([1, 0, 1, 0])
+    out = _run("closedloop", y_cl, [np.array([1, 0]), np.array([1, 0])])
+
+    with open(decoder_dict_path, "rb") as f:
+        saved = pickle.load(f)
+    assert saved["accuracy_openloop"] == pytest.approx(0.75)
+    assert saved["accuracy_closedloop"] == pytest.approx(1.0)
+    assert out["best_params_all_closedloop"] == {"C": [0.1, 0.2]}
+    np.testing.assert_array_equal(saved["y_test_all_openloop"], y_ol)
+    np.testing.assert_array_equal(saved["y_test_all_closedloop"], y_cl)
+
+
+def test_depth_decoder_driver_does_not_write_decoder_dict(tmp_path, monkeypatch):
+    """depth_decoder must not write decoder_results.pickle from the driver process,
+    leaving all writes to the dependency-serialized calculate_acc_conmat job."""
+    from types import SimpleNamespace
+
+    from cottage_analysis.analysis import population_depth_decoder as pdd
+
+    decoder_dict_path = tmp_path / "decoder_results.pickle"
+    neurons_ds = SimpleNamespace(path_full=tmp_path / "neurons_df.pickle")
+    trials_df = pd.DataFrame(
+        {
+            "closed_loop": [1, 1],
+            "depth": [0.1, 0.2],
+            "depth_col": [np.array([0, 0]), np.array([1, 1])],
+        }
+    )
+
+    monkeypatch.setattr(
+        pdd,
+        "preprocess_data",
+        lambda **kw: (
+            trials_df,
+            ([], [], [], [], [], []),
+            (np.array([True]), np.array([0.1, 0.2])),
+            ([np.array([0, 1]), np.array([2, 3])], "dff", "depth_col"),
+        ),
+    )
+
+    def _fake_fold(*args, **kwargs):
+        assert not decoder_dict_path.exists()
+        return "fold_job"
+
+    def _fake_acc(*args, **kwargs):
+        assert not decoder_dict_path.exists()
+        assert kwargs["decoder_dict_path"] == decoder_dict_path
+        return "acc_job"
+
+    monkeypatch.setattr(pdd, "fit_each_fold", _fake_fold)
+    monkeypatch.setattr(pdd, "calculate_acc_conmat", _fake_acc)
+
+    res = pdd.depth_decoder(
+        trials_df=trials_df,
+        flexilims_session=None,
+        session_name="M_S",
+        closed_loop=1,
+        k_folds=2,
+        use_slurm=False,
+        neurons_ds=neurons_ds,
+        decoder_dict_path=decoder_dict_path,
+    )
+    assert res == "acc_job"
+    assert not decoder_dict_path.exists()

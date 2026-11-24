@@ -830,8 +830,11 @@ def calculate_acc_conmat(
     special_sfx="",
 ):
     print(f"Reading decoder inputs from {decoder_inputs_path}...")
-    with open(decoder_dict_path, "rb") as f:
-        decoder_dict = pickle.load(f)
+    if os.path.exists(decoder_dict_path):
+        with open(decoder_dict_path, "rb") as f:
+            decoder_dict = pickle.load(f)
+    else:
+        decoder_dict = {}
     if decoder_inputs_path is not None:
         if os.path.exists(decoder_inputs_path):
             with open(decoder_inputs_path, "rb") as f:
@@ -845,6 +848,14 @@ def calculate_acc_conmat(
             / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
         )["roi_vector"]
         decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
+
+    y_test_all = decoder_inputs["y_test_all"]
+    decoder_dict[f"best_params_all_{recording_type}"] = (
+        {"C": []} if decoder_inputs["kernel"] == "linear" else {"C": [], "gamma": []}
+    )
+    decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
+    decoder_dict[f"y_preds_all_{recording_type}"] = np.zeros_like(y_test_all)
+    decoder_dict[f"trials_df_{recording_type}"] = decoder_inputs["trials_df"]
 
     # concatenate results from all folds
     for i in range(k_folds):
@@ -884,14 +895,8 @@ def calculate_acc_conmat(
     decoder_dict[f"conmat_{recording_type}"] = conmat
     decoder_dict[f"error_{recording_type}"] = calculate_error(conmat)
     print(f"Accuracy {recording_type}: {acc}")
-    if n_rois is None:
-        decoder_results_str = f"decoder_results{special_sfx}.pickle"
-    elif n_rois is not None and random_state is not None:
-        decoder_results_str = f"decoder_results_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}.pickle"
-    print(f"Writing decoder results to {decoder_results_str}")
-    _save_decoder_dict(
-        decoder_dict, Path(decoder_dict_path).parent / decoder_results_str
-    )
+    print(f"Writing decoder results to {decoder_dict_path}")
+    _save_decoder_dict(decoder_dict, decoder_dict_path)
     return decoder_dict
 
 
@@ -966,7 +971,6 @@ def depth_decoder(
 
     # save decoder inputs if use_slurm
     y_test_all = np.hstack(trials_df[depth_col])
-    y_preds_all = np.zeros_like(y_test_all)
     decoder_inputs = {
         "trials_df": trials_df,
         "dff_train_all": dff_train_all,
@@ -985,16 +989,6 @@ def depth_decoder(
         "gammas": gammas,
         "y_test_all": y_test_all,
     }
-
-    if kernel == "linear":
-        best_params_all = {
-            "C": [],
-        }
-    else:
-        best_params_all = {
-            "C": [],
-            "gamma": [],
-        }
 
     if closed_loop:
         recording_type = "closedloop"
@@ -1024,29 +1018,21 @@ def depth_decoder(
     else:
         decoder_inputs_path = None
 
-    # save temp decoder results. Load the existing results only now, after the
-    # slow preprocessing, so we don't overwrite results that jobs from a previous
-    # depth_decoder call (e.g. openloop) wrote in the meantime.
-    if os.path.exists(decoder_dict_path):
-        with open(decoder_dict_path, "rb") as f:
-            decoder_dict = pickle.load(f)
-    else:
-        decoder_dict = {}
-    decoder_dict[f"best_params_all_{recording_type}"] = best_params_all
-    decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
-    decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
-    decoder_dict[f"trials_df_{recording_type}"] = trials_df
+    # Do not write decoder_results.pickle from the driver process: under Slurm, jobs
+    # of a previous recording_type (e.g. openloop) may still be running and writing to
+    # the same file. calculate_acc_conmat creates this recording_type's entries when
+    # it runs. It only waits for those jobs if the caller passes them as
+    # `job_dependency`, as depth_decoder_pipeline does; without it, two recording
+    # types sharing a file can still overwrite each other's results.
     if n_rois is None:
-        decoder_results_path = (
-            neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
-        )
+        decoder_results_path = Path(decoder_dict_path)
     else:
         decoder_results_path = (
             neurons_ds.path_full.parent
             / "decoder_subsets"
             / f"decoder_results_{recording_type}_n{n_rois}_seed{random_state}.pickle"
         )
-    _save_decoder_dict(decoder_dict, decoder_results_path)
+    decoder_results_path.parent.mkdir(parents=True, exist_ok=True)
 
     # fit each fold
     outputs = []
