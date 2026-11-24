@@ -325,14 +325,17 @@ def generate_trials_df(
 
     def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
         if "_volume" in column_name:
+            sample_shape = np.asarray(imaging_df[column_name].iloc[0]).shape
+
+            def _slice_volume(x):
+                start = int(x[f"imaging_{epoch}_start"])
+                stop = int(x[f"imaging_{epoch}_stop"])
+                if start > stop:
+                    return np.empty((0, *sample_shape))
+                return np.stack(imaging_df[column_name].loc[start:stop])
+
             trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-                lambda x: np.stack(
-                    imaging_df[column_name].loc[
-                        int(x[f"imaging_{epoch}_start"]) : int(
-                            x[f"imaging_{epoch}_stop"]
-                        )
-                    ]
-                ),
+                _slice_volume,
                 axis=1,
             )
         else:
