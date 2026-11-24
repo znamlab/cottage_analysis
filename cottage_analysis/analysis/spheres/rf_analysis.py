@@ -330,6 +330,7 @@ def load_sig_rf(
     filter_datasets=None,
     use_multidepth=False,
     sphere_presentation_mask=None,
+    rf_file=None,
 ):
     """
     Load significant RFs for each session in session_list.
@@ -350,6 +351,9 @@ def load_sig_rf(
             but `_closedloop` is always used for depth significance.
         sphere_presentation_mask (np.ndarray, optional): Mask to use for
             filtering out non-significant RFs. Defaults to None.
+        rf_file (str, optional): file next to neurons_df.pickle whose `rf_*` columns
+            are used instead (e.g. "neurons_df_spks.pickle"), see
+            `pipeline_utils.load_neurons_df`. Defaults to None.
 
     Returns:
         tuple: A tuple containing:
@@ -366,16 +370,22 @@ def load_sig_rf(
 
     if filter_datasets is None:
         filter_datasets = {"anatomical_only": 3}
+    filter_datasets_rois = filter_datasets.copy()
+    if "ast_neuropil" in filter_datasets.keys():
+        print("Ignoring ast_neuropil filter for ROI selection")
+        filter_datasets_rois.pop("ast_neuropil")
 
-    if use_multidepth and use_cols is not None:
+    if use_multidepth:
         sfx = "_closedloop_multidepth"
-        # add the columns
-        use_cols += [
-            "rf_coef_closedloop_multidepth",
-            "rf_coef_ipsi_closedloop_multidepth",
-            "rf_rsq_closedloop_multidepth",
-            "rf_rsq_ipsi_closedloop_multidepth",
-        ]
+        if use_cols is not None:
+            # add the columns (new list, so neither the caller's list nor the
+            # default argument is modified)
+            use_cols = use_cols + [
+                "rf_coef_closedloop_multidepth",
+                "rf_coef_ipsi_closedloop_multidepth",
+                "rf_rsq_closedloop_multidepth",
+                "rf_rsq_ipsi_closedloop_multidepth",
+            ]
     else:
         sfx = "_closedloop"
 
@@ -407,7 +417,7 @@ def load_sig_rf(
             conflicts="skip",
         )
         try:
-            neurons_df = pd.read_pickle(neurons_ds.path_full)
+            neurons_df = pipeline_utils.load_neurons_df(neurons_ds, rf_file=rf_file)
         except FileNotFoundError:
             print(f"ERROR: SESSION {session}: neurons_df not found")
             continue
@@ -423,15 +433,18 @@ def load_sig_rf(
                 flexilims_session=flexilims_session,
                 origin_name=session,
                 dataset_type="suite2p_rois",
-                filter_datasets=filter_datasets,
+                filter_datasets=filter_datasets_rois,
                 allow_multiple=False,
                 return_dataseries=False,
             )
+            assert (
+                suite2p_ds is not None
+            ), f"No suite2p ROIs found for session {session}"
             iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
             neurons_df["iscell"] = iscell
             neurons_df["session"] = session
             roi_location.determine_roi_locations(
-                neurons_df, flexilims_session, session, suite2p_ds
+                neurons_df, flexilims_session, session, suite2p_ds, filter_datasets
             )
             # Load RF significant %
             coef = np.stack(neurons_df[f"rf_coef{sfx}"].values)
@@ -461,10 +474,12 @@ def load_sig_rf(
                 )
                 neurons_df["rf_sig"] = sig
                 neurons_df["rf_sig_ipsi"] = sig_ipsi
-                select_neurons = (
-                    (neurons_df["iscell"] == 1)
-                    & (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] < 0.05)
-                    & (neurons_df["depth_tuning_test_spearmanr_rval_closedloop"] > 0.1)
+                select_neurons = (neurons_df["iscell"] == 1) & (
+                    common_utils.one_sided_pval_from_spearman(
+                        neurons_df["depth_tuning_test_spearmanr_rval_closedloop"],
+                        neurons_df["depth_tuning_test_spearmanr_pval_closedloop"],
+                    )
+                    < 0.05
                 )
                 sig = sig[select_neurons]
                 sig_ipsi = sig_ipsi[select_neurons]

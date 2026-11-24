@@ -88,6 +88,38 @@ def create_neurons_ds(
     return neurons_ds
 
 
+def load_neurons_df(neurons_ds, rf_file=None):
+    """Load the neurons_df of a session, optionally with its RF columns from another
+    file.
+
+    Used mostly to combine the RF columns from a fit on spikes with the rest of the
+    neurons_df that used dF/F.
+
+    Args:
+        neurons_ds (Dataset): neurons_df dataset, from `create_neurons_ds`.
+        rf_file (str, optional): name of a file in the same folder (e.g.
+            "neurons_df_spks.pickle", RF fits on spikes) whose `rf_*` columns replace
+            those of neurons_df. Defaults to None (neurons_df as saved).
+
+    Returns:
+        pd.DataFrame: neurons_df.
+    """
+    neurons_df = pd.read_pickle(neurons_ds.path_full)
+    if rf_file is None or rf_file == neurons_ds.path_full.name:
+        return neurons_df
+    other = pd.read_pickle(neurons_ds.path_full.with_name(rf_file))
+    assert np.array_equal(
+        neurons_df["roi"].values, other["roi"].values, equal_nan=True
+    ), f"ROIs of {rf_file} do not match {neurons_ds.path_full.name}"
+    rf_cols = [c for c in other.columns if c.startswith("rf_")]
+    neurons_df = neurons_df.drop(
+        columns=[c for c in neurons_df.columns if c.startswith("rf_")]
+    )
+    for col in rf_cols:
+        neurons_df[col] = other[col].values
+    return neurons_df
+
+
 def sbatch_session(
     project,
     session_name,
@@ -159,6 +191,7 @@ def load_session(
     treadmill_params=None,
     add_spikes=False,
     tread_kwargs=None,
+    lag=0,
 ):
     """Load data from a single session.
 
@@ -190,6 +223,8 @@ def load_session(
             `treadmill.sync_all_recordings` (e.g. `acceleration_time`, `method`,
             `margin`, `cut_trial_end`, `trial_duration`). Only used when
             `protocol_base == "SpheresTubeMotor"`. Defaults to None.
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `sync_all_recordings`. Defaults to 0.
 
     Returns:
         neurons_df (pd.DataFrame): neurons_df dataframe.
@@ -234,6 +269,7 @@ def load_session(
             ephys_kwargs=ephys_kwargs,
             treadmill_params=treadmill_params,
             add_spikes=add_spikes,
+            lag=lag,
             **(tread_kwargs or {}),
         )
     else:
@@ -249,6 +285,7 @@ def load_session(
             return_volumes=True,
             ephys_kwargs=ephys_kwargs,
             add_spikes=add_spikes,
+            lag=lag,
         )
     out = [neurons_ds, neurons_df, vs_df_all, trials_df_all]
     if regenerate_frames:
@@ -307,6 +344,8 @@ def load_and_fit(
     trial_average=False,
     min_valid_frames=None,
     tread_kwargs=None,
+    use_col="dffs",
+    lag=0,
 ):
     """Load data for a session and fit a running speed and optic flow tuning model.
 
@@ -365,6 +404,10 @@ def load_and_fit(
         tread_kwargs (dict, optional): additional kwargs for
             `treadmill.sync_all_recordings`, forwarded to `load_session`. Only used
             when `protocol_base == "SpheresTubeMotor"`. Defaults to None.
+        use_col (str, optional): response to fit, "dffs" (dF/F) or "spks" (suite2p
+            spikes). Defaults to "dffs".
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `load_session`. Defaults to 0.
 
     Returns:
         pd.DataFrame: A dataframe containing the fitted parameters and performance
@@ -391,6 +434,8 @@ def load_and_fit(
         recording_type=recording_type,
         ephys_kwargs=ephys_kwargs,
         tread_kwargs=tread_kwargs,
+        add_spikes=use_col == "spks",
+        lag=lag,
     )
     # create name from model and choose_trials
     suffix = f"{model}"
@@ -419,6 +464,7 @@ def load_and_fit(
         max_acc=max_acc,
         min_valid_frames=min_valid_frames,
         trial_average=trial_average,
+        use_col=use_col,
     )
     # save fit_df
     target = neurons_ds.path_full.with_name(
@@ -501,6 +547,12 @@ def merge_fit_dataframes(
         else:
             tmp = pd.read_pickle(df_name)
             dfs_to_merge.append(tmp)
+
+    if not dfs_to_merge:
+        # e.g. the pipeline run with run_rsof_fit=False: nothing to merge, and reduce()
+        # below would fail on an empty list. neurons_df is left as it is on disk.
+        print(f"No file matching {search_str} to merge, neurons_df unchanged")
+        return neurons_df
 
     # Checking that the number of ROIs is the same across dataframes with fit results
     assert all(

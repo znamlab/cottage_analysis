@@ -48,8 +48,8 @@ def main(
     params = {
         "trial_average": False,
         "rolling_window": None,
-        "downsample_window": None,
-        "Cs": np.logspace(-3, 3, 7),
+        "downsample_window": 0.5,
+        "Cs": np.logspace(-5, 3, 9),
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,
@@ -140,6 +140,7 @@ def main(
             decoder_dict_path=neurons_ds.path_full.parent
             / f"decoder_results{params['special_sfx']}.pickle",
             special_sfx=params["special_sfx"],
+            job_dependency=outputs_all.copy() if use_slurm else None,
         )
         outputs.append(out)
         outputs_all.append(out)
@@ -157,11 +158,12 @@ def main(
             still_time=params["still_time"],
             frame_rate=frame_rate,
             add_errors=True,
+            downsample_window=params["downsample_window"],
             use_slurm=use_slurm,
             slurm_folder=slurm_folder,
             scripts_name=f"decoder_speedbins{sfx}{params['special_sfx']}",
             job_dependency=job_dependency,
-            job_name=f"decoder_speedbins_{session_name}{sfx}",
+            slurm_options={"job-name": f"decoder_speedbins_{session_name}{sfx}"},
         )
         outputs_all.append(out)
 
@@ -179,7 +181,9 @@ def main(
         scripts_name=f"decoder_plots{params['special_sfx']}",
         job_dependency=job_dependency,
         filter_datasets=filter_datasets,
-        job_name=f"decoder_plots_{session_name}_{params['special_sfx']}",
+        slurm_options={
+            "job-name": f"decoder_plots_{session_name}_{params['special_sfx']}"
+        },
     )
 
 

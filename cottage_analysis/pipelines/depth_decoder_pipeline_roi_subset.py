@@ -16,11 +16,12 @@ from cottage_analysis.analysis import (
 from cottage_analysis.pipelines import pipeline_utils
 from cottage_analysis.io_module import suite2p as s2p_io
 
+
 def main(
     project, session_name, conflicts="skip", photodiode_protocol=5, use_slurm=False
 ):
     """Main function to decode depth from a session using different subsets of ROIs.
-    
+
     Args:
         project(str): project name
         session_name(str): name of session formatted as mouse_session
@@ -32,16 +33,17 @@ def main(
     print(
         f"------------------------------- \n \
         Start decoding {session_name}   \n \
-        -------------------------------", flush=True
+        -------------------------------",
+        flush=True,
     )
 
     params = {
         "trial_average": False,
-        "n_rois": [50,100,500,1000,2000],
+        "n_rois": [50, 100, 500, 1000, 2000],
         "n_subsets": 10,
         "rolling_window": None,
-        "downsample_window": None,
-        "Cs": np.logspace(-3, 3, 7),
+        "downsample_window": 0.5,
+        "Cs": np.logspace(-5, 3, 9),
         "continuous_still": 1,
         "still_time": 1,
         "still_thr": 0.05,
@@ -61,7 +63,7 @@ def main(
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-    flexilims_session = flz.get_flexilims_session(project)  
+    flexilims_session = flz.get_flexilims_session(project)
 
     neurons_ds = pipeline_utils.create_neurons_ds(
         session_name=session_name,
@@ -77,10 +79,10 @@ def main(
         flexilims_session=flexilims_session,
         return_dataseries=False,
         filter_datasets={"anatomical_only": 3},
-    )   
+    )
 
     suite2p_datasets = suite2p_datasets[0]
-    frame_rate= suite2p_datasets.extra_attributes["fs"]
+    frame_rate = suite2p_datasets.extra_attributes["fs"]
     iscell = s2p_io.load_is_cell(suite2p_datasets.path_full)
 
     # Load the trial dataframe and visual stimulus dataframe
@@ -96,16 +98,20 @@ def main(
     )
 
     # Check that the trial dataframe is suitable for decoding
-    assert len(trials_df.closed_loop.unique()) in [1,2]
+    assert len(trials_df.closed_loop.unique()) in [1, 2]
     if len(trials_df.closed_loop.unique()) == 1:
         print("This is a closed-loop only session.")
     elif len(trials_df.closed_loop.unique()) == 2:
         print("This is a session with an open loop recording.")
 
     # Check that there are enough ROIs in the recording session for the values in params
-    n_rois = [n for n in params["n_rois"] if n < trials_df.iloc[0].dff_stim[:,iscell].shape[1]]
+    n_rois = [
+        n
+        for n in params["n_rois"]
+        if n < trials_df.iloc[0].dff_stim[:, iscell].shape[1]
+    ]
     print(f"Breaking {session_name} into subsets of ROIs: {n_rois}", flush=True)
-    # Choosing the seed for the random number generator 
+    # Choosing the seed for the random number generator
     seeds = common_utils.get_n_seeds(10)
     print(f"Random seeds used for this decoder run: {seeds}", flush=True)
 
@@ -114,8 +120,10 @@ def main(
             sfx = "_closedloop"
         else:
             sfx = "_openloop"
-        assert os.path.exists(neurons_ds.path_full.parent / f"decoder_inputs{sfx}.pickle")
-        outputs=[]
+        assert os.path.exists(
+            neurons_ds.path_full.parent / f"decoder_inputs{sfx}.pickle"
+        )
+        outputs = []
         print(f"Running depth decoder for {sfx}...", flush=True)
         for seed in seeds:
             print(f"Running depth decoder for seed {seed}...", flush=True)
@@ -137,15 +145,22 @@ def main(
                     k_folds=5,
                     use_slurm=use_slurm,
                     neurons_ds=neurons_ds,
-                    decoder_dict_path=neurons_ds.path_full.parent / "decoder_subsets" / f"decoder_results{sfx}_n{n}_seed{seed}.pickle",
+                    decoder_dict_path=neurons_ds.path_full.parent
+                    / "decoder_subsets"
+                    / f"decoder_results{sfx}_n{n}_seed{seed}.pickle",
                     special_sfx=params["special_sfx"],
                 )
                 outputs.append(out)
 
-                print(f"Calculating the accuracy for the depth decoder at different speed bins{sfx}", flush=True)
+                print(
+                    f"Calculating the accuracy for the depth decoder at different speed bins{sfx}",
+                    flush=True,
+                )
                 job_dependency = outputs if use_slurm else None
                 out = population_depth_decoder.find_acc_speed_bins(
-                    decoder_dict_path=neurons_ds.path_full.parent / "decoder_subsets" / f"decoder_results{sfx}_n{n}_seed{seed}.pickle",
+                    decoder_dict_path=neurons_ds.path_full.parent
+                    / "decoder_subsets"
+                    / f"decoder_results{sfx}_n{n}_seed{seed}.pickle",
                     recording_type=sfx,
                     speed_bins=params["speed_bins"].tolist(),
                     continuous_still=params["continuous_still"],
@@ -158,6 +173,7 @@ def main(
                     scripts_name=f"decoder_speedbins{sfx}_n{n}_seed{seed}{params['special_sfx']}",
                     job_dependency=job_dependency,
                 )
+
 
 if __name__ == "__main__":
     defopt.run(main)

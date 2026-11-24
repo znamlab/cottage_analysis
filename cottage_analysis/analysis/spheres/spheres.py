@@ -14,7 +14,12 @@ from cottage_analysis.utilities.misc import (
 )
 from cottage_analysis.io_module.visstim import get_param_log
 from cottage_analysis.io_module.spikes import load_kilosort_folder
-from cottage_analysis.analysis.fit_gaussian_blob import fit_rs_of_tuning
+
+# Import the module, not the function: fit_gaussian_blob imports this package (via
+# find_depth_neurons -> size_control -> spheres), so `from ... import fit_rs_of_tuning`
+# fails when fit_gaussian_blob is imported first. A module import resolves the attribute
+# lazily, at call time.
+from cottage_analysis.analysis import fit_gaussian_blob
 
 print = partial(print, flush=True)
 
@@ -84,7 +89,11 @@ def find_stim_time(
         # first put all stim during protocol to 0
         imaging_df.loc[imaging_df.depth.notnull(), "stim"] = 0
         # then get trial start and stop, in frame logger time
-        if diagnostics_folder is not None:
+        # the diagnostic plot is saved once: an existing one is left untouched
+        if (
+            diagnostics_folder is not None
+            and not (diagnostics_folder / "trial_diagnostic.png").exists()
+        ):
             diagnostics_folder.mkdir(parents=True, exist_ok=True)
             (
                 harpstim_time,
@@ -97,6 +106,9 @@ def find_stim_time(
                 param_log, harpstim_time, all_offsets, all_onsets
             )
             fig.savefig(diagnostics_folder / "trial_diagnostic.png")
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
         else:
             harpstim_time, param_log_index = multidepth.find_trial_times(param_log)
         # We know when are trial in the frame logger, find where it fits in the
@@ -126,6 +138,7 @@ def generate_trials_df(
     acceleration_time=0.5,
     add_spikes=False,
     return_volumes=True,
+    lag=0,
 ):
     """Generate a DataFrame that contains information for each trial.
 
@@ -135,6 +148,15 @@ def generate_trials_df(
             project_id=project).
         imaging_df(pd.DataFrame): dataframe that contains
             info for each imaging volume.
+        is_multidepth (bool, optional): if True, multidepth session. Defaults to False.
+        param_log (pd.DataFrame, optional): parameter log dataframe. Defaults to None.
+        acceleration_time (float, optional): window in seconds for acceleration calculation.
+            Defaults to 0.5.
+        add_spikes (bool, optional): if True, also slice `spks` into `spks_{epoch}`.
+            Defaults to False.
+        lag (int, optional): response lag in imaging frames/volumes. Positive values read
+            `dff_{epoch}` / `spks_{epoch}` `lag` frames after the corresponding stimulus
+            and behaviour frames. Defaults to 0.
 
     Returns:
         DataFrame: contains information for each trial.
@@ -288,6 +310,17 @@ def generate_trials_df(
     mask = trials_df.imaging_stim_start == trials_df.imaging_blank_stop.shift(1)
     trials_df.loc[mask, "imaging_stim_start"] += 1
 
+    if lag != 0:
+        min_frame = max(0, -lag)
+        max_frame = min(len(imaging_df) - 1, len(imaging_df) - 1 - lag)
+        for epoch in ["stim", "blank", "blank_pre"]:
+            trials_df[f"imaging_{epoch}_start"] = trials_df[
+                f"imaging_{epoch}_start"
+            ].clip(lower=min_frame)
+            trials_df[f"imaging_{epoch}_stop"] = trials_df[
+                f"imaging_{epoch}_stop"
+            ].clip(upper=max_frame)
+
     # Assign protocol to trials_df
     if "Playback" in recording.name:
         trials_df.closed_loop = 0
@@ -296,14 +329,17 @@ def generate_trials_df(
 
     def assign_values_to_df(trials_df, imaging_df, column_name, epoch):
         if "_volume" in column_name:
+            sample_shape = np.asarray(imaging_df[column_name].iloc[0]).shape
+
+            def _slice_volume(x):
+                start = int(x[f"imaging_{epoch}_start"])
+                stop = int(x[f"imaging_{epoch}_stop"])
+                if start > stop:
+                    return np.empty((0, *sample_shape))
+                return np.stack(imaging_df[column_name].loc[start:stop])
+
             trials_df[f"{column_name}_{epoch}"] = trials_df.apply(
-                lambda x: np.stack(
-                    imaging_df[column_name].loc[
-                        int(x[f"imaging_{epoch}_start"]) : int(
-                            x[f"imaging_{epoch}_stop"]
-                        )
-                    ]
-                ),
+                _slice_volume,
                 axis=1,
             )
         else:
@@ -315,6 +351,14 @@ def generate_trials_df(
             )
 
         return trials_df
+
+    n_rois = imaging_df.dffs.iloc[0].shape[-1]
+
+    def _slice_trace(series, start, stop):
+        if start > stop:
+            return np.empty((0, n_rois))
+        arr = np.stack(series.loc[start:stop]).squeeze()
+        return arr.reshape(-1, n_rois) if arr.ndim == 1 else arr
 
     columns_to_assign = [
         "mouse_z_harp",
@@ -345,22 +389,20 @@ def generate_trials_df(
             if (column not in ["OF", "RS_eye"]) or (epoch == "stim"):
                 trials_df = assign_values_to_df(trials_df, imaging_df, column, epoch)
         trials_df[f"dff_{epoch}"] = trials_df.apply(
-            lambda x: np.stack(
-                imaging_df.dffs.loc[
-                    int(x[f"imaging_{epoch}_start"]) : int(x[f"imaging_{epoch}_stop"])
-                ]
-            ).squeeze(),
+            lambda x: _slice_trace(
+                imaging_df.dffs,
+                int(x[f"imaging_{epoch}_start"]) + lag,
+                int(x[f"imaging_{epoch}_stop"]) + lag,
+            ),
             axis=1,
         )
         if add_spikes and "spks" in imaging_df.columns:
             trials_df[f"spks_{epoch}"] = trials_df.apply(
-                lambda x: np.stack(
-                    imaging_df.spks.loc[
-                        int(x[f"imaging_{epoch}_start"]) : int(
-                            x[f"imaging_{epoch}_stop"]
-                        )
-                    ]
-                ).squeeze(),
+                lambda x: _slice_trace(
+                    imaging_df.spks,
+                    int(x[f"imaging_{epoch}_start"]) + lag,
+                    int(x[f"imaging_{epoch}_stop"]) + lag,
+                ),
                 axis=1,
             )
 
@@ -532,6 +574,7 @@ def sync_all_recordings(
     add_spikes=False,
     sync_kwargs=None,
     ephys_kwargs=None,
+    lag=0,
 ):
     """Concatenate synchronisation results for all recordings in a
     session.
@@ -569,6 +612,8 @@ def sync_all_recordings(
         ephys_kwargs (dict): Keyword arguments for generate_spike_rate_df.
             `return_multiunit` or `exp_sd` for instance. Defaults to
             None.
+        lag (int, optional): response lag in imaging frames/volumes forwarded to
+            `generate_trials_df`. Defaults to 0.
 
     Returns:
         (pd.DataFrame, pd.DataFrame): tuple of two dataframes, one
@@ -628,6 +673,7 @@ def sync_all_recordings(
             ephys_kwargs,
             verbose=True,
             add_spikes=add_spikes,
+            lag=lag,
         )
 
         if i == 0:
@@ -660,6 +706,7 @@ def regenerate_frames_all_recordings(
     ephys_kwargs=None,
     add_spikes=False,
     do_regenerate_frames=True,
+    time_offset=0.0,
     verbose=True,
 ):
     """Concatenate regenerated frames for all recordings in a session.
@@ -693,6 +740,9 @@ def regenerate_frames_all_recordings(
             `return_multiunit` or `exp_sd` for instance. Defaults to None.
         add_spikes (bool): if True, add spikes to trials_df for two_photon recordings. Defaults to False.
         do_regenerate_frames (bool): if True, regenerate frames. Defaults to True.
+        time_offset (float): time in seconds added to the imaging frame times at
+            which the stimulus is reconstructed, e.g. to sample within the frame.
+            Defaults to 0.
         verbose (bool): if True, print progress. Defaults to True.
 
     Returns:
@@ -772,7 +822,7 @@ def regenerate_frames_all_recordings(
             else:
                 separate_depth = None
             frames = regenerate_frames(
-                frame_times=imaging_df.imaging_harptime,
+                frame_times=imaging_df.imaging_harptime + time_offset,
                 trials_df=trials_df,
                 vs_df=vs_df,
                 param_logger=param_log,
@@ -878,6 +928,7 @@ def _process_single_recording_for_session(
     ephys_kwargs,
     verbose=True,
     add_spikes=False,
+    lag=0,
 ):
     """
     Processes a single recording to generate vs_df, imaging_df, trials_df,
@@ -942,6 +993,7 @@ def _process_single_recording_for_session(
         param_log=param_log,
         add_spikes=add_spikes,
         return_volumes=return_volumes,
+        lag=lag,
     )
     trials_df["recording"] = recording.name
 
@@ -1137,7 +1189,7 @@ def simulate_and_fit_session(
     mock_trials_df = trials_df_all.copy()
     mock_trials_df["dff_stim"] = mock_trials_df["fake_dff_stim"]
 
-    sim_neurons_df = fit_rs_of_tuning(
+    sim_neurons_df = fit_gaussian_blob.fit_rs_of_tuning(
         trials_df=mock_trials_df,
         model="gaussian_2d",
         trial_sfx="",

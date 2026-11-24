@@ -517,11 +517,9 @@ def plot_RS_OF_matrix(
     )
     dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
 
+    valid = np.isfinite(rs_arr) & np.isfinite(of_arr) & np.isfinite(dff_arr)
     if max_acc_ratio is not None:
-        idx = acc_max_ratio < max_acc_ratio
-        rs_arr = rs_arr[idx]
-        of_arr = of_arr[idx]
-        dff_arr = dff_arr[idx]
+        valid &= acc_max_ratio < max_acc_ratio
 
     if (
         max_abs_rs2motor_diff_ratio is not None
@@ -529,14 +527,11 @@ def plot_RS_OF_matrix(
         rs2motor_diff_ratio = np.array(
             [j for i in trials_df.max_abs_rs2motor_diff_ratio_stim.values for j in i]
         )
-        idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
-        rs_arr = rs_arr[idx]
-        of_arr = of_arr[idx]
-        dff_arr = dff_arr[idx]
-        valid = ~(np.isnan(dff_arr) | np.isinf(dff_arr))
-        rs_arr = rs_arr[valid]
-        of_arr = of_arr[valid]
-        dff_arr = dff_arr[valid]
+        valid &= rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+
+    rs_arr = rs_arr[valid]
+    of_arr = of_arr[valid]
+    dff_arr = dff_arr[valid]
 
     bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
         x=rs_arr, y=of_arr, values=dff_arr, statistic="mean", bins=[rs_bins, of_bins]
@@ -579,6 +574,15 @@ def plot_RS_OF_matrix(
         ax.set_xlabel(xlabel, fontsize=fontsize_dict["label"], labelpad=0)
         ax.set_ylabel(ylabel, fontsize=fontsize_dict["label"], labelpad=0)
     else:
+        (
+            ticks_select1,
+            ticks_select2,
+            bin_edges1,
+            bin_edges2,
+        ) = get_RS_OF_heatmap_axis_ticks(
+            log_range=log_range,
+            fontsize_dict=fontsize_dict,
+        )
         ax.set_xticks([])
         ax.set_yticks([])
 
@@ -1356,12 +1360,12 @@ def plot_speed_trace(
         if OF_to_degree:  # to convert OF from rads/s to degrees/s
             param_trace = np.degrees(param_trace)
         if trial_list[0] == 0:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"][
+            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"][
                 -int(fs * 10) :
             ]
             param_trace = np.concatenate([np.full(int(fs * 10), np.nan), param_trace])
         else:
-            blank_start = trials_df.iloc[trial_list[0]][f"{param[:2]}_blank_pre"]
+            blank_start = trials_df.iloc[trial_list[0]]["RS_blank_pre"]
             param_trace = np.concatenate(
                 [np.full(len(blank_start), np.nan), param_trace]
             )
@@ -1823,11 +1827,9 @@ def plot_treadmill_vs_closedloop_matrix(
         )
         dff_arr = np.vstack(trials_df.dff_stim.values)[:, roi]
 
+        valid = np.isfinite(rs_arr) & np.isfinite(of_arr) & np.isfinite(dff_arr)
         if max_acc_ratio is not None:
-            idx = acc_max_ratio < max_acc_ratio
-            rs_arr = rs_arr[idx]
-            of_arr = of_arr[idx]
-            dff_arr = dff_arr[idx]
+            valid &= acc_max_ratio < max_acc_ratio
         if (not idx_df) and max_abs_rs2motor_diff_ratio is not None:
             # apply filter on treadmill only
             rs2motor_diff_ratio = np.array(
@@ -1837,10 +1839,11 @@ def plot_treadmill_vs_closedloop_matrix(
                     for j in i
                 ]
             )
-            idx = rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
-            rs_arr = rs_arr[idx]
-            of_arr = of_arr[idx]
-            dff_arr = dff_arr[idx]
+            valid &= rs2motor_diff_ratio < max_abs_rs2motor_diff_ratio
+
+        rs_arr = rs_arr[valid]
+        of_arr = of_arr[valid]
+        dff_arr = dff_arr[valid]
 
         bin_means, rs_edges, of_egdes, _ = scipy.stats.binned_statistic_2d(
             x=rs_arr,

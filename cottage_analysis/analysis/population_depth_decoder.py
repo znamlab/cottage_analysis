@@ -3,6 +3,7 @@ import functools
 print = functools.partial(print, flush=True)
 
 import os
+import time
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -16,7 +17,8 @@ from sklearn.model_selection import (
     StratifiedKFold,
     StratifiedShuffleSplit,
 )
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
+from joblib import Parallel, delayed
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 import flexiznam as flz
@@ -26,6 +28,7 @@ from cottage_analysis.io_module import suite2p as s2p_io
 from znamutils.decorators import slurm_it
 
 CONDA_ENV = "v1_depth_map"
+LINEAR_SVC_RANDOM_STATE = 42
 
 
 def calculate_error(conmat):
@@ -91,37 +94,53 @@ def downsample(arr, factor, mode="average"):
 
 def downsample_dff(
     trials_df,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
 ):
-    trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
-        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
-        lambda x: rolling_average(x, window=round(rolling_window * frame_rate), axis=0)
-    )
-    trials_df["dff_stim_downsample"] = trials_df["dff_stim_rolling"].apply(
+    if rolling_window is not None and rolling_window > 0:
+        trials_df["dff_stim_rolling"] = trials_df["dff_stim"].apply(
+            lambda x: rolling_average(
+                x, window=round(rolling_window * frame_rate), axis=0
+            )
+        )
+        trials_df["RS_stim_rolling"] = trials_df["RS_stim"].apply(
+            lambda x: rolling_average(
+                x, window=round(rolling_window * frame_rate), axis=0
+            )
+        )
+        dff_col, rs_col = "dff_stim_rolling", "RS_stim_rolling"
+    else:
+        dff_col, rs_col = "dff_stim", "RS_stim"
+
+    trials_df["dff_stim_downsample"] = trials_df[dff_col].apply(
         lambda x: downsample(
             x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
-    trials_df["RS_stim_downsample"] = trials_df["RS_stim_rolling"].apply(
+    trials_df["RS_stim_downsample"] = trials_df[rs_col].apply(
         lambda x: downsample(
             x, factor=round(downsample_window * frame_rate), mode="average"
         )
     )
     if any(trials_df.columns.str.contains("RS_volume")):
         # Take the maximum running speed in each imaging volume and then compute the rolling average across imaging volumes
-        trials_df["RS_volume_max_stim_rolling"] = trials_df["RS_volume_stim"].apply(
-            lambda x: rolling_average(
-                np.nanmax(x, axis=1), window=round(rolling_window * frame_rate), axis=0
+        if rolling_window is not None and rolling_window > 0:
+            trials_df["RS_volume_max_stim_rolling"] = trials_df["RS_volume_stim"].apply(
+                lambda x: rolling_average(
+                    np.nanmax(x, axis=1),
+                    window=round(rolling_window * frame_rate),
+                    axis=0,
+                )
             )
-        )
-        # Downsample the rolling average of the maximum running speed
-        trials_df["RS_volume_max_stim_downsample"] = trials_df[
-            "RS_volume_max_stim_rolling"
-        ].apply(
+            rs_volume_col = "RS_volume_max_stim_rolling"
+        else:
+            trials_df["RS_volume_max_stim"] = trials_df["RS_volume_stim"].apply(
+                lambda x: np.nanmax(x, axis=1)
+            )
+            rs_volume_col = "RS_volume_max_stim"
+        # Downsample the (rolling average of the) maximum running speed
+        trials_df["RS_volume_max_stim_downsample"] = trials_df[rs_volume_col].apply(
             lambda x: downsample(
                 x, factor=round(downsample_window * frame_rate), mode="average"
             )
@@ -138,6 +157,69 @@ def downsample_dff(
     )
 
     return trials_df
+
+
+def find_stationary_samples(
+    trials_df,
+    frame_rate=15,
+    downsample_window=0.5,
+    still_thr=0.05,
+    still_time=1,
+):
+    """Find stationary decoder samples: maximum running speed during the preceding
+    `still_time` s is < `still_thr` m/s.
+
+    Uses the raw per-frame running speed, not the smoothed and downsampled one. For
+    volumetric imaging (`RS_volume_*` columns), the speed of a volume is the maximum over
+    its frames. A sample of round(downsample_window * frame_rate) frames (as in
+    downsample_dff; one frame if downsample_window is None) is stationary if the
+    int(still_time * frame_rate) frames ending on its last frame are. The window extends
+    into the preceding blank (`*_blank_pre`) for the first samples of a trial; samples
+    without a full window are not stationary.
+
+    Args:
+        trials_df (pd.DataFrame): trials_df after downsample_dff.
+        frame_rate (float): imaging frame (or volume) rate. Truncated to int as in
+            preprocess_data.
+        downsample_window (float): downsample window in s used in downsample_dff, or
+            None if the samples were not downsampled.
+        still_thr (float): running speed threshold in m/s.
+        still_time (float): duration in s the mouse must have been stationary.
+
+    Returns:
+        np.ndarray: boolean mask in the sample order of np.hstack(dff_stim_downsample).
+    """
+    frame_rate = int(frame_rate)
+    bin_frames = (
+        1 if downsample_window is None else round(downsample_window * frame_rate)
+    )
+    still_frames = int(still_time * frame_rate)
+    use_volume = "RS_volume_stim" in trials_df.columns
+
+    def _speed(trial, epoch):
+        col = f"RS_volume_{epoch}" if use_volume else f"RS_{epoch}"
+        if col not in trial or len(trial[col]) == 0:
+            return np.array([])
+        if use_volume:
+            return np.nanmax(np.asarray(trial[col], dtype=float), axis=1)
+        return np.asarray(trial[col], dtype=float)
+
+    masks = []
+    for _, trial in trials_df.iterrows():
+        rs_pre = _speed(trial, "blank_pre")
+        rs = np.concatenate([rs_pre, _speed(trial, "stim")])
+        n_samples = trial["dff_stim_downsample"].shape[0]
+        sample_end = len(rs_pre) + (np.arange(n_samples) + 1) * bin_frames
+        trial_mask = np.zeros(n_samples, dtype=bool)
+        for i, end in enumerate(sample_end):
+            window = rs[max(end - still_frames, 0) : end]
+            trial_mask[i] = (
+                len(window) == still_frames
+                and np.isfinite(window).any()
+                and np.nanmax(window) < still_thr
+            )
+        masks.append(trial_mask)
+    return np.concatenate(masks)
 
 
 def split_train_test_val(trials_df, k_folds=5, random_state=42, trial_average=False):
@@ -281,6 +363,61 @@ def subset_decoder_inputs(decoder_inputs, roi_vector, k_folds=5):
     return subset
 
 
+def _svm_param_grid(kernel, Cs, gammas):
+    """Hyperparameter combinations in the order they are evaluated."""
+    if kernel == "linear":
+        return [{"C": C} for C in Cs]
+    return [{"C": C, "gamma": gamma} for C in Cs for gamma in gammas]
+
+
+def _fit_svm(X, y, kernel, params):
+    """Fit one SVM classifier.
+
+    kernel "linear" uses LinearSVC (liblinear): squared hinge loss, one-vs-rest,
+    default settings. It gives accuracies and confusion matrices close to
+    SVC(kernel="linear") (libsvm: hinge loss, one-vs-one), in a fraction of the time.
+    Other kernels use SVC.
+    """
+    if kernel == "linear":
+        clf = LinearSVC(random_state=LINEAR_SVC_RANDOM_STATE, **params)
+    else:
+        clf = SVC(kernel=kernel, **params)
+    clf.fit(X, y)
+    return clf
+
+
+def _grid_task(X_train, y_train, X_val, y_val, kernel, params):
+    t0 = time.time()
+    clf = _fit_svm(X_train, y_train, kernel, params)
+    acc = accuracy_score(y_val, clf.predict(X_val))
+    label = f"C{params['C']}" + (
+        f" gamma{params['gamma']}" if "gamma" in params else ""
+    )
+    print(f"Accuracy for {label}: {acc} ({time.time() - t0:.0f} s)")
+    return acc
+
+
+def _refit_task(X_train_val, y_train_val, X_test, kernel, params):
+    t0 = time.time()
+    clf = _fit_svm(X_train_val, y_train_val, kernel, params)
+    return clf, clf.predict(X_test), time.time() - t0
+
+
+def _select_best_params(grid, accs, kernel, Cs, gammas):
+    """Same rule as the original sequential loop: first best in grid order."""
+    best_acc = 0
+    best_params = {"C": Cs[0], "gamma": gammas[0]}
+    for params, acc in zip(grid, accs):
+        if acc > best_acc:
+            best_acc = acc
+            best_params = dict(params)
+    if kernel == "linear":
+        print(f"Best C: {best_params['C']}")
+    else:
+        print(f"Best C: {best_params['C']}, Best gamma: {best_params['gamma']}")
+    return best_params
+
+
 def svm_classifier_hyperparam_tuning(
     X_train,
     y_train,
@@ -290,36 +427,18 @@ def svm_classifier_hyperparam_tuning(
     kernel="linear",
     Cs=[0.1, 1, 10],
     gammas=[1, 0.1, 0.01],
+    n_jobs=1,
 ):
-    # tune hyperparameters:
-    best_acc = 0
-    best_params = {"C": Cs[0], "gamma": gammas[0]}
-    if kernel == "linear":
-        for C in Cs:
-            clf = SVC(C=C, kernel=kernel)
-            clf.fit(X_train, y_train)
-            y_pred = clf.predict(X_val)
-            acc = accuracy_score(y_val, y_pred)
-            print(f"Accuracy for C{C}: {acc}")
+    """Select SVM hyperparameters on the validation set.
 
-            if acc > best_acc:
-                best_acc = acc
-                best_params = {"C": C}
-        print(f"Best C: {best_params['C']}")
-    else:
-        for C in Cs:
-            for gamma in gammas:
-                clf = SVC(C=C, gamma=gamma, kernel=kernel)
-                clf.fit(X_train, y_train)
-                y_pred = clf.predict(X_val)
-                acc = accuracy_score(y_val, y_pred)
-
-                if acc > best_acc:
-                    best_acc = acc
-                    best_params = {"C": C, "gamma": gamma}
-        print(f"Best C: {best_params['C']}, Best gamma: {best_params['gamma']}")
-
-    return best_params
+    The grid is fitted in parallel when n_jobs > 1; selection is unchanged (first
+    best accuracy in grid order), so results do not depend on n_jobs.
+    """
+    grid = _svm_param_grid(kernel, Cs, gammas)
+    accs = Parallel(n_jobs=n_jobs)(
+        delayed(_grid_task)(X_train, y_train, X_val, y_val, kernel, p) for p in grid
+    )
+    return _select_best_params(grid, accs, kernel, Cs, gammas)
 
 
 def test_svm_classifier(
@@ -335,17 +454,101 @@ def test_svm_classifier(
 ):
     # Train the final classifier on the best hyperparameters
     if kernel == "linear":
-        clf = SVC(C=best_params["C"], kernel=kernel)
+        params = {"C": best_params["C"]}
     else:
-        clf = SVC(C=best_params["C"], gamma=best_params["gamma"], kernel=kernel)
+        params = {"C": best_params["C"], "gamma": best_params["gamma"]}
     X_train_val = np.vstack([X_train, X_val])
     y_train_val = np.hstack([y_train, y_val])
-    clf.fit(X_train_val, y_train_val)
-
-    # Test on the test set
-    y_pred = clf.predict(X_test)
-
+    clf, y_pred, _ = _refit_task(X_train_val, y_train_val, X_test, kernel, params)
     return clf, y_pred
+
+
+def tune_and_test_svm_classifier(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    X_test,
+    kernel="linear",
+    Cs=[0.1, 1, 10],
+    gammas=[1, 0.1, 0.01],
+    n_jobs=1,
+):
+    """Hyperparameter search and final train+val fit, in parallel when n_jobs > 1.
+
+    Equivalent to svm_classifier_hyperparam_tuning followed by test_svm_classifier.
+    With n_jobs > 1, the final train+val fits are also started for every candidate
+    except the largest C (the slowest to fit with SVC, and rarely selected), alongside
+    the grid, so the final model is usually ready when the grid finishes. Selection and
+    fits are unchanged, so best_params and y_pred are identical to the sequential
+    version.
+
+    Returns:
+        best_params (dict), clf (fitted LinearSVC or SVC), y_pred (np.ndarray)
+    """
+    if n_jobs == 1:
+        best_params = svm_classifier_hyperparam_tuning(
+            X_train, y_train, X_val, y_val, None, kernel, Cs, gammas, 1
+        )
+        clf, y_pred = test_svm_classifier(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            X_test,
+            None,
+            None,
+            kernel,
+            best_params,
+        )
+        return best_params, clf, y_pred
+
+    grid = _svm_param_grid(kernel, Cs, gammas)
+    X_train_val = np.vstack([X_train, X_val])
+    y_train_val = np.hstack([y_train, y_val])
+    max_C = max(Cs)
+    tasks = [("grid", i) for i in range(len(grid))] + [
+        ("refit", i) for i, p in enumerate(grid) if p["C"] != max_C
+    ]
+    # start the slowest fits (largest C) first
+    tasks.sort(key=lambda t: -grid[t[1]]["C"])
+    results = Parallel(n_jobs=n_jobs)(
+        (
+            delayed(_grid_task)(X_train, y_train, X_val, y_val, kernel, grid[i])
+            if kind == "grid"
+            else delayed(_refit_task)(X_train_val, y_train_val, X_test, kernel, grid[i])
+        )
+        for kind, i in tasks
+    )
+    out = dict(zip(tasks, results))
+    accs = [out[("grid", i)] for i in range(len(grid))]
+    best_params = _select_best_params(grid, accs, kernel, Cs, gammas)
+    best_i = next(
+        (
+            i
+            for i, p in enumerate(grid)
+            if all(best_params.get(k) == v for k, v in p.items())
+        ),
+        None,
+    )
+    if best_i is not None and ("refit", best_i) in out:
+        clf, y_pred, duration = out[("refit", best_i)]
+        print(f"Final fit (started in parallel): {duration:.0f} s")
+    else:
+        t0 = time.time()
+        clf, y_pred = test_svm_classifier(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            X_test,
+            None,
+            None,
+            kernel,
+            best_params,
+        )
+        print(f"Final fit: {time.time() - t0:.0f} s")
+    return best_params, clf, y_pred
 
 
 def preprocess_data(
@@ -355,7 +558,7 @@ def preprocess_data(
     closed_loop=1,
     n_rois=None,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,
@@ -381,7 +584,7 @@ def preprocess_data(
     iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
 
     # process dff and trials_df
-    if None not in (rolling_window, downsample_window):
+    if downsample_window is not None:
         trials_df = downsample_dff(
             trials_df,
             rolling_window=rolling_window,
@@ -470,6 +673,17 @@ def preprocess_data(
     )
 
 
+def _save_decoder_dict(decoder_dict, decoder_dict_path):
+    """Write decoder_dict atomically so concurrent readers never see a partial file."""
+    decoder_dict_path = Path(decoder_dict_path)
+    tmp_path = decoder_dict_path.with_name(
+        f".{decoder_dict_path.name}.{os.getpid()}.tmp"
+    )
+    with open(tmp_path, "wb") as f:
+        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp_path, decoder_dict_path)
+
+
 @slurm_it(
     conda_env=CONDA_ENV,
     slurm_options={
@@ -513,8 +727,6 @@ def fit_each_fold(
                 / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
             )["roi_vector"]
             decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
-
-    decoder_dict = pd.read_pickle(decoder_dict_path)
 
     (
         trials_df,
@@ -566,29 +778,19 @@ def fit_each_fold(
         dff_val = dff_val[:, iscell]
         dff_test = dff_test[:, iscell]
 
-    # get best hyperparameters for this fold
-    best_params = svm_classifier_hyperparam_tuning(
-        X_train=dff_train,
-        y_train=depth_train,
-        X_val=dff_val,
-        y_val=depth_val,
-        class_labels=np.arange(len(depth_list)),
-        kernel=kernel,
-        Cs=Cs,
-        gammas=gammas,
-    )
-
-    # train and test on the current fold (train on combined train and val data)
-    clf, y_pred = test_svm_classifier(
+    # get best hyperparameters for this fold, then train on combined train and val
+    # data and test on the current fold. Uses the CPUs allocated by slurm, if any.
+    n_jobs = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+    best_params, clf, y_pred = tune_and_test_svm_classifier(
         X_train=dff_train,
         y_train=depth_train,
         X_val=dff_val,
         y_val=depth_val,
         X_test=dff_test,
-        y_test=depth_test,
-        class_labels=np.arange(len(depth_list)),
         kernel=kernel,
-        best_params=best_params,
+        Cs=Cs,
+        gammas=gammas,
+        n_jobs=n_jobs,
     )
 
     decoder_outputs = {
@@ -604,7 +806,7 @@ def fit_each_fold(
         "wb",
     ) as f:
         pickle.dump(decoder_outputs, f, protocol=pickle.HIGHEST_PROTOCOL)
-    return decoder_dict
+    return decoder_outputs
 
 
 @slurm_it(
@@ -628,8 +830,11 @@ def calculate_acc_conmat(
     special_sfx="",
 ):
     print(f"Reading decoder inputs from {decoder_inputs_path}...")
-    with open(decoder_dict_path, "rb") as f:
-        decoder_dict = pickle.load(f)
+    if os.path.exists(decoder_dict_path):
+        with open(decoder_dict_path, "rb") as f:
+            decoder_dict = pickle.load(f)
+    else:
+        decoder_dict = {}
     if decoder_inputs_path is not None:
         if os.path.exists(decoder_inputs_path):
             with open(decoder_inputs_path, "rb") as f:
@@ -643,6 +848,14 @@ def calculate_acc_conmat(
             / f"decoder_subset_{recording_type}_n{n_rois}_seed{random_state}.npz",
         )["roi_vector"]
         decoder_inputs = subset_decoder_inputs(decoder_inputs, roi_vector, k_folds)
+
+    y_test_all = decoder_inputs["y_test_all"]
+    decoder_dict[f"best_params_all_{recording_type}"] = (
+        {"C": []} if decoder_inputs["kernel"] == "linear" else {"C": [], "gamma": []}
+    )
+    decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
+    decoder_dict[f"y_preds_all_{recording_type}"] = np.zeros_like(y_test_all)
+    decoder_dict[f"trials_df_{recording_type}"] = decoder_inputs["trials_df"]
 
     # concatenate results from all folds
     for i in range(k_folds):
@@ -682,14 +895,8 @@ def calculate_acc_conmat(
     decoder_dict[f"conmat_{recording_type}"] = conmat
     decoder_dict[f"error_{recording_type}"] = calculate_error(conmat)
     print(f"Accuracy {recording_type}: {acc}")
-    if n_rois is None:
-        decoder_results_str = f"decoder_results{special_sfx}.pickle"
-    elif n_rois is not None and random_state is not None:
-        decoder_results_str = f"decoder_results_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}.pickle"
-    print(f"Writing decoder results to {decoder_results_str}")
-    with open(Path(decoder_dict_path).parent / decoder_results_str, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
-
+    print(f"Writing decoder results to {decoder_dict_path}")
+    _save_decoder_dict(decoder_dict, decoder_dict_path)
     return decoder_dict
 
 
@@ -700,7 +907,7 @@ def depth_decoder(
     closed_loop=1,
     n_rois=None,
     trial_average=False,
-    rolling_window=0.5,
+    rolling_window=None,
     frame_rate=15,
     downsample_window=0.5,
     random_state=42,
@@ -712,13 +919,15 @@ def depth_decoder(
     neurons_ds=None,
     decoder_dict_path=None,
     special_sfx="",
+    job_dependency=None,
 ):
-    if decoder_dict_path is not None:
-        if os.path.exists(decoder_dict_path):
-            with open(decoder_dict_path, "rb") as f:
-                decoder_dict = pickle.load(f)
-        else:
-            decoder_dict = {}
+    if decoder_dict_path is None:
+        assert (
+            neurons_ds is not None
+        ), "ERROR: neurons_ds or decoder_dict_path must be provided."
+        decoder_dict_path = (
+            neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
+        )
     # set slurm folder
     if use_slurm:
         slurm_folder = Path(os.path.expanduser(f"~/slurm_logs"))
@@ -762,7 +971,6 @@ def depth_decoder(
 
     # save decoder inputs if use_slurm
     y_test_all = np.hstack(trials_df[depth_col])
-    y_preds_all = np.zeros_like(y_test_all)
     decoder_inputs = {
         "trials_df": trials_df,
         "dff_train_all": dff_train_all,
@@ -781,16 +989,6 @@ def depth_decoder(
         "gammas": gammas,
         "y_test_all": y_test_all,
     }
-
-    if kernel == "linear":
-        best_params_all = {
-            "C": [],
-        }
-    else:
-        best_params_all = {
-            "C": [],
-            "gamma": [],
-        }
 
     if closed_loop:
         recording_type = "closedloop"
@@ -820,23 +1018,21 @@ def depth_decoder(
     else:
         decoder_inputs_path = None
 
-    # save temp decoder results
-    decoder_dict[f"best_params_all_{recording_type}"] = best_params_all
-    decoder_dict[f"y_test_all_{recording_type}"] = y_test_all
-    decoder_dict[f"y_preds_all_{recording_type}"] = y_preds_all
-    decoder_dict[f"trials_df_{recording_type}"] = trials_df
+    # Do not write decoder_results.pickle from the driver process: under Slurm, jobs
+    # of a previous recording_type (e.g. openloop) may still be running and writing to
+    # the same file. calculate_acc_conmat creates this recording_type's entries when
+    # it runs. It only waits for those jobs if the caller passes them as
+    # `job_dependency`, as depth_decoder_pipeline does; without it, two recording
+    # types sharing a file can still overwrite each other's results.
     if n_rois is None:
-        decoder_results_path = (
-            neurons_ds.path_full.parent / f"decoder_results{special_sfx}.pickle"
-        )
+        decoder_results_path = Path(decoder_dict_path)
     else:
         decoder_results_path = (
             neurons_ds.path_full.parent
             / "decoder_subsets"
             / f"decoder_results_{recording_type}_n{n_rois}_seed{random_state}.pickle"
         )
-    with open(decoder_results_path, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    decoder_results_path.parent.mkdir(parents=True, exist_ok=True)
 
     # fit each fold
     outputs = []
@@ -859,7 +1055,10 @@ def depth_decoder(
         outputs.append(out)
 
     # calculate the accuracy on all test data
-    job_dependency = outputs if use_slurm else None
+    if use_slurm:
+        acc_dependency = outputs + (list(job_dependency) if job_dependency else [])
+    else:
+        acc_dependency = None
     decoder_dict = calculate_acc_conmat(
         decoder_dict_path=decoder_results_path,
         recording_type=recording_type,
@@ -875,7 +1074,7 @@ def depth_decoder(
         scripts_name=f"decoder_{recording_type}{special_sfx}_accuracy"
         if n_rois is None
         else f"decoder_{recording_type}{special_sfx}_n{n_rois}_seed{random_state}_accuracy",
-        job_dependency=job_dependency,
+        job_dependency=acc_dependency,
     )
 
     return decoder_dict
@@ -899,6 +1098,7 @@ def find_acc_speed_bins(
     still_time=1,
     frame_rate=15,
     add_errors=False,
+    downsample_window=0.5,
 ):
     speed_bins = np.array(speed_bins)
     with open(decoder_dict_path, "rb") as f:
@@ -922,15 +1122,12 @@ def find_acc_speed_bins(
         error_speed_bins = []
     rs_arr = np.hstack(trials_df["RS_stim_downsample"])
     if continuous_still:
-        # for volumetric imaging, take the indices of running volumes where the maximum running speed for each frame is below threshold
-        # but for all other speed bins, take the average running speed across the volume
-        idx = common_utils.find_thresh_sequence(
-            array=rs_arr
-            if not trials_df.columns.str.contains("RS_volume").any()
-            else np.hstack(trials_df["RS_volume_max_stim_downsample"]),
-            threshold_max=still_thr,
-            length=int(still_time * frame_rate),
-            shift=int(still_time * frame_rate),
+        idx = find_stationary_samples(
+            trials_df,
+            frame_rate=frame_rate,
+            downsample_window=downsample_window,
+            still_thr=still_thr,
+            still_time=still_time,
         )
         acc_speed_bins.append(_accuracy_or_nan(y_test[idx], y_preds[idx]))
         conmat = _confusion_matrix_or_empty(y_test[idx], y_preds[idx])
@@ -992,6 +1189,5 @@ def find_acc_speed_bins(
     decoder_dict[f"error{recording_type}"] = (
         calculate_error(decoder_dict[f"conmat{recording_type}"]) if add_errors else None
     )
-    with open(decoder_dict_path, "wb") as f:
-        pickle.dump(decoder_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+    _save_decoder_dict(decoder_dict, decoder_dict_path)
     return decoder_dict

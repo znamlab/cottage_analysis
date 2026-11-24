@@ -13,7 +13,16 @@ def analyze_grating_responses(
     photodiode_protocol=5,
     protocol_base="SFTF",
     return_volumes=True,
+    use_col="dffs",
 ):
+    """Single-trial grating responses of the SFTF recordings of a session.
+
+    Args:
+        use_col (str): response, "dffs" (dF/F) or "spks" (deconvolved spikes). The
+            integer ROI columns of the returned trials_df hold its mean over each trial,
+            and `dff_stim` (dF/F) or `spks_stim` (spikes) the trial's volumes. Defaults to
+            "dffs".
+    """
     flexilims_session = flz.get_flexilims_session(project_id=project)
 
     recordings = flz.get_children(
@@ -22,7 +31,7 @@ def analyze_grating_responses(
         children_datatype="recording",
     )
     recordings = recordings[recordings.name.str.contains(protocol_base)]
-    if len(recordings) >1 :
+    if len(recordings) > 1:
         warnings.warn(f"Multiple recordings found for {session}, using the first one.")
     dfs = []
     dff_mean_all = []
@@ -39,9 +48,10 @@ def analyze_grating_responses(
             flexilims_session=flexilims_session,
             filter_datasets=filter_datasets,
             return_volumes=return_volumes,
+            add_spikes=use_col == "spks",
         )
 
-        trials_df, dff_mean = generate_trials_df(img_df)
+        trials_df, dff_mean = generate_trials_df(img_df, use_col=use_col)
         trials_df["irecording"] = i
         dfs.append(trials_df)
         dff_mean_all.append(dff_mean)
@@ -49,7 +59,7 @@ def analyze_grating_responses(
     return pd.concat(dfs, axis=0, ignore_index=True), dff_mean_all
 
 
-def generate_trials_df(img_df, skip_first_n_volumes=2):
+def generate_trials_df(img_df, skip_first_n_volumes=2, use_col="dffs"):
     # select rows of img_df where SpatialFrequency, TemporalFrequency, Angle change
     trials_df = (
         img_df.loc[
@@ -60,17 +70,31 @@ def generate_trials_df(img_df, skip_first_n_volumes=2):
         .copy()
         .reset_index(drop=True)
     )
+    # skip the onset volumes; the window still ends at the next trial's onset
     trials_df["stim_start"] = trials_df["imaging_volume"] + skip_first_n_volumes
-    trials_df["stim_end"] = trials_df["stim_start"].shift(-1)
+    trials_df["stim_end"] = trials_df["imaging_volume"].shift(-1)
     # drop the last row
     trials_df = trials_df.iloc[:-1].copy()
 
-    # Assign dffs array to trials_df
-    trials_df["dff_stim"] = trials_df.apply(
+    # Assign dffs (or spks) array to trials_df: volumes [stim_start, stim_end). `.loc`
+    # includes its end, so stop one volume before the next trial's onset.
+    stim_col = {"dffs": "dff_stim", "spks": "spks_stim"}[use_col]
+    trials_df[stim_col] = trials_df.apply(
         lambda x: np.stack(
-            img_df.dffs.loc[int(x.stim_start) : int(x.stim_end)]
+            img_df[use_col].loc[int(x.stim_start) : int(x.stim_end) - 1]
         ).squeeze(),
         axis=1,
     )
-    dff_mean = trials_df["dff_stim"].apply(lambda x: np.mean(x, axis=0)).to_list()
+    # mean response over the same volumes, one integer column per ROI (read by
+    # fit_sftf_tuning)
+    dff_mean = [
+        np.stack(img_df[use_col].loc[int(start) : int(end) - 1])
+        .reshape(int(end) - int(start), -1)
+        .mean(axis=0)
+        for start, end in zip(trials_df["stim_start"], trials_df["stim_end"])
+    ]
+    trials_df = pd.concat(
+        [trials_df.reset_index(drop=True), pd.DataFrame(np.stack(dff_mean, axis=0))],
+        axis=1,
+    )
     return trials_df, dff_mean

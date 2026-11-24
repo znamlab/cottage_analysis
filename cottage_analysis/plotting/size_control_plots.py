@@ -36,7 +36,6 @@ def plot_depth_size_fit_comparison(
     plot_height=1,
     fontsize_dict={"title": 15, "label": 10, "tick": 10},
 ):
-
     # Plot scatter of r2 depth vs. size
     if filter is None:
         filtered_neurons_df = neurons_df
@@ -105,8 +104,8 @@ def plot_preferred_depths_sizes_scatter(
             [plot_x + i * plot_width, plot_y, plot_width * 0.6, plot_height * 0.6]
         )
         ax.scatter(
-            neurons_df[f"preferred_depth_size{size_x}"],
-            neurons_df[f"preferred_depth_size{size_y}"],
+            neurons_df[f"preferred_depth_size{size_x}"] * 100,
+            neurons_df[f"preferred_depth_size{size_y}"] * 100,
             s=1,
             c="k",
             alpha=0.2,

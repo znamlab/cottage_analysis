@@ -432,7 +432,7 @@ def download_full_flexilims_database(flexilims_session, target_file=None):
     return json_data
 
 
-def get_si_metadata(flexilims_session, session):
+def get_si_metadata(flexilims_session, session, filter_datasets):
     recording = flz.get_children(
         parent_name=session,
         flexilims_session=flexilims_session,
@@ -453,7 +453,7 @@ def get_si_metadata(flexilims_session, session):
             flexilims_session=flexilims_session,
             origin_name=recording.name,
             dataset_type="suite2p_traces",
-            filter_datasets={"anatomical_only": 3},
+            filter_datasets=filter_datasets,
             allow_multiple=False,
             return_dataseries=False,
         )
@@ -503,7 +503,62 @@ def hierarchical_bootstrap_stats(
     correlation=False,
     difference=False,
     ratio=False,
+    plot=True,
 ):
+    """Hierarchically bootstrap a per-column statistic to build a null/CI distribution.
+
+    For each bootstrap iteration, rows are hierarchically resampled with `bootstrap_sample`
+    (see that function for the nested-resampling scheme), and one statistic is computed per
+    entry of `xcol` on the resampled rows:
+      - if `ycol` is None: the median of `data[x]`.
+      - if `ycol` is given: one of a paired statistic between `data[x]` and the matching
+        `data[y]`, selected by exactly one of `correlation` (Spearman r), `difference`
+        (median of `x - y`), or `ratio` (median of `x / y`).
+
+    The resulting `distribution` is the standard input to `calculate_pval_from_bootstrap`:
+    e.g. pass `distribution[:, i] - distribution[:, j]` to test whether columns `i` and `j`
+    differ significantly, or `distribution[:, i]` directly (with `value=0`) to test a single
+    column against zero.
+
+    If `"mouse"` is not already a column of `data`, it is derived as
+    `data["session"].str.split("_").str[0]` (i.e. assumes session names of the form
+    `"{mouse}_{session_id}"`), so `resample_cols` can reference `"mouse"` even when it isn't
+    an explicit column.
+
+    Note: seeds `np.random.seed(0)` internally, so results are reproducible across calls but
+    this also resets global numpy random state as a side effect.
+
+    Args:
+        data (pd.DataFrame): Dataframe containing `xcol` (and `ycol`, if given) plus the
+            columns needed for `resample_cols` (and `"session"`, if `"mouse"` isn't already
+            a column).
+        n_boots (int): Number of bootstrap iterations.
+        xcol (list): Column names to bootstrap; one distribution column is produced per
+            entry, in order.
+        resample_cols (list): Columns to hierarchically resample over, passed straight to
+            `bootstrap_sample` (e.g. `["mouse", "session"]` to resample mice, then sessions
+            within each resampled mouse, then rows within each resampled session).
+        ycol (list, optional): Column names to pair with `xcol` (same length, same order),
+            required when `correlation`, `difference`, or `ratio` is True. Defaults to None.
+        correlation (bool): If True (with `ycol` given), compute the Spearman correlation
+            between each `xcol`/`ycol` pair instead of a plain median. Defaults to False.
+        difference (bool): If True (with `ycol` given), compute the median of `x - y` for
+            each pair instead of a plain median. Defaults to False.
+        ratio (bool): If True (with `ycol` given), compute the median of `x / y` for each
+            pair instead of a plain median. Defaults to False.
+        plot (bool): If True, plot a quick grid of histograms of `distribution` (one subplot
+            per `xcol`), each with dashed lines at the 2.5th/97.5th percentiles, as a
+            sanity-check diagnostic. Defaults to True.
+
+    Returns:
+        tuple: `(r, distribution)`.
+            r (np.ndarray or None): Point estimate (correlation, difference, or ratio) of
+                each `xcol`/`ycol` pair computed on the full, unresampled `data`; `None` if
+                none of `correlation`/`difference`/`ratio` is set (including whenever `ycol`
+                is None).
+            distribution (np.ndarray): Array of shape `(n_boots, len(xcol))` with one
+                bootstrap replicate of the chosen statistic per row/column.
+    """
     np.random.seed(0)
     data = data.copy()  # Avoid modifying the original dataframe
     if "mouse" not in data.columns:
@@ -540,16 +595,17 @@ def hierarchical_bootstrap_stats(
                     distribution[i, icol] = np.median(
                         data.loc[sample][x] / data.loc[sample][y]
                     )
-    plt.figure()
-    for icol, x in enumerate(xcol):
-        plt.subplot(2, len(xcol) // 2 + 1, icol + 1)
-        plt.hist(distribution[:, icol], bins=31)
-        plt.axvline(
-            np.percentile(distribution[:, icol], 2.5), color="r", linestyle="--"
-        )
-        plt.axvline(
-            np.percentile(distribution[:, icol], 97.5), color="r", linestyle="--"
-        )
+    if plot:
+        plt.figure()
+        for icol, x in enumerate(xcol):
+            plt.subplot(2, len(xcol) // 2 + 1, icol + 1)
+            plt.hist(distribution[:, icol], bins=31)
+            plt.axvline(
+                np.percentile(distribution[:, icol], 2.5), color="r", linestyle="--"
+            )
+            plt.axvline(
+                np.percentile(distribution[:, icol], 97.5), color="r", linestyle="--"
+            )
     return r, distribution
 
 
@@ -673,6 +729,48 @@ def add_rsq_significance(df, rsq_cols, percentile=95, min_valid_rsq=-1, verbose=
                 f"passing={df[sig_col].mean() * 100:5.1f}%"
             )
     return thresholds
+
+
+def one_sided_pval_from_spearman(rval, pval_two_sided):
+    """Convert two-sided Spearman p-values to one-sided p-values testing rval > 0.
+
+    The null distribution of the Spearman statistic is symmetric around 0, so the
+    one-sided p-value for "correlation is positive" is half the two-sided p-value
+    when rval > 0, and its complement when rval <= 0.
+
+    Args:
+        rval (array-like): Spearman correlation coefficients.
+        pval_two_sided (array-like): Two-sided p-values from scipy.stats.spearmanr.
+
+    Returns:
+        np.ndarray: One-sided p-values, same shape as input.
+    """
+    rval = np.asarray(rval, dtype=float)
+    pval_two_sided = np.asarray(pval_two_sided, dtype=float)
+    return np.where(rval > 0, pval_two_sided / 2, 1 - pval_two_sided / 2)
+
+
+def add_one_sided_spearman_significance(df, rval_col, pval_col, out_col, alpha=0.05):
+    """Add a boolean column flagging significantly positive Spearman correlations.
+
+    Replaces the ad hoc `rval > 0.1 & pval_two_sided < alpha` filter (where the 0.1
+    magnitude cutoff exists only to reject significant-but-negative correlations)
+    with a proper one-sided test at the same significance level, using
+    `one_sided_pval_from_spearman`.
+
+    Args:
+        df (pd.DataFrame): Dataframe containing the rval/pval columns.
+        rval_col (str): Column of Spearman rval (e.g. "depth_tuning_test_spearmanr_rval_closedloop").
+        pval_col (str): Column of two-sided Spearman pval (e.g. "..._pval_closedloop").
+        out_col (str): Name of the boolean column to add (e.g. "is_depth_neuron").
+        alpha (float): Significance level for the one-sided test. Defaults to 0.05.
+
+    Returns:
+        pd.DataFrame: `df`, modified in place with `out_col` added.
+    """
+    pval_one_sided = one_sided_pval_from_spearman(df[rval_col], df[pval_col])
+    df[out_col] = pval_one_sided < alpha
+    return df
 
 
 def filter_trials_by_rs2motor(

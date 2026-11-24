@@ -163,6 +163,7 @@ def plot_depth_tuning_curve(
     plot_smooth=False,
     linewidth=3,
     linecolor="k",
+    fit_linecolor=None,
     markersize=5,
     markeredgecolor="k",
     closed_loop=1,
@@ -193,6 +194,7 @@ def plot_depth_tuning_curve(
         plot_smooth (bool, optional): Whether to plot smoothed tuning curve or not. Defaults to False.
         linewidth (int, optional): linewidth. Defaults to 3.
         linecolor (str, optional): linecolor of true data. Defaults to "k".
+        fit_linecolor (str, optional): linecolor of fitted tuning curve. Defaults to None.
         markersize (int, optional): markersize. Defaults to 5.
         markeredgecolor (str, optional): markeredgecolor. Defaults to "k".
         closed_loop (int, optional): whether it's closedloop or openloop. Defaults to 1.
@@ -207,6 +209,9 @@ def plot_depth_tuning_curve(
         ax = plt.gca()
     else:
         plt.sca(ax)
+
+    if fit_linecolor is None:
+        fit_linecolor = linecolor
 
     # Load average activity and confidence interval for this roi
     trials_df = trials_df[trials_df.closed_loop == closed_loop]
@@ -283,7 +288,7 @@ def plot_depth_tuning_curve(
                 ax.plot(
                     np.log(x),
                     gaussian_arr,
-                    color=linecolor,
+                    color=fit_linecolor,
                     linewidth=linewidth,
                     label=label,
                 )
@@ -295,7 +300,7 @@ def plot_depth_tuning_curve(
             ax.plot(
                 np.log(x),
                 gaussian_arr,
-                color=linecolor,
+                color=fit_linecolor,
                 linewidth=linewidth,
                 label=label,
             )
@@ -310,7 +315,7 @@ def plot_depth_tuning_curve(
         plt.yticks(
             [
                 0,
-                common_utils.ceil(np.max(CI_high), ylim_precision_base, ylim_precision),
+                ylim[1],
             ],
             fontsize=fontsize_dict["tick"],
         )
@@ -509,6 +514,44 @@ def get_PSTH(
     frame_rate=15,
     compute_ci=True,
 ):
+    """Calculate the Peri-Stimulus Time Histogram (PSTH) / position-binned activity for a given ROI.
+
+    Args:
+        roi (int): ROI number.
+        psth (list or np.ndarray, optional): Pre-computed PSTH data. If empty, PSTH will
+            be calculated from trials_df. Defaults to [].
+        depth_list (list, optional): List of depth values. Defaults to [].
+        is_closed_loop (int, optional): Whether to use closed-loop (1) or open-loop (0)
+            trials. Defaults to 1.
+        trials_df (pd.DataFrame, optional): Dataframe containing trial information.
+            Defaults to None.
+        use_col (str, optional): The dataframe column name representing the activity
+            metric (e.g. "dff"). Defaults to "dff".
+        rs_thr_min (float, optional): Minimum threshold of running speed for imaging
+            frames (m/s). Defaults to None.
+        rs_thr_max (float, optional): Maximum threshold of running speed for imaging
+            frames (m/s). Defaults to None.
+        still_only (bool, optional): Whether to only use frames when the mouse is
+            stationary. Defaults to False.
+        still_time (float or int, optional): Number of seconds the mouse must stay still
+            before a frame is taken. Defaults to 1.
+        max_distance (float or int, optional): Maximum distance in meters. Defaults to 6
+        min_distance (float or int, optional): Minimum distance in meters. Defaults to 0
+        nbins (int, optional): Number of bins to divide the distance. Defaults to 20.
+        bins (list or np.ndarray, optional): Custom bin edges. If provided, nbins is
+            ignored. Defaults to [].
+        frame_rate (int, optional): Imaging frame rate in Hz. Defaults to 15.
+        compute_ci (bool, optional): Whether to compute bootstrap confidence intervals.
+            Defaults to True.
+
+    Returns:
+        tuple: A tuple containing:
+            - all_means (np.ndarray): Binned mean activity of shape (len(depth_list) + 1
+                , nbins).
+            - all_ci (np.ndarray): Confidence intervals (lower, upper) of shape
+                (2, len(depth_list) + 1, nbins).
+            - bin_centers (np.ndarray): Binned centers of distance of shape (nbins,).
+    """
     # confidence interval z calculation
     ci_range = 0.95
 
@@ -923,7 +966,7 @@ def plot_psth_raster(
     ax.set_xlabel("Virtual depth (cm)", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="x", labelsize=fontsize_dict["tick"], rotation=60)
     ax.set_ylabel("Neuron number", fontsize=fontsize_dict["label"], labelpad=-5)
-    ax.set_yticks([1, len(results_df)])
+    ax.set_yticks([0.5, len(results_df) - 0.5], labels=[1, len(results_df)])
     ax.tick_params(axis="y", labelsize=fontsize_dict["tick"])
     ax.set_xlim([0, ndepths * nbins])
 
@@ -1019,13 +1062,15 @@ def plot_example_fov(
     )
     roi_location.find_roi_centers(neurons_df, stat)
     if col == "preferred_depth":
+        one_sided_pval = common_utils.one_sided_pval_from_spearman(
+            neurons_df["depth_tuning_test_spearmanr_rval_closedloop"],
+            neurons_df["depth_tuning_test_spearmanr_pval_closedloop"],
+        )
         select_neurons = neurons_df[
-            (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] < 0.05)
-            & (neurons_df["iscell"] == 1)
+            (one_sided_pval < 0.05) & (neurons_df["iscell"] == 1)
         ]
         null_neurons = neurons_df[
-            (neurons_df["depth_tuning_test_spearmanr_pval_closedloop"] >= 0.05)
-            & (neurons_df["iscell"] == 1)
+            (one_sided_pval >= 0.05) & (neurons_df["iscell"] == 1)
         ]
     else:
         coef = np.stack(neurons_df[f"rf_coef_closedloop"].values)
@@ -1226,9 +1271,7 @@ def plot_mean_running_speed_alldepths(
         ax.set_ylabel("Average running\nspeed (cm/s)", fontsize=fontsize_dict["label"])
         ax.set_ylim(0, ax.get_ylim()[1])
     elif param == "OF":
-        ax.set_ylabel(
-            "Average optic flow\nspeed (degrees/s)", fontsize=fontsize_dict["label"]
-        )
+        ax.set_ylabel("Average optic flow speed (°/s)", fontsize=fontsize_dict["label"])
         ax.set_yscale("log")
     ax.set_xlabel("Depth (cm)", fontsize=fontsize_dict["label"])
     ax.tick_params(axis="both", which="major", labelsize=fontsize_dict["tick"])
