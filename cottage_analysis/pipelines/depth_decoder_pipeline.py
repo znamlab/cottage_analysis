@@ -48,7 +48,7 @@ def main(
     params = {
         "trial_average": False,
         "rolling_window": None,
-        "downsample_window": None,
+        "downsample_window": 0.5,
         "Cs": np.logspace(-5, 3, 9),
         "continuous_still": 1,
         "still_time": 1,

@@ -42,7 +42,7 @@ def main(
         "n_rois": [50, 100, 500, 1000, 2000],
         "n_subsets": 10,
         "rolling_window": None,
-        "downsample_window": None,
+        "downsample_window": 0.5,
         "Cs": np.logspace(-5, 3, 9),
         "continuous_still": 1,
         "still_time": 1,
