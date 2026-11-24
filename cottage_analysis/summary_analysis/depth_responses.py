@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import scipy
@@ -232,88 +234,102 @@ def get_psth_crossval_all_sessions(
         try:
             neurons_df = pd.read_pickle(neurons_ds.path_full)
         except FileNotFoundError:
-            print(f"ERROR: SESSION {session_name}: neurons_ds not found")
+            warnings.warn(f"Skipping session {session_name}: neurons_df not found")
             continue
+
+        # Trials not used to fit the cross-validated preferred depth. Read them from the
+        # full neurons_df, before `use_cols` is applied, so that callers do not have to
+        # ask for these two columns.
+        required_cols = [
+            "depth_tuning_trials_closedloop",
+            "depth_tuning_trials_closedloop_crossval",
+        ]
+        missing_required = [c for c in required_cols if c not in neurons_df.columns]
+        if missing_required:
+            warnings.warn(
+                f"Skipping session {session_name}: neurons_df has no "
+                f"{missing_required}"
+            )
+            continue
+        choose_trials_resp = list(
+            set(neurons_df.depth_tuning_trials_closedloop.mode()[0].tolist())
+            - set(neurons_df.depth_tuning_trials_closedloop_crossval.mode()[0].tolist())
+        )
+
         if use_cols is not None:
+            missing = [c for c in use_cols if c not in neurons_df.columns]
+            if missing:
+                warnings.warn(f"Session {session_name}: missing cols {missing}")
             cols_to_use = [c for c in use_cols if c in neurons_df.columns]
-            neurons_df = neurons_df[cols_to_use]
+            neurons_df = neurons_df[cols_to_use].copy()
 
-            _, trials_df = spheres.sync_all_recordings(
-                session_name=session_name,
-                flexilims_session=flexilims_session,
-                project=None,
-                filter_datasets=filter_datasets,
-                exclude_datasets=exclude_datasets,
-                recording_type="two_photon",
-                protocol_base="SpheresPermTubeReward",
-                photodiode_protocol=photodiode_protocol,
-                return_volumes=True,
-            )
-            trials_df = trials_df[trials_df.closed_loop == closed_loop]
-            neurons_df["session"] = session_name
-            # Add roi, preferred depth, iscell to results
-            exp_session = flz.get_entity(
-                datatype="session",
-                name=session_name,
-                flexilims_session=flexilims_session,
-            )
-            suite2p_ds = flz.get_datasets(
-                flexilims_session=flexilims_session,
-                origin_name=exp_session.name,
-                dataset_type="suite2p_rois",
-                filter_datasets=filter_datasets,
-                exclude_datasets=exclude_datasets,
-                allow_multiple=False,
-                return_dataseries=False,
-            )
-            if "annotated" in suite2p_ds.full_name:
-                iscell = np.ones(len(neurons_df))
-            else:
-                iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
-            neurons_df.loc[:, "iscell"] = iscell
-            neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
-
-            # Calculate dff psth crossval
-            # Get the responses for this session that are not included for calculating
-            # the cross-validated preferred depth
-            choose_trials_resp = list(
-                set(neurons_df.depth_tuning_trials_closedloop.mode()[0].tolist())
-                - set(
-                    neurons_df.depth_tuning_trials_closedloop_crossval.mode()[
-                        0
-                    ].tolist()
-                )
-            )
-            trials_df_resp, _, _ = common_utils.choose_trials_subset(
-                trials_df, choose_trials_resp, by_depth=True
-            )
-
-            print("Calculating dff PSTH")
-            for roi in tqdm(range(len(neurons_df))):
-                psth, _, _ = depth_selectivity_plots.get_PSTH(
-                    trials_df=trials_df_resp,
-                    roi=roi,
-                    is_closed_loop=closed_loop,
-                    max_distance=corridor_length + blank_length,
-                    min_distance=-blank_length,
-                    nbins=nbins,
-                    rs_thr_min=rs_thr_min,
-                    rs_thr_max=rs_thr_max,
-                    still_only=still_only,
-                    still_time=still_time,
-                    frame_rate=fs,
-                    compute_ci=False,
-                )
-                neurons_df.at[roi, "psth_crossval"] = psth
-
-            psth_path.parent.mkdir(parents=True, exist_ok=True)
-            neurons_df.to_pickle(psth_path)
-            results_all.append(neurons_df)
-            if verbose:
-                print(f"Finished concat neurons_df from session {session_name}")
+        _, trials_df = spheres.sync_all_recordings(
+            session_name=session_name,
+            flexilims_session=flexilims_session,
+            project=None,
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            recording_type="two_photon",
+            protocol_base="SpheresPermTubeReward",
+            photodiode_protocol=photodiode_protocol,
+            return_volumes=True,
+        )
+        trials_df = trials_df[trials_df.closed_loop == closed_loop]
+        neurons_df["session"] = session_name
+        # Add roi, preferred depth, iscell to results
+        exp_session = flz.get_entity(
+            datatype="session",
+            name=session_name,
+            flexilims_session=flexilims_session,
+        )
+        suite2p_ds = flz.get_datasets(
+            flexilims_session=flexilims_session,
+            origin_name=exp_session.name,
+            dataset_type="suite2p_rois",
+            filter_datasets=filter_datasets,
+            exclude_datasets=exclude_datasets,
+            allow_multiple=False,
+            return_dataseries=False,
+        )
+        if "annotated" in suite2p_ds.full_name:
+            iscell = np.ones(len(neurons_df))
         else:
-            print(
-                f"ERROR: SESSION {session_name}: specified cols not all in neurons_df"
+            iscell = s2p_io.load_is_cell(suite2p_ds.path_full)
+        neurons_df.loc[:, "iscell"] = iscell
+        neurons_df["psth_crossval"] = [[np.nan]] * len(neurons_df)
+
+        # Calculate dff psth crossval on the responses that were not used to fit the
+        # cross-validated preferred depth
+        trials_df_resp, _, _ = common_utils.choose_trials_subset(
+            trials_df, choose_trials_resp, by_depth=True
+        )
+
+        print("Calculating dff PSTH")
+        for roi in tqdm(range(len(neurons_df))):
+            psth, _, _ = depth_selectivity_plots.get_PSTH(
+                trials_df=trials_df_resp,
+                roi=roi,
+                is_closed_loop=closed_loop,
+                max_distance=corridor_length + blank_length,
+                min_distance=-blank_length,
+                nbins=nbins,
+                rs_thr_min=rs_thr_min,
+                rs_thr_max=rs_thr_max,
+                still_only=still_only,
+                still_time=still_time,
+                frame_rate=fs,
+                compute_ci=False,
             )
+            neurons_df.at[roi, "psth_crossval"] = psth
+
+        psth_path.parent.mkdir(parents=True, exist_ok=True)
+        neurons_df.to_pickle(psth_path)
+        results_all.append(neurons_df)
+        if verbose:
+            print(f"Finished concat neurons_df from session {session_name}")
+    if not results_all:
+        raise ValueError(
+            "No PSTH to concatenate: every session was skipped (see the warnings)."
+        )
     results_all = pd.concat(results_all, axis=0, ignore_index=True)
     return results_all
