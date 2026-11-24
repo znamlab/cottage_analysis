@@ -329,6 +329,7 @@ def main(
             closed_loops = trials_df_all["closed_loop"].unique()
         else:
             closed_loops = [True]
+        closedloop_depth_list = None
         for is_closedloop in closed_loops:
             if is_closedloop:
                 sfx = "_closedloop"
@@ -354,6 +355,20 @@ def main(
                 verbose=False,
                 resolution=5,
             )
+
+            if is_closedloop:
+                if is_multidepth:
+                    # trials_df.depth is the radius of the sphere logged at trial start,
+                    # which is negative for sphere removals. Use the depths of the RF
+                    # frames.
+                    closedloop_depth_list = np.sort(
+                        imaging_df_all.depth[imaging_df_all.depth > 0].unique()
+                    ).tolist()
+                    assert len(closedloop_depth_list) == frames_all.shape[0]
+                else:
+                    closedloop_depth_list = find_depth_neurons.find_depth_list(
+                        trials_df_all
+                    )
 
             print(f"Fitting RF{sfx}...")
             if use_slurm:
@@ -461,26 +476,25 @@ def main(
                 neurons_df.at[i, f"rf_reg_xy{sfx}"] = best_reg_xys[i]
                 neurons_df.at[i, f"rf_reg_depth{sfx}"] = best_reg_depths[i]
 
-        # Fit RF preferred depth using Gaussian fit across depths
+        # Fit RF preferred depth using Gaussian fit across depths (closed-loop only)
         from cottage_analysis.analysis.spheres.rf_analysis import fit_rf_preferred_depth
 
-        if is_multidepth:
-            # trials_df.depth is the radius of the sphere logged at trial start, which
-            # is negative for sphere removals. Use the depths of the RF frames.
-            depth_list = np.sort(
-                imaging_df_all.depth[imaging_df_all.depth > 0].unique()
-            ).tolist()
-            assert len(depth_list) == frames_all.shape[0]
-        else:
-            depth_list = find_depth_neurons.find_depth_list(trials_df_all)
-        print(f"Fitting RF preferred depth{sfx} (Gaussian across depths)...")
-        fit_rf_preferred_depth(
-            neurons_df,
-            depths=depth_list,
-            is_closed_loop=1,
-            use_multidepth=is_multidepth,
-            suffix=sfx,
-        )
+        base_sfx = "_closedloop_multidepth" if is_multidepth else "_closedloop"
+        closedloop_sfx = base_sfx + special_sfx_base
+        if (
+            closedloop_depth_list is not None
+            and f"rf_coef{closedloop_sfx}" in neurons_df.columns
+        ):
+            print(
+                f"Fitting RF preferred depth{closedloop_sfx} (Gaussian across depths)..."
+            )
+            fit_rf_preferred_depth(
+                neurons_df,
+                depths=closedloop_depth_list,
+                is_closed_loop=1,
+                use_multidepth=is_multidepth,
+                suffix=closedloop_sfx,
+            )
 
         # Save neurons_df
         assert all(~np.isnan(neurons_df["roi"].values)), "ROIs in neurons_df are NaN."
