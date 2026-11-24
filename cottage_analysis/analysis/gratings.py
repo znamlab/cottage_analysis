@@ -76,15 +76,16 @@ def generate_trials_df(img_df, skip_first_n_volumes=2, use_col="dffs"):
     # drop the last row
     trials_df = trials_df.iloc[:-1].copy()
 
-    # Assign dffs (or spks) array to trials_df
+    # Assign dffs (or spks) array to trials_df: volumes [stim_start, stim_end). `.loc`
+    # includes its end, so stop one volume before the next trial's onset.
     stim_col = {"dffs": "dff_stim", "spks": "spks_stim"}[use_col]
     trials_df[stim_col] = trials_df.apply(
         lambda x: np.stack(
-            img_df[use_col].loc[int(x.stim_start) : int(x.stim_end)]
+            img_df[use_col].loc[int(x.stim_start) : int(x.stim_end) - 1]
         ).squeeze(),
         axis=1,
     )
-    # mean response over [stim_start, stim_end), one integer column per ROI (read by
+    # mean response over the same volumes, one integer column per ROI (read by
     # fit_sftf_tuning)
     dff_mean = [
         np.stack(img_df[use_col].loc[int(start) : int(end) - 1])
