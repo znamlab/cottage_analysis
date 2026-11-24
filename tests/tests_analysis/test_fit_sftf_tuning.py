@@ -151,3 +151,10 @@ def test_parallel_matches_serial():
     np.testing.assert_array_equal(
         serial[cols].to_numpy(float), parallel[cols].to_numpy(float)
     )
+
+
+def test_crossval_single_fold_group_raises():
+    trials = make_trials()
+    trials["irecording"] = 0
+    with pytest.raises(ValueError, match="Cannot cross-validate by 'irecording'"):
+        fit_sftf_tuning(trials, niter=1, k_folds=5, fold_col="irecording")

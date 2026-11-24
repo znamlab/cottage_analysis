@@ -1463,9 +1463,15 @@ def _sftf_folds(trials_df, k_folds, fold_col):
     `k_folds` stratified folds on the stimulus condition (SF, TF, direction)."""
     if fold_col is not None:
         groups = trials_df[fold_col].to_numpy()
+        unique_groups = np.unique(groups)
+        if len(unique_groups) < 2:
+            raise ValueError(
+                f"Cannot cross-validate by {fold_col!r}: need at least 2 unique "
+                f"values, found {len(unique_groups)} ({unique_groups.tolist()})."
+            )
         return [
             (np.flatnonzero(groups != g), np.flatnonzero(groups == g))
-            for g in np.unique(groups)
+            for g in unique_groups
         ]
     _, condition = np.unique(
         trials_df[["SpatialFrequency", "TemporalFrequency", "Angle"]].to_numpy(float),
