@@ -502,6 +502,7 @@ def main(
         print("RF fitting finished. Neurons_df saved.")
 
     # Fit gaussian blob to neuronal activity
+    has_openloop = len(trials_df_all) > 0 and 0 in trials_df_all["closed_loop"].unique()
     if run_rsof_fit:
         print("---Start fitting 2D gaussian blob...---")
         outputs = []
@@ -562,9 +563,34 @@ def main(
             outputs.append(out)
             print("---RS OF fit finished. Neurons_df saved.---")
 
+        if has_openloop:
+            openloop_sfx = f"{special_sfx_base}_openloop"
+            openloop_params = {
+                **common_params,
+                "run_openloop_only": True,
+                "file_special_sfx": openloop_sfx,
+            }
+            print("Fitting gaussian_2d (5-fold open-loop)...")
+            out = pipeline_utils.load_and_fit(
+                project,
+                session_name,
+                photodiode_protocol,
+                model="gaussian_2d",
+                choose_trials=None,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                scripts_name=f"{session_name}_gaussian_2d_k5_openloop",
+                k_folds=5,
+                filter_datasets=filter_traces,
+                protocol_base=protocol_base,
+                **openloop_params,
+            )
+            outputs.append(out)
+            print("---Open-loop 5-fold RS OF fit finished.---")
+
         # Merge fit dataframes
         job_dependency = outputs if use_slurm else None
-        out = pipeline_utils.merge_fit_dataframes(
+        merge_out = pipeline_utils.merge_fit_dataframes(
             project,
             session_name,
             use_slurm=use_slurm,
@@ -574,12 +600,32 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed", "openloop"],
+            exclude_keywords=["recording", "openclosed", "openloop", "no_acc"],
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )
+        if has_openloop:
+            # Merge only the 5-fold open-loop g2d fit file (with underscore before
+            # openloop) so it never collides with legacy k5openloop.pickle or
+            # per-recording files.
+            merge_out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=use_slurm,
+                slurm_folder=slurm_folder,
+                job_dependency=[merge_out] if use_slurm else None,
+                scripts_name=f"{session_name}_merge_fit_dataframes_openloop",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_gaussian_2d_k5",
+                suffix=f"{special_sfx_base}_openloop",
+                exclude_keywords=["recording", "openclosed"],
+                include_keywords=[],
+                target_column_suffix=special_sfx_base,
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
         print("---Analysis finished. Neurons_df saved.---")
 
     if (run_depth_fit or run_rf) and not run_rsof_fit:
@@ -595,19 +641,36 @@ def main(
             conflicts=conflicts,
             prefix="fit_rs_of_tuning_",
             suffix=special_sfx_base,
-            exclude_keywords=["recording", "openclosed"],
+            exclude_keywords=["recording", "openclosed", "openloop", "no_acc"],
             include_keywords=[],
             target_column_suffix=special_sfx_base,
             filetype=".pickle",
             target_filename="neurons_df.pickle",
         )
+        if has_openloop:
+            out = pipeline_utils.merge_fit_dataframes(
+                project,
+                session_name,
+                use_slurm=0,
+                slurm_folder=slurm_folder,
+                job_dependency=None,
+                scripts_name=f"{session_name}_merge_fit_dataframes_openloop",
+                conflicts=conflicts,
+                prefix="fit_rs_of_tuning_gaussian_2d_k5",
+                suffix=f"{special_sfx_base}_openloop",
+                exclude_keywords=["recording", "openclosed"],
+                include_keywords=[],
+                target_column_suffix=special_sfx_base,
+                filetype=".pickle",
+                target_filename="neurons_df.pickle",
+            )
         print("---Analysis finished. Neurons_df saved.---")
 
     # Plot basic plots
     if run_plot:
         print("---Start basic vis plotting...---")
         if run_rsof_fit:
-            job_dependency = outputs if use_slurm else None
+            job_dependency = [merge_out] if use_slurm else None
         else:
             job_dependency = None
         pipeline_utils.run_basic_plots(
