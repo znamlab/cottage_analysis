@@ -83,6 +83,13 @@ def iterate_fit(
         popt_best: best parameters
         rsq_best: best R squared
 
+    Note:
+        A restart for which `curve_fit` does not converge (`RuntimeError`, e.g. "the
+        maximum number of function evaluations is exceeded") is skipped with a warning
+        and the best of the other restarts is returned. The starting points are drawn
+        before each fit, so skipping one does not change those of the other restarts.
+        If no restart converges, `popt_best` is all NaN and `rsq_best` is NaN.
+
     """
     popt_arr = []
     rsq_arr = []
@@ -112,17 +119,28 @@ def iterate_fit(
                     continue
                 else:
                     p0[i] = np.random.uniform(lower_bounds[i], upper_bounds[i])
-        popt, _ = curve_fit(
-            func,
-            X,
-            y,
-            maxfev=100000,  # 100000
-            bounds=(
-                lower_bounds,
-                upper_bounds,
-            ),
-            p0=p0,
-        )
+        try:
+            popt, _ = curve_fit(
+                func,
+                X,
+                y,
+                maxfev=100000,  # 100000
+                bounds=(
+                    lower_bounds,
+                    upper_bounds,
+                ),
+                p0=p0,
+            )
+        except RuntimeError as err:
+            # curve_fit did not converge from this starting point: keep the other
+            # restarts instead of failing the whole fit (and the session with it)
+            warnings.warn(
+                f"iterate_fit: restart {i_iter + 1}/{niter} did not converge and is "
+                f"skipped ({err})",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
 
         pred = func(np.array(X), *popt)
         r_sq = calculate_r_squared(y, pred)
@@ -130,6 +148,9 @@ def iterate_fit(
         rsq_arr.append(r_sq)
         if verbose:
             print(f"Iteration {i_iter}, R^2 = {r_sq}")
+    if not popt_arr:
+        # no restart converged
+        return np.full(len(lower_bounds), np.nan), np.nan
     idx_best = np.argmax(np.array(rsq_arr))
     popt_best = popt_arr[idx_best]
     rsq_best = rsq_arr[idx_best]
